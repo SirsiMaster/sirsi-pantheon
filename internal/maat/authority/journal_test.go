@@ -56,4 +56,39 @@ func TestFileJournal_TornTailIsIgnored(t *testing.T) {
 	if entry.Seq != 3 {
 		t.Fatalf("want the torn entry's seq reused, got %d", entry.Seq)
 	}
+	assertThreeCleanEntries(t, reopened)
+
+	reopenedAgain, err := OpenFileJournal(path)
+	if err != nil {
+		t.Fatalf("reopen again: %v", err)
+	}
+	assertThreeCleanEntries(t, reopenedAgain)
+}
+
+// assertThreeCleanEntries fails unless the journal reads back exactly three
+// valid entries seq 1,2,3. If the torn tail's bytes survived in the file
+// (ADR-120 review P2-a follow-up), the fourth Append's O_APPEND write lands
+// right after them, producing a second unterminated line that is dropped the
+// same way -- so Head/Since would wrongly read back only 2 entries here.
+func assertThreeCleanEntries(t *testing.T, j Journal) {
+	t.Helper()
+	head, err := j.Head()
+	if err != nil {
+		t.Fatalf("head: %v", err)
+	}
+	if head != 3 {
+		t.Fatalf("want head 3, got %d", head)
+	}
+	entries, err := j.Since(0)
+	if err != nil {
+		t.Fatalf("since: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("want 3 entries, got %d", len(entries))
+	}
+	for i, e := range entries {
+		if want := int64(i + 1); e.Seq != want {
+			t.Fatalf("entry %d: want seq %d, got %d", i, want, e.Seq)
+		}
+	}
 }

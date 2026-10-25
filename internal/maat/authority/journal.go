@@ -162,8 +162,16 @@ func (j *FileJournal) readAllLocked() ([]Entry, error) {
 		// Append fsyncs only after a full "line\n" write, so an unterminated
 		// tail was never acknowledged to a caller: a crash mid-write leaves
 		// this, and it is safe to drop rather than fail every future Append,
-		// Since and Head (ADR-120 review P2-a).
-		data = data[:bytes.LastIndexByte(data, '\n')+1]
+		// Since and Head (ADR-120 review P2-a). Truncate the file itself, not
+		// just this in-memory copy: otherwise the next Append's O_APPEND
+		// write lands right after the torn bytes, producing a second
+		// unterminated line that is never valid JSON and corrupts every
+		// read from then on (ADR-120 review P2-a follow-up).
+		cut := bytes.LastIndexByte(data, '\n') + 1
+		if err := os.Truncate(j.path, int64(cut)); err != nil {
+			return nil, fmt.Errorf("maat: truncate torn tail %s: %w", j.path, err)
+		}
+		data = data[:cut]
 	}
 	var out []Entry
 	scanner := bufio.NewScanner(bytes.NewReader(data))
