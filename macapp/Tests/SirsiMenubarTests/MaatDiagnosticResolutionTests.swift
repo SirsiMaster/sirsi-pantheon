@@ -1,4 +1,5 @@
 import XCTest
+import CryptoKit
 @testable import SirsiMenubar
 
 final class MaatDiagnosticResolutionTests: XCTestCase {
@@ -38,6 +39,57 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
         XCTAssertEqual(current.fix, "sirsi clean --include-caution")
         XCTAssertFalse(current.fix?.contains("self-update") == true)
         XCTAssertEqual(v.findings[0].claim, "Historical disk condition")
+    }
+
+    func testTypedPrivateHostBindingMatchesOnlyExactLocalHashAndKeepsLegacyStrict() throws {
+        var object = screenObject()
+        var subject = try XCTUnwrap(object["subject"] as? [String:Any])
+        let digest = SHA256.hash(data:Data(host.utf8)).map{String(format:"%02x",$0)}.joined()
+        subject["repo"] = "local-host-" + digest
+        subject["host_binding"] = "sirsi.maat.local-host-sha256.v1"
+        object["subject"] = subject
+        let current = try verdict(object)
+        XCTAssertTrue(maatHasLocalDiagnosticCustody(current,finding:current.findings[0],localHost:host))
+        XCTAssertFalse(maatHasLocalDiagnosticCustody(current,finding:current.findings[0],localHost:"foreign"))
+        guard case .current = maatCurrentDiagnosticResolution(verdict:current,finding:current.findings[0],localHost:host,read:try read()) else {return XCTFail("private new projection lost fresh-check custody")}
+        for marker in ["", "unknown", "sirsi.maat.local-host-sha256.v2"] {
+            subject["host_binding"] = marker; object["subject"] = subject
+            let invalid = try verdict(object)
+            XCTAssertFalse(maatHasLocalDiagnosticCustody(invalid,finding:invalid.findings[0],localHost:host))
+        }
+        subject["host_binding"] = "sirsi.maat.local-host-sha256.v1";subject["repo"] = "local-host-" + digest + "x";object["subject"] = subject
+        let malformed = try verdict(object)
+        XCTAssertFalse(maatHasLocalDiagnosticCustody(malformed,finding:malformed.findings[0],localHost:host))
+        let legacy = try verdict()
+        XCTAssertTrue(maatHasLocalDiagnosticCustody(legacy,finding:legacy.findings[0],localHost:host))
+    }
+
+    @MainActor func testActualGoRecordedPrivateProjectionRoundTripsNativeCustodyAndFreshScreen() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PANTHEON_TEST_DIAGNOSTIC_REQUEST_INTEROP"] else {
+            throw XCTSkip("Main supplies the actual Go request/preparation/record/read/discovery artifact")
+        }
+        let bytes = try Data(contentsOf:URL(fileURLWithPath:path)); XCTAssertLessThanOrEqual(bytes.count,8*1024*1024)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with:bytes) as? [String:Any])
+        let store = try XCTUnwrap(object["store_uuid"] as? String), key = try XCTUnwrap(object["request_id"] as? String)
+        let uuid = try XCTUnwrap(UUID(uuidString:key)); var submissions = 0
+        let empty = MaatDiagnosticCorrelationFixture.reply(try XCTUnwrap(object["empty_discovery"]))
+        let prepared = MaatDiagnosticCorrelationFixture.reply(try XCTUnwrap(object["prepared"]))
+        let recorded = MaatDiagnosticCorrelationFixture.reply(try XCTUnwrap(object["recorded"]))
+        let lookup = MaatDiagnosticCorrelationFixture.reply(try XCTUnwrap(object["lookup"]))
+        let correlation = MaatDiagnosticRecordModel(localHost:{ "fixture-mac" },newRequestID:{ uuid }) { args in
+            if args == MaatDiagnosticRecordModel.inspectArguments { return MaatDiagnosticCorrelationFixture.reply(["state":"ready","store_uuid":store]) }
+            if args == MaatDiagnosticRecordModel.pendingArguments { return empty }
+            if args == MaatDiagnosticRecordModel.requestArguments("prepare",id:key) { return prepared }
+            if args == MaatDiagnosticRecordModel.requestArguments("record",id:key,confirm:true) { submissions += 1; return recorded }
+            XCTAssertEqual(args,MaatDiagnosticRecordModel.requestArguments("read",id:key))
+            return lookup
+        }
+        let model = MaatDiagnosticResolutionModel()
+        await model.recordFreshScreen(localHost:"fixture-mac",using:correlation)
+        XCTAssertEqual(submissions,1); XCTAssertNotNil(model.screenResult)
+        XCTAssertEqual(correlation.requestCompletion?.request.id,key); XCTAssertEqual(correlation.requestCompletion?.request.store_uuid,store)
+        XCTAssertTrue(maatDiagnosticHostMatches(try XCTUnwrap(model.screenResult).verdict.subject,localHost:"fixture-mac"))
+        await model.recordFreshScreen(localHost:"fixture-mac",using:correlation); XCTAssertEqual(submissions,1)
     }
 
     func testForeignImportedMalformedAndDuplicateCustodyRefuses() throws {
@@ -149,62 +201,44 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
     }
 
     @MainActor func testConfirmedRescreenUsesExactCanonicalArgumentsOnceAndDoesNotClaimRepair() async throws {
-        let model = MaatDiagnosticResolutionModel()
-        var response = screenObject()
-        response["decision_evidence"] = "maat-system-one:sha256=" + String(repeating: "b", count: 64)
-        response["snapshot_evidence"] = "diagnostic:sha256=" + head
-        let receipt = CommandExecution(stdout: try JSONSerialization.data(withJSONObject: response), exitCode: 0, childState: .exitConfirmed)
-        var calls = 0
-        for _ in 0..<2 {
-            await model.recordFreshScreen(localHost: host) { args in
-                calls += 1
-                XCTAssertEqual(args, ["maat", "triage", "--confirm", "--json"])
-                return receipt
-            }
-        }
-        XCTAssertEqual(calls, 1)
-        XCTAssertTrue(model.screenAttempted)
-        XCTAssertNotNil(model.screenResult)
-        XCTAssertEqual(model.screenReceipt, receipt)
-        XCTAssertTrue(model.message.contains("does not prove"))
-        XCTAssertTrue(model.message.contains("original case"))
-        XCTAssertNil(model.finding)
+        let model = MaatDiagnosticResolutionModel(), fixture = MaatDiagnosticCorrelationFixture()
+        let correlation = fixture.model()
+        for _ in 0..<2 { await model.recordFreshScreen(localHost:host,using:correlation) }
+        XCTAssertEqual(fixture.calls.filter{$0.contains("--record-request")}.count,1)
+        let key = try XCTUnwrap(fixture.requestID)
+        XCTAssertEqual(fixture.calls.filter{$0.contains("--record-request")},[MaatDiagnosticRecordModel.requestArguments("record",id:key,confirm:true)])
+        XCTAssertTrue(model.screenAttempted); XCTAssertNotNil(model.screenResult)
+        XCTAssertNotNil(correlation.requestCompletion)
+        XCTAssertTrue(model.message.contains("does not prove")); XCTAssertTrue(model.message.contains("original case")); XCTAssertNil(model.finding)
     }
-
     @MainActor func testFailedOrUnknownRescreenRetainsReceiptWithoutAutomaticReplay() async {
-        for receipt in [CommandExecution(stdout: Data("failed write".utf8), exitCode: 1, childState: .exitConfirmed),
-                        CommandExecution(stdout: Data("partial".utf8), timedOut: true, childState: .exitUnknown),
-                        CommandExecution(stdout: Data("{}".utf8), exitCode: 0, childState: .exitConfirmed)] {
-            let model = MaatDiagnosticResolutionModel()
-            var calls = 0
-            for _ in 0..<2 { await model.recordFreshScreen { _ in calls += 1; return receipt } }
-            XCTAssertEqual(calls, 1)
-            XCTAssertNil(model.screenResult)
-            XCTAssertEqual(model.screenReceipt, receipt)
-            XCTAssertTrue(model.message.contains("Inspect Casebook"))
-            XCTAssertTrue(model.message.contains("will not replay"))
+        for reply in [MaatDiagnosticCorrelationFixture.lost,
+                      MaatDiagnosticCorrelationFixture.reply(["error":"inert refusal"],exit:1),
+                      MaatDiagnosticCorrelationFixture.reply([:])] {
+            let fixture = MaatDiagnosticCorrelationFixture(), model = MaatDiagnosticResolutionModel()
+            fixture.recordReply = reply; fixture.readLost = true
+            let correlation = fixture.model()
+            for _ in 0..<2 { await model.recordFreshScreen(localHost:host,using:correlation) }
+            XCTAssertEqual(fixture.calls.filter{$0.contains("--record-request")}.count,1)
+            XCTAssertNil(model.screenResult); XCTAssertNotNil(correlation.activeRequestID); XCTAssertTrue(correlation.deliveryUnknown)
+            XCTAssertTrue(model.message.contains("Inspect Casebook")); XCTAssertTrue(model.message.contains("will not replay"))
         }
     }
-
     @MainActor func testContradictoryOrForeignFreshScreenNeverClaimsRecordedObservation() async throws {
-        var baseline = screenObject()
-        baseline["decision_evidence"] = "maat-system-one:sha256=" + String(repeating: "b", count: 64)
-        baseline["snapshot_evidence"] = "diagnostic:sha256=" + head
+        let template = MaatDiagnosticCorrelationFixture()
         var variants: [[String: Any]] = []
-        for (key, value) in [("snapshot_evidence", "diagnostic:sha256=other"), ("decision_evidence", ""),
-                             ("contract", "imported"), ("gate", "unknown")] {
-            var changed = baseline; changed[key] = value; variants.append(changed)
+        for (key,value) in [("snapshot_evidence","diagnostic:sha256=other"),("decision_evidence",""),("contract","imported"),("gate","unknown")] {
+            var changed = template.success; changed[key] = value; variants.append(changed)
         }
-        var foreign = baseline
-        var subject = try XCTUnwrap(foreign["subject"] as? [String: Any])
+        var foreign = template.success, subject = template.success["subject"] as! [String:Any]
         subject["repo"] = "other-mac"; foreign["subject"] = subject; variants.append(foreign)
         for object in variants {
-            let model = MaatDiagnosticResolutionModel()
-            let receipt = CommandExecution(stdout: try JSONSerialization.data(withJSONObject: object), exitCode: 0, childState: .exitConfirmed)
-            await model.recordFreshScreen(localHost: host) { _ in receipt }
-            XCTAssertNil(model.screenResult)
-            XCTAssertEqual(model.screenReceipt, receipt)
-            XCTAssertTrue(model.message.contains("not confirmed"))
+            let fixture = MaatDiagnosticCorrelationFixture(), model = MaatDiagnosticResolutionModel()
+            fixture.recordReply = MaatDiagnosticCorrelationFixture.reply(object)
+            let correlation = fixture.model()
+            await model.recordFreshScreen(localHost:host,using:correlation)
+            XCTAssertNil(model.screenResult); XCTAssertTrue(model.message.contains("not confirmed"))
+            XCTAssertEqual(fixture.calls.filter{$0.contains("--record-request")}.count,1)
         }
     }
 
@@ -252,45 +286,29 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
     }
 
     @MainActor func testActualNavOwnsPendingAndUnknownWriteAfterDestinationValueIsReleased() async throws {
-        let v = try verdict(), engine = SirsiEngine(), nav = Nav()
-        var bridge: MaatDiagnosticResolutionView? = MaatDiagnosticResolutionView(
-            engine: engine, origin: originCase(v), finding: v.findings[0])
-        weak var ownedModel = bridge?.model
-        let modelID = ObjectIdentifier(try XCTUnwrap(ownedModel))
-        nav.push(try XCTUnwrap(bridge))
-        let bridgeID = try XCTUnwrap(nav.stack.last?.id)
-        bridge = nil // Only the actual Nav destination value owns the model.
-        XCTAssertNotNil(ownedModel)
-        let unknown = CommandExecution(stdout: Data("retained partial write output".utf8),
-                                       timedOut: true, childState: .exitUnknown)
-        var captures = 0
-        await ownedModel?.recordFreshScreen(localHost: host) { args in
-            captures += 1
-            XCTAssertEqual(args, ["maat", "triage", "--confirm", "--json"])
-            XCTAssertEqual(ownedModel?.busy, true)
-            XCTAssertEqual(ownedModel?.screenAttempted, true)
-            nav.push(MaatCasebookView(engine: engine))
-            nav.pop()
-            XCTAssertEqual(nav.stack.last?.id, bridgeID)
-            XCTAssertEqual(ownedModel.map { ObjectIdentifier($0) }, modelID)
-            // Pending writes cannot renew their latch after a navigation turn.
-            await ownedModel?.recordFreshScreen(localHost: self.host) { _ in captures += 1; return unknown }
-            return unknown
+        let fixture = MaatDiagnosticCorrelationFixture()
+        fixture.recordReply = MaatDiagnosticCorrelationFixture.lost; fixture.readLost = true
+        let correlation = fixture.model(), v = try verdict(), nav = Nav()
+        let engine = SirsiEngine(maatCaseOperations:MaatCaseOperationStore(diagnosticRecord:correlation))
+        var bridge: MaatDiagnosticResolutionView? = MaatDiagnosticResolutionView(engine:engine,origin:originCase(v),finding:v.findings[0])
+        weak var owned = bridge?.model
+        let identity = ObjectIdentifier(try XCTUnwrap(owned))
+        nav.push(try XCTUnwrap(bridge)); bridge = nil
+        let bridgeID = nav.stack.last?.id
+        fixture.onRecord = {
+            XCTAssertTrue(owned?.busy == true); XCTAssertNotNil(correlation.activeRequestID)
+            nav.push(MaatCasebookView(engine:engine)); nav.pop()
+            XCTAssertEqual(nav.stack.last?.id,bridgeID)
+            await owned?.recordFreshScreen(localHost:self.host,using:correlation)
         }
-        XCTAssertEqual(captures, 1)
-        XCTAssertNotNil(ownedModel)
-        XCTAssertEqual(ownedModel?.screenReceipt, unknown)
-        XCTAssertEqual(ownedModel?.screenAttempted, true)
-        XCTAssertEqual(ownedModel?.busy, false)
-        nav.push(MaatCasebookView(engine: engine))
-        nav.pop()
-        XCTAssertEqual(nav.stack.last?.id, bridgeID)
-        XCTAssertEqual(ObjectIdentifier(try XCTUnwrap(ownedModel)), modelID)
-        await ownedModel?.recordFreshScreen(localHost: host) { _ in captures += 1; return unknown }
-        XCTAssertEqual(captures, 1, "Back after an unknown write cannot create new journal intent")
-        XCTAssertEqual(ownedModel?.screenReceipt, unknown)
-        XCTAssertTrue(ownedModel?.message.contains("will not replay") == true)
-        nav.pop()
-        XCTAssertTrue(nav.atRoot)
+        await owned?.recordFreshScreen(localHost:host,using:correlation)
+        XCTAssertTrue(correlation.deliveryUnknown); let key = try XCTUnwrap(correlation.activeRequestID)
+        XCTAssertEqual(ObjectIdentifier(try XCTUnwrap(owned)),identity)
+        nav.push(MaatCasebookView(engine:engine)); nav.pop()
+        await owned?.recordFreshScreen(localHost:host,using:correlation)
+        XCTAssertEqual(fixture.calls.filter{$0.contains("--record-request")}.count,1)
+        XCTAssertEqual(correlation.activeRequestID,key); XCTAssertTrue(owned?.screenAttempted == true)
+        XCTAssertTrue(owned?.message.contains("will not replay") == true)
+        nav.pop(); XCTAssertTrue(nav.atRoot)
     }
 }

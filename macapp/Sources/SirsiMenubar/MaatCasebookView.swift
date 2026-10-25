@@ -34,7 +34,14 @@ import UniformTypeIdentifiers
     }
 
     var body: some View {
-        MaatWorkspaceRecoveryFrame(
+        // Bind the ACTUAL query owners without a new model or remount reset.
+        // Capturing stores directly avoids an engine -> callback -> engine cycle.
+        let system = systemOneHistory, decisions = decisionHistory
+        engine.maatCaseOperations.diagnosticRecord.bindQueryOwnedHistoryRefresh {
+            await system.refresh(scope: "system-one")
+            await decisions.refresh(scope: "all")
+        }
+        return MaatWorkspaceRecoveryFrame(
             recovery: engine.maatCaseOperations.preparedPreflightRecovery,
             content: AnyView(workspaceContent),
             diagnostic: engine.maatCaseOperations.diagnosticRecord,
@@ -3918,7 +3925,8 @@ struct MaatSystemOneSubject: Decodable {
     let ref: String
     let headSHA: String
     let repo: String?
-    enum CodingKeys: String, CodingKey { case kind, ref, repo; case headSHA = "head_sha" }
+    let hostBinding: String?
+    enum CodingKeys: String, CodingKey { case kind, ref, repo; case hostBinding = "host_binding"; case headSHA = "head_sha" }
 }
 
 struct MaatSystemOneFloor: Decodable {

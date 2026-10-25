@@ -69,3 +69,21 @@ no release, installed-state or broader Ma'at completion follows from this source
 | Installed/release behavior | release workflow and host evidence | exact release/host receipts | OPEN |
 | A release can bootstrap without future helper/old CLI flag deadlock | `maat-native-release-bootstrap`, `.github/workflows/release.yml`, `test_release_admission.py` | actual shell selects quoted installed supervisor, forwards bounded executor arguments and fails before payload when absent; omission controls | source-qualified only; legacy conservative admission and signed native build must be read back separately |
 | A finite CPU-only build does not seize the model slot | native launcher core propagation; CLI `--cores`; canonical scheduler | `test_native_cpu_request_reaches_reservation`, `TestReserveCLIPropagatesBoundedCoresAndPreservesLegacyOmission`, `TestActualCPUFirstReserveDoesNotOwnModelSlot`, conservative conflict matrix | post124 corrective source; protected full checks and installed/server behavior OPEN |
+
+O7 native request consumer continuation: `MaatDiagnosticCorrelation.swift` decodes
+the accepted73d canonical request/record/page DTOs. `MaatDiagnosticRecordModel`
+retains the request key before preparation, verifies prepared custody, submits
+once, then reads that exact request; uncertain preparation/invocation is read or
+confirmed-resolve only. Discovery follows one query/snapshot chain with eight
+pages per UI turn and explicit continuation, rather than a total128-row cap. A
+completed chain is revalidated against the producer's full-namespace snapshot
+before new preparation. `MaatDiagnosticRecordView` exposes partial/restart/debt
+and retained typed receipts; `MaatDiagnosticResolution.recordFreshScreen` uses
+the engine-owned model rather than a second legacy submitter. Existing
+query-owned refresh and UI1/UI2 completion retention remain. Corresponding
+record/resolution/correlation tests include129 historical rows, cancellation,
+snapshot drift, missing preparation, exact tuple refusal and an external
+Go-produced wire input (explicit skip without Main artifact). This child has
+not been built/tested by its author; actual interoperability, normal-window
+acceptance and installed/full-O7 acceptance remain open. See
+[consumer boundary](DIAGNOSTIC_NATIVE_REQUEST_ADAPTER_V1.md).
