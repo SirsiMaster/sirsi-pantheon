@@ -19,6 +19,41 @@
   },
   "components": [
     {
+      "id": "maat-history-linked-qualification-batches",
+      "source": [
+        "internal/maat/history_query.go",
+        "internal/maat/history_query_batch.go",
+        "internal/mcp/maat_reads.go",
+        "internal/dashboard/maat_reads.go",
+        "internal/tui/command.go",
+        "internal/tui/screen_activity.go"
+      ],
+      "tests": [
+        "internal/maat/history_query_batch_test.go",
+        "internal/mcp/maat_history_test.go",
+        "internal/dashboard/maat_history_test.go",
+        "internal/tui/maat_history_test.go",
+        "internal/tui/console_test.go"
+      ],
+      "inputs": [
+        "existing canonical same-snapshot HistoryQuery and opaque continuation",
+        "existing Match/NeedsState/MatchState predicates before top-K; existing owner/updater links"
+      ],
+      "outputs": [
+        "bounded reference batches sharing one canonical relationship pass per batch",
+        "unchanged per-call work budgets and no provisional cases; cursorv4 rejects stale schema",
+        "visible real TUI m operations return plus neutral bidirectional registry hint"
+      ],
+      "writes": [],
+      "upgrade_recipe": [
+        "keep at most48 candidate refs and the strict64KiB cursor encoder; reduce capacity for retained page metadata",
+        "retain partial batches across request boundaries instead of reverting to per-candidate passes",
+        "charge link scans and candidate re-reads; qualify before top-K and materialize selected links from same snapshot",
+        "retain original80-call MCP tests byte-for-byte and fixed charged-work causal regression",
+        "Astra architecture and Main runtime pending; amortized batching is not a general linear/performance claim"
+      ]
+    },
+    {
       "id": "maat-bounded-history-read-surfaces",
       "source": [
         "internal/mcp/maat_reads.go",

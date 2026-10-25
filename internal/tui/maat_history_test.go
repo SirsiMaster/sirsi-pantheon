@@ -114,3 +114,28 @@ func TestMaatHistoryTUIPartialEmptyAndCanonicalRunnerRefusal(t *testing.T) {
 		}
 	}
 }
+
+func TestMaatHistoryTUIOperationsHintSurvivesSupportedWidth(t *testing.T) {
+	withStub(t, fullStub(), func() {
+		app := newTestApp(t)
+		app.focus(4)
+		loadScreen(app)
+		app.handleKey("m")
+		frame := strings.Join(app.render(), "\n")
+		if !strings.Contains(frame, "m operations") {
+			t.Fatalf("return action was truncated or mislabeled: %s", frame)
+		}
+		reg, err := DefaultRegistry()
+		if err != nil {
+			t.Fatal(err)
+		}
+		command, ok := reg.ResolveKey("m")
+		if !ok || command.ID != CmdMaatCasebook || command.Hint != "view" {
+			t.Fatal("bidirectional switch advertises only Ma’at destination")
+		}
+		app.handleKey("m")
+		if app.screens[4].(*activityScreen).showMaat {
+			t.Fatal("advertised operations return does not dispatch")
+		}
+	})
+}

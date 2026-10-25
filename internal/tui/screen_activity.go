@@ -417,7 +417,7 @@ func (s *activityScreen) maatView(height int, caps Capabilities) []string {
 			tail = append(tail, "  "+Paint("owner acceptance: ", TokDim, caps)+c.Resolution)
 		}
 	}
-	tail = append(tail, "", "  "+Paint("read-only · enter detail · n older/continue/retry · / search · o scope · v status · u restart · m operations", TokDim, caps))
+	tail = append(tail, "", "  "+Paint("m operations · n older/continue/retry · u restart", TokDim, caps), "  "+Paint("enter detail · / search · o scope · v status · read-only", TokDim, caps))
 	lines = append(lines, renderTableWindow(cols, rows, caps, false, height-len(lines)-len(tail))...)
 	return append(lines, tail...)
 }

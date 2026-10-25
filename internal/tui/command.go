@@ -164,7 +164,7 @@ func DefaultRegistry() (*Registry, error) {
 		{ID: CmdMaatSearch, Title: "Search Ma’at history", Key: "/", Hint: "search"},
 		{ID: CmdMaatScope, Title: "Ma’at history scope", Key: "o", Hint: "scope"},
 		{ID: CmdMaatStatus, Title: "Ma’at history status", Key: "v", Hint: "status"},
-		{ID: CmdMaatCasebook, Title: "Ma'at System One casebook", Key: "m", Hint: "Ma'at"},
+		{ID: CmdMaatCasebook, Title: "Ma'at System One casebook", Key: "m", Hint: "view"},
 		// Relieve is the Pulse hero beat, bound to r (proof §3.2: "r relieve").
 		{ID: CmdRelieve, Title: "Relieve memory pressure", Key: "r", Hint: "relieve"},
 	}

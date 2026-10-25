@@ -21,20 +21,21 @@ import (
 )
 
 const (
-	HistoryScopeAll          = "all"
-	HistoryScopeSystemOne    = "system-one"
-	HistoryCoverageComplete  = "complete"
-	HistoryCoveragePartial   = "partial"
-	maxHistoryPageSize       = 100
-	maxHistoryCursorBytes    = 64 << 10
-	maxHistoryRecordBytes    = 256 << 10
-	defaultHistoryByteBudget = 4 << 20
-	maxHistoryByteBudget     = 8 << 20
-	defaultHistoryRowBudget  = 5000
-	maxHistoryRowBudget      = 10000
-	defaultHistoryTimeBudget = 300 * time.Millisecond
-	maxHistoryTimeBudget     = 2 * time.Second
-	historyCursorVersion     = 3
+	HistoryScopeAll              = "all"
+	HistoryScopeSystemOne        = "system-one"
+	HistoryCoverageComplete      = "complete"
+	HistoryCoveragePartial       = "partial"
+	maxHistoryPageSize           = 100
+	maxHistoryCursorBytes        = 64 << 10
+	maxHistoryRecordBytes        = 256 << 10
+	defaultHistoryByteBudget     = 4 << 20
+	maxHistoryByteBudget         = 8 << 20
+	defaultHistoryRowBudget      = 5000
+	maxHistoryRowBudget          = 10000
+	defaultHistoryTimeBudget     = 300 * time.Millisecond
+	maxHistoryTimeBudget         = 2 * time.Second
+	historyCursorVersion         = 4
+	maxHistoryQualificationBatch = 48
 )
 
 var ErrHistorySnapshotChanged = errors.New("maat decision history: snapshot changed; refresh the query")
@@ -134,6 +135,9 @@ type historyLinkRef struct {
 }
 
 type historyCursor struct {
+	Batch                []historyCandidateRef `json:"batch,omitempty"`
+	BatchLinks           []historyLinkRef      `json:"batch_links,omitempty"`
+	BatchIndex           int                   `json:"batch_index,omitempty"`
 	Version              int                   `json:"v"`
 	Snapshot             string                `json:"snapshot"`
 	QueryKey             string                `json:"query"`
@@ -252,7 +256,7 @@ func (j *FileDecisionJournal) QueryHistory(query HistoryQuery) (HistoryPage, err
 			page.ScannedBytes += bytesRead
 			page.ScannedRecords += rowsRead
 			if !done {
-				if state.Phase == "candidate-links" {
+				if state.Phase == "candidate-links" || state.Phase == "batch-links" {
 					continue
 				}
 				break
@@ -269,6 +273,69 @@ func (j *FileDecisionJournal) QueryHistory(query HistoryQuery) (HistoryPage, err
 				page.MatchCount = state.Seen
 				page.EvidenceMatches = state.EvidenceSeen
 				return page, nil
+			}
+			continue
+		}
+		if state.Phase == "batch-links" {
+			// Reuse the exact canonical link resolver for a bounded reference batch.
+			// Only the reference slice is swapped; offsets/discard state and work
+			// counters advance in this same snapshot, never through another reader.
+			state.Links, state.BatchLinks = state.BatchLinks, state.Links
+			done, bytesRead, rowsRead, err := scanHistoryLinks(ctx, deadline, file, state, remainingBytes, remainingRows)
+			state.Links, state.BatchLinks = state.BatchLinks, state.Links
+			page.ScannedBytes += bytesRead
+			page.ScannedRecords += rowsRead
+			if err != nil {
+				return HistoryPage{}, err
+			}
+			if !done {
+				break
+			}
+			state.Phase = "batch-finalize"
+			continue
+		}
+		if state.Phase == "batch-finalize" {
+			pending := *state
+			ref, link := state.Batch[state.BatchIndex], state.BatchLinks[state.BatchIndex]
+			pending.Pending = &ref
+			pending.PendingAccepted = link.Acceptance != nil
+			pending.PendingReviewed = link.Review != nil
+			pending.PendingAcceptance = link.Acceptance
+			pending.PendingRepairOutcome = link.RepairOutcome
+			pending.PendingRepairAttempt = link.RepairAttempt
+			bundleBytes, bundleRows := ref.Order.Size, 1
+			if link.Acceptance != nil {
+				bundleBytes += link.Acceptance.Size
+				bundleRows++
+			}
+			if repair, _ := selectedHistoryRepair(link.Acceptance, link.RepairOutcome, link.RepairAttempt); repair != nil {
+				bundleBytes += repair.Size
+				bundleRows++
+			}
+			if (page.ScannedBytes > 0 || page.ScannedRecords > 0) && (bundleBytes > remainingBytes || bundleRows > remainingRows) {
+				break
+			}
+			matched, bytesRead, rowsRead, err := finishPendingHistoryCandidate(ctx, deadline, file, &pending, query)
+			page.ScannedBytes += bytesRead
+			page.ScannedRecords += rowsRead
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					break
+				}
+				return HistoryPage{}, err
+			}
+			state.Candidates = pending.Candidates
+			if matched {
+				state.Seen++
+			}
+			state.BatchIndex++
+			if state.BatchIndex == len(state.Batch) {
+				state.Batch = nil
+				state.BatchLinks = nil
+				state.BatchIndex = 0
+				state.Offset = state.ResumeOffset
+				state.ResumeOffset = 0
+				state.Phase = "scan"
 			}
 			continue
 		}
@@ -415,6 +482,10 @@ func scanHistoryChunk(ctx context.Context, deadline time.Time, file *os.File, st
 		start := state.Offset
 		line, consumed, oversized, complete, digest, err := readHistoryLine(reader)
 		if err == io.EOF {
+			if len(state.Batch) > 0 {
+				beginHistoryQualificationBatch(state)
+				return false, bytesRead, rowsRead, nil
+			}
 			return true, bytesRead, rowsRead, nil
 		}
 		if err != nil {
@@ -475,16 +546,12 @@ func scanHistoryChunk(ctx context.Context, deadline time.Time, file *os.File, st
 		}
 		if matchState != nil {
 			if needsState == nil || needsState(decision) {
-				state.Pending = &candidate
-				state.ResumeOffset = state.Offset
-				state.Offset = 0
-				state.PendingAccepted = false
-				state.PendingReviewed = false
-				state.PendingAcceptance = nil
-				state.PendingRepairOutcome = nil
-				state.PendingRepairAttempt = nil
-				state.Phase = "candidate-links"
-				return false, bytesRead, rowsRead, nil
+				state.Batch = append(state.Batch, candidate)
+				if len(state.Batch) >= historyQualificationBatchCapacity(state) {
+					beginHistoryQualificationBatch(state)
+					return false, bytesRead, rowsRead, nil
+				}
+				continue
 			}
 			if !matchState(decision, HistoryMatchState{}) {
 				continue
@@ -1171,7 +1238,7 @@ func validateHistoryCursor(state *historyCursor, limit int, fileSize int64) erro
 	if state.Offset > fileSize || state.ResumeOffset < 0 || state.ResumeOffset > fileSize || (state.After != nil && (state.After.Offset < 0 || state.After.Offset >= fileSize || state.After.Time == "")) {
 		return fmt.Errorf("maat decision history: invalid continuation")
 	}
-	if state.Phase != "scan" && state.Phase != "links" && state.Phase != "candidate-links" && state.Phase != "candidate-finalize" && state.Phase != "materialize" {
+	if state.Phase != "scan" && state.Phase != "links" && state.Phase != "candidate-links" && state.Phase != "candidate-finalize" && state.Phase != "materialize" && state.Phase != "batch-links" && state.Phase != "batch-finalize" {
 		return fmt.Errorf("maat decision history: invalid continuation")
 	}
 	if state.Phase == "candidate-links" || state.Phase == "candidate-finalize" {
@@ -1181,7 +1248,7 @@ func validateHistoryCursor(state *historyCursor, limit int, fileSize int64) erro
 		if (state.Pending.EvidenceHash != "" && !validHistoryDigest(state.Pending.EvidenceHash)) || (state.Pending.ResolutionHash != "" && !validHistoryDigest(state.Pending.ResolutionHash)) || state.PendingAccepted != (state.PendingAcceptance != nil) || (state.PendingReviewed && !state.Pending.OwnerAcceptance) {
 			return fmt.Errorf("maat decision history: invalid continuation")
 		}
-	} else if state.Pending != nil || state.ResumeOffset != 0 || state.PendingAcceptance != nil || state.PendingRepairOutcome != nil || state.PendingRepairAttempt != nil || state.PendingAccepted || state.PendingReviewed {
+	} else if state.Pending != nil || (state.ResumeOffset != 0 && state.Phase != "batch-links" && state.Phase != "batch-finalize") || state.PendingAcceptance != nil || state.PendingRepairOutcome != nil || state.PendingRepairAttempt != nil || state.PendingAccepted || state.PendingReviewed {
 		return fmt.Errorf("maat decision history: invalid continuation")
 	}
 	if state.PendingAcceptance != nil && (state.PendingAcceptance.Offset < 0 || state.PendingAcceptance.Offset >= fileSize || state.PendingAcceptance.Time == "" || state.PendingAcceptance.Size <= 0 || state.PendingAcceptance.Size > maxHistoryRecordBytes+1) {
@@ -1201,7 +1268,7 @@ func validateHistoryCursor(state *historyCursor, limit int, fileSize int64) erro
 			return fmt.Errorf("maat decision history: invalid continuation")
 		}
 	}
-	for _, link := range state.Links {
+	for _, link := range append(append([]historyLinkRef{}, state.Links...), state.BatchLinks...) {
 		if !exclusiveHistoryOutcome(link.Acceptance, link.RepairOutcome, link.RepairAttempt) {
 			return fmt.Errorf("maat decision history: conflicting continuation outcomes")
 		}
@@ -1222,6 +1289,9 @@ func validateHistoryCursor(state *historyCursor, limit int, fileSize int64) erro
 				return fmt.Errorf("maat decision history: invalid continuation")
 			}
 		}
+	}
+	if err := validateHistoryQualificationBatch(state, fileSize); err != nil {
+		return err
 	}
 	return nil
 }

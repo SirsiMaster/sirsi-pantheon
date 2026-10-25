@@ -70,3 +70,41 @@ CLI producers, existing CLI compilation/vet/lint, inert JS controller tests, the
 production-only compiled semantic negatives with the original positive source
 restored. No source qualification, installed behavior, performance, release, or
 full original-scope completion follows from this document.
+
+## Corrective source after Main's 2ee terminal failure
+
+Main's owned run `/private/tmp/pantheon-maat-g04-2ee401-qualification-c8kex8ni`
+failed both original 80-continuation MCP tests and the existing TUI return-hint
+assertion. Neither test was a single-call query. The cursor advanced, but the
+core's text/status `NeedsState` path performed a full relationship scan for
+each candidate, including unrelated candidates, before MatchState. MCP did not
+lose the cursor. The original two 80-call tests remain byte-identical.
+
+`internal/maat/history_query_batch.go` now groups at most48 candidate references
+for a shared canonical relationship pass. Partially collected batches survive
+request boundaries instead of flushing a small batch on each work deadline.
+Each candidate is still re-read and qualified with its complete linked state
+before top-K insertion. Final selected-page relationships are independently
+materialized using the existing snapshot-bound path. No query/owner-status
+predicate is moved after the window, and no relationship or integrity failure
+is treated as absent. Per-call byte/row/time budgets, maximum record/page/cursor
+sizes and cancellation remain unchanged. Counts include qualification reads.
+
+This is bounded amortization, not a linear-complexity or empirical performance
+claim: full relationship passes still repeat across batches. No new database,
+policy owner or persisted authority/index is introduced. The batch reference
+arrays and selected links are bounded; the strict cursor encoder remains the
+final64KiB bound. Cursor version4 binds the new phases; older cursors require a
+fresh query. MCP/GET transport syntax recognizes the new version and phases.
+
+Authored `TestHistoryQualificationSharesLinkPassBeforeWindow` checks a fixed
+charged-record work ceiling and actual late owner-acceptance text qualification
+under a smaller row budget. Cancellation/malformed-batch/old-version fixtures
+preserve no provisional output. Existing same-snapshot updater/link tests remain
+required. The TUI return hint is on its own short line before optional controls;
+the bidirectional `m` registry hint now says `view` rather than naming the wrong
+destination while already viewing Ma’at.
+
+Core architecture/source review by Astra and Main runtime qualification remain
+required. No test, build, lint, service, model or user-data action was run by the
+author. The original failed packet and frozen2ee source remain unchanged.

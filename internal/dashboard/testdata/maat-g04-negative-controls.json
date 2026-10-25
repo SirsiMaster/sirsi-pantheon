@@ -7,7 +7,7 @@
       "id": "restore-mcp-window-before-filter",
       "kind": "compiled-go",
       "production_file": "internal/mcp/maat_reads.go",
-      "source_sha256": "578da2441185a468bbb709ccc3e31c59e8be94447eee57ac9024063da316a082",
+      "source_sha256": "e050af97994b5cc6a166a0282beff2b3753b1bbba280306384bb6545fdb9ab1c",
       "replace": "result, err := casebook.SearchHistory(file, q)",
       "with_text": "result, err := casebook.SearchHistory(file, q)\n rows, recentErr := file.Recent(1000)\n if err == nil { err=recentErr; result.View=casebook.Search(rows,q.Query) }",
       "expected_occurrences": 1,
@@ -31,7 +31,7 @@
       "id": "drop-tui-generation-fence",
       "kind": "compiled-go",
       "production_file": "internal/tui/screen_activity.go",
-      "source_sha256": "f46d0b525872a541f94cb3d9796abb18de02d9ada9ce31331d26d0444c37164e",
+      "source_sha256": "36699594158e0eb252f28a9a7c395c86e965780189bf6212751f71bf252482da",
       "replace": "if m.generation != s.maatGeneration {",
       "with_text": "if false {",
       "expected_occurrences": 1,
@@ -55,13 +55,25 @@
       "id": "discard-archive-search-cursor",
       "kind": "compiled-go",
       "production_file": "internal/mcp/maat_reads.go",
-      "source_sha256": "578da2441185a468bbb709ccc3e31c59e8be94447eee57ac9024063da316a082",
+      "source_sha256": "e050af97994b5cc6a166a0282beff2b3753b1bbba280306384bb6545fdb9ab1c",
       "replace": "return knowledge.LoadPageContext(ctx, home, r.Query)",
       "with_text": "r.Query.Cursor=\"\"\n return knowledge.LoadPageContext(ctx, home, r.Query)",
       "expected_occurrences": 1,
       "package": "./internal/mcp",
       "selector": "^TestMaatKnowledgeMCPCanonicalSearchDetailHistoryAndPrivacy$",
       "expected": "compiles; selected causal assertion fails; no skip/build-error acceptance"
+    },
+    {
+      "id": "restore-candidate-by-candidate-link-work",
+      "kind": "compiled-go",
+      "production_file": "internal/maat/history_query.go",
+      "source_sha256": "869911eef13ccc5cbe372568b31d50c65abf7a0d7cca57076eccf635cd296c3b",
+      "replace": "\tmaxHistoryQualificationBatch = 48",
+      "with_text": "\tmaxHistoryQualificationBatch = 1",
+      "expected_occurrences": 1,
+      "package": "./internal/maat",
+      "selector": "^TestHistoryQualificationSharesLinkPassBeforeWindow$",
+      "expected": "compiles; charged-record work ceiling assertion fails, not a build/skip/timeout credit"
     }
   ]
 }

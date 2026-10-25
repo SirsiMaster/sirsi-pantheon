@@ -41,3 +41,9 @@ No G01/G02 learning workflow or full original-scope completion is claimed.
 | Installed/release behavior | release workflow and host evidence | exact release/host receipts | OPEN |
 | A release can bootstrap without future helper/old CLI flag deadlock | `maat-native-release-bootstrap`, `.github/workflows/release.yml`, `test_release_admission.py` | actual shell selects quoted installed supervisor, forwards bounded executor arguments and fails before payload when absent; omission controls | source-qualified only; legacy conservative admission and signed native build must be read back separately |
 | A finite CPU-only build does not seize the model slot | native launcher core propagation; CLI `--cores`; canonical scheduler | `test_native_cpu_request_reaches_reservation`, `TestReserveCLIPropagatesBoundedCoresAndPreservesLegacyOmission`, `TestActualCPUFirstReserveDoesNotOwnModelSlot`, conservative conflict matrix | post124 corrective source; protected full checks and installed/server behavior OPEN |
+
+G04's 2ee runtime failure is retained in its original terminal packet. The
+corrective child adds bounded shared candidate qualification in
+`history_query_batch.go`, cursor-v4 validation and charged-work/cancel fixtures;
+original80-call MCP tests are unchanged. This core change is an independent
+Astra review subject, not a passed-runtime or full original-scope claim.
