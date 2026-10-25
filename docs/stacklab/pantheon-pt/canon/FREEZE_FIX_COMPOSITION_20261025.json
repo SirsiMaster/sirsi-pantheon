@@ -6,9 +6,9 @@
     "tree": "e0dae007221eb22948149e4f602c415a2d53faef"
   },
   "source_checkpoint": {
-    "commit": "b2dbe2d53920715f41aed402a1960009521a02e5",
-    "tree": "c56e8f92737ba7fb99cb2b3e03cad3f5b8453528",
-    "purpose": "Exact code checkpoint after DC01 import, before this metadata correction; no self-hash or combined runtime claim."
+    "commit": "dc1376c2d8cf82b849f651977d8caef4afd4322b",
+    "tree": "16cde927844d68c8b2e84db390ac4561804fc71e",
+    "purpose": "Exact code checkpoint after DC01 and Fabric R4 imports, before this canon-only record; no self-hash or runtime acceptance."
   },
   "components": [
     {
@@ -80,6 +80,17 @@
       "accepted_source_review_sha256": "240d44b48d73964fa47df716187979a4faab1fed0825963d8e6434ffda469687",
       "accepted_metadata_review_sha256": "7ee0ad0417899a5e9858814f5e77a5b329d133077c4da46f3d7509991cfa5fa1",
       "boundary": "SSA donor qualified SQLite whole normal/race734PASS8SKIP each and focused private PostgreSQL16 normal/race6PASS each, with server stopped. Main independently read raw outcomes; combined-source affected qualification and actual deployed own-item lifecycle remain open."
+    },
+    {
+      "name": "Existing Ra/Horus/Fabric module: shared immutable generation successor",
+      "source": "5915af1de3a1769fcce68004769713fbe725a58d",
+      "imported_commits": [
+        "5915af1de3a1769fcce68004769713fbe725a58d"
+      ],
+      "source_review_status": "INDEPENDENT_EXACT_OBJECT_REVIEW_PENDING",
+      "producer_receipt_sha256": "16fe226b1cf382ec4ebf27a7da99f7c030365cc51cae808ef3301f934d3819d8",
+      "owner_contract_audit_sha256": "9d3a1ccd72eaca746f9c46f83113775ae6e600e4e7375251a0e49231d7999b30",
+      "boundary": "Shared task/message facts, canonical liveness and registry/ledger union precede existing adapters. Preserve distinct schemas, legacy Nexus8734 task/ledger APIs, full detail, SSE, unavailable states and access controls. No new listener/store/auth or whole cross-process atomic observation is claimed. Runtime qualification and actual existing-consumer readback remain open."
     }
   ],
   "custom_composition": [
@@ -96,7 +107,8 @@
   ],
   "pending_source": [
     "Full append-tolerant history needs bounded-budget closure; current candidate includes explicit stale-cursor recovery only.",
-    "DC01 source is imported; combined-source affected qualification and deployed own-item completion/remint/restart evidence remain open."
+    "DC01 source is imported; combined-source affected qualification and deployed own-item completion/remint/restart evidence remain open.",
+    "Fabric R4 frozen source is imported pending exact review, affected normal/race/HTTP/SSE/wire/controls and actual existing-consumer installed readbacks."
   ],
   "qualification": {
     "candidate_tests": "PENDING_FRESH_AFFECTED_CHECKS_AFTER_DC01_AND_R4",
@@ -109,6 +121,11 @@
       "tree": "2e0861dbe43b305337d2e5413a2260a9a839e122",
       "receipt_sha256": "0aa8392e20abedf3f0ddd935d603bdd28d3e99213431db7ac2ae276c5c094e62",
       "attribution": "104-row plan completed through13fresh+91attributed prior rows; strict Swift Release and332PASS8SKIP0FAIL, race-wire3PASS. Does not qualify later DC01 or Fabric R4 source."
+    },
+    "development_ancestor_artifacts": {
+      "commit": "430c47129aa533b68caa6bfd225eb21822a250c7",
+      "receipt_sha256": "112a31510443b8e11aa027bdc8081db8c9af93956ac4c3c943c88198aea3a96f",
+      "attribution": "18 actual development app/DMG/unsigned-PKG/expanded/copied checks passed. Three29-entry inventories agree on payload content and are Python-free. Does not certify this later child, commercial signing/notary/publication or installation."
     }
   },
   "delivery": "One existing normal release train and one publisher after final qualification; no version/tag/publication created by this source record.",
