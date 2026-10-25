@@ -77,3 +77,18 @@ Main owns strict Release build/native tests, Go-to-native actual wire checks,
 compiled semantic controls, and inert normal-window end-to-end acceptance.
 No author tests, builds, services, signing, models, user-store operations or
 installed-app actions were performed. Existing full-scope obligations remain.
+
+## Canonical request argument correction
+
+The record operation is `maat triage --record-request <UUID> --confirm --json`.
+The other flags are `--prepare-record-request`, `--read-record-request`, and
+`--resolve-record-request`; resolve also requires explicit confirmation. The
+record flag is not constructed by repeating the word record. The independent
+native fixture uses a literal flag table, and a direct literal argv regression
+covers all four operations without deriving its oracle from the implementation.
+
+The Main-only Go exporter accepts those full native argv through the actual
+canonical triage command's flag parser and RunE, then exports the accepted argv
+alongside its real request/preparation/record/read/resolve/discovery bytes. It
+retains the one-observation/one-journal-append and no-replay assertions. This is
+an inert interoperability fixture, not an installed action or runtime pass claim.

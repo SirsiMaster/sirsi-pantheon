@@ -71,8 +71,8 @@ import XCTest
             initialized = true; return Self.reply(["status":"initialized","store_uuid":store,"imported_incidents":false])
         }
         if args.contains("--inspect-record-requests") { return Self.reply(page(requests:requestID.map { [request($0,state:state)] } ?? [])) }
-        for op in ["prepare", "record", "read", "resolve"] {
-            let flag = "--" + op + "-record-request"
+        for (op, flag) in [("prepare", "--prepare-record-request"), ("record", "--record-request"),
+                           ("read", "--read-record-request"), ("resolve", "--resolve-record-request")] {
             guard let index = args.firstIndex(of:flag), args.indices.contains(index+1) else { continue }
             let id = args[index+1]
             switch op {

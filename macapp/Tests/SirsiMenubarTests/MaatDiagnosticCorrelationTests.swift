@@ -5,6 +5,16 @@ import CryptoKit
 
 @MainActor final class MaatDiagnosticCorrelationTests: XCTestCase {
     private let key = "690c358a-d905-4546-871d-de40a76cc0ac"
+    func testRequestArgumentsUseLiteralCanonicalGoFlagsForAllFourOperations() {
+        XCTAssertEqual(MaatDiagnosticRecordModel.requestArguments("prepare", id:key),
+                       ["maat", "triage", "--prepare-record-request", key, "--json"])
+        XCTAssertEqual(MaatDiagnosticRecordModel.requestArguments("record", id:key, confirm:true),
+                       ["maat", "triage", "--record-request", key, "--confirm", "--json"])
+        XCTAssertEqual(MaatDiagnosticRecordModel.requestArguments("read", id:key),
+                       ["maat", "triage", "--read-record-request", key, "--json"])
+        XCTAssertEqual(MaatDiagnosticRecordModel.requestArguments("resolve", id:key, confirm:true),
+                       ["maat", "triage", "--resolve-record-request", key, "--confirm", "--json"])
+    }
     func testDiscoveryPasses129HistoricalRowsBeforeRequestAndNeverTreatsFirstEmptyRequestsAsEmptyHistory() async throws {
         let fixture = MaatDiagnosticCorrelationFixture(); var page = 0
         fixture.override = { args in
@@ -250,6 +260,12 @@ import CryptoKit
         XCTAssertLessThanOrEqual(data.count,8*1024*1024)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with:data) as? [String:Any])
         let store = try XCTUnwrap(object["store_uuid"] as? String), key = try XCTUnwrap(object["request_id"] as? String)
+        let acceptedArgv = try XCTUnwrap(object["native_argv"] as? [String:[String]])
+        XCTAssertEqual(Set(acceptedArgv.keys),Set(["prepare","record","read","resolve"]))
+        for (operation, confirmed) in [("prepare",false),("record",true),("read",false),("resolve",true)] {
+            XCTAssertEqual(MaatDiagnosticRecordModel.requestArguments(operation,id:key,confirm:confirmed),acceptedArgv[operation],
+                           "Native argv must equal the argv accepted by the actual Go command fixture")
+        }
         let uid = UInt32(getuid())
         for name in ["prepared","lookup","resolved"] {
             let bytes = try JSONSerialization.data(withJSONObject:try XCTUnwrap(object[name]))

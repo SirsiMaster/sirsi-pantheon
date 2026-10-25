@@ -82,7 +82,8 @@ import SwiftUI
         pendingArguments + (cursor.map { ["--request-cursor", $0] } ?? [])
     }
     static func requestArguments(_ operation: String, id: String, confirm: Bool = false) -> [String] {
-        ["maat", "triage", "--" + operation + "-record-request", id] + (confirm ? ["--confirm"] : []) + ["--json"]
+        let flag = operation == "record" ? "--record-request" : "--" + operation + "-record-request"
+        return ["maat", "triage", flag, id] + (confirm ? ["--confirm"] : []) + ["--json"]
     }
     func cancel() { operationCancelled = true; task?.cancel() }
     private func read(_ args: [String]) async -> SirsiEngine.JSONCommandRead? {
