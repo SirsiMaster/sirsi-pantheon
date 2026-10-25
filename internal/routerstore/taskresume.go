@@ -165,7 +165,7 @@ func (s *SQLiteStore) ResumeTaskClaim(ctx context.Context, req TaskResumeRequest
 	var out TaskResumeResult
 	a, ok := ctx.Value(taskEvidenceActorKey{}).(taskEvidenceActor)
 	if !ok || a.Agent == "" || a.Agent != req.Agent || a.ThreadID == "" || a.SessionID == "" || a.Host == "" || a.Runtime == "" {
-		return out, errors.New("task resume: authenticated own-lane principal required")
+		return out, fmt.Errorf("%w: task resume: authenticated own-lane principal required", ErrLaneScope)
 	}
 	if err := ValidateTaskResumeRequest(req); err != nil {
 		return out, err

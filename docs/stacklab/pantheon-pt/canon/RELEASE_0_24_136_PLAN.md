@@ -63,6 +63,33 @@ the real Studio135 pre-bootout refusal, not permission to delete a health file.
 
 ## Ordered release and recovery
 
+The exact merged4ab candidate passed all four protected PR/main CI jobs and
+produced a signed, notarized, stapled DMG/PKG pair. Its real zero-traffic cloud
+canary proved new own-lane inspection and the released121 read path, and closed
+its own temporary thread, but foreign inspection returned500 rather than the
+expected403. The authorization guard refused before entering a task transaction;
+this is an actual error-classification and HTTP fixture-coverage defect, not an
+observed foreign authority grant. Preserve the failed execution, old stage and
+private signed pair. Neither production traffic nor public136 was promoted.
+
+Use the existing typed lane-scope error at the same initial guard. Exercise the
+actual authenticated handler for both scoped and operator token classes, each
+with inspection and claim, asserting403 and unchanged own/foreign task rows and
+resume audit. The identical final test must first fail500 against unchanged4ab
+production, then pass on the correction. Qualify the complete routerstore package
+normal/race and retain explicit PG-only/opt-in skips; actual protected CI provides
+its separate PostgreSQL leg. Preserve all other source and policy, seal the exact
+successor, and repeat the normal protected release train. Build one new signed
+pair for that new source, never overwrite or relabel the prior candidate.
+
+The late1210 pool fragment and authorization correction are both preserved in
+Git and the exact two-fragment preparation archive before ordinary assembly.
+Fold their notes into the existing136 section rather than creating a second
+version heading. The pool default/schema remain unchanged; no new runtime pool
+configuration, key, token, IAM grant, account setting or database migration is
+part of this source correction. Re-run the finite scoped cloud canary on the
+new exact stage and inspect real denial/cleanup before any traffic promotion.
+
 The first protected PR1212 run40152243468 passed lint and both builds but failed
 failure-memory tests: Go t.TempDir children under hosted022 were public, while
 the local077 gate had supplied private roots. Preserve the actual CI log and

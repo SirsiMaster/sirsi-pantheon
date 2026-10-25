@@ -1,2 +1,0 @@
-### Fixed
-- **Router service: the Postgres connection pool can be sized.** The pool was hard-coded at 4 connections per process. On Cloud Run that capped each instance at 4 concurrent ledger queries, and in the 2026-10-24 outage all 8 connections across 2 instances were busy while the database CPU sat at 28%. `SIRSI_ROUTER_PG_MAX_CONNS` (1-64) now sets it. The default stays 4, so nothing changes until a deploy sets it. Keep instances × value under Cloud SQL `max_connections`.
