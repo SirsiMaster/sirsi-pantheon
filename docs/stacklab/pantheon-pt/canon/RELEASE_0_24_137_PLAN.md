@@ -74,6 +74,13 @@ audits all archive/default-store positive fixture callers and qualifies whole
 affected packages before another full gate. Existing CLI and archive-package
 TestMain canonicalization already covers their positive callers; explicit
 production symlink-rejection fixtures and all assertions remain unchanged.
+Whole affected Ma'at/MCP/dashboard packages now pass normal and race:932 named
+pass events (486 top-level) and8 explicit skips per mode, no failures. The
+existing gate diagnostic helper also emits its complete failed-step output
+before temporary-log cleanup; a causal55-line/late-linker fixture preserves
+the original exit23. This changes diagnostic visibility only, never admission,
+advice, test selection or the gate's failure status. Retain ordinary outer
+stdout/stderr for the next protected push rather than losing late failures.
 
 - Main integrated receipt SHA256
   `3e5da51f47b1bfa4569737705261dc76e4d121243d4473ff53f199793b22c70e`:
