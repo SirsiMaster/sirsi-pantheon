@@ -2,6 +2,10 @@
 
 ## 2026-10-24 — v0.24.136 release candidate
 
+- Canonicalize positive archive/CLI fixture temp roots only; preserve the product
+  no-follow boundary and explicit symlink-home refusal. Retain the failed normal
+  protected push and aliased-versus-physical causal control as separate evidence.
+
 - Prevent relay forwards from automatically following redirects, so a later redirected TLS/dial failure cannot replay an original POST already received by the canonical service. Preserve the shared transport, pins, timeout and client policy; add actual307/308 no-replay controls and join owned stalled-handshake fixture cleanup.
 - Reconcile the cumulative commercial release source verifier with the explicit private-draft POST publisher and retained creation identity, preserving tag/source binding, paired readback, Apple trust and no-clobber checks; add inert full-verifier mutation controls for the executing creation invariants.
 - Retain the controlled diagnostic workflow in its existing navigation frame so Back preserves pending/unknown re-screen receipts and once-only write custody; keep disappearance cancellation and fresh-read checks unchanged.

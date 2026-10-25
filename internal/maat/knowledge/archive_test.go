@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,51 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/seshat"
 )
+
+func TestMain(m *testing.M) {
+	// macOS exposes its default temp root through /var -> /private/var.
+	// Fixtures need a physical root before t.TempDir creates their homes;
+	// product archive opening must keep refusing explicit symlink components.
+	root, err := filepath.EvalSymlinks(os.TempDir())
+	if err == nil {
+		var info os.FileInfo
+		info, err = os.Stat(root)
+		if err == nil && !info.IsDir() {
+			err = fmt.Errorf("temporary root is not a directory")
+		}
+	}
+	if err == nil {
+		err = os.Setenv("TMPDIR", root)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot prepare canonical archive test temp root: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
+
+func TestArchiveFixtureCanonicalRootStillRejectsExplicitSymlinkHome(t *testing.T) {
+	home := t.TempDir()
+	physical, err := filepath.EvalSymlinks(home)
+	if err != nil || physical != home {
+		t.Fatalf("fixture home is not physical: %q -> %q, %v", home, physical, err)
+	}
+	archive, err := Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "explicit-home-alias")
+	if err := os.Symlink(home, alias); err != nil {
+		t.Fatal(err)
+	}
+	if archive, err := Open(alias); err == nil {
+		_ = archive.Close()
+		t.Fatal("explicit symlink home must still be refused")
+	}
+}
 
 func openTestArchive(t *testing.T) (*Archive, string) {
 	t.Helper()

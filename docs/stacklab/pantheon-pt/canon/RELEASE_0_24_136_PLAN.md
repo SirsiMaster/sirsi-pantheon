@@ -63,6 +63,16 @@ the real Studio135 pre-bootout refusal, not permission to delete a health file.
 
 ## Ordered release and recovery
 
+The first actual normal DEEP push failed archive/CLI fixtures under macOS's
+default symlinked `/var` temporary root, and the idle SSH connection also closed.
+Retain native `b99b142e` and its raw output. Causal control `f1cbfb60` runs the
+same original archive test: an owned alias root fails the existing safe-home
+boundary, and its physical root passes. The narrow child canonicalizes only
+test-process TMPDIR before fixture creation in the archive and CLI packages,
+with explicit product symlink-home rejection retained. No product open policy,
+assertion, trust or permission is relaxed. Fresh exact child qualification and
+review precede an ordinary HTTPS DEEP push; no failure is relabeled or bypassed.
+
 Normal changelog assembly retains every consumed fragment in Git and in the
 preparation archive. Prepare VERSION136, release/canon changelogs and completion
 target without altering product code. Verify the prepared descendant, publish

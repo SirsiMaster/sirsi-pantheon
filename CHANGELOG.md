@@ -8,6 +8,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.136] — 2026-10-24
 
+- Canonicalize only the test process's temporary-root environment before creating
+  positive archive/CLI fixture homes. Keep the product's component-wise no-follow
+  boundary unchanged, with an explicit symlink-home refusal regression. Preserve
+  the failed default-macOS-temp protected push and aliased-versus-physical root
+  causal control; this is test-harness portability, not a production policy change.
+
 - Prevent relay forwards from automatically following redirects, so a later redirected TLS/dial failure cannot replay an original POST already received by the canonical service. Preserve the shared transport, pins, timeout and client policy; add actual307/308 no-replay controls and join owned stalled-handshake fixture cleanup.
 
 - Reconcile the cumulative commercial release source verifier with the explicit private-draft POST publisher and retained creation identity, preserving tag/source binding, paired readback, Apple trust and no-clobber checks; add inert full-verifier mutation controls for the executing creation invariants.
