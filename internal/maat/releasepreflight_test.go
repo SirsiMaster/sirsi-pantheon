@@ -99,9 +99,14 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	// 08843c54272a7ad6f6d2a431724bad98123d823f, not a policy stub.
 	// The successor to published134 ba2a07bb adds only explicit Python -B
 	// invocation flags to these three pinned scripts; signing/cask policy stays.
+	// The unified command and typed retained-app owner below bind the actual
+	// reviewed post137 O2/O4 source composed at7ad2bd6e; they are copied as
+	// inert source bytes, never executed by this release source preflight.
 	// No copied script is executed. Future route changes must deliberately
 	// update this provenance and the observer together.
 	pinned := map[string]string{
+		"cmd/sirsi/update.go":                  "6afdb9391a36adf4d1ca46d630bdeaa863f04002c4923ece204e41dafef09567",
+		"cmd/sirsi/update_app_darwin.go":       "bf03bf0ebba9c49b65382ecbaa2f0e35dd38f773a56722e2ea54edba77fcfa0b",
 		"scripts/build-dmg.sh":                 "aad1c9c9d0404e96e6e80a54e83c1992f7094b359dac282eb896cbaa0b05e3c4",
 		"scripts/build-pkg.sh":                 "5a95ed756f6b632b044c12bbdfd18eb81e327bb649f03293eceb01135b4f627a",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
@@ -135,6 +140,13 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 
 func TestPreflightReleaseContractMissingControlsStillBlock(t *testing.T) {
 	for _, tc := range []struct{ name, path, control, check string }{
+		{"unified-typed-owner", "cmd/sirsi/update.go", `return installAppReleaseWithMaat(rel)`, "unified-update-install-handoff"},
+		{"pending-attempt-before-install", "cmd/sirsi/update.go", `if handled, err := reconcilePendingMaatAppUpdate(); handled || err != nil {`, "unified-update-install-handoff"},
+		{"retained-complete-preflight", "cmd/sirsi/update_app_darwin.go", `stored, err := store.RetainPreflightReceipt(receipt)`, "retained-app-update-handoff"},
+		{"durable-app-intent", "cmd/sirsi/update_app_darwin.go", `attempt, err := store.BeginAppUpdateAttempt(manifest, stored)`, "retained-app-update-handoff"},
+		{"typed-installer-handoff", "cmd/sirsi/update_app_darwin.go", `if err := maatAppUpdateDependencies.handoff(ctx, plan.Package); err != nil {`, "retained-app-update-handoff"},
+		{"installed-pair-readback", "cmd/sirsi/update_app_darwin.go", `observation, observeErr := maatAppUpdateDependencies.observe(ctx)`, "retained-app-update-handoff"},
+		{"data-only-recovery-owner", "cmd/sirsi/update_app_darwin.go", `func reconcileMaatAppUpdateObserved(ctx context.Context, store maatAppUpdateStore, attempt maat.AppUpdateAttempt)`, "retained-app-update-handoff"},
 		{"explicit-mode", "scripts/build-dmg.sh", `[[ -n "$MODE" ]] ||`, "dmg-explicit-artifact-mode"},
 		{"mutually-exclusive-mode", "scripts/build-pkg.sh", `[[ -z "$MODE" ]] ||`, "pkg-explicit-artifact-mode"},
 		{"application-identity", "scripts/build-dmg.sh", `for required in DEVELOPER_ID_APPLICATION; do`, "dmg-explicit-artifact-mode"},
