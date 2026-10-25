@@ -15,6 +15,8 @@ import (
 
 // A real Go-encoded canonical private journal, not a fake Recent transport.
 // Its oldest record is outside both former consumer windows (50 and 1000).
+const surfaceJournalRows = 2012
+
 func surfaceJournal(t *testing.T, large bool) *maat.FileDecisionJournal {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "private")
@@ -28,7 +30,7 @@ func surfaceJournal(t *testing.T, large bool) *maat.FileDecisionJournal {
 	}
 	t.Cleanup(func() { _ = file.Close() })
 	encoder := json.NewEncoder(file)
-	for i := 0; i < 2012; i++ {
+	for i := 0; i < surfaceJournalRows; i++ {
 		row := maat.Decision{Time: time.Date(2026, 9, 1, 0, i, 0, 0, time.UTC).Format(time.RFC3339Nano), Host: "inert", Kind: "allocation", Requester: "fixture", Assessed: "local capacity", Determination: "deny", Why: "unrelated", Evidence: fmt.Sprintf("allocation:%04d", i)}
 		if i == 0 {
 			row.Why = "retained-older-match"
@@ -117,8 +119,21 @@ func TestMaatHistoryMCPPartialContinuationAndDrift(t *testing.T) {
 		t.Fatalf("bounded scan must not claim absence: %+v", first)
 	}
 	args["cursor"] = first.History.NextCursor
-	for n := 0; n < 80; n++ {
+	// Keep the full large journal and production 300ms/4MiB request budgets.
+	// Eighty requests was an accidental throughput assertion under race plus
+	// coverage on hosted Macs. Bound actual work instead: 64 journal passes
+	// covers the 48-reference qualification batches plus scan/link/selected-row
+	// rereads, but rejects a whole-journal rescan for each of the 2012 records.
+	const maxScannedRecords = surfaceJournalRows * 64
+	scanned := first.History.ScannedRecords
+	seen := map[string]bool{first.History.NextCursor: true}
+	complete := false
+	for n := 0; n < maxScannedRecords; n++ {
 		page := mcpHistory(t, args)
+		scanned += page.History.ScannedRecords
+		if scanned > maxScannedRecords {
+			t.Fatalf("continuation exceeded structural work bound: %d records", scanned)
+		}
 		if page.History.Snapshot != first.History.Snapshot || page.History.QueryID != first.History.QueryID {
 			t.Fatal("mixed snapshot/query")
 		}
@@ -126,15 +141,18 @@ func TestMaatHistoryMCPPartialContinuationAndDrift(t *testing.T) {
 			if len(page.Cases) != 1 || page.Cases[0].Evidence != "old:target" {
 				t.Fatalf("lost old match=%+v", page)
 			}
+			complete = true
+			t.Logf("completed after %d continuation calls and %d scanned records (bound %d)", n+1, scanned, maxScannedRecords)
 			break
 		}
-		if n == 79 {
-			t.Fatal("bounded continuation did not finish")
+		if len(page.Cases) != 0 || page.History.NextCursor == "" || page.History.ScannedRecords <= 0 || seen[page.History.NextCursor] {
+			t.Fatalf("provisional or nonprogressing scan: %+v", page.History)
 		}
-		if len(page.Cases) != 0 || page.History.NextCursor == "" {
-			t.Fatal("provisional or stalled scan")
-		}
+		seen[page.History.NextCursor] = true
 		args["cursor"] = page.History.NextCursor
+	}
+	if !complete {
+		t.Fatal("bounded continuation did not finish within its structural work bound")
 	}
 	if err := journal.Append(maat.Decision{Time: "2026-10-25T00:00:00Z", Host: "inert", Kind: "allocation", Requester: "fixture", Assessed: "new", Determination: "deny", Why: "snapshot changed"}); err != nil {
 		t.Fatal(err)
