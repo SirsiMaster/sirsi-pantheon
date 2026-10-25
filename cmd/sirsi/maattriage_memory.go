@@ -58,9 +58,6 @@ func maatDiagnosticObservation(report *guard.DoctorReport, host string) (maat.Di
 	return o, o.Validate()
 }
 
-func recordMaatDiagnostic(report *guard.DoctorReport, host string, verdict maat.MaatVerdict, snapshot string) error {
-	return recordMaatDiagnosticWithRequest(report, host, verdict, snapshot, nil)
-}
 func recordMaatDiagnosticWithRequest(report *guard.DoctorReport, host string, verdict maat.MaatVerdict, snapshot string, request *maat.DiagnosticRequestSession) error {
 	observation, err := maatDiagnosticObservation(report, host)
 	if err != nil {

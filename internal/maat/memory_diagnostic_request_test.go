@@ -98,7 +98,7 @@ func TestDiagnosticRequestHistoryKeepsPriorUncorrelatedCompletionWithoutInvented
 		t.Fatal("historical record acquired a request", requests, err)
 	}
 	history := page.Records
-	if err != nil || len(history) != 1 || history[0].Result == nil || history[0].Result.ID != result.ID || history[0].State != "recorded_verified" || history[0].Intent.Manifest.Observation.Schema != diagnosticObservationSchemaV1 {
+	if len(history) != 1 || history[0].Result == nil || history[0].Result.ID != result.ID || history[0].State != "recorded_verified" || history[0].Intent.Manifest.Observation.Schema != diagnosticObservationSchemaV1 {
 		t.Fatal(history, err)
 	}
 	if j.count() != 1 {
