@@ -712,6 +712,23 @@ def valid(row, resource, agent, work, cpu_cores=None, regime=None):
         return False
 
 
+def registration_transport_cause(error):
+    """Retain closed diagnostic classes, never arbitrary credential-bearing stderr."""
+    detail = str(error)
+    causes = []
+    for status in ('502', '503', '504'):
+        if re.search(r'\bHTTP ' + status + r'\b', detail):
+            causes.append('http_' + status)
+    for marker, cause in (
+            ('TLS handshake timeout', 'tls_handshake_timeout'),
+            ('OUTCOME UNKNOWN', 'relay_outcome_unknown'),
+            ('prune lost lifecycle fence', 'prune_lifecycle_fence'),
+            ('timed out', 'control_timeout')):
+        if marker in detail:
+            causes.append(cause)
+    return ','.join(causes) or 'transient_transport'
+
+
 class Native:
     def __init__(self):
         self.cli = str(Path.home() / '.local/bin/sirsi')
@@ -736,11 +753,16 @@ class Native:
             row = self.call('thread', 'register', '--agent', agent, '--surface', 'worker', '--thread', identity,
                             '--anchor-pid', str(os.getpid()), '--repo', os.getcwd(),
                             '--json', timeout=30)
-        except TransientTransport:
+        except TransientTransport as initial:
             # Retain the requested identity and resolve that exact registration;
             # never create another executor to discover an uncertain outcome.
             self.executor_thread = identity
-            row = self.registration_observation(identity)
+            try:
+                row = self.registration_observation(identity, pending_registration=True)
+            except Refused as observed:
+                raise Refused('Initial registration outcome uncertain (' +
+                              registration_transport_cause(initial) +
+                              '); exact-ID observation failed: ' + str(observed)) from initial
         if (not isinstance(row, dict) or row.get('agent_id') != agent or
                 row.get('pid') != os.getpid() or row.get('status') != 'active' or
                 row.get('thread_id') != identity):
@@ -790,7 +812,7 @@ class Native:
             raise Refused('Control call '+str(args[:2])+' failed: '+detail) from error
         return (json.loads(response.stdout) if response.stdout.strip() else None) if json_result else response.stdout
 
-    def registration_observation(self, thread):
+    def registration_observation(self, thread, *, pending_registration=False):
         """Bound registration transport retries; no compute permission is created."""
         prior_deadline = self.deadline
         self.deadline = min(prior_deadline, time.monotonic() + 120) if prior_deadline is not None else time.monotonic() + 120
@@ -801,7 +823,19 @@ class Native:
                     raise TransientTransport('Registration observation recovery budget exhausted')
                 try:
                     return self.call('thread', 'heartbeat', '--thread', thread, '--json', timeout=30)
-                except TransientTransport:
+                except Refused as error:
+                    # Only a newly submitted, outcome-unknown registration can
+                    # still arrive after its first exact-ID observation. Never
+                    # retry Register, and never revive a terminal/mismatched row.
+                    detail = re.sub(r'\x1b\[[0-9;]*m', '', str(error)).strip()
+                    missing = ('thread "' + thread +
+                               '" not registered: heartbeat registration unavailable')
+                    pending = (pending_registration and
+                               detail.startswith("Control call ('thread', 'heartbeat') failed:") and
+                               detail.endswith(missing) and
+                               not re.search(r'(?i)\b(401|403|denied|forbidden|revoked|expired|mismatch|scope)\b', detail))
+                    if not isinstance(error, TransientTransport) and not pending:
+                        raise
                     remaining = self.deadline - time.monotonic()
                     if remaining <= 0:
                         raise

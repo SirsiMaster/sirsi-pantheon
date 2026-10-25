@@ -199,6 +199,76 @@ class RegistryDeadlineTests(unittest.TestCase):
             native.registration_observation('own')
         self.assertEqual(native.call.call_count, 1)
 
+    def test_uncertain_registration_waits_only_for_the_same_pending_identity(self):
+        native = runner.Native()
+        clock = Clock()
+        calls = []
+        def call(*args, **kwargs):
+            calls.append(args)
+            identity = args[args.index('--thread') + 1]
+            if args[:2] == ('thread', 'register'):
+                raise runner.TransientTransport('HTTP 502 OUTCOME UNKNOWN Bearer secret-do-not-retain')
+            if len(calls) == 2:
+                raise runner.Refused("Control call ('thread', 'heartbeat') failed: thread \"" + identity +
+                                     '\" not registered: heartbeat registration unavailable')
+            return dict(agent_id='lane', pid=os.getpid(), status='active', thread_id=identity)
+        native.call = call
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)):
+            identity = native.register_executor('lane')
+        self.assertEqual([c[:2] for c in calls], [('thread', 'register'), ('thread', 'heartbeat'), ('thread', 'heartbeat')])
+        self.assertTrue(all(c[c.index('--thread') + 1] == identity for c in calls))
+        self.assertEqual(clock.now, 1)
+
+    def test_uncertain_registration_retains_safe_initial_cause_on_refusal(self):
+        native = runner.Native()
+        native.call = mock.Mock(side_effect=[
+            runner.TransientTransport('HTTP 503 OUTCOME UNKNOWN Bearer secret-do-not-retain'),
+            runner.Refused('403 denied')])
+        with self.assertRaises(runner.Refused) as caught:
+            native.register_executor('lane')
+        self.assertIn('http_503,relay_outcome_unknown', str(caught.exception))
+        self.assertIn('403 denied', str(caught.exception))
+        self.assertNotIn('secret-do-not-retain', str(caught.exception))
+        self.assertEqual(native.call.call_count, 2)
+
+    def test_missing_registration_is_not_retried_outside_pending_recovery(self):
+        native = runner.Native()
+        native.call = mock.Mock(side_effect=runner.Refused(
+            "Control call ('thread', 'heartbeat') failed: thread \"own\" not registered: heartbeat registration unavailable"))
+        with self.assertRaises(runner.Refused):
+            native.registration_observation('own')
+        self.assertEqual(native.call.call_count, 1)
+
+    def test_pending_missing_registration_respects_prior_deadline(self):
+        native = runner.Native()
+        native.deadline = 3
+        native.call = mock.Mock(side_effect=runner.Refused(
+            "Control call ('thread', 'heartbeat') failed: thread \"own\" not registered: heartbeat registration unavailable"))
+        clock = Clock()
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)), \
+                self.assertRaises(runner.TransientTransport):
+            native.registration_observation('own', pending_registration=True)
+        self.assertEqual(clock.now, 3)
+        self.assertEqual(native.deadline, 3)
+        self.assertEqual(native.call.call_count, 2)
+
+    def test_uncertain_registration_never_retries_denial_terminal_or_foreign_missing(self):
+        for message in (
+                '403 denied',
+                'thread "own" is closed and cannot be revived by heartbeat',
+                'thread "own" belongs to a different native runtime',
+                "Control call ('thread', 'heartbeat') failed: thread \"foreign\" not registered: heartbeat registration unavailable",
+                "Control call ('thread', 'heartbeat') failed: 403 denied; thread \"own\" not registered: heartbeat registration unavailable"):
+            with self.subTest(message=message):
+                native = runner.Native()
+                native.call = mock.Mock(side_effect=runner.Refused(message))
+                with mock.patch.object(runner.time, 'sleep') as sleep, self.assertRaises(runner.Refused):
+                    native.registration_observation('own', pending_registration=True)
+                self.assertEqual(native.call.call_count, 1)
+                sleep.assert_not_called()
+
     def test_registration_observation_stops_at_bounded_budget(self):
         native = runner.Native()
         native.call = mock.Mock(side_effect=runner.TransientTransport('HTTP 502'))
