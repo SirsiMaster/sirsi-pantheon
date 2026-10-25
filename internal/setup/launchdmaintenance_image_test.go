@@ -3,6 +3,7 @@ package setup
 import (
 	"bytes"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -161,6 +162,25 @@ func TestMaintenanceLoadedImageIdentityRejectsInvalidPIDAndHashLength(t *testing
 	got, err = maintenanceLoadedImageIdentity(539, start, hash)
 	if err == nil || got != (MaintenanceImageIdentity{}) || readerCalls != 2 {
 		t.Fatalf("malformed kernel hash accepted: %+v, calls=%d, err=%v", got, readerCalls, err)
+	}
+}
+
+func TestMaintenanceImageIdentityRejectsPIDOverflowBeforeReaders(t *testing.T) {
+	if strconv.IntSize < 64 {
+		t.Skip("an int larger than Darwin pid_t is not representable")
+	}
+	oversized := int(int64(maintenanceMaximumPID) + 1)
+	readerCalls := 0
+	start := func(int) (string, error) { readerCalls++; return "start", nil }
+	loaded := func(int) ([]byte, error) { readerCalls++; return bytes.Repeat([]byte{0x41}, 20), nil }
+	identity, err := maintenanceLoadedImageIdentity(oversized, start, loaded)
+	if err == nil || identity != (MaintenanceImageIdentity{}) || readerCalls != 0 {
+		t.Fatalf("oversized kernel PID queried: %+v, calls=%d, err=%v", identity, readerCalls, err)
+	}
+	_, err = maintenanceImageCDHash("retained-fixture", oversized,
+		func(string) ([]byte, error) { readerCalls++; return bytes.Repeat([]byte{0x41}, 20), nil }, loaded)
+	if err == nil || readerCalls != 0 {
+		t.Fatalf("oversized candidate PID reached readers: calls=%d, err=%v", readerCalls, err)
 	}
 }
 

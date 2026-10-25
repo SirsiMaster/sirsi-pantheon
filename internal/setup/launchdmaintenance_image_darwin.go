@@ -77,7 +77,7 @@ func maintenanceSignedImage(path string, pid int) (string, error) {
 }
 
 func maintenanceKernelCDHash(pid int) ([]byte, error) {
-	if pid <= 1 {
+	if !maintenanceValidLoadedPID(pid) {
 		return nil, fmt.Errorf("invalid selected kernel PID %d", pid)
 	}
 	var hash [20]byte

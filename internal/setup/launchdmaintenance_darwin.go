@@ -416,6 +416,9 @@ func (b nativeServiceBackend) maintenanceAbortVerify(ctx context.Context, s Main
 // child. No goroutine is abandoned around an uninterruptible C call. This is
 // an owned read-only helper process, never a signal to a selected service.
 func maintenanceImage(ctx context.Context, path string, pid int) (string, error) {
+	if pid != 0 && !maintenanceValidLoadedPID(pid) {
+		return "", errors.New("legacy maintenance: invalid selected image PID")
+	}
 	probe, err := CurrentPackagedMaatEngine()
 	if err != nil {
 		return "", err
@@ -448,7 +451,7 @@ func InspectRootMaintenanceImage(path string, pid int) (MaintenanceImageIdentity
 	if err := rootRelayOwner(os.Getuid(), os.Geteuid()); err != nil {
 		return result, err
 	}
-	if pid < 0 || pid == 1 {
+	if pid != 0 && !maintenanceValidLoadedPID(pid) {
 		return result, errors.New("legacy maintenance: invalid selected image PID")
 	}
 	before, err := maintenancePayload(path)
