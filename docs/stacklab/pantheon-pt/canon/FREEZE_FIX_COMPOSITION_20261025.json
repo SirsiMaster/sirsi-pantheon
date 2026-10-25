@@ -1,0 +1,85 @@
+{
+  "kind": "Pantheon feature-freeze fix composition; source record, not runtime authority",
+  "public_baseline": {
+    "version": "0.24.137",
+    "commit": "cb59d56f849235eb80f5e4b10514fc89467fb8af",
+    "tree": "e0dae007221eb22948149e4f602c415a2d53faef"
+  },
+  "source_checkpoint": {
+    "commit": "72232f2d1f0bc91a86f917c72c40da3a06117923",
+    "tree": "c736d87bb42a0be6b1b08215de2adeff6ccb11c6",
+    "purpose": "Exact code checkpoint before this ordinary canon record; no self-hash claim"
+  },
+  "components": [
+    {
+      "name": "Integrated eight-donor fixes and fixture-family repairs",
+      "source": "20f3e888c03713023a1d038b1334569fa7de448f",
+      "boundary": "Prior r7 failed at routerstore package race deadline; no overall qualification inherited"
+    },
+    {
+      "name": "History stale-snapshot recovery and optional summary compile correction",
+      "source": "c73084832f0014cd9b7ee819d2d125f525128e19",
+      "imported_commits": [
+        "b56bd0bea2c91ac86fd8934ed72dd98150a3a2a7",
+        "7197bd6fc2127a0239fd616841e7904fa1559dd4",
+        "c73084832f0014cd9b7ee819d2d125f525128e19"
+      ],
+      "boundary": "Five positive native tests and semantic negative belong to donor; continuous-append history remains open"
+    },
+    {
+      "name": "Local Tier1 CPU execution, cleanup and optional Stack Lab workflow",
+      "source": "36cc78f2435cb6ed7e71d8256256cc3cd9b13faa",
+      "import_range": "35f411c1..36cc78f2",
+      "boundary": "Prior c185 first13 rows passed, whole run failed native compile; route corrected at36cc. Remaining qualification unrun; no whole-run acceptance inherited"
+    },
+    {
+      "name": "Fabric canonical runtime health, task detail and shared semantic roles",
+      "source": "16aa3f2552ce802c3ecc4a647ca3623101bb90a7",
+      "import_range": "b4db388c..16aa3f25",
+      "accepted_source_review_sha256": "fe3748a7cb8b565d4356988cb3ebff5dcb23d6ec9b58917e0baca13dfb2afdb8",
+      "boundary": "New R1/R2 fixtures unrun; installed adoption R3 and independent Nexus/Horus convergence/conditional8734 retirement R4 open"
+    },
+    {
+      "name": "Current-source root relay identity and cooperative handoff",
+      "source": "68012a1108c0123017b01e755c8a6774e15f6a94",
+      "import_range": "233f303a..68012a11",
+      "accepted_source_review_sha256": [
+        "210dbf6d711bdfdaa4299d311b609b9cff5d0474f41541778211f708d52c0be6",
+        "2dcd1cf4ddaeee763df3974340038208b23859068c18e2662dbdf9f3e68dbec6"
+      ],
+      "boundary": "Source/fixtures only; no tests/runtime or old loaded121/129/122 safe retirement inferred"
+    },
+    {
+      "name": "Same-endpoint native fabric dispatch and bounded metadata lifecycle",
+      "source": "3e9f08b933e151077e352b61409c8e4545290991",
+      "imported_commits": [
+        "469cb2db357dae7c753bb1c9381a2769263715e8",
+        "3e9f08b933e151077e352b61409c8e4545290991"
+      ],
+      "accepted_source_review_sha256": "90a199e62abcc7628a085921ab580623e21ccad43cdb0b661d2b4f75b4322104",
+      "boundary": "47 authored tests/five controls and actual own-route completion unrun; no new credentials or authorization"
+    }
+  ],
+  "custom_composition": [
+    {
+      "commit": "8154c78f05798efe02eb1983ce85b1b52e08bb5e",
+      "path": "internal/dashboard/ui/app.js",
+      "intent": "Canonical Fabric host facts/overview plus existing explicit memory diagnostics",
+      "review": "pending",
+      "preserved_failure": "Initial resolver assertion failed and intermediate imported commit contained conflict markers. Corrected before any build or publication; no runtime credit claimed."
+    }
+  ],
+  "pending_source": [
+    "Managed app-update memory recovery child of3ed82820 requires stale-state compile and shared in-flight custody corrections before inclusion.",
+    "Full append-tolerant history needs bounded-budget closure; current candidate includes explicit stale-cursor recovery only.",
+    "SSA-owned DC01 authenticated claim/session-bind atomicity still unfixed in public137; frontend exact-ID improvement does not discharge it."
+  ],
+  "qualification": {
+    "candidate_tests": "NOT_RUN",
+    "candidate_build": "NOT_RUN",
+    "candidate_install": "NOT_RUN",
+    "candidate_publication": "NOT_RUN",
+    "rule": "A combined source tree is not equivalent to any individually tested donor. Attribute prior evidence narrowly and qualify final composition."
+  },
+  "delivery": "One existing normal release train and one publisher after final qualification; no version/tag/publication created by this source record."
+}
