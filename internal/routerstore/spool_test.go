@@ -1275,25 +1275,46 @@ func TestPublishNeverAttemptsToChmodAnExistingResDir(t *testing.T) {
 	}
 }
 
-// TestPublishLogsWhenItCannotCreateResDir: the fresh-creation fallback path
-// must never fail silently — an unlogged failure here is exactly what let a
-// forwarded-and-succeeded request vanish with no response and no trace in
-// the real incident this fix responds to.
+// Publication errors must reach the recovery owner, which logs the failure,
+// retains the inflight request and refuses clean settlement. publish itself
+// returns the cause; logging it at that lower layer loses recovery context.
 func TestPublishLogsWhenItCannotCreateResDir(t *testing.T) {
-	lockedSpool := t.TempDir()
-	if err := os.Chmod(lockedSpool, 0o500); err != nil { // no write bit: MkdirAll below must fail
+	spool := t.TempDir()
+	lockedLane := filepath.Join(spool, "lane-locked")
+	inflight := filepath.Join(lockedLane, "inflight", "id1.json")
+	if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(lockedSpool, 0o700) }) // let t.TempDir() clean up
+	if err := writeAtomic(inflight, spoolRequest{Method: "Read", Body: []byte(`{}`)}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := os.ReadFile(inflight)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(lockedLane, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lockedLane, 0o700) })
 	logBuf := &strings.Builder{}
-	rl := &Relay{Spool: lockedSpool, Log: slog.New(slog.NewTextHandler(logBuf, nil))}
-	rl.publish("lane-locked", "id1", spoolResponse{Status: 200})
-
-	if _, err := os.Stat(filepath.Join(lockedSpool, "lane-locked", "res", "id1.json")); !os.IsNotExist(err) {
+	rl := &Relay{Spool: spool, Log: slog.New(slog.NewTextHandler(logBuf, nil))}
+	if err := rl.publish("lane-locked", "id1", spoolResponse{Status: 200}); err == nil || !strings.Contains(err.Error(), "create response directory") || !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("publication must return its directory-creation failure: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(lockedLane, "res", "id1.json")); !os.IsNotExist(err) {
 		t.Fatalf("response must not exist when its directory could not be created: %v", err)
 	}
-	if l := logBuf.String(); !strings.Contains(l, "create response dir") {
-		t.Fatalf("a failed resDir creation must be logged, not swallowed silently:\n%s", l)
+	if n := rl.recoverInflight(); n != 1 {
+		t.Fatalf("recovery must inspect the retained request: got %d", n)
+	}
+	if l := logBuf.String(); !strings.Contains(l, "create response directory") || !strings.Contains(l, "retained inflight") {
+		t.Fatalf("recovery must log the publication cause and retained obligation:\n%s", l)
+	}
+	if !rl.settlementFailed.Load() {
+		t.Fatal("failed recovery publication must prevent clean settlement")
+	}
+	if after, err := os.ReadFile(inflight); err != nil || !bytes.Equal(after, retained) {
+		t.Fatalf("failed recovery must preserve the exact inflight request: %v", err)
 	}
 }
 
