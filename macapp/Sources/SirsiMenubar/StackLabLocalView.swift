@@ -101,7 +101,7 @@ private struct StackLabLocalFrame: View {
                 ForEach(catalog.unknown ?? [], id: \.self) { Text($0).sirsiFont(.caption).foregroundStyle(.orange) }
             }
             NavLink { StackLabDoctorView(engine: engine) } label: { Label("Fabric wing checks", systemImage: "network") }
-            NavLink { ReleaseWorkspaceView(engine: engine) } label: { Label("Open release workspace", systemImage: "shippingbox") }
+            NavLink { PantheonReleaseWorkspaceView(engine: engine) } label: { Label("Open release workspace", systemImage: "shippingbox") }
             Spacer(minLength: 0)
         }
         .padding(20)
