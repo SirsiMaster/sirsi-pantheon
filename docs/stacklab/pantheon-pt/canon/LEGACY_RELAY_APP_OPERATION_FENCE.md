@@ -52,6 +52,36 @@ consent. It never replays the original. Old detailed results may be bounded out,
 but their stale generation remains inadmissible and is not called successful or
 never-run. The original unknown receipt remains visible after resolution.
 
+## Unreadable public receipt recovery
+
+Malformed, oversized or invalid public preferences do not reset uncertainty.
+The panel exposes Inspect public binding recovery independently of the normal
+service-review latch. This reads controller status only. A valid concurrently
+persisted operation B is recovered as B, never overwritten with an older status
+A. Otherwise an explicit confirmation re-reads the exact controller ticket.
+If the controller is empty, the user selects the retained payload and confirms
+a fresh **existing preview reservation** under the existing service lock; empty
+status alone never authorizes a new service action. No new controller operation,
+database, daemon, credential or generation-reset path is introduced.
+
+The returned exact binding is saved and read back before public recovery is
+reported. The old unreadable state remains identified by byte count, SHA256 of
+at most its first256KiB and an explicit unknown-past-outcome classification.
+This bounded summary does not claim to retain or hash the complete oversized
+bytes. No raw invalid public data is displayed or treated as authority.
+Public replacement checks the inspected stored bytes before writing; these are
+ordinary cooperative local-receipt checks, not a hostile same-UID atomicity claim.
+
+The recovered/new reservation remains outstanding. The existing explicit
+matching-result/late-arrival-fence action is still required, followed by a fresh
+preview and NEW service consent only if current lifecycle debt is clear. Failed
+local persistence retains the verified ticket in the frame so exact resolution
+and another durable save remain reachable. Busy/corrupt/changed authority or
+readback failure never unlocks consent. Current protected high-water state is
+never cleared. A shared Go-empty-wire fixture is checked against the actual
+controller and consumed by native recovery tests; it is authored, not execution
+evidence until separately qualified.
+
 ## Finite inert truth matrix
 
 | Case | Required truth |
@@ -85,3 +115,12 @@ not offered merely because it is present. No DMG drag-only route or unsigned
 bundle/PATH root fallback substitutes for the system helper. The app confirms,
 revalidates and opens normal macOS Installer, then rechecks the installed pair;
 it never calls installer/root/service operations itself during source testing.
+
+Preparation and final verification use the same instance-local one-shot bounded
+preflight as the privileged bridge. The Installer signed-app identity and file
+qualification run in an owned detached read-only worker with cancellation
+propagation; an uncooperative completion is ignored after the deadline rather
+than joined by a structured timeout scope. CLI submission and Installer opening
+recheck cancellation, current generation, exact captured selection and deadline.
+The UI actor remains available for pending status and Cancel Request. No actual
+Security/Installer/root operation is exercised by inert stall fixtures.

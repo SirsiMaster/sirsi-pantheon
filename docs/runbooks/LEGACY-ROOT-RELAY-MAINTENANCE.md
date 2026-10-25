@@ -149,6 +149,20 @@ arrival. Old/empty status cannot clear another outstanding operation. Only a
 verified fence/result with zero lifecycle debt permits fresh preview and consent.
 The app retains the exact public binding and unknown receipt across navigation
 and restart; it never relabels a running-intent result as never-run.
+Unreadable public preferences expose Inspect public binding recovery, not a
+manual-delete prerequisite. Read-only inspection is followed by explicit
+confirmation to recover the exact controller ticket or obtain a fresh serialized
+preview reservation for the selected retained payload. After local persistence
+and readback, the existing result/fence control must resolve that ticket before
+new service preview/consent. Empty status cannot unlock the latch. Known B is
+never overwritten by older status A. Busy/corrupt/changed authority and failed
+public readback remain actionable retry/debt, with the verified ticket retained
+when available. The unreadable byte count and bounded-prefix SHA256 remain
+explicit unknown-past-outcome metadata; no raw invalid preferences are displayed.
+Installer identity checks now use the same bounded asynchronous preflight as
+the root bridge, with off-actor signed-app/file qualification before either
+preparation or final verification. Late identity completion, cancellation,
+changed generation and expired/consumed consent cannot submit or open Installer.
 Abort re-verifies the original alive and cannot run after retirement may begin.
 Restore accepts only the originally approved replacement bytes and signed identity,
 binds the current protected target and parent, retains create-only backup/stage

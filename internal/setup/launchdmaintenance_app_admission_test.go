@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -113,6 +114,54 @@ func (a *appAdmissionFixture) effects(name string) int {
 		}
 	}
 	return n
+}
+
+func TestLegacyAppEmptyStatusMatchesPublicRecoveryWireFixture(t *testing.T) {
+	a := newAppAdmissionFixture(t)
+	v, err := a.c.RunLegacyAppMaintenance(context.Background(), LegacyAppRequest{Profile: RootRelayMaintenanceProfile, EngineSHA256: strings.Repeat("a", 64), Operation: "status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/legacy-app-empty-status.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(append(got, '\n')) != string(want) {
+		t.Fatal("shared native recovery fixture differs from actual empty controller wire", string(got))
+	}
+	if a.state.Schema != 0 || a.effects("prepare")+a.effects("retire") != 0 {
+		t.Fatal("inspection changed authority or service", a.state, a.f.events)
+	}
+}
+
+func TestLegacyAppPublicRebindingReservationRefusesLateOriginal(t *testing.T) {
+	a := newAppAdmissionFixture(t)
+	old := a.preview(t)
+	rebound := a.preview(t) // Actual existing serialized reservation, never reset.
+	if rebound.Ticket.Generation <= old.Ticket.Generation || rebound.Ticket.ID == old.Ticket.ID {
+		t.Fatal("reservation did not supersede old identity")
+	}
+	if _, err := a.c.RunLegacyAppMaintenance(context.Background(), appMutation(old)); err == nil {
+		t.Fatal("late original executed after replacement binding")
+	}
+	resolved, err := a.resolve(rebound)
+	if err != nil || !resolved.SafeForNewPreview {
+		t.Fatal(resolved, err)
+	}
+	if a.effects("prepare")+a.effects("retire") != 0 {
+		t.Fatal("rebind/fence caused lifecycle effects", a.f.events)
+	}
+	fresh := a.preview(t)
+	if _, err := a.c.RunLegacyAppMaintenance(context.Background(), appMutation(fresh)); err != nil {
+		t.Fatal(err)
+	}
+	if a.effects("retire") != 1 {
+		t.Fatal("new consent did not execute exactly once", a.f.events)
+	}
 }
 
 func TestLegacyAppAdmissionTruthMatrix(t *testing.T) {

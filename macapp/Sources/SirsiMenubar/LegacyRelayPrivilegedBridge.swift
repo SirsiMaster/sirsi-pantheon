@@ -101,42 +101,8 @@ import Security
             childState: raw.childState, termSent: raw.termSent)
     }
 
-    // Unstructured read-only probes cannot extend the app's submission deadline.
-    // The one-shot continuation ignores late completion. Production probes also
-    // cancel their owned child/hash worker; no root operation exists at this stage.
-    @MainActor private final class ProbeLatch {
-        let deadline:TimeInterval
-        init(deadline:TimeInterval){self.deadline=deadline}
-        var continuation:CheckedContinuation<String,Error>?
-        var work:Task<Void,Never>?
-        var timer:Task<Void,Never>?
-        func finish(_ result:Result<String,Error>){
-            guard let saved=continuation else{return}
-            continuation=nil;work?.cancel();timer?.cancel()
-            if ProcessInfo.processInfo.systemUptime>=deadline {
-                saved.resume(throwing:NSError(domain:"MaintenancePreflightDeadline",code:1))
-            }else{saved.resume(with:result)}
-        }
-    }
     private func boundedProbe(deadline:TimeInterval,operation:@escaping @MainActor()async throws->String)async throws->String{
-        guard !Task.isCancelled,ProcessInfo.processInfo.systemUptime<deadline else{throw CancellationError()}
-        let latch=ProbeLatch(deadline:deadline)
-        return try await withTaskCancellationHandler(operation:{
-            try await withCheckedThrowingContinuation{continuation in
-                latch.continuation=continuation
-                latch.work=Task{@MainActor in
-                    guard !Task.isCancelled,ProcessInfo.processInfo.systemUptime<deadline else{
-                        latch.finish(.failure(CancellationError()));return
-                    }
-                    do{latch.finish(.success(try await operation()))}catch{latch.finish(.failure(error))}
-                }
-                latch.timer=Task{@MainActor in
-                    do{try await Task.sleep(nanoseconds:UInt64(max(0,deadline-ProcessInfo.processInfo.systemUptime)*1_000_000_000))}
-                    catch{return}
-                    latch.finish(.failure(NSError(domain:"MaintenancePreflightDeadline",code:1)))
-                }
-            }
-        },onCancel:{Task{@MainActor in latch.finish(.failure(CancellationError()))}})
+        try await LegacyRelayPreflight.run(deadline:deadline,operation:operation)
     }
     private static func defaultQualification()async throws->String{
         func hash()async throws->String{

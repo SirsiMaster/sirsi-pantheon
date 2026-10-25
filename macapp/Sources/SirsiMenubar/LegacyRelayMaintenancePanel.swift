@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 import UniformTypeIdentifiers
 
 struct LegacyRelayMaintenancePanel: View {
@@ -16,6 +17,8 @@ struct LegacyRelayMaintenancePanel: View {
     @State private var approvedRestore: LegacyRelayMaintenanceModel.RestoreApproval?
     @State private var approvedInstaller: LegacyRelayMaintenanceModel.InstallerApproval?
     @State private var confirmInstaller=false
+    @State private var approvedPublicBinding:LegacyRelayMaintenanceModel.PublicBindingApproval?
+    @State private var confirmPublicBinding=false
 
     init(directory:URL,model:LegacyRelayMaintenanceModel){self.directory=directory;self.model=model}
 
@@ -60,6 +63,18 @@ struct LegacyRelayMaintenancePanel: View {
                 if model.busy{HStack{ProgressView().controlSize(.small);Text("Inspecting selected maintenance state…").sirsiFont(.caption);Button("Cancel request"){model.cancelInvocation()}.buttonStyle(.bordered)}}
                 if let error=model.error{Text(error).sirsiFont(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
                 if model.outcomeUnknown { Text("The previous operation may still have started. Read its transaction before another confirmation; cancellation did not prove rollback.").sirsiFont(.caption).foregroundStyle(.secondary) }
+                if model.publicStateUnreadable {
+                    Button("Inspect public binding recovery"){Task{await model.inspectPublicBinding()}}.buttonStyle(.bordered)
+                        .disabled(model.busy||model.outstanding != nil||snapshotMode)
+                    if let binding=model.publicBindingApproval {
+                        Button("Review public binding reconciliation"){approvedPublicBinding=binding;confirmPublicBinding=true}.buttonStyle(.bordered)
+                            .disabled(model.busy||snapshotMode)
+                    }
+                }
+                if let unreadable=model.unreadableReceipt {
+                    Text("Retained unreadable public receipt · \(unreadable.bytes) bytes · SHA256 of first\(unreadable.prefixBytes) bytes: \(unreadable.prefixSHA256) · past execution unknown")
+                        .sirsiFont(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                }
                 if let operation=model.outstanding {
                     Text("Outstanding \(operation.operation) · \(operation.ticket?.id ?? "unreadable") · generation \(operation.ticket?.generation ?? 0)").sirsiFont(.caption).textSelection(.enabled)
                     Button("Check result and prevent delayed submission"){_ = model.resolveOutstanding(operation)}.buttonStyle(.bordered).disabled(model.busy||snapshotMode)
@@ -86,6 +101,10 @@ struct LegacyRelayMaintenancePanel: View {
             Button("Open verified Installer"){if let approvedInstaller{_ = model.install(approvedInstaller)};approvedInstaller=nil}
             Button("Cancel",role:.cancel){approvedInstaller=nil}
         }message:{Text("Release: \(approvedInstaller?.release ?? "unavailable")\nPackage: \(approvedInstaller?.package ?? "unavailable")\nSHA256: \(approvedInstaller?.digest ?? "unavailable")\nPantheon rechecks the exact package before opening macOS Installer. Installation and a fresh installed-pair check remain separate; no service is restarted.")}
+        .confirmationDialog("Reconcile this public operation binding?",isPresented:$confirmPublicBinding,titleVisibility:.visible){
+            Button("Confirm public binding reconciliation"){if let approvedPublicBinding{_ = model.rebindPublicState(approvedPublicBinding)};approvedPublicBinding=nil}
+            Button("Cancel",role:.cancel){approvedPublicBinding=nil}
+        }message:{Text("\(publicBindingSummary)\nThe controller is inspected again. An existing exact ticket is recovered, or a fresh serialized preview reservation is issued for the selected retained payload. The public binding is persisted and read back; then matching result/fence resolution is required before a new service preview and consent. No service operation is replayed and no empty status proves that old work never ran.")}
         .confirmationDialog("Interrupt this exact legacy root relay?",isPresented:$confirming,titleVisibility:.visible){
             Button("Confirm maintenance",role:.destructive){if let approved{_ = model.confirm(approved)};approved=nil}
             Button("Cancel",role:.cancel){approved=nil;model.cancelReview()}
@@ -96,7 +115,15 @@ struct LegacyRelayMaintenancePanel: View {
         }message:{Text("Transaction: \(selectedTransaction?.id ?? "unavailable")\nPlan: \(selectedTransaction?.plan.sha256 ?? "unavailable")\nAbort only restores scoped admission while the original is verified alive. Resume never certifies old remote outcomes or replays retained envelopes.")}
         .onChange(of:directory){value in model.changeDirectory(value)}
         .onAppear{model.changeDirectory(directory)}
-        .onDisappear{approved=nil;approvedRestore=nil}
+        .onDisappear{approved=nil;approvedRestore=nil;approvedPublicBinding=nil;confirmPublicBinding=false}
+    }
+    private var publicBindingSummary:String {
+        guard let approvedPublicBinding else{return "No reviewed public binding"}
+        if let raw=approvedPublicBinding.ticketJSON,let data=raw.data(using:.utf8),
+           let ticket=try?JSONDecoder().decode(LegacyRelayAppTicket.self,from:data){
+            return "Target: system/ai.sirsi.router.relay\nOperation: \(ticket.operation) · \(ticket.id)\nGeneration: \(ticket.generation)\nPlan: \(ticket.plan.sha256)"
+        }
+        return "Target: system/ai.sirsi.router.relay\nFresh reservation for retained payload: \(approvedPublicBinding.file?.path ?? "unavailable")"
     }
     private func select(_ action:String,_ transaction:LegacyRelayTransaction){
         Task{

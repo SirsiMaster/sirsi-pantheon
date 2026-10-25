@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct LegacyRelayAppTicket:Decodable,Equatable {
     let schema:Int;let generation:UInt64;let id:String;let nonce:String;let operation:String
@@ -30,6 +31,19 @@ struct LegacyRelaySavedOperationState:Codable{
     var resolved:LegacyRelayOutstandingOperation?
     var lifecycleDebt=false
     var lastTransaction:LegacyRelayTransaction?
+    var unreadableReceipt:LegacyRelayUnreadableReceipt? = nil
+}
+struct LegacyRelayUnreadableReceipt:Codable,Equatable {
+    let bytes:Int
+    let prefixSHA256:String
+    let prefixBytes:Int
+    let classification:String
+    init(_ data:Data){
+        let bounded=data.prefix(256*1024)
+        bytes=data.count;prefixBytes=bounded.count
+        prefixSHA256=SHA256.hash(data:bounded).map{String(format:"%02x",$0)}.joined()
+        classification="unreadable public operation state; prior execution outcome unknown"
+    }
 }
 @MainActor struct LegacyRelayOperationStorage {
     let read:()->Data?

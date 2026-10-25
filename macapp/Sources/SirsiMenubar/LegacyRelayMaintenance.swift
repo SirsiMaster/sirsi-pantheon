@@ -71,6 +71,14 @@ enum LegacyRelayAppHost {
     struct InstallerApproval: Equatable {
         let release:String;let package:String;let digest:String;let bytes:Data;let generation:UUID
     }
+    struct PublicBindingApproval:Equatable {
+        let ticketJSON:String?
+        let file:URL?
+        let inspection:Data
+        let directory:URL
+        let generation:UUID
+        let expectedPublic:Data?
+    }
     @Published private(set) var selectedFile: URL?
     @Published private(set) var preview: LegacyRelayPlan?
     @Published private(set) var transaction: LegacyRelayTransaction?
@@ -88,6 +96,9 @@ enum LegacyRelayAppHost {
     @Published private(set) var lastResolved:LegacyRelayOutstandingOperation?
     @Published private(set) var observedTransaction:LegacyRelayTransaction?
     @Published private(set) var lifecycleDebt=false
+    @Published private(set) var publicStateUnreadable=false
+    @Published private(set) var publicBindingApproval:PublicBindingApproval?
+    @Published private(set) var unreadableReceipt:LegacyRelayUnreadableReceipt?
     private var approval: Approval?
     private var generation = UUID()
     private var directory: URL
@@ -98,23 +109,18 @@ enum LegacyRelayAppHost {
     private let installerCapture: Capture
     private let openInstaller: @MainActor (URL)->Bool
     private let operationStorage:LegacyRelayOperationStorage
+    private let installerTimeout:TimeInterval
 
-    init(directory: URL, capture: Capture? = nil, installerCapture: Capture? = nil, openInstaller: (@MainActor (URL)->Bool)? = nil,storage:LegacyRelayOperationStorage? = nil) {
+    init(directory: URL, capture: Capture? = nil, installerCapture: Capture? = nil, openInstaller: (@MainActor (URL)->Bool)? = nil,storage:LegacyRelayOperationStorage? = nil,installerTimeout:TimeInterval = 130) {
         self.directory = directory
         let stateStorage=storage ?? .preferences()
         operationStorage=stateStorage
+        self.installerTimeout=installerTimeout
         self.capture = capture ?? { args, stdin, _, authorize in
             await LegacyRelayPrivilegedBridge().capture(args: args, stdin: stdin, authorize: authorize)
         }
         self.installerCapture = installerCapture ?? {args,_,_,authorize in
-            if let reason=LegacyRelayAppHost.refusal(){return CommandExecution(launchError:reason)}
-            guard let executable=Bundle.main.executableURL,let release=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String,!release.isEmpty else {
-                return CommandExecution(launchError:"Canonical app release metadata is unavailable.")
-            }
-            let cli=executable.deletingLastPathComponent().appendingPathComponent("sirsi")
-            guard SirsiEngine.isTrustedBundledCLI(cli) else {return CommandExecution(launchError:"The app's update client is missing.")}
-            return await SirsiEngine.captureProcess(executable:cli.path,args:args,directory:URL(fileURLWithPath:NSHomeDirectory()),
-                timeout:130,outputLimit:16*1024,environment:["PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":NSHomeDirectory(),"TMPDIR":NSTemporaryDirectory(),"LC_ALL":"C"],authorize:authorize)
+            await LegacyRelayInstallerCapture().capture(args:args,authorize:authorize)
         }
         self.openInstaller=openInstaller ?? {NSWorkspace.shared.open($0)}
         if let data=stateStorage.read() {
@@ -122,39 +128,48 @@ enum LegacyRelayAppHost {
                saved.outstanding == nil || saved.outstanding?.ticket != nil {
                 outstanding=saved.outstanding;lastResolved=saved.resolved;outcomeUnknown=saved.outstanding != nil
                 lifecycleDebt=saved.lifecycleDebt;transaction=saved.lastTransaction;transactionDirectory=directory
+                unreadableReceipt=saved.unreadableReceipt
                 if let old=saved.outstanding?.receipt {receipt=CommandExecution(stdout:old.stdout,stderr:old.stderr,exitCode:old.exitCode,captureError:old.issue ?? "Restored uncertain operation; check result and fence late arrival",childState:.exitUnknown)}
-            }else{outcomeUnknown=true;error="Saved public operation binding is unreadable. Read controller status before any new review."}
+            }else{outcomeUnknown=true;publicStateUnreadable=true;unreadableReceipt=LegacyRelayUnreadableReceipt(data)
+                error="Saved public operation binding is unreadable. Inspect authoritative binding recovery, then explicitly reconcile it before any new review."}
         }
     }
 
     func select(_ file: URL) { selectedFile = file; cancelReview() }
     func changeDirectory(_ directory: URL) { if self.directory != directory { self.directory = directory; cancelReview() } }
-    func cancelReview() { generation = UUID(); approval = nil; restoreApproval = nil; actionApproval=nil;canConfirm = false; preview = nil }
+    func cancelReview() { generation = UUID(); approval = nil; restoreApproval = nil; actionApproval=nil;publicBindingApproval=nil;canConfirm = false; preview = nil }
 
     func prepareInstaller() async {
-        guard !busy else {return}
+        guard !busy,installerTimeout.isFinite,installerTimeout>0,installerTimeout<=130 else {return}
         busy=true;error=nil;installer=nil
-        let token=generation,scope=directory
+        let token=generation,scope=directory,deadline=ProcessInfo.processInfo.systemUptime+installerTimeout
         let result=await observe(["launchd","maintenance-installer"],scope,{self.generation==token},using:installerCapture)
         busy=false
-        guard !Task.isCancelled,generation==token else{return}
         installerReceipt=result
+        guard !Task.isCancelled,generation==token,ProcessInfo.processInfo.systemUptime<deadline else{
+            error="Installer preparation canceled, superseded or expired; no selection is available. Check the compatible Installer again.";return
+        }
         guard result.complete,result.exitCode==0,let plan=try?JSONDecoder().decode(InstallerEnvelope.self,from:result.stdoutData),plan.valid else {error=detail(result);return}
         installer=InstallerApproval(release:plan.release,package:plan.package,digest:plan.sha256,bytes:result.stdoutData,generation:token)
         statusNotice="Compatible signed/notarized PKG verified. Review and open normal Installer, then recheck the installed app/helper pair. No service action was performed."
     }
     func install(_ approved:InstallerApproval)->Task<Void,Never>? {
-        guard !busy,installer==approved,generation==approved.generation else{return nil}
+        guard !busy,installer==approved,generation==approved.generation,installerTimeout.isFinite,installerTimeout>0,installerTimeout<=130 else{return nil}
         installer=nil;busy=true;error=nil
+        let deadline=ProcessInfo.processInfo.systemUptime+installerTimeout
         let task=Task{@MainActor in
             let encoded=approved.bytes.map{String(format:"%02x",$0)}.joined()
             let result=await self.installerCapture(["launchd","maintenance-installer","--verify-selection",encoded],nil,self.directory,
-                {self.generation==approved.generation})
+                {self.generation==approved.generation && ProcessInfo.processInfo.systemUptime<deadline})
             self.installerReceipt=result
+            guard !Task.isCancelled,self.generation==approved.generation,ProcessInfo.processInfo.systemUptime<deadline else{
+                self.error="Installer verification canceled, superseded or expired; Installer was not opened. Check the compatible Installer again."
+                self.busy=false;return
+            }
             if result.complete,result.exitCode==0,
                let plan=try?JSONDecoder().decode(InstallerEnvelope.self,from:result.stdoutData),plan.valid,
                plan.package==approved.package,plan.sha256==approved.digest,plan.release==approved.release,
-               self.generation==approved.generation,!Task.isCancelled {
+               self.generation==approved.generation,!Task.isCancelled,ProcessInfo.processInfo.systemUptime<deadline {
                 if self.openInstaller(URL(fileURLWithPath:plan.package)) {
                     self.statusNotice="Normal Installer opened. Complete its signed PKG workflow, then choose Recheck installed pair. If Pantheon was replaced, reopen the one installed app before maintenance."
                 }else{self.error="Installer did not open. Check the release again; no maintenance or installation was claimed."}
@@ -335,6 +350,94 @@ enum LegacyRelayAppHost {
         activeTask=task;return task
     }
 
+    func inspectPublicBinding()async {
+        guard !busy,publicStateUnreadable,outstanding==nil else{return}
+        publicBindingApproval=nil
+        let stored=operationStorage.read()
+        // Another frame may have completed a durable public write since this
+        // model saw corruption. Recover B itself; never overwrite it with A's
+        // older status. This is a read, not permission to execute or reset.
+        if let stored,stored.count<=256*1024,
+           let saved=try?JSONDecoder().decode(LegacyRelaySavedOperationState.self,from:stored),saved.schema==1,
+           let retained=saved.outstanding,retained.ticket != nil {
+            outstanding=retained;lastResolved=saved.resolved;outcomeUnknown=true
+            lifecycleDebt=saved.lifecycleDebt;transaction=saved.lastTransaction;transactionDirectory=directory
+            publicStateUnreadable=false
+            statusNotice="Recovered the existing persisted operation binding. Explicit matching result/fence resolution is still required."
+            return
+        }
+        busy=true;error=nil
+        let token=generation,scope=directory
+        let result=await observe(["launchd","legacy-maintenance","status"],scope,{self.generation==token})
+        busy=false
+        guard !Task.isCancelled,generation==token,publicStateUnreadable,outstanding==nil else{return}
+        receipt=result
+        guard result.complete,result.exitCode==0,
+              let response=try?JSONDecoder().decode(StatusEnvelope.self,from:result.stdoutData) else{error=detail(result);return}
+        observedTransaction=response.status.isBound ? response.status:nil
+        if ["reserved","running","terminal","fenced"].contains(response.admission.state),Self.ticket(response.ticketJSON) != nil {
+            publicBindingApproval=PublicBindingApproval(ticketJSON:response.ticketJSON,file:nil,inspection:result.stdoutData,
+                directory:scope,generation:token,expectedPublic:stored)
+            statusNotice="Controller binding inspected. Confirm storing this exact public binding, then use matching result/fence resolution. No lifecycle action or new consent is authorized."
+        }else if response.status.id.isEmpty,response.admission.schema==0,response.admission.highWater==0,response.admission.state.isEmpty {
+            guard let file=selectedFile else{
+                statusNotice="No controller ticket is currently visible; past execution remains unknown. Choose the retained legacy payload, then inspect again to review a fresh serialized reservation."
+                return
+            }
+            publicBindingApproval=PublicBindingApproval(ticketJSON:nil,file:file,inspection:result.stdoutData,
+                directory:scope,generation:token,expectedPublic:stored)
+            statusNotice="Empty status did not reset the unknown outcome. Confirm a new controller preview reservation and public readback; then explicitly fence that ticket before fresh service consent."
+        }else{error="Controller state has no verified recoverable binding. Retry authoritative inspection; no public state was replaced."}
+    }
+
+    func rebindPublicState(_ approved:PublicBindingApproval)->Task<Void,Never>?{
+        guard !busy,publicStateUnreadable,outstanding==nil,publicBindingApproval==approved,
+              generation==approved.generation,directory==approved.directory,
+              approved.file==nil || selectedFile==approved.file else{return nil}
+        publicBindingApproval=nil;busy=true;error=nil
+        let task=Task{@MainActor in
+            defer{self.busy=false}
+            let args=approved.file.map{["launchd","legacy-maintenance","preview","--legacy-payload",$0.path]} ?? ["launchd","legacy-maintenance","status"]
+            let result=await self.observe(args,approved.directory,{
+                self.generation==approved.generation && self.publicStateUnreadable && self.outstanding==nil
+            })
+            guard !Task.isCancelled,self.generation==approved.generation,self.publicStateUnreadable,self.outstanding==nil else{return}
+            self.receipt=result
+            guard result.complete,result.exitCode==0 else{self.error=self.detail(result);return}
+            let rawTicket:String
+            var boundTransaction:LegacyRelayTransaction?
+            if let expected=approved.ticketJSON {
+                guard let view=try?JSONDecoder().decode(StatusEnvelope.self,from:result.stdoutData),
+                      view.ticketJSON==expected,Self.ticket(expected) != nil else{
+                    self.error="Controller binding changed after inspection. Inspect again; no public binding was overwritten.";return
+                }
+                rawTicket=expected
+                if view.status.isBound,view.status.id==Self.ticket(expected)?.transaction,view.status.plan==Self.ticket(expected)?.plan{boundTransaction=view.status}
+            }else{
+                guard let view=try?JSONDecoder().decode(PreviewEnvelope.self,from:result.stdoutData),
+                      view.plan.isRootProfile,view.plan.legacyPayload==approved.file?.path,
+                      view.ticket.operation=="confirm",view.ticket.plan==view.plan,Self.ticket(view.ticketJSON)==view.ticket else{
+                    self.error="Fresh controller reservation was not verified. Inspect again; no lifecycle action or reset was claimed.";return
+                }
+                rawTicket=view.ticketJSON
+            }
+            guard self.operationStorage.read()==approved.expectedPublic else{
+                self.error="Public binding changed after inspection. Inspect its current binding before replacing anything.";return
+            }
+            guard let ticket=Self.ticket(rawTicket)else{self.error="Controller ticket is invalid; no public binding saved.";return}
+            var retained=LegacyRelayOutstandingOperation(operation:ticket.operation,ticketJSON:rawTicket,originalPreview:result.stdoutData)
+            retained.receipt=LegacyRelaySavedReceipt(CommandExecution(captureError:"Recovered public binding; prior unreadable receipt and past execution remain unknown.",childState:.exitUnknown))
+            // Retain the verified binding even if the local write fails, so the
+            // exact resolver remains usable. No service consent is enabled.
+            self.outstanding=retained;self.outcomeUnknown=true;self.lifecycleDebt=true
+            self.transaction=boundTransaction;self.transactionDirectory=approved.directory
+            if self.persistPublicState(){
+                self.statusNotice="Public binding stored and read back. Use Check result and prevent delayed submission; only a verified matching result/fence with zero debt permits fresh preview and new consent."
+            }
+        }
+        activeTask=task;return task
+    }
+
     private struct RestoreEnvelope: Decodable {
         let transaction: String; let revision: UInt64; let artifact: String
         let maintenanceSHA256: String; let sha256: String
@@ -368,7 +471,10 @@ enum LegacyRelayAppHost {
         enum CodingKeys:String,CodingKey{case ticket,disposition,status;case safeForNewPreview="safe_for_new_preview",pastOutcome="past_outcome"}
     }
     private struct StatusEnvelope:Decodable{
-        struct Admission:Decodable{let state:String}
+        struct Admission:Decodable{
+            let state:String;let schema:Int?;let highWater:UInt64?
+            enum CodingKeys:String,CodingKey{case state,schema;case highWater="high_water"}
+        }
         let status:LegacyRelayTransaction;let admission:Admission;let ticketJSON:String
         enum CodingKeys:String,CodingKey{case status,admission;case ticketJSON="ticket_json"}
     }
@@ -379,9 +485,12 @@ enum LegacyRelayAppHost {
     private static func ticketArgs(_ raw:String)->[String]{["--app-ticket",Data(raw.utf8).base64EncodedString()]}
     @discardableResult private func persistPublicState()->Bool{
         do{
-            let saved=LegacyRelaySavedOperationState(outstanding:outstanding,resolved:lastResolved,lifecycleDebt:lifecycleDebt,lastTransaction:transaction)
+            var saved=LegacyRelaySavedOperationState(outstanding:outstanding,resolved:lastResolved,lifecycleDebt:lifecycleDebt,lastTransaction:transaction)
+            saved.unreadableReceipt=unreadableReceipt
             let data=try JSONEncoder().encode(saved);guard data.count<=256*1024 else{throw NSError(domain:"MaintenancePublicReceiptBound",code:1)}
-            try operationStorage.write(data);return true
+            try operationStorage.write(data)
+            guard operationStorage.read()==data else{throw NSError(domain:"MaintenancePublicReadback",code:1)}
+            publicStateUnreadable=false;return true
         }catch{self.outcomeUnknown=true;self.approval=nil;self.actionApproval=nil;self.restoreApproval=nil;self.canConfirm=false
             self.error="Public operation binding/receipt was not durably retained. No new submission is authorized; read matching controller state and resolve the retained operation.";return false}
     }
@@ -410,6 +519,10 @@ enum LegacyRelayAppHost {
     private func acceptStatus(_ result:CommandExecution,scope:URL){
         guard result.complete,let response=try?JSONDecoder().decode(StatusEnvelope.self,from:result.stdoutData)else{error=detail(result);return}
         observedTransaction=response.status.isBound ? response.status:nil
+        if publicStateUnreadable {
+            statusNotice="Controller status is context only. Use Inspect public binding recovery and explicit reconciliation; an empty or unrelated status cannot reset the unknown outcome."
+            error=nil;return
+        }
         if let retained=outstanding{
             // Status is context, never implicit resolve-or-revoke. In particular
             // oldA and an empty journal cannot consume B's unknown receipt.
