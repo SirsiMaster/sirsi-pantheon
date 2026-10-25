@@ -93,6 +93,12 @@ the existing sirsiFont helpers, preserving native semantic fonts at scale1,
 explicit60/44-point light numerals, layout, controls and effect semantics.
 No guard exemption or new visual world is introduced. Qualify the complete
 structural guard and strict native Swift Release tests before publication.
+The next existing resolution guard still searched the old inline dashboard
+literal after history had moved to its embedded JavaScript module. Retarget
+the same recovery/floor/next-action requirements to that actual module and
+also require page load/mount and embedded route/serving continuity. Preserve
+causal missing-mount/serving/projection negatives; do not remove requirements
+or satisfy them with copied strings or comments in the old file.
 
 - Main integrated receipt SHA256
   `3e5da51f47b1bfa4569737705261dc76e4d121243d4473ff53f199793b22c70e`:
