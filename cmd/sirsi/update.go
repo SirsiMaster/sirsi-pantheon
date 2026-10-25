@@ -4,9 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -26,17 +23,23 @@ var updateCmd = &cobra.Command{
 	Long: `Check GitHub Releases for a newer Sirsi Pantheon and install it.
 
   sirsi update          Check only — report the newest release + any advisories.
-  sirsi update --cli    Download the unified Pantheon app update (CLI compatibility alias).
-  sirsi update --app    Download the notarized .app DMG and open it to install.
+  sirsi update --cli    Open the exact signed Pantheon package in macOS Installer (CLI compatibility alias).
+  sirsi update --app    Open the exact signed Pantheon package in macOS Installer.
 
-The .app is delivered as the notarized DMG so its Developer-ID signature — and
-therefore your Full Disk Access grant — stays stable across updates. Ad-hoc
-local rebuilds cannot do that; that is why merged fixes must arrive via a
-signed release, not a hand-rebuilt binary.`,
+The package handoff is not an installed-success claim. Ma'at retains an exact
+update intent before opening Installer and reads the installed app, helper,
+signatures, and required paths back before closing that attempt. An interrupted
+or ambiguous handoff is reconciled by readback only; Installer is never replayed
+automatically.`,
 	RunE: runUpdate,
 }
 
 func runUpdate(_ *cobra.Command, _ []string) error {
+	if updateInstallCLI || updateInstallApp {
+		if handled, err := reconcilePendingMaatAppUpdate(); handled || err != nil {
+			return err
+		}
+	}
 	// An explicit `sirsi update` tolerates a slower call than the 3s background
 	// version-check, whose tight timeout trips on the full releases list. Use a
 	// generous client for both the check and the release fetch.
@@ -80,9 +83,11 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-// installAppRelease downloads the notarized .app DMG and opens it so the user
-// drags it into Applications. Installing the notarized bundle (vs. an ad-hoc
-// rebuild) preserves the Developer-ID identity, so Full Disk Access survives.
+// installAppRelease is the existing whole-app update owner. The platform
+// adapter retains Ma'at preflight and an exact install intent before handing
+// the verified commercial package to macOS Installer. A returned handoff is
+// never treated as installed success; a later invocation must read the exact
+// installed identity back before closing the retained attempt.
 func installAppRelease(rel *updater.Release) error {
 	if rel == nil {
 		return fmt.Errorf("missing Pantheon release; installed product preserved")
@@ -93,32 +98,11 @@ func installAppRelease(rel *updater.Release) error {
 	if err := updater.ValidateUpdateVersion(version, rel.TagName); err != nil {
 		return err
 	}
-	asset := updater.AppDMGAsset(rel)
-	if asset == nil {
-		return fmt.Errorf("release %s does not expose a complete arm64 Pantheon app payload", rel.TagName)
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	dest := filepath.Join(home, "Downloads", asset.Name)
-	fmt.Printf("  ↓ downloading %s …\n", asset.Name)
-	if _, err = updater.Download(asset.BrowserDownloadURL, dest); err != nil {
-		return err
-	}
-
-	fmt.Printf("  ✓ notarized app downloaded: %s\n", dest)
-	fmt.Println("  Opening it — drag “Sirsi” onto Applications to install.")
-	fmt.Println("  Its Developer-ID signature keeps Full Disk Access stable across future updates.")
-	if err := exec.Command("open", dest).Run(); err != nil {
-		return fmt.Errorf("open downloaded Pantheon DMG %q: %w; open this file manually to complete the unified app update", dest, err)
-	}
-	return nil
+	return installAppReleaseWithMaat(rel)
 }
 
 func init() {
-	updateCmd.Flags().BoolVar(&updateInstallCLI, "cli", false, "download the unified Pantheon app update (compatibility alias)")
-	updateCmd.Flags().BoolVar(&updateInstallApp, "app", false, "download the notarized .app DMG and open it to install")
+	updateCmd.Flags().BoolVar(&updateInstallCLI, "cli", false, "open the verified unified Pantheon package in macOS Installer (compatibility alias)")
+	updateCmd.Flags().BoolVar(&updateInstallApp, "app", false, "open the verified Pantheon package in macOS Installer")
 	rootCmd.AddCommand(updateCmd)
 }

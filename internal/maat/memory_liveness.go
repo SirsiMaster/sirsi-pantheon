@@ -200,6 +200,19 @@ func (s *Store) BeginLivenessWatchAttempt(manifest LivenessWatchManifest, receip
 		currentReceipt.ActionManifestSHA256 != receipt.ActionManifestSHA256 || currentReceipt.RegistrySnapshotSHA256 != receipt.RegistrySnapshotSHA256 {
 		return LivenessWatchAttempt{}, errors.New("maat memory: reviewed preflight is stale, rejected, or unverifiable at attempt admission; fresh review and confirmation are required")
 	}
+	if err := s.ensureNoConflictingRawSelfUpdateLocked(); err != nil {
+		return LivenessWatchAttempt{}, err
+	}
+	if _, err := s.pendingBinaryUpdateAttemptLocked(); err == nil {
+		return LivenessWatchAttempt{}, errors.New("maat memory: incomplete binary update must be inspected before liveness-watch installation")
+	} else if !errors.Is(err, ErrNoIncompleteBinaryUpdateAttempt) {
+		return LivenessWatchAttempt{}, fmt.Errorf("maat memory: shared attempt history is unverifiable: %w", err)
+	}
+	if _, err := s.pendingAppUpdateAttemptLocked(); err == nil {
+		return LivenessWatchAttempt{}, errors.New("maat memory: an incomplete whole-app update must be inspected before liveness-watch installation")
+	} else if !errors.Is(err, ErrNoIncompleteAppUpdateAttempt) {
+		return LivenessWatchAttempt{}, fmt.Errorf("maat memory: shared attempt history is unverifiable: %w", err)
+	}
 	if _, err := s.pendingLivenessWatchAttemptLocked(); err == nil {
 		return LivenessWatchAttempt{}, errors.New("maat memory: an incomplete liveness-watch attempt must be inspected and re-observed before a new consent")
 	} else if !errors.Is(err, ErrNoIncompleteLivenessWatchAttempt) {
@@ -287,6 +300,9 @@ func (s *Store) pendingLivenessWatchAttemptRowsLocked() (LivenessWatchAttempt, e
 			// Closed versioned local records are validated against started rows below.
 		case strings.HasSuffix(name, ".projection.json"), strings.HasSuffix(name, ".projection-receipt.json"):
 			// Projection records are validated by the projection reader below.
+		case strings.HasSuffix(name, ".app-update-started.json"), strings.HasSuffix(name, ".app-update-outcome.json"):
+			// The scoped whole-app updater validates these typed records under
+			// the same Store lock; they share the append-only attempt namespace.
 		default:
 			return LivenessWatchAttempt{}, errors.New("maat memory: unrecognized liveness-watch attempt record")
 		}
