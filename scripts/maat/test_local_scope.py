@@ -22,6 +22,8 @@ class LocalScopeTests(unittest.TestCase):
         wait = mock.patch.object(runner, 'local_wait_terminal', side_effect=lambda child, timeout: child.wait(timeout=timeout))
         identity.start(); wait.start()
         self.addCleanup(identity.stop); self.addCleanup(wait.stop)
+        release=mock.patch.object(runner,'release_local_child')
+        self.release=release.start();self.addCleanup(release.stop)
 
     def main(self, home, flags=(), child=None):
         child = child or mock.Mock(pid=12345)
@@ -52,7 +54,7 @@ class LocalScopeTests(unittest.TestCase):
             self.assertNotIn('SIRSI_ROUTER_DB', env)
             self.assertEqual(env['SIRSI_ROUTER_URL'], 'https://unreachable.invalid')
             self.assertEqual(env['GOMAXPROCS'], '1')
-            self.assertEqual(len(spawn.call_args.kwargs['pass_fds']), 1)
+            self.assertEqual(len(spawn.call_args.kwargs['pass_fds']), 2)
             paths = list((home/'.sirsi/evidence/maat-runs').glob('*/terminal.json'))
             self.assertEqual(len(paths), 1)
             value = json.loads(paths[0].read_text())
@@ -222,7 +224,8 @@ class LocalContinuationTests(unittest.TestCase):
             home=Path(raw);cli=home/'Pantheon.app/Contents/MacOS/sirsi';cli.parent.mkdir(parents=True);cli.write_bytes(b'fixture');cli.chmod(0o755)
             command=[str(cli),'vitals','--json'];child=mock.Mock(pid=24680);child.wait.return_value=0
             def spawn(argv,**kw):
-                self.assertEqual(argv,command)
+                self.assertEqual(argv[-len(command):],command)
+                self.assertIn('--owned-local-child',argv)
                 fact_path=Path(kw['env']['SIRSI_MAAT_LOCAL_EXECUTION_RECEIPT']);fact=json.loads(fact_path.read_text())
                 self.assertEqual(fact['schema'],runner.LOCAL_RECEIPT_SCHEMA)
                 self.assertEqual(fact['supervisor_pid'],os.getpid())
@@ -251,6 +254,7 @@ class LocalContinuationTests(unittest.TestCase):
             result,spawn,_=self.main(Path(raw),['--scope','local'])
             self.assertEqual(result,78);spawn.assert_called_once()
             self.assertEqual(len(retained),1);self.assertEqual(*retained[0])
+            self.release.assert_not_called()
 
 
 class LocalCustodyTests(unittest.TestCase):
@@ -293,7 +297,7 @@ class LocalCustodyTests(unittest.TestCase):
             folder=root/('a'*32);folder.mkdir(mode=0o700)
             child=mock.Mock(pid=24680);record={}
             with mock.patch.object(runner.subprocess,'Popen',return_value=child),mock.patch.object(runner,'process_identity',return_value=(os.getpid(),'old')), \
-                    mock.patch.object(runner,'local_wait_terminal',return_value=0),mock.patch.object(runner,'local_stop_owned',side_effect=runner.Refused('unknown group')):
+                    mock.patch.object(runner,'local_wait_terminal',return_value=0),mock.patch.object(runner,'release_local_child'),mock.patch.object(runner,'local_stop_owned',side_effect=runner.Refused('unknown group')):
                 self.assertEqual(runner.supervise_local(['/owned/fake'],10,record,folder,lambda:None),78)
             next_folder=root/('b'*32);next_folder.mkdir(mode=0o700)
             with mock.patch.object(runner.subprocess,'Popen') as spawn:
@@ -318,6 +322,33 @@ class LocalCustodyTests(unittest.TestCase):
                 self.assertEqual((folder/'intent.json').read_bytes(),prior)
                 self.assertFalse((folder/'running.json').exists())
                 self.assertEqual((folder/'intent.json').stat().st_mode&0o777,0o600)
+
+    def test_child_handshake_eof_never_executes_and_release_executes_exact_payload(self):
+        for token in (b'',b'1'):
+            read,write=os.pipe()
+            try:
+                if token:os.write(write,token)
+                os.close(write);write=None
+                with mock.patch.object(runner.os,'execvpe') as execute:
+                    self.assertEqual(runner.owned_local_child(read,['/owned/fake','arg']),78)
+                    read=None
+                    if token:execute.assert_called_once();self.assertEqual(execute.call_args.args[:2],('/owned/fake',['/owned/fake','arg']))
+                    else:execute.assert_not_called()
+            finally:
+                for fd in (read,write):
+                    if fd is not None:os.close(fd)
+
+    def test_unreleased_durable_protocol_intent_can_reconcile_without_replay(self):
+        with tempfile.TemporaryDirectory() as raw,mock.patch.dict(os.environ,{'HOME':raw},clear=True):
+            root=Path(raw)/'.sirsi/evidence/maat-runs';root.mkdir(parents=True,mode=0o700)
+            folder=root/('c'*32);folder.mkdir(mode=0o700)
+            lock=root/'.local-cpu.lock';lock.write_text('c'*32+'\n');lock.chmod(0o600)
+            runner.local_transition(folder,dict(status='admitted',scope='local',uid=os.getuid(),execution='c'*32,spawn_protocol='pipe-after-durable-running-v1'))
+            with mock.patch.object(runner.subprocess,'Popen') as spawn,mock.patch.object(runner.os,'killpg') as signal_group:
+                runner.reconcile_local_debt('c'*32)
+                spawn.assert_not_called();signal_group.assert_not_called()
+            self.assertEqual(json.loads((folder/'cleanup-reconciled.json').read_text())['resolution'],'payload_not_released_by_protocol')
+            self.assertEqual(lock.read_bytes(),b'')
 
 
 if __name__ == '__main__':

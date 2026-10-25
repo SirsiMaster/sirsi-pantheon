@@ -1,5 +1,9 @@
 # Explicit standalone CPU admission
 
+Historical6c slice: the successor in LOCAL_TIER1_AND_STACKLAB.md adds automatic
+qualified Tier1 routing, immutable phases, bounded owned-group cleanup/recovery
+and local Stack Lab. The frozen6c implementation was not qualified or accepted.
+
 This finite corrective slice belongs to SSA's existing
 `maat-local-first-admission-20261022` task and the owner-directed local-first
 service-tier contract. It is not a shadow task, new ADR, reservation backend,

@@ -282,6 +282,23 @@ def retain_local_debt(root, folder, child, birth):
     finally:os.close(directory)
 
 
+def release_local_child(fd):
+    if os.write(fd,b'1')!=1:raise Refused('Owned local launch handshake was not delivered')
+
+
+def owned_local_child(fd,command):
+    # Same foreground child, no daemon/helper service or independent authority.
+    import select
+    require_local_user()
+    if not command or not stat.S_ISFIFO(os.fstat(fd).st_mode):return 78
+    ready,_,_=select.select([fd],[],[],5)
+    token=os.read(fd,1) if ready else b''
+    os.close(fd)
+    if token!=b'1':return 78
+    os.execvpe(command[0],command,os.environ.copy())
+    return 78
+
+
 def reconcile_local_debt(execution):
     require_local_user()
     if not re.fullmatch('[0-9a-f]{32}',execution):raise Refused('Exact local execution identity required')
@@ -294,20 +311,38 @@ def reconcile_local_debt(execution):
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         if os.read(lock,128)!=(execution+'\n').encode():raise Refused('Local execution fence identity differs')
         path=root/'.local-cpu.debt.json'
-        fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        try:
+            fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        except FileNotFoundError:
+            # This fallback is protocol evidence, not "file absent => never ran".
+            # The release byte is written only after running.json is committed.
+            phase=root/execution/'running.json'
+            if not os.path.lexists(phase):phase=root/execution/'intent.json'
+            fd=os.open(phase,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
         with os.fdopen(fd,'r') as value:
             st=os.fstat(value.fileno())
             if not stat.S_ISREG(st.st_mode) or st.st_uid!=os.getuid() or stat.S_IMODE(st.st_mode)!=0o600 or st.st_nlink!=1 or st.st_size>4096:raise Refused('Local debt metadata unavailable')
             debt=json.load(value)
-        if debt.get('schema')!=LOCAL_RECEIPT_SCHEMA or debt.get('uid')!=os.getuid() or debt.get('execution')!=execution or type(debt.get('pid')) is not int:raise Refused('Local debt identity differs')
-        if local_group_snapshot(debt['pid']):raise Refused('Original group is not proven absent; no signal or replay')
+        fallback=debt.get('spawn_protocol')=='pipe-after-durable-running-v1'
+        if fallback:
+            if debt.get('scope')!='local' or debt.get('uid')!=os.getuid() or debt.get('execution')!=execution:raise Refused('Local phase identity differs')
+            if debt.get('status')=='admitted':
+                debt['resolution']='payload_not_released_by_protocol'
+            elif debt.get('status')=='running' and type(debt.get('pid')) is int:
+                if local_group_snapshot(debt['pid']):raise Refused('Original group remains; no signal or replay')
+                debt['resolution']='released_group_now_absent'
+            else:raise Refused('Local phase cannot resolve this fence')
+        else:
+            if debt.get('schema')!=LOCAL_RECEIPT_SCHEMA or debt.get('uid')!=os.getuid() or debt.get('execution')!=execution or type(debt.get('pid')) is not int:raise Refused('Local debt identity differs')
+            if local_group_snapshot(debt['pid']):raise Refused('Original group is not proven absent; no signal or replay')
         # Typed resolution keeps the exact debt as evidence; no absence-only job replay.
         resolved=root/execution/'cleanup-reconciled.json'
         fd=os.open(resolved,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
         with os.fdopen(fd,'w') as out:json.dump(debt,out);out.flush();os.fsync(out.fileno())
-        if (path.lstat().st_dev,path.lstat().st_ino)!=(st.st_dev,st.st_ino):raise Refused('Local debt changed before resolution')
-        destination=root/('.local-cpu.resolved-'+execution+'.json')
-        os.link(path,destination,follow_symlinks=False);path.unlink()
+        if not fallback:
+            if (path.lstat().st_dev,path.lstat().st_ino)!=(st.st_dev,st.st_ino):raise Refused('Local debt changed before resolution')
+            destination=root/('.local-cpu.resolved-'+execution+'.json')
+            os.link(path,destination,follow_symlinks=False);path.unlink()
         os.ftruncate(lock,0);os.fsync(lock)
         directory=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
         try:os.fsync(directory)
@@ -327,6 +362,7 @@ def supervise_local(command, timeout, record, folder, persist):
     child = None
     birth = None
     fence_written = False
+    gate_read = gate_write = None
     code = 78
     try:
         require_local_user()
@@ -359,6 +395,7 @@ def supervise_local(command, timeout, record, folder, persist):
                       local_lock=dict(device=lock.st_dev, inode=lock.st_ino),
                       supervisor_pid=os.getpid(), execution_timeout_sec=timeout,
                       status='admitted', fabric_delivery='not_requested')
+        record.update(execution=folder.name,spawn_protocol='pipe-after-durable-running-v1')
         fence_written = True
         os.write(lock_fd,(folder.name+'\n').encode())
         os.fsync(lock_fd)  # Pre-spawn durable refusal fence, even if later debt write fails.
@@ -390,11 +427,16 @@ def supervise_local(command, timeout, record, folder, persist):
             env[key] = '1'
         # The child retains this same kernel lock if the supervisor crashes.
         # A cooperative child/descendant exiting releases it; no timer unlock.
-        child = subprocess.Popen(command, start_new_session=True, env=env, pass_fds=(lock_fd,))
+        gate_read,gate_write=os.pipe()
+        launcher=[sys.executable,str(Path(__file__).resolve()),'--owned-local-child',str(gate_read),*command]
+        child = subprocess.Popen(launcher, start_new_session=True, env=env, pass_fds=(lock_fd,gate_read))
+        os.close(gate_read);gate_read=None
         parent,birth=process_identity(child.pid)
         if parent!=os.getpid():raise Refused('Local child parent differs')
         record.update(pid=child.pid, child_start=birth, status='running')
         persist()
+        release_local_child(gate_write)
+        os.close(gate_write);gate_write=None
         code = local_wait_terminal(child,timeout)
         record['child_exit_code'] = code
         record['status'] = 'success' if code == 0 else 'child_failed'
@@ -422,7 +464,7 @@ def supervise_local(command, timeout, record, folder, persist):
             except OSError as error:
                 record['cleanup_debt']='Local completion fence persistence unconfirmed: '+str(error)
                 code=78
-        for fd in (lock_fd, parent_fd):
+        for fd in (gate_read, gate_write, lock_fd, parent_fd):
             if fd is not None:
                 try:
                     os.close(fd)
@@ -1069,7 +1111,7 @@ def main():
         try:
             return supervise_local(command, args.timeout, record, folder, persist)
         finally:
-            print('Ma\'at local terminal: '+str(target), file=sys.stderr)
+            print('Ma\'at local execution evidence: '+str(folder), file=sys.stderr)
     backend = Native()
     backend.execution_receipt_root = folder
     backend.cpu_cores = args.cpu_cores
@@ -1126,6 +1168,8 @@ def check_tool_stop(payload):
 
 
 if __name__ == '__main__':
+    if len(sys.argv)>3 and sys.argv[1]=='--owned-local-child':
+        sys.exit(owned_local_child(int(sys.argv[2]),sys.argv[3:]))
     if sys.argv[1:] == ['--check-stop-command']:
         try:
             raw = sys.stdin.read(65537)

@@ -49,6 +49,15 @@ not absence and is never silently cleared. The existing fabric cleanup is not
 rewritten as part of this local correction. Cooperative same-user behavior is
 the boundary; no hostile-UID atomic isolation is claimed.
 
+The owned child initially waits on a private pipe in this same script. It keeps
+the kernel-lock descriptor. Only after its PID/start and running phase are fully
+durable does the parent release it to exec the exact payload under the same
+PID/start/group. EOF or a bounded missing-release timeout never execs the payload.
+If a supervisor dies before retaining running identity, reconciliation requires
+the exact protocol-tagged immutable intent and its execution fence; it records
+payload-not-released by protocol, not absence-as-safe or an invented run.
+If identity was retained, kernel group absence is required. Neither path resends.
+
 Local receipts now have create-only immutable pending, intent, running and
 terminal phases. A full private stage is written/fsynced before atomic no-replace
 publication and directory fsync. Failed short writes, fsyncs or publication keep
