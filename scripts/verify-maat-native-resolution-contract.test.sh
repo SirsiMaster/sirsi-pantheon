@@ -2,7 +2,7 @@
 # Closed source fixtures only: no browser, server, model, credentials or service.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-fixture=$(mktemp -d /private/tmp/ssa-maat-projection-guard.XXXXXXXX)
+fixture=$(mktemp -d "${TMPDIR:-/tmp}/ssa-maat-projection-guard.XXXXXXXX")
 trap 'rm -rf "$fixture"' EXIT
 paths=$(sed -n 's/^[a-zA-Z][a-zA-Z0-9_]*="\$root\/\([^"]*\)"$/\1/p' "$ROOT/scripts/verify-maat-native-resolution-contract.sh")
 refresh() {
