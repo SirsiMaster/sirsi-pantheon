@@ -56,6 +56,19 @@ file did, so nothing above it can tell the difference.
 To take a node back to its local file, unset `SIRSI_ROUTER_URL`. That is the
 whole rollback.
 
+### Machine-readable inbox pulls
+
+`sirsi router pull <agent> --json` returns one JSON array of the canonical inbox
+items, or `[]` when empty. Item fields match the `items` array from
+`router wait --ensure --json`; pull performs the same facade inbox read and no
+additional body/detail lookup, acknowledgement, claim or mutation.
+
+`--build-filter` keeps its existing build-shaped-item predicate and ordering.
+With `--json`, deferred-item guidance goes to stderr so stdout remains one JSON
+document, including when every item is deferred. Without `--json`, the existing
+human list, empty message and deferred-item guidance remain on stdout. Read and
+output-write failures return nonzero rather than claiming an empty/successful pull.
+
 ## What changes on a node once the URL is set
 
 - **It has no local ledger of record.** `sirsi schema-check` and the self-update

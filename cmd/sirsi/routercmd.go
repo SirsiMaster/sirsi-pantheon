@@ -312,66 +312,100 @@ cutover live the store row IS the record.
 	},
 }
 
-var pullBuildFilter bool
+// readRouterPullInbox preserves the canonical facade's validation, authority
+// and store/file cutover behavior. Output selection never opens another reader.
+func readRouterPullInbox(agent string) ([]work.Item, error) {
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return nil, fmt.Errorf("no .agents/idea-router/ found: %w", err)
+	}
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return f.Inbox(agent)
+}
 
-var routerPullCmd = &cobra.Command{
-	Use:   "pull <agent>",
-	Short: "Pull open work items addressed to an agent",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Read through the facade (store rows ∪ file items) so store-only items
-		// — the post-cutover steady state — are visible to pull, not just wait.
-		repoRoot, err := router.FindRepoRoot()
-		if err != nil {
-			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
-		}
-		f, err := dispatch.Open(repoRoot)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = f.Close() }()
-		items, err := f.Inbox(args[0])
-		if err != nil {
-			return err
-		}
+var routerPullCmd = newRouterPullCmd(readRouterPullInbox)
 
-		if pullBuildFilter {
-			// Guard: headless build workers cannot execute decision/review/proposal
-			// items (no build artifact exists). Split into buildable vs. deferred and
-			// warn about deferred ones so they don't silently spin for the full timeout.
-			var buildable, nonBuildable []work.Item
+// The per-command reader seam permits inert command fixtures; the production
+// command always uses readRouterPullInbox, with no alternate CLI/config path.
+func newRouterPullCmd(readInbox func(string) ([]work.Item, error)) *cobra.Command {
+	var buildFilter bool
+	cmd := &cobra.Command{
+		Use:   "pull <agent>",
+		Short: "Pull open work items addressed to an agent",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			items, err := readInbox(args[0])
+			if err != nil {
+				return err
+			}
+
+			if buildFilter {
+				// Keep the existing predicate, ordering and deferred-item guidance.
+				var buildable, nonBuildable []work.Item
+				for _, it := range items {
+					if it.IsBuildable() {
+						buildable = append(buildable, it)
+					} else {
+						nonBuildable = append(nonBuildable, it)
+					}
+				}
+				if len(nonBuildable) > 0 {
+					warnings := cmd.OutOrStdout()
+					if JsonOutput {
+						warnings = cmd.ErrOrStderr()
+					}
+					if _, err := fmt.Fprintf(warnings, "  ⚠ %d item(s) skipped — not build-shaped (type: decision/review/proposal):\n", len(nonBuildable)); err != nil {
+						return err
+					}
+					for _, it := range nonBuildable {
+						if _, err := fmt.Fprintf(warnings, "    • %s  type:%s  from:%s\n      → route to human/agent lane: sirsi router respond %s --result \"<answer>\"\n\n", it.ID, it.Type, it.From, it.ID); err != nil {
+							return err
+						}
+					}
+				}
+				items = buildable
+			}
+
+			out := cmd.OutOrStdout()
+			if JsonOutput {
+				// Match the canonical item array used by wait's items member;
+				// never fetch show/body/dump data beyond this same inbox read.
+				if items == nil {
+					items = []work.Item{}
+				}
+				encoder := json.NewEncoder(out)
+				encoder.SetIndent("", "  ")
+				return encoder.Encode(items)
+			}
+			if len(items) == 0 {
+				_, err := fmt.Fprintf(out, "  No open items for %s.\n", args[0])
+				return err
+			}
+			if _, err := fmt.Fprintf(out, "  %d open items for %s:\n\n", len(items), args[0]); err != nil {
+				return err
+			}
 			for _, it := range items {
-				if it.IsBuildable() {
-					buildable = append(buildable, it)
-				} else {
-					nonBuildable = append(nonBuildable, it)
+				typeHint := ""
+				if it.Type != "" {
+					typeHint = fmt.Sprintf("  type: %s\n    ", it.Type)
+				}
+				if _, err := fmt.Fprintf(out, "  • %s\n    %sfrom: %s\n      title: %s\n      opened: %s\n\n", it.ID, typeHint, it.From, it.Title, it.Opened); err != nil {
+					return err
 				}
 			}
-			if len(nonBuildable) > 0 {
-				fmt.Printf("  ⚠ %d item(s) skipped — not build-shaped (type: decision/review/proposal):\n", len(nonBuildable))
-				for _, it := range nonBuildable {
-					fmt.Printf("    • %s  type:%s  from:%s\n      → route to human/agent lane: sirsi router respond %s --result \"<answer>\"\n\n", it.ID, it.Type, it.From, it.ID)
-				}
+			if _, err := fmt.Fprint(out, "  Read full: sirsi router show <id>\n"); err != nil {
+				return err
 			}
-			items = buildable
-		}
-
-		if len(items) == 0 {
-			fmt.Printf("  No open items for %s.\n", args[0])
-			return nil
-		}
-		fmt.Printf("  %d open items for %s:\n\n", len(items), args[0])
-		for _, it := range items {
-			typeHint := ""
-			if it.Type != "" {
-				typeHint = fmt.Sprintf("  type: %s\n    ", it.Type)
-			}
-			fmt.Printf("  • %s\n    %sfrom: %s\n      title: %s\n      opened: %s\n\n", it.ID, typeHint, it.From, it.Title, it.Opened)
-		}
-		fmt.Printf("  Read full: sirsi router show <id>\n")
-		fmt.Printf("  Close when done: sirsi router close <id> --result @path/to/result.md\n")
-		return nil
-	},
+			_, err = fmt.Fprint(out, "  Close when done: sirsi router close <id> --result @path/to/result.md\n")
+			return err
+		},
+	}
+	cmd.Flags().BoolVar(&buildFilter, "build-filter", false, "Skip non-build items (decision/review/proposal) — safe for headless build workers")
+	return cmd
 }
 
 var routerWaitCmd = newRouterWaitCmdWithKernel(strictCodexAnchor)
@@ -1515,7 +1549,6 @@ func init() {
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
 	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")
 	routerWakeInstallCmd.Flags().Bool("force", false, "arm even if the agent already has an armed watcher (bypasses the duplicate-spawn leak guard)")
-	routerPullCmd.Flags().BoolVar(&pullBuildFilter, "build-filter", false, "Skip non-build items (decision/review/proposal) — safe for headless build workers")
 	routerCutoverEnableCmd.Flags().Bool("rearm", false, "reinstall headless wake LaunchAgents into store-wake mode now")
 	routerCutoverCmd.AddCommand(routerCutoverStatusCmd, routerCutoverEnableCmd, routerCutoverDisableCmd)
 	routerPruneCmd.Flags().IntVar(&pruneDays, "days", router.DefaultRetentionDays, "retention window in days (older artifacts are removed)")
