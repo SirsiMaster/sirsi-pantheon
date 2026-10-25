@@ -739,13 +739,20 @@ func (s *Store) PendingBinaryUpdateProjectionDebts() ([]BinaryUpdateProjectionDe
 // BinaryUpdateReconciliations returns exact immutable records for read-only
 // recovery. It never derives a no-invocation fact from a missing leaf.
 func (s *Store) BinaryUpdateReconciliations(caseEvidence string) ([]BinaryUpdateReconciliation, error) {
-	if caseEvidence != "" && (!strings.HasPrefix(caseEvidence, "maat-system-one:sha256=") || !validDigest(strings.TrimPrefix(caseEvidence, "maat-system-one:sha256="))) {
-		return nil, errors.New("maat memory: invalid source case for binary-update reconciliation")
-	}
 	if err := s.lock(unix.LOCK_SH); err != nil {
 		return nil, err
 	}
 	defer s.unlock()
+	return s.binaryUpdateReconciliationsLocked(caseEvidence)
+}
+
+// binaryUpdateReconciliationsLocked reads exact retained records while the
+// caller holds a Store lock. Admission uses it under the existing exclusive
+// lock; the public history API uses a shared lock.
+func (s *Store) binaryUpdateReconciliationsLocked(caseEvidence string) ([]BinaryUpdateReconciliation, error) {
+	if caseEvidence != "" && (!strings.HasPrefix(caseEvidence, "maat-system-one:sha256=") || !validDigest(strings.TrimPrefix(caseEvidence, "maat-system-one:sha256="))) {
+		return nil, errors.New("maat memory: invalid source case for binary-update reconciliation")
+	}
 	if _, err := s.verifyWriteJournal(); err != nil {
 		return nil, err
 	}
