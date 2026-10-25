@@ -277,3 +277,26 @@ G01 direct failure intake and explicit accepted-not-repaired local disposition
 continue separately under the revised owner-disposition contract. This checkpoint
 does not introduce their trust/lifecycle semantics, waive unknown action debt,
 claim other operation rows or surfaces, or establish installed/release proof.
+
+### Exact G02 receipt interruption recovery and leaf custody
+
+An issuance-bound retry first completes only its own exact prepared receipt tuple
+under the store lock and existing WAL rules. Every other intent/committed target
+must verify. Only then may ordinary fresh current reassessment return a projection
+handle; closing an old persistence debt does not refresh its time or eligibility.
+
+The existing receipt reader also offers explicit `--recover --confirm` for a
+complete retained canonical v2 target and its exact prepared record. It accepts
+only a digest, never caller JSON or a path outside the existing selected store.
+Missing, truncated, substituted or unrelated prepared data remains refused.
+Recovery returns the historical envelope with `action_authorized:false`, creates
+no local issuance, appends no Casebook decision and starts no action. Native
+selected-memory detail offers this same separately confirmed data-only control;
+inspection and failures preserve the original case and prior detail.
+
+Shared opened-object reads require current-EUID ownership and private leaf modes
+(`mode & 0077 == 0`) as well as no-follow, regular type, single link and bounds.
+Readback rechecks private ownership and its stability. Matching bytes cannot
+adopt0644/0660 or foreign-owned receipt/WAL targets, and no read repairs modes.
+This corrective source remains unqualified until Main's bounded execution and
+independent review; previous parent fixture passes do not waive either finding.

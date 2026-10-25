@@ -35,6 +35,28 @@ final class MaatRetainedPreflightTests: XCTestCase {
         }
     }
 
+    func testHistoricalRecoveryBindsOnlyCapturedDigestAndExplicitConsent() throws {
+        let identity = try XCTUnwrap(MaatCapturedPreflightIdentity(evidence: entry().evidence))
+        XCTAssertEqual(identity.recoveryArguments, ["maat", "failure-memory", "receipt", "--sha256", receiptSHA, "--json", "--recover", "--confirm"])
+        XCTAssertFalse(identity.arguments.contains("--recover"))
+        XCTAssertFalse(identity.recoveryArguments.contains("--store"))
+        XCTAssertFalse(identity.recoveryArguments.contains { $0.hasPrefix("/") })
+    }
+
+    func testFailedHistoricalRecoveryPreservesOriginalDetailAndNeverAuthorizes() throws {
+        let original = try response()
+        var state = MaatRetainedPreflightReadState()
+        state.finish(read(original), entry: entry(), cancelled: false)
+        state.finish(read(Data("incomplete retained target".utf8), exit: 1), entry: entry(), cancelled: false)
+        XCTAssertEqual(state.canonicalCLIResponse, original)
+        XCTAssertEqual(state.receipt?.action_authorized, false)
+        XCTAssertNotNil(state.message)
+        state.finish(read(try response(relation: "changed")), entry: entry(), cancelled: false)
+        XCTAssertEqual(state.receipt?.receipt.evaluated_at_utc, "2026-10-24T00:00:00Z")
+        XCTAssertEqual(state.receipt?.freshness, "historical")
+        XCTAssertEqual(state.receipt?.action_authorized, false)
+    }
+
     func testHistoricalSameAndChangedReceiptsNeverAuthorizeAction() throws {
         for relation in ["same", "changed", "unverifiable"] {
             let bytes = try response(relation: relation)

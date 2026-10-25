@@ -100,7 +100,13 @@ func OpenExistingStore(root string) (*Store, error) {
 // assessment. WAL bookkeeping is excluded from semantic identity, never from
 // validation. Persistence precedes the projection or any attempt admission.
 func (s *Store) RetainPreflightReceipt(r PreflightReceipt) (StoredPreflightReceipt, error) {
-	if r.RegistrySnapshotVersion != 2 || r.validate() != nil || time.Since(r.EvaluatedAtUTC) > 2*time.Minute || r.EvaluatedAtUTC.After(time.Now().UTC().Add(10*time.Second)) {
+	return s.retainPreflightReceiptWithWrite(r, s.createOrVerify)
+}
+
+// Per-call write seam exercises actual prepared/leaf interruption boundaries;
+// production always uses the ordinary governed writer above.
+func (s *Store) retainPreflightReceiptWithWrite(r PreflightReceipt, write func(string, int, string, []byte) error) (StoredPreflightReceipt, error) {
+	if r.RegistrySnapshotVersion != 2 || r.validate() != nil {
 		return StoredPreflightReceipt{}, errors.New("maat memory: retention requires a complete current v2 receipt")
 	}
 	if err := s.lock(unix.LOCK_EX); err != nil {
@@ -114,6 +120,24 @@ func (s *Store) RetainPreflightReceipt(r PreflightReceipt) (StoredPreflightRecei
 	issued, _ := json.Marshal(r)
 	if r.localOrigin == nil || r.localOrigin.device != uint64(identity.Dev) || r.localOrigin.inode != uint64(identity.Ino) || r.localOrigin.storeUUID != s.storeUUID || r.localOrigin.canonical != string(issued) {
 		return StoredPreflightReceipt{}, errors.New("maat memory: receipt was not issued by this local store assessment")
+	}
+	if _, err := decodePreflightReceipt(issued); err != nil {
+		return StoredPreflightReceipt{}, err
+	}
+	sum := sha256.Sum256(issued)
+	digest := hex.EncodeToString(sum[:])
+	// Finish only this exact issued tuple BEFORE clean-WAL reassessment. A
+	// changed registry or old observation can close historical persistence debt
+	// but cannot obtain a newly eligible handle.
+	resumed, err := s.resumePreparedPreflightLocked(digest, issued, true)
+	if err != nil {
+		return StoredPreflightReceipt{}, err
+	}
+	if time.Since(r.EvaluatedAtUTC) > 2*time.Minute || r.EvaluatedAtUTC.After(time.Now().UTC().Add(10*time.Second)) {
+		if resumed {
+			return StoredPreflightReceipt{}, errors.New("maat memory: exact receipt persistence recovered; fresh assessment is required before projection or admission")
+		}
+		return StoredPreflightReceipt{}, errors.New("maat memory: fresh assessment is required before projection or admission")
 	}
 	current, evalErr := s.preflightBoundLocked(r.Action, r.ActionManifestSHA256, resolveMemoryGuard)
 	// An unsupported closed guard can yield a complete unverifiable receipt;
@@ -133,9 +157,7 @@ func (s *Store) RetainPreflightReceipt(r PreflightReceipt) (StoredPreflightRecei
 	if _, err := decodePreflightReceipt(expected); err != nil {
 		return StoredPreflightReceipt{}, err
 	}
-	sum := sha256.Sum256(expected)
-	digest := hex.EncodeToString(sum[:])
-	if err := s.createOrVerify("evidence", s.evidenceFD, digest, expected); err != nil {
+	if err := write("evidence", s.evidenceFD, digest, expected); err != nil {
 		return StoredPreflightReceipt{}, err
 	}
 	if _, err := s.readPreflightReceiptLocked(digest); err != nil {
@@ -152,6 +174,9 @@ func (s *Store) ReadPreflightReceipt(digest string) (PreflightReceiptRead, error
 		return PreflightReceiptRead{}, err
 	}
 	defer s.unlock()
+	return s.preflightReceiptReadLocked(digest)
+}
+func (s *Store) preflightReceiptReadLocked(digest string) (PreflightReceiptRead, error) {
 	r, err := s.readPreflightReceiptLocked(digest)
 	if err != nil {
 		return PreflightReceiptRead{}, err
@@ -314,4 +339,96 @@ func (r PreflightReceiptReference) validate() error {
 		return nil
 	}
 	return errors.New("maat memory: invalid receipt store binding")
+}
+
+// resumePreparedPreflightLocked permits one exact prepared key, never an
+// arbitrary WAL exception. Only normal issuance-bound retry may supply a leaf
+// that was not yet written. Reopened recovery must read complete retained bytes.
+func (s *Store) resumePreparedPreflightLocked(digest string, data []byte, allowMissingTarget bool) (bool, error) {
+	intent, err := newWriteIntent("evidence", digest, data)
+	if err != nil {
+		return false, err
+	}
+	expected, _ := json.Marshal(intent)
+	prepared, err := readExact(s.writesFD, intent.Key+".prepared.json")
+	if errors.Is(err, unix.ENOENT) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !bytes.Equal(prepared, expected) {
+		return false, errors.New("maat memory: prepared receipt intent differs from exact target and bytes")
+	}
+	commit, err := readExact(s.writesFD, intent.Key+".committed.json")
+	if err == nil {
+		expectedCommit, _ := json.Marshal(writeCommit{Schema: MemorySchema, IntentKey: intent.Key})
+		if !bytes.Equal(commit, expectedCommit) {
+			return false, errors.New("maat memory: invalid receipt commit")
+		}
+		return false, nil
+	}
+	if !errors.Is(err, unix.ENOENT) {
+		return false, err
+	}
+	if _, err := s.verifyWriteJournalAllow(intent.Key); err != nil {
+		return false, err
+	}
+	target, err := readExact(s.evidenceFD, digest)
+	if errors.Is(err, unix.ENOENT) && allowMissingTarget {
+		target = data
+	} else if err != nil {
+		return false, err
+	}
+	if !bytes.Equal(target, data) {
+		return false, errors.New("maat memory: interrupted receipt target is missing, truncated or substituted")
+	}
+	if err := s.createOrVerify("evidence", s.evidenceFD, digest, data); err != nil {
+		return false, err
+	}
+	if _, err := s.readPreflightReceiptLocked(digest); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// RecoverPreflightReceipt completes a fully retained exact prepared object,
+// or verifies its already completed retry. It does not import bytes, reconstruct
+// a missing leaf, change its time, project a decision or create local issuance.
+func (s *Store) RecoverPreflightReceipt(digest string) (PreflightReceiptRead, error) {
+	if !validDigest(digest) {
+		return PreflightReceiptRead{}, errors.New("maat memory: invalid historical recovery digest")
+	}
+	if err := s.lock(unix.LOCK_EX); err != nil {
+		return PreflightReceiptRead{}, err
+	}
+	defer s.unlock()
+	data, err := readExact(s.evidenceFD, digest)
+	if err != nil {
+		return PreflightReceiptRead{}, fmt.Errorf("maat memory: complete retained receipt bytes required for recovery: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != digest {
+		return PreflightReceiptRead{}, errors.New("maat memory: retained recovery target digest mismatch")
+	}
+	receipt, err := decodePreflightReceipt(data)
+	if err != nil || receipt.RegistrySnapshotVersion != 2 {
+		return PreflightReceiptRead{}, errors.New("maat memory: recovery requires the exact canonical v2 receipt")
+	}
+	intent, err := newWriteIntent("evidence", digest, data)
+	if err != nil {
+		return PreflightReceiptRead{}, err
+	}
+	prepared, err := readExact(s.writesFD, intent.Key+".prepared.json")
+	if err != nil {
+		return PreflightReceiptRead{}, err
+	}
+	expected, _ := json.Marshal(intent)
+	if !bytes.Equal(prepared, expected) {
+		return PreflightReceiptRead{}, errors.New("maat memory: recovery has no exact retained receipt intent")
+	}
+	if _, err := s.resumePreparedPreflightLocked(digest, data, false); err != nil {
+		return PreflightReceiptRead{}, err
+	}
+	return s.preflightReceiptReadLocked(digest)
 }

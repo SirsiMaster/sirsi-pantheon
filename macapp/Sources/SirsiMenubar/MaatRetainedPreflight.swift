@@ -85,6 +85,7 @@ struct MaatCapturedPreflightIdentity: Equatable {
         value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
     var arguments: [String] { ["maat", "failure-memory", "receipt", "--sha256", receipt, "--json"] }
+    var recoveryArguments: [String] { arguments + ["--recover", "--confirm"] }
 
     func matches(_ read: MaatRetainedPreflightRead, entry: MaatCase) -> Bool {
         let r = read.receipt
@@ -143,10 +144,12 @@ struct MaatRetainedPreflightReadState {
 @MainActor final class MaatPreflightReceiptReadStore: ObservableObject {
     @Published private(set) var states: [String: MaatRetainedPreflightReadState] = [:]
     func state(_ entry: MaatCase) -> MaatRetainedPreflightReadState { states[entry.id + "|" + entry.evidence] ?? MaatRetainedPreflightReadState() }
-    func inspect(_ entry: MaatCase) async {
+    func inspect(_ entry: MaatCase) async { await read(entry, recovering: false) }
+    func recover(_ entry: MaatCase) async { await read(entry, recovering: true) }
+    private func read(_ entry: MaatCase, recovering: Bool) async {
         guard let identity = MaatCapturedPreflightIdentity(evidence: entry.evidence), !state(entry).busy else { return }
         var pending = state(entry); pending.busy = true; states[entry.id + "|" + entry.evidence] = pending
-        let read = await SirsiEngine.runJSONRead(args: identity.arguments)
+        let read = await SirsiEngine.runJSONRead(args: recovering ? identity.recoveryArguments : identity.arguments)
         var terminal = state(entry); terminal.finish(read, entry: entry, cancelled: Task.isCancelled)
         states[entry.id + "|" + entry.evidence] = terminal
     }
@@ -155,6 +158,7 @@ struct MaatRetainedPreflightReadState {
 struct MaatRetainedPreflightDetail: View {
     @ObservedObject var model: MaatPreflightReceiptReadStore
     let entry: MaatCase
+    @State private var confirmRecovery = false
     var body: some View {
         let state = model.state(entry)
         VStack(alignment: .leading, spacing: 8) {
@@ -163,7 +167,11 @@ struct MaatRetainedPreflightDetail: View {
             }
             .disabled(state.busy || MaatCapturedPreflightIdentity(evidence: entry.evidence) == nil)
             if state.busy { ProgressView("Reading retained receipt…") }
-            if let message = state.message { Text(message).foregroundStyle(.secondary) }
+            if let message = state.message {
+                Text(message).foregroundStyle(.secondary)
+                Button("Recover exact interrupted receipt") { confirmRecovery = true }
+                    .disabled(state.busy || MaatCapturedPreflightIdentity(evidence: entry.evidence) == nil)
+            }
             if let read = state.receipt {
                 Text("Historical preflight — \(read.receipt.decision)").font(.headline)
                 Text("Evaluated \(read.receipt.evaluated_at_utc); read \(read.read_at_utc). Registry \(read.registry_relation). This historical receipt authorizes no action.")
@@ -184,6 +192,12 @@ struct MaatRetainedPreflightDetail: View {
                 Text("Recovery reference: \(read.receipt.recovery_reference)")
             }
         }.textSelection(.enabled)
+        .confirmationDialog("Complete only this exact retained receipt write?", isPresented: $confirmRecovery) {
+            Button("Complete exact historical receipt") { Task { await model.recover(entry) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Only complete original bytes with their exact prepared intent can be committed. Missing or changed bytes and unrelated debt remain refused. No receipt time is rewritten, no Casebook decision is appended, and no repair or new action is authorized.")
+        }
     }
 }
 

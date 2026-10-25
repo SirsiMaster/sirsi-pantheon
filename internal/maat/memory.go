@@ -1088,8 +1088,8 @@ func readExact(parentFD int, name string) ([]byte, error) {
 	if err := unix.Fstat(fd, &stat); err != nil {
 		return nil, err
 	}
-	if stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 || stat.Size < 0 || stat.Size > maxMemoryObjectBytes {
-		return nil, errors.New("maat memory: invalid stored object identity")
+	if err := validateMemoryObjectStat(stat, uint32(os.Geteuid())); err != nil {
+		return nil, err
 	}
 	buf := make([]byte, stat.Size)
 	for read := 0; read < len(buf); {
@@ -1106,10 +1106,28 @@ func readExact(parentFD int, name string) ([]byte, error) {
 	if err := unix.Fstat(fd, &after); err != nil {
 		return nil, err
 	}
-	if after.Dev != stat.Dev || after.Ino != stat.Ino || after.Size != stat.Size || after.Mode != stat.Mode || after.Nlink != stat.Nlink {
-		return nil, errors.New("maat memory: stored object changed while read")
+	if err := validateMemoryObjectReadback(stat, after, uint32(os.Geteuid())); err != nil {
+		return nil, err
 	}
 	return buf, nil
+}
+
+// Pure stat validation is also the inert foreign-owner fixture seam. The
+// production reader always supplies its actual current EUID and opened FDs.
+func validateMemoryObjectStat(stat unix.Stat_t, ownerUID uint32) error {
+	if stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 || stat.Size < 0 || stat.Size > maxMemoryObjectBytes || stat.Uid != ownerUID || stat.Mode&0o077 != 0 {
+		return errors.New("maat memory: expected private current-owner singly linked bounded regular object")
+	}
+	return nil
+}
+func validateMemoryObjectReadback(before, after unix.Stat_t, ownerUID uint32) error {
+	if err := validateMemoryObjectStat(after, ownerUID); err != nil {
+		return err
+	}
+	if after.Dev != before.Dev || after.Ino != before.Ino || after.Size != before.Size || after.Mode != before.Mode || after.Nlink != before.Nlink || after.Uid != before.Uid {
+		return errors.New("maat memory: stored object changed while read")
+	}
+	return nil
 }
 
 func readDirectoryNames(fd int) ([]string, error) {

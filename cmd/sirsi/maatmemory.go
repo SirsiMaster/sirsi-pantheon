@@ -145,6 +145,8 @@ func init() {
 	maatFailureMemoryReceiptCmd.Flags().StringVar(&maatMemoryReceiptSHA, "sha256", "", "exact retained preflight receipt SHA256")
 	maatFailureMemoryReceiptCmd.Flags().StringVar(&maatMemoryReceiptStore, "store", "", "optional absolute existing private legacy store; never initializes")
 	maatFailureMemoryReceiptCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
+	maatFailureMemoryReceiptCmd.Flags().BoolVar(&maatMemoryReceiptRecover, "recover", false, "complete only this exact already-retained interrupted receipt; no action or projection")
+	maatFailureMemoryReceiptCmd.Flags().BoolVar(&maatMemoryReceiptConfirm, "confirm", false, "confirm exact historical receipt write recovery")
 	_ = maatFailureMemoryReceiptCmd.MarkFlagRequired("sha256")
 	maatFailureMemoryCmd.AddCommand(maatFailureMemoryPreflightCmd, maatFailureMemoryReceiptCmd)
 	maatCmd.AddCommand(maatFailureMemoryCmd)
@@ -160,15 +162,25 @@ func openMaatMemoryExisting(root string) (*maat.Store, error) {
 }
 
 var maatMemoryReceiptStore string
+var maatMemoryReceiptRecover bool
+var maatMemoryReceiptConfirm bool
 var maatFailureMemoryReceiptCmd = &cobra.Command{
 	Use: "receipt", Short: "Read an exact retained historical preflight; grants no action authority", Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if maatMemoryReceiptRecover != maatMemoryReceiptConfirm {
+			return errors.New("exact receipt recovery requires --recover and --confirm together; no bytes were changed")
+		}
 		store, err := openMaatMemoryExisting(maatMemoryReceiptStore)
 		if err != nil {
 			return fmt.Errorf("open existing receipt custody: %w", err)
 		}
 		defer store.Close()
-		receipt, err := store.ReadPreflightReceipt(maatMemoryReceiptSHA)
+		var receipt maat.PreflightReceiptRead
+		if maatMemoryReceiptRecover {
+			receipt, err = store.RecoverPreflightReceipt(maatMemoryReceiptSHA)
+		} else {
+			receipt, err = store.ReadPreflightReceipt(maatMemoryReceiptSHA)
+		}
 		if err != nil {
 			if (JsonOutput || maatJSON) && errors.Is(err, maat.ErrHistoricalReceiptUnavailable) {
 				if outputErr := emitJSON(struct {
