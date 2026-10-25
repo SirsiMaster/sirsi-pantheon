@@ -658,7 +658,9 @@ func TestMaatBinaryDriftProjectionDebtDoesNotRetryUpdater(t *testing.T) {
 	maatRepairConfirm = true
 	maatRepairBinaryDriftCaseEvidence = evidence
 	maatRepairBinaryDriftBinding = preview.Binding
-	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err == nil || !strings.Contains(err.Error(), "projection debt") {
+	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err == nil ||
+		!strings.Contains(err.Error(), "binary-drift result remains retained for projection reconciliation") ||
+		!strings.Contains(err.Error(), "append terminal outcome projection: injected projection outage") {
 		t.Fatalf("projection outage result=%v", err)
 	}
 	if *updates != 1 {
@@ -669,12 +671,21 @@ func TestMaatBinaryDriftProjectionDebtDoesNotRetryUpdater(t *testing.T) {
 		t.Fatal(err)
 	}
 	debts, err := store.PendingBinaryUpdateProjectionDebts()
-	_ = store.Close()
-	if err != nil || len(debts) != 1 {
+	if err != nil || len(debts) != 1 || debts[0].Attempt.Manifest.CaseEvidence != evidence || debts[0].Outcome.AttemptID != debts[0].Attempt.ID || debts[0].Outcome.Determination != "failed" || debts[0].Decision.OriginEvidence != evidence || debts[0].Decision.Determination != "failed" {
+		_ = store.Close()
 		t.Fatalf("projection debts=%d err=%v", len(debts), err)
 	}
-	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err == nil {
-		t.Fatal("retry unexpectedly proceeded through existing attempt")
+	attemptID, terminalEvidence := debts[0].Attempt.ID, debts[0].Decision.Evidence
+	history, err := store.BinaryUpdateReconciliations(evidence)
+	if err != nil || len(history) != 1 || !history[0].ClaimOwned || history[0].Outcome == nil || history[0].Outcome.AttemptID != attemptID || history[0].Projection == nil || history[0].ProjectionReadBack {
+		_ = store.Close()
+		t.Fatalf("durable owned projection intent=%+v err=%v", history, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err == nil || err.Error() != "Ma'at binary-drift recovery: this exact screen already has a durable repair attempt or receipt; inspect the retained attempt and create a fresh System One observation before another action" {
+		t.Fatalf("durable same-screen claim did not block another confirmed action before projection debt admission: %v", err)
 	}
 	if *updates != 1 {
 		t.Fatalf("projection debt caused automatic updater replay: calls=%d", *updates)
@@ -682,7 +693,8 @@ func TestMaatBinaryDriftProjectionDebtDoesNotRetryUpdater(t *testing.T) {
 	newMaatDecisionJournal = func() (maat.DecisionJournal, error) {
 		return &projectionReadbackFailMaatJournal{maatTestJournal: base}, nil
 	}
-	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err == nil || !strings.Contains(err.Error(), "read back terminal outcome projection") {
+	maatRepairBinaryDriftReconcile = true
+	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err == nil || !strings.Contains(err.Error(), "read back terminal outcome projection: injected exact readback outage") {
 		t.Fatalf("injected projection readback outage was not retained as debt: %v", err)
 	}
 	store, err = maat.OpenDefaultStore()
@@ -690,12 +702,12 @@ func TestMaatBinaryDriftProjectionDebtDoesNotRetryUpdater(t *testing.T) {
 		t.Fatal(err)
 	}
 	debts, err = store.PendingBinaryUpdateProjectionDebts()
+	history, historyErr := store.BinaryUpdateReconciliations(evidence)
 	_ = store.Close()
-	if err != nil || len(debts) != 1 {
+	if err != nil || len(debts) != 1 || debts[0].Attempt.ID != attemptID || debts[0].Decision.Evidence != terminalEvidence || historyErr != nil || len(history) != 1 || history[0].ProjectionReadBack {
 		t.Fatalf("readback outage lost projection debt: debts=%d err=%v", len(debts), err)
 	}
 	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return base, nil }
-	maatRepairBinaryDriftReconcile = true
 	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err != nil {
 		t.Fatalf("data-only terminal projection reconciliation failed: %v", err)
 	}
@@ -707,9 +719,21 @@ func TestMaatBinaryDriftProjectionDebtDoesNotRetryUpdater(t *testing.T) {
 		t.Fatal(err)
 	}
 	debts, err = store.PendingBinaryUpdateProjectionDebts()
+	history, historyErr = store.BinaryUpdateReconciliations(evidence)
 	_ = store.Close()
-	if err != nil || len(debts) != 0 {
+	if err != nil || len(debts) != 0 || historyErr != nil || len(history) != 1 || !history[0].ProjectionReadBack || history[0].Outcome == nil || history[0].Outcome.AttemptID != attemptID {
 		t.Fatalf("reconciled projection debts=%d err=%v", len(debts), err)
+	}
+	projected, found, err := base.FindByEvidence("diagnostic verified repair", terminalEvidence)
+	if err != nil || !found || projected.OriginEvidence != evidence || projected.Determination != "failed" {
+		t.Fatalf("exact terminal projection was not read back after data-only reconciliation: row=%+v found=%v err=%v", projected, found, err)
+	}
+	maatRepairBinaryDriftReconcile = false
+	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err == nil || err.Error() != "Ma'at binary-drift recovery: this exact screen already has a durable repair attempt or receipt; inspect the retained attempt and create a fresh System One observation before another action" {
+		t.Fatalf("failed terminal finding did not require a fresh System One observation after projection reconciliation: %v", err)
+	}
+	if *updates != 1 {
+		t.Fatalf("terminal projection reconciliation or same-screen refusal replayed updater: calls=%d", *updates)
 	}
 }
 
