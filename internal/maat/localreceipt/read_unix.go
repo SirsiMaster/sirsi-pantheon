@@ -4,9 +4,10 @@ package localreceipt
 
 import (
 	"errors"
-	"golang.org/x/sys/unix"
 	"io"
 	"os"
+
+	"golang.org/x/sys/unix"
 )
 
 func readFact(path string) ([]byte, error) {

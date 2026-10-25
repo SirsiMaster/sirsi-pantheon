@@ -3,8 +3,9 @@
 package localreceipt
 
 import (
-	"golang.org/x/sys/unix"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func parentStart(pid int) string {

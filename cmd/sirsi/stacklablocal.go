@@ -3,10 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/stacklab"
-	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
+
+	"github.com/spf13/cobra"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stacklab"
 )
 
 func newStacklabLocalCmd(home func() (string, error), recipes func() (string, error)) *cobra.Command {
