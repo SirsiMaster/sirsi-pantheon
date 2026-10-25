@@ -117,6 +117,15 @@ from current host state. History validation remains structural; the short
 manifest freshness window applies only to new admission, so expired historical
 attempts and outcomes remain inspectable.
 
+The Store persists a digest-named ownership link only after the existing journal
+claim callback returns the exact expected case-bound claim evidence. A refused
+or mismatched claim is retained as local `not_invoked` evidence but cannot
+produce a global origin-terminal row or discharge an older operation-wide
+claim. Owned pre-invocation facts and terminal projection debt remain
+reconcilable without the updater; unknown invocation and legacy claims remain
+unresolved. Store lock precedes the journal lock, and the claim callback does
+not re-enter Store.
+
 Composition provenance: the complete 27-file updater feature delta was
 reconciled from `ec6253d14980a6d7d4a8c3adea6679be11cd0dcf` through
 `a5734b9b58f4f24895858bd53e388a1f4a4d1095` onto release-135 composition

@@ -162,6 +162,22 @@ for all eight operational rows or project receipts through CLI, MCP, TUI, native
 Mac, menu bar, and dashboard. No installed qualification, benchmark, or release
 success is asserted by this document.
 
+### Binary-drift claim ownership continuation (2026-10-25)
+
+The existing confirmed binary-drift action binds the Store attempt to the exact
+operation-wide journal claim only after the claim callback returns the expected
+case-bound evidence. Ma'at retains that fact as a create-only digest-named leaf
+binding the attempt, case evidence, claim evidence, full preflight receipt,
+action manifest and registry snapshot. The Store lock is acquired before the
+journal mutation lock; the callback must not re-enter Store. A refused or
+mismatched callback retains local `not_invoked` evidence without claim ownership
+and cannot produce a global origin-terminal row. Reconciliation remains
+data-only: owned pre-invocation and terminal projection debt may be completed,
+but unknown invocation and legacy claims remain unresolved and are never
+replayed. Equal case evidence and audit text do not establish claim ownership.
+This source correction is unqualified; raw self-update and commercial update or
+installer routes remain open.
+
 ### Released131 corrective source continuation (2026-10-24)
 
 The closed local registry now admits only `maat.active-incident` / `v1`.

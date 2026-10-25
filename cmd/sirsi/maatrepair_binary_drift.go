@@ -538,10 +538,10 @@ func reconcileMaatBinaryDrift(journal maat.DecisionJournal, store maatBinaryDrif
 	for _, entry := range history {
 		attempt := entry.Attempt
 		if entry.Outcome == nil && !entry.InvocationRecorded && attempt.InvocationProtocol == maat.BinaryUpdateInvocationProtocol {
-			// This is the typed pre-invocation generation. Both claim append and
-			// updater invocation are ordered after the durable attempt; the updater
-			// cannot have been reached before its independently read-back marker.
-			if _, err := store.RecordBinaryUpdateNotInvoked(attempt, "claim_not_invoked_before_barrier", "reconciled a typed attempt whose updater invocation barrier was never persisted"); err != nil {
+			// The Store attempt precedes claim append; only its separately retained
+			// claim-ownership leaf decides whether a global terminal projection is
+			// permitted. The invocation barrier proves the updater was not reached.
+			if _, err := store.RecordBinaryUpdateNotInvoked(attempt, "invocation_barrier_not_recorded", "reconciled a typed attempt whose updater invocation barrier was never persisted"); err != nil {
 				unresolved = append(unresolved, attempt.ID+": no-invocation fact could not be retained: "+err.Error())
 				continue
 			}
@@ -559,6 +559,15 @@ func reconcileMaatBinaryDrift(journal maat.DecisionJournal, store maatBinaryDrif
 		}
 		if entry.Outcome == nil {
 			unresolved = append(unresolved, attempt.ID+": updater completion is unknown; replay refused")
+			continue
+		}
+		if !entry.ClaimOwned {
+			if entry.ProjectionReadBack && entry.Outcome.Determination != "not_invoked" {
+				// A completed legacy projection is retained historical evidence. Do
+				// not use it to authorize or synthesize another terminal row.
+				continue
+			}
+			unresolved = append(unresolved, attempt.ID+": local outcome retained without proof this attempt acquired the journal claim; no global terminal projection written")
 			continue
 		}
 		if entry.ProjectionReadBack {

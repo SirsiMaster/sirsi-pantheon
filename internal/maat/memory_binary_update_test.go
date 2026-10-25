@@ -118,6 +118,69 @@ func TestBinaryUpdateHistoricalManifestRemainsReadableButCannotBeAdmitted(t *tes
 	}
 }
 
+func TestBinaryUpdateAgedAttemptOutcomeAndProjectionRemainReadableAfterReopen(t *testing.T) {
+	store, root, m := binaryUpdateFixture(t)
+	oldNow := binaryUpdateNow
+	now := m.ObservedAtUTC.Add(time.Second)
+	binaryUpdateNow = func() time.Time { return now }
+	t.Cleanup(func() { binaryUpdateNow = oldNow })
+	m.ObservedAtUTC = now
+	receipt, err := store.PreflightBinaryUpdate(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RetainPreflightReceipt(receipt); err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := store.BeginBinaryUpdateAttempt(m, receipt, func() (string, error) { return binaryUpdateClaimEvidence(m), nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordBinaryUpdateInvocation(attempt); err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := store.RecordBinaryUpdateOutcome(attempt, true, false, strings.Repeat("f", 64), "fresh postcheck retained a failed result")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, err := BuildDiagnosticRepairDecision("fixture", DiagnosticRepair{Check: "binary-drift", Operation: "brew upgrade sirsi-pantheon", OriginEvidence: m.CaseEvidence, Before: m.PreviewBinding, After: "still active", Determination: "failed", Detail: outcome.Detail})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision.Time = outcome.RecordedAtUTC.UTC().Format(time.RFC3339Nano)
+	debt, err := store.BeginBinaryUpdateProjection(attempt, outcome, decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PersistBinaryUpdateProjectionOutcome(debt); err != nil {
+		t.Fatal(err)
+	}
+	journal := &FileDecisionJournal{Path: filepath.Join(root, "aged-casebook.jsonl")}
+	if err := journal.AppendIdempotent(debt.Decision); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkBinaryUpdateProjectionReadBack(debt); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(3 * time.Minute)
+	reopened, err := OpenStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.storeUUID = m.StoreUUID
+	defer reopened.Close()
+	history, err := reopened.BinaryUpdateReconciliations(m.CaseEvidence)
+	if err != nil || len(history) != 1 || history[0].Outcome == nil || history[0].Projection == nil || !history[0].ClaimOwned || !history[0].InvocationRecorded || !history[0].ProjectionReadBack {
+		t.Fatalf("aged reopened history=%+v err=%v", history, err)
+	}
+	if debts, err := reopened.PendingBinaryUpdateProjectionDebts(); err != nil || len(debts) != 0 {
+		t.Fatalf("aged projection debts=%+v err=%v", debts, err)
+	}
+	if pending, err := reopened.PendingBinaryUpdateAttempt(); !errors.Is(err, ErrNoIncompleteBinaryUpdateAttempt) {
+		t.Fatalf("aged terminal attempt=%+v err=%v", pending, err)
+	}
+}
+
 func TestBinaryUpdateReceiptAndAttemptFenceRegistryDrift(t *testing.T) {
 	store, _, m := binaryUpdateFixture(t)
 	receipt, err := store.PreflightBinaryUpdate(m)
@@ -285,8 +348,8 @@ func TestBinaryUpdatePostcheckFailureIsTerminalFailure(t *testing.T) {
 	}
 }
 
-func TestBinaryUpdateClaimRefusalRetainsNoInvocationAndTerminalProjection(t *testing.T) {
-	store, root, m := binaryUpdateFixture(t)
+func TestBinaryUpdateClaimRefusalRetainsOnlyUnownedLocalFact(t *testing.T) {
+	store, _, m := binaryUpdateFixture(t)
 	r, err := store.PreflightBinaryUpdate(m)
 	if err != nil {
 		t.Fatal(err)
@@ -299,7 +362,7 @@ func TestBinaryUpdateClaimRefusalRetainsNoInvocationAndTerminalProjection(t *tes
 		t.Fatalf("claim refusal did not retain a typed attempt: attempt=%+v err=%v", attempt, err)
 	}
 	history, err := store.BinaryUpdateReconciliations(m.CaseEvidence)
-	if err != nil || len(history) != 1 || history[0].Outcome == nil || history[0].InvocationRecorded {
+	if err != nil || len(history) != 1 || history[0].Outcome == nil || history[0].InvocationRecorded || history[0].ClaimOwned {
 		t.Fatalf("claim refusal history=%+v err=%v", history, err)
 	}
 	if history[0].Outcome.FactCode != "launch_claim_refused" {
@@ -310,23 +373,8 @@ func TestBinaryUpdateClaimRefusalRetainsNoInvocationAndTerminalProjection(t *tes
 		t.Fatal(err)
 	}
 	decision.Time = history[0].Outcome.RecordedAtUTC.UTC().Format(time.RFC3339Nano)
-	debt, err := store.BeginBinaryUpdateProjection(attempt, *history[0].Outcome, decision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	journal := &FileDecisionJournal{Path: filepath.Join(root, "casebook.jsonl")}
-	if err := store.PersistBinaryUpdateProjectionOutcome(debt); err != nil {
-		t.Fatal(err)
-	}
-	if err := journal.AppendIdempotent(debt.Decision); err != nil {
-		t.Fatal(err)
-	}
-	readback, found, err := journal.FindByEvidence(debt.Decision.Kind, debt.Decision.Evidence)
-	if err != nil || !found || digestEqual(readback, debt.Decision) != nil {
-		t.Fatalf("strict journal rejected projected outcome: found=%v err=%v", found, err)
-	}
-	if err := store.MarkBinaryUpdateProjectionReadBack(debt); err != nil {
-		t.Fatal(err)
+	if _, err := store.BeginBinaryUpdateProjection(attempt, *history[0].Outcome, decision); err == nil {
+		t.Fatal("unowned local refusal was allowed to create a global origin-terminal projection")
 	}
 	debts, err := store.PendingBinaryUpdateProjectionDebts()
 	if err != nil || len(debts) != 0 {

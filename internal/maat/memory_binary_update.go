@@ -173,6 +173,21 @@ type BinaryUpdateInvocation struct {
 	AuthorizedAtUTC time.Time `json:"authorized_at_utc"`
 }
 
+// BinaryUpdateClaimOwnership binds the Store attempt to the exact journal
+// claim returned as newly acquired by this invocation of the claim callback.
+// Equal case evidence alone never establishes ownership.
+type BinaryUpdateClaimOwnership struct {
+	Schema                 string    `json:"schema"`
+	AttemptID              string    `json:"attempt_id"`
+	AttemptSHA256          string    `json:"attempt_sha256"`
+	CaseEvidence           string    `json:"case_evidence"`
+	ClaimEvidence          string    `json:"claim_evidence"`
+	ActionManifestSHA256   string    `json:"action_manifest_sha256"`
+	PreflightReceiptSHA256 string    `json:"preflight_receipt_sha256"`
+	RegistrySnapshotSHA256 string    `json:"registry_snapshot_sha256"`
+	AcquiredAtUTC          time.Time `json:"acquired_at_utc"`
+}
+
 type BinaryUpdateProjectionDebt struct {
 	Schema         string              `json:"schema"`
 	Attempt        BinaryUpdateAttempt `json:"attempt"`
@@ -196,6 +211,7 @@ type BinaryUpdateReconciliation struct {
 	Attempt            BinaryUpdateAttempt         `json:"attempt"`
 	Outcome            *BinaryUpdateOutcome        `json:"outcome,omitempty"`
 	Projection         *BinaryUpdateProjectionDebt `json:"projection,omitempty"`
+	ClaimOwned         bool                        `json:"claim_owned"`
 	InvocationRecorded bool                        `json:"invocation_recorded"`
 	ProjectionReadBack bool                        `json:"projection_read_back"`
 }
@@ -249,7 +265,7 @@ func (s *Store) readBinaryUpdateEvidenceLocked(kind, operationID string) ([]byte
 		switch kind {
 		case "started":
 			_ = json.Unmarshal(record["id"], &id)
-		case "outcome", "projection-receipt", "invocation":
+		case "outcome", "projection-receipt", "invocation", "claim-ownership":
 			_ = json.Unmarshal(record["attempt_id"], &id)
 		case "projection":
 			var attempt struct {
@@ -331,7 +347,8 @@ func (s *Store) BeginBinaryUpdateAttempt(m BinaryUpdateManifest, receipt Preflig
 	}
 	claimDigest := sha256.Sum256([]byte(m.CaseEvidence))
 	for _, history := range reconciliations {
-		if history.Outcome != nil && !history.ProjectionReadBack {
+		if history.Outcome != nil && !history.ProjectionReadBack &&
+			(history.ClaimOwned || history.Attempt.InvocationProtocol != BinaryUpdateInvocationProtocol || history.Outcome.Determination != "not_invoked") {
 			return BinaryUpdateAttempt{}, errors.New("maat memory: known binary-update terminal fact requires data-only projection reconciliation")
 		}
 	}
@@ -360,6 +377,30 @@ func (s *Store) BeginBinaryUpdateAttempt(m BinaryUpdateManifest, receipt Preflig
 		}
 		return a, errors.New("maat memory: launch claim is not bound to this exact System One case; updater was not invoked")
 	}
+	attemptDigest, err := digestJSON(a)
+	if err != nil {
+		return a, err
+	}
+	ownership := BinaryUpdateClaimOwnership{Schema: MemorySchema, AttemptID: a.ID, AttemptSHA256: attemptDigest, CaseEvidence: m.CaseEvidence,
+		ClaimEvidence: claimEvidence, ActionManifestSHA256: a.ActionManifestSHA256, PreflightReceiptSHA256: a.PreflightReceiptSHA256,
+		RegistrySnapshotSHA256: a.RegistrySnapshotSHA256, AcquiredAtUTC: binaryUpdateNow().UTC()}
+	if err := validateBinaryUpdateClaimOwnership(ownership, a); err != nil {
+		return a, err
+	}
+	if err := s.writeBinaryUpdateEvidence("claim-ownership", ownership); err != nil {
+		if _, factErr := s.recordBinaryUpdateNotInvokedLocked(a, "claim_ownership_persist_failed", binaryUpdateBoundDetail(err.Error())); factErr != nil {
+			return a, fmt.Errorf("maat memory: journal claim acquired but Store ownership link and no-invocation fact are uncertain; updater not called, preserve both debts: ownership=%v fact=%w", err, factErr)
+		}
+		return a, fmt.Errorf("maat memory: journal claim acquired but Store ownership link was not retained; updater not called: %w", err)
+	}
+	readback, err := s.readBinaryUpdateEvidenceLocked("claim-ownership", a.ID)
+	if err != nil {
+		return a, fmt.Errorf("maat memory: journal claim acquired but exact Store ownership readback failed; updater not called: %w", err)
+	}
+	var got BinaryUpdateClaimOwnership
+	if json.Unmarshal(readback, &got) != nil || digestEqual(got, ownership) != nil {
+		return a, errors.New("maat memory: journal claim acquired but Store ownership readback differs; updater not called")
+	}
 	return a, nil
 }
 
@@ -374,6 +415,7 @@ func (s *Store) pendingBinaryUpdateAttemptLocked() (BinaryUpdateAttempt, error) 
 		return BinaryUpdateAttempt{}, err
 	}
 	starts, ends, invocations := map[string]BinaryUpdateAttempt{}, map[string]BinaryUpdateOutcome{}, map[string]BinaryUpdateInvocation{}
+	claimOwners := map[string]BinaryUpdateClaimOwnership{}
 	for _, name := range names {
 		switch {
 		case strings.HasPrefix(name, "binary-update-started-") && strings.HasSuffix(name, ".json"):
@@ -439,6 +481,27 @@ func (s *Store) pendingBinaryUpdateAttemptLocked() (BinaryUpdateAttempt, error) 
 				return BinaryUpdateAttempt{}, errors.New("maat memory: multiple invocation facts exist for one binary-update attempt")
 			}
 			invocations[invocation.AttemptID] = invocation
+		case strings.HasPrefix(name, "binary-update-claim-ownership-") && strings.HasSuffix(name, ".json"):
+			digest := strings.TrimSuffix(strings.TrimPrefix(name, "binary-update-claim-ownership-"), ".json")
+			if !validDigest(digest) {
+				return BinaryUpdateAttempt{}, errors.New("maat memory: malformed binary-update claim-ownership name")
+			}
+			b, err := readExact(s.evidenceFD, name)
+			if err != nil {
+				return BinaryUpdateAttempt{}, err
+			}
+			sum := sha256.Sum256(b)
+			if hex.EncodeToString(sum[:]) != digest {
+				return BinaryUpdateAttempt{}, errors.New("maat memory: binary-update claim-ownership digest mismatch")
+			}
+			var owner BinaryUpdateClaimOwnership
+			if json.Unmarshal(b, &owner) != nil || owner.Schema != MemorySchema || !validUUID(owner.AttemptID) || !validDigest(owner.AttemptSHA256) || owner.AcquiredAtUTC.IsZero() {
+				return BinaryUpdateAttempt{}, errors.New("maat memory: invalid binary-update claim-ownership fact")
+			}
+			if _, duplicate := claimOwners[owner.AttemptID]; duplicate {
+				return BinaryUpdateAttempt{}, errors.New("maat memory: multiple claim-ownership facts exist for one attempt")
+			}
+			claimOwners[owner.AttemptID] = owner
 		case strings.HasPrefix(name, "binary-update-projection-") || strings.HasPrefix(name, "binary-update-projection-receipt-"):
 		case strings.HasPrefix(name, "binary-update-"):
 			return BinaryUpdateAttempt{}, errors.New("maat memory: malformed binary-update evidence name")
@@ -474,8 +537,24 @@ func (s *Store) pendingBinaryUpdateAttemptLocked() (BinaryUpdateAttempt, error) 
 		if attempt.InvocationProtocol != BinaryUpdateInvocationProtocol {
 			return BinaryUpdateAttempt{}, errors.New("maat memory: legacy attempt contains an unrecognized invocation marker")
 		}
+		if _, owned := claimOwners[id]; !owned {
+			return BinaryUpdateAttempt{}, errors.New("maat memory: updater invocation has no exact Store claim-ownership link")
+		}
 		if outcome, ok := ends[id]; ok && outcome.Determination == "not_invoked" {
 			return BinaryUpdateAttempt{}, errors.New("maat memory: not-invoked outcome contradicts a persisted invocation fact")
+		}
+	}
+	for id, owner := range claimOwners {
+		attempt, ok := starts[id]
+		if !ok || attempt.InvocationProtocol != BinaryUpdateInvocationProtocol || validateBinaryUpdateClaimOwnership(owner, attempt) != nil {
+			return BinaryUpdateAttempt{}, errors.New("maat memory: claim ownership does not bind one typed Store attempt")
+		}
+	}
+	for id, outcome := range ends {
+		attempt := starts[id]
+		_, owned := claimOwners[id]
+		if err := validateBinaryUpdateOutcomeForAttempt(outcome, attempt, owned); err != nil {
+			return BinaryUpdateAttempt{}, err
 		}
 	}
 	if pending == nil {
@@ -507,6 +586,17 @@ func validateBinaryUpdateAttempt(a BinaryUpdateAttempt, storeUUID string) error 
 	return nil
 }
 
+func validateBinaryUpdateClaimOwnership(owner BinaryUpdateClaimOwnership, attempt BinaryUpdateAttempt) error {
+	attemptDigest, err := digestJSON(attempt)
+	if err != nil || owner.Schema != MemorySchema || owner.AttemptID != attempt.ID || owner.AttemptSHA256 != attemptDigest ||
+		owner.CaseEvidence != attempt.Manifest.CaseEvidence || owner.ClaimEvidence != attempt.LaunchClaimEvidence ||
+		owner.ActionManifestSHA256 != attempt.ActionManifestSHA256 || owner.PreflightReceiptSHA256 != attempt.PreflightReceiptSHA256 ||
+		owner.RegistrySnapshotSHA256 != attempt.RegistrySnapshotSHA256 || owner.AcquiredAtUTC.IsZero() {
+		return errors.New("maat memory: binary-update claim ownership does not bind the exact attempt, receipt, registry and source-case claim")
+	}
+	return nil
+}
+
 func validBinaryUpdateDetermination(v string) bool {
 	return v == "resolved" || v == "failed" || v == "not_invoked"
 }
@@ -523,7 +613,7 @@ func validateBinaryUpdateOutcome(o BinaryUpdateOutcome, attemptID string) error 
 		return errors.New("maat memory: invalid binary-update outcome")
 	}
 	if o.Determination == "not_invoked" {
-		if o.UpdaterReturned || o.PostcheckPassed || (o.FactCode != "launch_claim_refused" && o.FactCode != "launch_claim_linkage_refused" && o.FactCode != "prelaunch_revalidation_failed" && o.FactCode != "invocation_record_failed" && o.FactCode != "claim_not_invoked_before_barrier") {
+		if o.UpdaterReturned || o.PostcheckPassed || (o.FactCode != "launch_claim_refused" && o.FactCode != "launch_claim_linkage_refused" && o.FactCode != "prelaunch_revalidation_failed" && o.FactCode != "invocation_record_failed" && o.FactCode != "claim_not_invoked_before_barrier" && o.FactCode != "claim_ownership_persist_failed" && o.FactCode != "invocation_barrier_not_recorded") {
 			return errors.New("maat memory: invalid known-not-invoked fact")
 		}
 	} else if !o.UpdaterReturned || o.FactCode != "" {
@@ -532,6 +622,28 @@ func validateBinaryUpdateOutcome(o BinaryUpdateOutcome, attemptID string) error 
 	if o.Determination != "not_invoked" && (o.Determination == "resolved") != o.PostcheckPassed {
 		return errors.New("maat memory: binary-update outcome contradicts the exact postcheck")
 	}
+	return nil
+}
+
+func validateBinaryUpdateOutcomeForAttempt(outcome BinaryUpdateOutcome, attempt BinaryUpdateAttempt, claimOwned bool) error {
+	if err := validateBinaryUpdateOutcome(outcome, attempt.ID); err != nil {
+		return err
+	}
+	if attempt.InvocationProtocol != BinaryUpdateInvocationProtocol {
+		if claimOwned || outcome.FactCode == "invocation_barrier_not_recorded" || outcome.FactCode == "claim_ownership_persist_failed" {
+			return errors.New("maat memory: legacy attempt cannot claim typed invocation or claim ownership")
+		}
+		return nil
+	}
+	switch outcome.FactCode {
+	case "launch_claim_refused", "launch_claim_linkage_refused":
+		if claimOwned {
+			return errors.New("maat memory: refused or mismatched claim cannot be marked owned")
+		}
+	}
+	// Historical local outcomes without a newly recorded ownership link remain
+	// readable evidence. Projection admission separately requires exact owner
+	// proof, so accepting the record here cannot discharge a journal claim.
 	return nil
 }
 
@@ -552,6 +664,14 @@ func (s *Store) RecordBinaryUpdateInvocation(a BinaryUpdateAttempt) error {
 	pending, err := s.pendingBinaryUpdateAttemptLocked()
 	if err != nil || pending.ID != a.ID || digestEqual(pending, a) != nil {
 		return errors.New("maat memory: updater invocation requires the unique incomplete attempt")
+	}
+	ownerBytes, err := s.readBinaryUpdateEvidenceLocked("claim-ownership", a.ID)
+	if err != nil {
+		return errors.New("maat memory: updater invocation requires exact persisted ownership of the screen claim")
+	}
+	var owner BinaryUpdateClaimOwnership
+	if json.Unmarshal(ownerBytes, &owner) != nil || validateBinaryUpdateClaimOwnership(owner, a) != nil {
+		return errors.New("maat memory: updater invocation claim-ownership link differs")
 	}
 	retained, err := s.readPreflightReceiptLocked(a.PreflightReceiptSHA256)
 	if err != nil || retained.Action != binaryUpdateScope() || retained.ActionManifestSHA256 != a.ActionManifestSHA256 || retained.RegistrySnapshotSHA256 != a.RegistrySnapshotSHA256 {
@@ -648,6 +768,14 @@ func (s *Store) RecordBinaryUpdateOutcome(a BinaryUpdateAttempt, updaterReturned
 	if err != nil {
 		return BinaryUpdateOutcome{}, errors.New("maat memory: updater invocation fact is required before a returned outcome")
 	}
+	ownerBytes, err := s.readBinaryUpdateEvidenceLocked("claim-ownership", a.ID)
+	if err != nil {
+		return BinaryUpdateOutcome{}, errors.New("maat memory: exact Store ownership of the screen claim is required before a returned outcome")
+	}
+	var owner BinaryUpdateClaimOwnership
+	if json.Unmarshal(ownerBytes, &owner) != nil || validateBinaryUpdateClaimOwnership(owner, a) != nil {
+		return BinaryUpdateOutcome{}, errors.New("maat memory: claim ownership does not bind the returned updater outcome")
+	}
 	var invocation BinaryUpdateInvocation
 	attemptDigest, digestErr := digestJSON(a)
 	if digestErr != nil || json.Unmarshal(invocationBytes, &invocation) != nil || invocation.Schema != MemorySchema || invocation.AttemptID != a.ID || invocation.AttemptSHA256 != attemptDigest || invocation.AuthorizedAtUTC.IsZero() {
@@ -686,6 +814,14 @@ func (s *Store) BeginBinaryUpdateProjection(a BinaryUpdateAttempt, o BinaryUpdat
 	var priorAttempt BinaryUpdateAttempt
 	if json.Unmarshal(storedAttempt, &priorAttempt) != nil || digestEqual(priorAttempt, a) != nil {
 		return BinaryUpdateProjectionDebt{}, errors.New("maat memory: supplied binary-update attempt differs from retained launch record")
+	}
+	ownerBytes, err := s.readBinaryUpdateEvidenceLocked("claim-ownership", a.ID)
+	if err != nil {
+		return BinaryUpdateProjectionDebt{}, errors.New("maat memory: exact acquired-claim ownership is required before a global terminal projection")
+	}
+	var owner BinaryUpdateClaimOwnership
+	if json.Unmarshal(ownerBytes, &owner) != nil || validateBinaryUpdateClaimOwnership(owner, a) != nil {
+		return BinaryUpdateProjectionDebt{}, errors.New("maat memory: global terminal projection claim ownership differs")
 	}
 	storedOutcome, err := s.readBinaryUpdateEvidenceLocked("outcome", a.ID)
 	if err != nil {
@@ -788,6 +924,15 @@ func (s *Store) binaryUpdateReconciliationsLocked(caseEvidence string) ([]Binary
 			continue
 		}
 		entry := BinaryUpdateReconciliation{Attempt: attempt}
+		if raw, err := s.readBinaryUpdateEvidenceLocked("claim-ownership", attempt.ID); err == nil {
+			var owner BinaryUpdateClaimOwnership
+			if json.Unmarshal(raw, &owner) != nil || validateBinaryUpdateClaimOwnership(owner, attempt) != nil {
+				return nil, errors.New("maat memory: claim ownership does not bind exact reconciliation attempt")
+			}
+			entry.ClaimOwned = true
+		} else if !errors.Is(err, unix.ENOENT) {
+			return nil, err
+		}
 		if _, err := s.readBinaryUpdateEvidenceLocked("invocation", attempt.ID); err == nil {
 			entry.InvocationRecorded = true
 		} else if !errors.Is(err, unix.ENOENT) {
@@ -795,7 +940,7 @@ func (s *Store) binaryUpdateReconciliationsLocked(caseEvidence string) ([]Binary
 		}
 		if raw, err := s.readBinaryUpdateEvidenceLocked("outcome", attempt.ID); err == nil {
 			var outcome BinaryUpdateOutcome
-			if json.Unmarshal(raw, &outcome) != nil || validateBinaryUpdateOutcome(outcome, attempt.ID) != nil {
+			if json.Unmarshal(raw, &outcome) != nil || validateBinaryUpdateOutcomeForAttempt(outcome, attempt, entry.ClaimOwned) != nil {
 				return nil, errors.New("maat memory: invalid binary-update outcome")
 			}
 			copy := outcome

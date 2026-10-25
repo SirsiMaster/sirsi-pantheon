@@ -710,6 +710,137 @@ func TestMaatBinaryDriftProjectionDebtDoesNotRetryUpdater(t *testing.T) {
 	}
 }
 
+func TestMaatBinaryDriftUnownedClaimFactsCannotDischargePriorGlobalClaim(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		callback string
+	}{
+		{name: "prior claim refusal", callback: "refuse"},
+		{name: "mismatched claim linkage", callback: "mismatch"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixtureJournal, caseA, self, target := installMaatBinaryDriftFixture(t)
+			updates := installMaatBinaryDriftSeams(t, fixtureJournal, self, target, func() (*guard.DoctorReport, error) { return maatBinaryDriftFixtureReport(true), nil }, func() (*selfupdate.DriftReport, error) {
+				return maatBinaryDriftFixtureInventory(self, target, true), nil
+			})
+			journal := &maat.FileDecisionJournal{Path: filepath.Join(t.TempDir(), "casebook", "decisions.jsonl")}
+			for _, row := range fixtureJournal.decisions {
+				if err := journal.Append(row); err != nil {
+					t.Fatal(err)
+				}
+			}
+			newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return journal, nil }
+			previewA, err := currentMaatBinaryDriftPreview(caseA)
+			if err != nil {
+				t.Fatal(err)
+			}
+			store, err := maatRepairOpenBinaryDriftStore()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			status := maatRepairDefaultStoreInspect()
+			manifestA, err := buildMaatBinaryUpdateManifest(previewA, status.StoreUUID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			receiptA, err := store.PreflightBinaryUpdate(manifestA)
+			if err != nil {
+				t.Fatal(err)
+			}
+			storedA, err := store.RetainPreflightReceipt(receiptA)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := maat.ProjectFailureMemoryPreflight(journal, storedA); err != nil {
+				t.Fatal(err)
+			}
+			digestA, err := manifestA.Digest()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// This is the prior operation-wide owner. It deliberately has no new
+			// Store attempt, modeling retained legacy journal custody.
+			if err := recordMaatBinaryDriftAttemptBound(journal, previewA, storedA.Reference(), digestA); err != nil {
+				t.Fatal(err)
+			}
+			claimRow, claimFound, err := journal.FindByEvidence("diagnostic repair attempt", maatBinaryDriftAttemptEvidence(caseA))
+			if err != nil || !claimFound || claimRow.OriginEvidence != caseA {
+				t.Fatalf("seeded prior claim row=%+v found=%v err=%v", claimRow, claimFound, err)
+			}
+			attemptA, err := store.BeginBinaryUpdateAttempt(manifestA, receiptA, func() (string, error) {
+				if tc.callback == "mismatch" {
+					return "diagnostic-repair-attempt:sha256=" + strings.Repeat("0", 64), nil
+				}
+				if err := recordMaatBinaryDriftAttemptBound(journal, previewA, storedA.Reference(), digestA); err != nil {
+					return "", err
+				}
+				return maatBinaryDriftAttemptEvidence(caseA), nil
+			})
+			if err == nil || attemptA.ID == "" {
+				t.Fatalf("second claim callback did not retain a local refusal: attempt=%+v err=%v", attemptA, err)
+			}
+			historyA, err := store.BinaryUpdateReconciliations(caseA)
+			if err != nil || len(historyA) != 1 || historyA[0].ClaimOwned || historyA[0].Outcome == nil {
+				t.Fatalf("unowned case-A fact=%+v err=%v", historyA, err)
+			}
+			if tc.callback == "mismatch" && historyA[0].Outcome.FactCode != "launch_claim_linkage_refused" {
+				t.Fatalf("mismatched callback fact=%+v", historyA[0].Outcome)
+			}
+			if err := reconcileMaatBinaryDrift(journal, store); err == nil || !strings.Contains(err.Error(), "no global terminal projection written") {
+				t.Fatalf("unowned local fact was not kept out of the global journal: %v", err)
+			}
+			if found, err := journal.HasOriginDecision("diagnostic verified repair", maatRepairBinaryDriftCheck, caseA); err != nil || found {
+				t.Fatalf("unowned fact discharged prior case-A claim: found=%v err=%v", found, err)
+			}
+			claimAfter, claimStillFound, err := journal.FindByEvidence("diagnostic repair attempt", maatBinaryDriftAttemptEvidence(caseA))
+			if err != nil || !claimStillFound || claimAfter.OriginEvidence != caseA {
+				t.Fatalf("prior case-A claim was lost during local reconciliation: row=%+v found=%v err=%v", claimAfter, claimStillFound, err)
+			}
+
+			caseB := "maat-system-one:sha256=" + strings.Repeat("f", 64)
+			manifestB := manifestA
+			manifestB.CaseEvidence = caseB
+			manifestB.PreviewBinding = strings.Repeat("e", 64)
+			manifestB.ObservedAtUTC = time.Now().UTC()
+			receiptB, err := store.PreflightBinaryUpdate(manifestB)
+			if err != nil {
+				t.Fatal(err)
+			}
+			storedB, err := store.RetainPreflightReceipt(receiptB)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := maat.ProjectFailureMemoryPreflight(journal, storedB); err != nil {
+				t.Fatal(err)
+			}
+			previewB := maatBinaryDriftPreviewFromManifest(manifestB)
+			digestB, err := manifestB.Digest()
+			if err != nil {
+				t.Fatal(err)
+			}
+			attemptB, err := store.BeginBinaryUpdateAttempt(manifestB, receiptB, func() (string, error) {
+				if err := recordMaatBinaryDriftAttemptBound(journal, previewB, storedB.Reference(), digestB); err != nil {
+					return "", err
+				}
+				return maatBinaryDriftAttemptEvidence(caseB), nil
+			})
+			if err == nil || attemptB.ID == "" {
+				t.Fatalf("case-B attempt escaped the older operation-wide claim: attempt=%+v err=%v", attemptB, err)
+			}
+			if *updates != 0 {
+				t.Fatalf("claim-reconciliation path invoked updater %d times", *updates)
+			}
+			for _, evidence := range []string{caseA, caseB} {
+				found, err := journal.HasOriginDecision("diagnostic verified repair", maatRepairBinaryDriftCheck, evidence)
+				if err != nil || found {
+					t.Fatalf("unowned claim fact projected terminal for %s: found=%v err=%v", evidence, found, err)
+				}
+			}
+		})
+	}
+}
+
 func TestMaatBinaryDriftReconcileClosesTypedPreInvocationGapWithoutUpdater(t *testing.T) {
 	journal, evidence, self, target := installMaatBinaryDriftFixture(t)
 	updates := installMaatBinaryDriftSeams(t, journal, self, target, func() (*guard.DoctorReport, error) { return maatBinaryDriftFixtureReport(true), nil }, func() (*selfupdate.DriftReport, error) {
@@ -768,7 +899,7 @@ func TestMaatBinaryDriftReconcileClosesTypedPreInvocationGapWithoutUpdater(t *te
 	}
 	defer store.Close()
 	history, err := store.BinaryUpdateReconciliations(evidence)
-	if err != nil || len(history) != 1 || history[0].Outcome == nil || history[0].Outcome.Determination != "not_invoked" || history[0].InvocationRecorded || !history[0].ProjectionReadBack {
+	if err != nil || len(history) != 1 || history[0].Outcome == nil || history[0].Outcome.Determination != "not_invoked" || !history[0].ClaimOwned || history[0].InvocationRecorded || !history[0].ProjectionReadBack {
 		t.Fatalf("reconciled typed gap=%+v err=%v", history, err)
 	}
 }
@@ -953,7 +1084,7 @@ func TestMaatBinaryDriftRealFileJournalAcceptsTypedPreflightAndClaim(t *testing.
 			return err
 		}
 		history, err := store.BinaryUpdateReconciliations(evidence)
-		if err != nil || len(history) != 1 || !history[0].InvocationRecorded {
+		if err != nil || len(history) != 1 || !history[0].InvocationRecorded || !history[0].ClaimOwned {
 			return fmt.Errorf("real store did not retain exact invocation barrier before updater: history=%+v err=%v", history, err)
 		}
 		rows, err := journal.Recent(20)
