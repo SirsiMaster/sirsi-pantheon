@@ -603,6 +603,7 @@ func activityMaatReviewArgs(for entry: ActivityEntry) -> [String] {
 // this type only reads the persisted scan and runs the CLI.
 @MainActor
 final class SirsiEngine: ObservableObject {
+    lazy var localStackLab = StackLabLocalModel()
     // Frame-owned operation state survives workspace unmounts without keeping
     // hidden view trees or polling tasks alive.
     lazy var legacyRelayMaintenance = LegacyRelayMaintenanceModel(directory: URL(fileURLWithPath: NSHomeDirectory()))

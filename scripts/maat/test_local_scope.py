@@ -17,6 +17,12 @@ spec.loader.exec_module(runner)
 
 
 class LocalScopeTests(unittest.TestCase):
+    def setUp(self):
+        identity = mock.patch.object(runner, 'process_identity', return_value=(os.getpid(), 'fixture-start'))
+        wait = mock.patch.object(runner, 'local_wait_terminal', side_effect=lambda child, timeout: child.wait(timeout=timeout))
+        identity.start(); wait.start()
+        self.addCleanup(identity.stop); self.addCleanup(wait.stop)
+
     def main(self, home, flags=(), child=None):
         child = child or mock.Mock(pid=12345)
         child.wait.return_value = 0
@@ -29,7 +35,7 @@ class LocalScopeTests(unittest.TestCase):
                 mock.patch.object(runner, 'Native', side_effect=AssertionError('fabric client constructed')), \
                 mock.patch.object(runner, 'local_resource', side_effect=AssertionError('enrollment mapping attempted')), \
                 mock.patch.object(runner.subprocess, 'Popen', return_value=child) as spawn, \
-                mock.patch.object(runner, 'stop') as stop, contextlib.redirect_stderr(io.StringIO()):
+                mock.patch.object(runner, 'local_stop_owned') as stop, contextlib.redirect_stderr(io.StringIO()):
             result = runner.main()
         return result, spawn, stop
 
@@ -39,7 +45,7 @@ class LocalScopeTests(unittest.TestCase):
             result, spawn, stop = self.main(home, ['--scope', 'local'])
             self.assertEqual(result, 0)
             spawn.assert_called_once()
-            stop.assert_called_once_with(spawn.return_value)
+            stop.assert_called_once_with(spawn.return_value, 'fixture-start')
             env = spawn.call_args.kwargs['env']
             self.assertNotIn('SIRSI_MAAT_EXECUTION_RECEIPT', env)
             self.assertNotIn('SIRSI_THREAD_ID', env)
@@ -105,7 +111,7 @@ class LocalScopeTests(unittest.TestCase):
                         fcntl.flock(competing.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 return child
 
-            with mock.patch.object(runner.subprocess, 'Popen', side_effect=spawn), mock.patch.object(runner, 'stop'):
+            with mock.patch.object(runner.subprocess, 'Popen', side_effect=spawn), mock.patch.object(runner, 'local_stop_owned'):
                 self.assertEqual(runner.supervise_local(['/owned/fake'], 10, record, folder, lambda: persisted.append(dict(record))), 0)
             with (root/'.local-cpu.lock').open('r+b') as released:
                 fcntl.flock(released.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -170,9 +176,9 @@ class LocalScopeTests(unittest.TestCase):
             child.wait.side_effect = subprocess.TimeoutExpired('/owned/fake', 1)
             record = {}
             with mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
-                    mock.patch.object(runner, 'stop', side_effect=OSError('inert cleanup unavailable')) as stop:
+                    mock.patch.object(runner, 'local_stop_owned', side_effect=OSError('inert cleanup unavailable')) as stop:
                 self.assertEqual(runner.supervise_local(['/owned/fake'], 1, record, folder, lambda: None), 78)
-                stop.assert_called_once_with(child)
+                stop.assert_called_once_with(child, 'fixture-start')
             self.assertEqual(record['status'], 'refused_or_stopped')
             self.assertIn('cleanup unconfirmed', record['cleanup_debt'])
 
@@ -182,11 +188,136 @@ class LocalScopeTests(unittest.TestCase):
             child = mock.Mock(pid=12345)
             child.wait.return_value = 7
             record = {}
-            with mock.patch.object(runner.subprocess, 'Popen', return_value=child), mock.patch.object(runner, 'stop') as stop:
+            with mock.patch.object(runner.subprocess, 'Popen', return_value=child), mock.patch.object(runner, 'local_stop_owned') as stop:
                 self.assertEqual(runner.supervise_local(['/owned/fake'], 10, record, folder, lambda: None), 7)
-                stop.assert_called_once_with(child)
+                stop.assert_called_once_with(child, 'fixture-start')
             self.assertEqual(record['child_exit_code'], 7)
             self.assertEqual(record['status'], 'child_failed')
+
+
+class LocalContinuationTests(unittest.TestCase):
+    setUp = LocalScopeTests.setUp
+    main = LocalScopeTests.main
+    def test_elevated_local_refuses_before_any_evidence_or_payload(self):
+        for uid,euid in ((0,0),(501,0),(501,502)):
+            with self.subTest(uid=uid,euid=euid), tempfile.TemporaryDirectory() as raw, \
+                    mock.patch.object(runner.os,'getuid',return_value=uid), mock.patch.object(runner.os,'geteuid',return_value=euid):
+                with self.assertRaises(SystemExit):self.main(Path(raw),['--scope','local'])
+                self.assertFalse((Path(raw)/'.sirsi').exists())
+
+    def test_auto_qualified_tier1_is_local_but_remote_and_old_capability_are_fabric(self):
+        args=mock.Mock(scope='auto',register_executor=False,iterations=1,cpu_cores=1,job_timeout=None)
+        with tempfile.TemporaryDirectory() as raw:
+            cli=Path(raw)/'Pantheon.app/Contents/MacOS/sirsi';cli.parent.mkdir(parents=True);cli.write_bytes(b'fixture');cli.chmod(0o755)
+            with mock.patch.object(runner.subprocess,'run',return_value=mock.Mock(returncode=0,stdout=json.dumps({'local_admission_schema':runner.LOCAL_RECEIPT_SCHEMA}))) as probe:
+                self.assertEqual(runner.select_scope(args,[str(cli),'vitals','--json'],'build'),'local')
+                self.assertEqual(probe.call_args.args[0],[str(cli),'version','--json'])
+                for command in (['router','task','claim'],['maat','reserve','studio'],['ask','model'],['launchd','refresh']):
+                    probe.reset_mock();self.assertEqual(runner.select_scope(args,[str(cli),*command],'build'),'fabric');probe.assert_not_called()
+            with mock.patch.object(runner.subprocess,'run',return_value=mock.Mock(returncode=0,stdout='{}')):
+                self.assertEqual(runner.select_scope(args,[str(cli),'vitals'],'build'),'fabric')
+
+    def test_actual_auto_entry_publishes_exact_private_local_fact_before_core_launch(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home=Path(raw);cli=home/'Pantheon.app/Contents/MacOS/sirsi';cli.parent.mkdir(parents=True);cli.write_bytes(b'fixture');cli.chmod(0o755)
+            command=[str(cli),'vitals','--json'];child=mock.Mock(pid=24680);child.wait.return_value=0
+            def spawn(argv,**kw):
+                self.assertEqual(argv,command)
+                fact_path=Path(kw['env']['SIRSI_MAAT_LOCAL_EXECUTION_RECEIPT']);fact=json.loads(fact_path.read_text())
+                self.assertEqual(fact['schema'],runner.LOCAL_RECEIPT_SCHEMA)
+                self.assertEqual(fact['supervisor_pid'],os.getpid())
+                self.assertEqual(fact['supervisor_start'],'fixture-start')
+                self.assertEqual(fact['argv_sha256'],runner.hashlib.sha256(b'\0'.join(os.fsencode(x) for x in command)).hexdigest())
+                self.assertEqual(fact_path.stat().st_mode&0o777,0o600)
+                self.assertNotIn('SIRSI_MAAT_EXECUTION_RECEIPT',kw['env'])
+                return child
+            with mock.patch.dict(os.environ,{'HOME':raw,'SIRSI_ROUTER_URL':'https://unreachable.invalid'},clear=True), \
+                    mock.patch.object(runner.sys,'argv',['sirsi-maat-run','--work','work','--',*command]),mock.patch.object(runner.signal,'signal'), \
+                    mock.patch.object(runner,'Native',side_effect=AssertionError('fabric client constructed')),mock.patch.object(runner,'local_resource',side_effect=AssertionError('remote enrollment mapping')), \
+                    mock.patch.object(runner.subprocess,'run',return_value=mock.Mock(returncode=0,stdout=json.dumps({'local_admission_schema':runner.LOCAL_RECEIPT_SCHEMA}))), \
+                    mock.patch.object(runner.subprocess,'Popen',side_effect=spawn) as start,mock.patch.object(runner,'local_stop_owned'),contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(runner.main(),0);start.assert_called_once()
+
+    def test_after_spawn_partial_running_write_keeps_intent_and_never_reports_success(self):
+        real=runner.local_transition;retained=[]
+        def transition(folder,record):
+            if record['status']=='running':
+                prior=(folder/'intent.json').read_bytes()
+                def partial(file,data):file.write(data[:5]);raise OSError('inert partial running write')
+                try:real(folder,record,write=partial)
+                finally:retained.append(((folder/'intent.json').read_bytes(),prior))
+            else:real(folder,record)
+        with tempfile.TemporaryDirectory() as raw,mock.patch.object(runner,'local_transition',side_effect=transition):
+            result,spawn,_=self.main(Path(raw),['--scope','local'])
+            self.assertEqual(result,78);spawn.assert_called_once()
+            self.assertEqual(len(retained),1);self.assertEqual(*retained[0])
+
+
+class LocalCustodyTests(unittest.TestCase):
+    def test_reaped_or_reused_anchor_never_signals(self):
+        child=mock.Mock(pid=24680)
+        row=dict(pid=child.pid,uid=os.getuid(),status='S')
+        for rows,birth in (([],'old'),([row],'new')):
+            with self.subTest(rows=rows),mock.patch.object(runner,'local_group_snapshot',return_value=rows), \
+                    mock.patch.object(runner,'process_identity',return_value=(os.getpid(),birth)),mock.patch.object(runner.os,'killpg') as kill:
+                with self.assertRaises(runner.Refused):runner.local_stop_owned(child,'old')
+                kill.assert_not_called();child.wait.assert_not_called()
+
+    def test_delayed_group_quiescence_precedes_reap_and_no_unnecessary_signal(self):
+        child=mock.Mock(pid=24680)
+        leader=dict(pid=child.pid,uid=os.getuid(),status='Z')
+        member=dict(pid=24681,uid=os.getuid(),status='S')
+        snapshots=[[leader,member],[leader,member],[leader],[leader],[]]
+        with mock.patch.object(runner,'local_group_snapshot',side_effect=snapshots), \
+                mock.patch.object(runner,'process_identity',return_value=(os.getpid(),'old')), \
+                mock.patch.object(runner.time,'sleep'),mock.patch.object(runner.os,'killpg') as kill:
+            runner.local_stop_owned(child,'old')
+            child.wait.assert_called_once_with(timeout=1);kill.assert_not_called()
+
+    def test_timeout_cleanup_signals_only_revalidated_owned_anchor(self):
+        child=mock.Mock(pid=24680);state={'zombie':False,'reaped':False};clock=iter(range(100))
+        def snapshot(group):
+            return [] if state['reaped'] else [dict(pid=child.pid,uid=os.getuid(),status='Z' if state['zombie'] else 'S')]
+        def kill(group,sig):
+            self.assertEqual(group,child.pid);self.assertEqual(sig,runner.signal.SIGTERM);state['zombie']=True
+        child.wait.side_effect=lambda timeout:state.update(reaped=True)
+        with mock.patch.object(runner,'local_group_snapshot',side_effect=snapshot),mock.patch.object(runner,'process_identity',return_value=(os.getpid(),'old')) as identity, \
+                mock.patch.object(runner.os,'killpg',side_effect=kill) as signal_group,mock.patch.object(runner.time,'sleep'),mock.patch.object(runner.time,'monotonic',side_effect=lambda:next(clock)/10):
+            runner.local_stop_owned(child,'old')
+            signal_group.assert_called_once_with(child.pid,runner.signal.SIGTERM)
+            self.assertGreaterEqual(identity.call_count,2)
+
+    def test_cleanup_debt_blocks_next_job_until_exact_quiescent_reconciliation(self):
+        with tempfile.TemporaryDirectory() as raw,mock.patch.dict(os.environ,{'HOME':raw},clear=True):
+            root=Path(raw)/'.sirsi/evidence/maat-runs';root.mkdir(parents=True,mode=0o700)
+            folder=root/('a'*32);folder.mkdir(mode=0o700)
+            child=mock.Mock(pid=24680);record={}
+            with mock.patch.object(runner.subprocess,'Popen',return_value=child),mock.patch.object(runner,'process_identity',return_value=(os.getpid(),'old')), \
+                    mock.patch.object(runner,'local_wait_terminal',return_value=0),mock.patch.object(runner,'local_stop_owned',side_effect=runner.Refused('unknown group')):
+                self.assertEqual(runner.supervise_local(['/owned/fake'],10,record,folder,lambda:None),78)
+            next_folder=root/('b'*32);next_folder.mkdir(mode=0o700)
+            with mock.patch.object(runner.subprocess,'Popen') as spawn:
+                self.assertEqual(runner.supervise_local(['/owned/fake'],10,{},next_folder,lambda:None),78);spawn.assert_not_called()
+            with mock.patch.object(runner,'local_group_snapshot',return_value=[{'pid':24680}]),mock.patch.object(runner.os,'killpg') as kill:
+                with self.assertRaises(runner.Refused):runner.reconcile_local_debt('a'*32)
+                kill.assert_not_called()
+            with mock.patch.object(runner,'local_group_snapshot',return_value=[]):runner.reconcile_local_debt('a'*32)
+            self.assertFalse((root/'.local-cpu.debt.json').exists())
+            self.assertTrue((folder/'cleanup-reconciled.json').exists())
+            self.assertEqual((root/'.local-cpu.lock').read_bytes(),b'')
+
+    def test_immutable_intent_survives_partial_sync_and_publication_failures(self):
+        for phase in ('partial','sync','publish'):
+            with self.subTest(phase=phase),tempfile.TemporaryDirectory() as raw:
+                folder=Path(raw);runner.local_transition(folder,{'status':'admitted','exact':'original'})
+                prior=(folder/'intent.json').read_bytes()
+                def partial(file,data):file.write(data[:4]);raise OSError('partial write')
+                def fail(*args):raise OSError('inert boundary failure')
+                kwargs={'write':partial} if phase=='partial' else {'sync':fail} if phase=='sync' else {'publish':fail}
+                with self.assertRaises(OSError):runner.local_transition(folder,{'status':'running','pid':24680},**kwargs)
+                self.assertEqual((folder/'intent.json').read_bytes(),prior)
+                self.assertFalse((folder/'running.json').exists())
+                self.assertEqual((folder/'intent.json').stat().st_mode&0o777,0o600)
 
 
 if __name__ == '__main__':

@@ -72,6 +72,20 @@ type recipeDocument struct {
 // every surface receives stable JSON.
 func LoadLocalCatalog(repoRoot string) (Catalog, error) {
 	contractDir := filepath.Join(repoRoot, "contracts", "stacklab")
+	return loadCatalogDirectory(contractDir, "contracts/stacklab")
+}
+
+// LoadPackagedCatalog projects installed contracts without requiring a checkout.
+// Structural completeness is not remote registry authority or execution proof.
+func LoadPackagedCatalog(contractDir string) (Catalog, error) {
+	catalog, err := loadCatalogDirectory(contractDir, "StackLab")
+	if err == nil && len(catalog.Entries) == 0 && len(catalog.Unknown) == 0 {
+		return catalog, fmt.Errorf("installed Stack Lab recipe payload is empty; inspect the normal release installation")
+	}
+	return catalog, err
+}
+
+func loadCatalogDirectory(contractDir, prefix string) (Catalog, error) {
 	entries, err := os.ReadDir(contractDir)
 	if err != nil {
 		return Catalog{}, fmt.Errorf("read Stack Lab contract directory: %w", err)
@@ -90,7 +104,7 @@ func LoadLocalCatalog(repoRoot string) (Catalog, error) {
 			continue
 		}
 
-		relative := filepath.ToSlash(filepath.Join("contracts", "stacklab", name))
+		relative := filepath.ToSlash(filepath.Join(prefix, name))
 		fullPath := filepath.Join(contractDir, name)
 		info, statErr := os.Lstat(fullPath)
 		if statErr != nil {

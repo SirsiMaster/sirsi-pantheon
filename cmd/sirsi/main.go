@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -12,6 +14,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/logging"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/localreceipt"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
@@ -67,6 +70,9 @@ var versionCmd = &cobra.Command{
 				"router_schema_max": info.RouterSchemaMax,
 				"product":           "Sirsi Pantheon",
 				"modules":           modules,
+			}
+			if runtime.GOOS == "darwin" {
+				result["local_admission_schema"] = localreceipt.Schema
 			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
@@ -861,8 +867,17 @@ func init() {
 
 }
 
+func executeSirsi(args []string) error {
+	ctx, err := localreceipt.Consume(context.Background(), append([]string{os.Args[0]}, args...))
+	if err != nil {
+		return err
+	}
+	rootCmd.SetArgs(args)
+	return rootCmd.ExecuteContext(ctx)
+}
+
 func main() {
-	if err := rootCmd.Execute(); err != nil {
+	if err := executeSirsi(os.Args[1:]); err != nil {
 		// SilenceErrors is set on root, so cobra prints nothing — we render the
 		// failure as one clean, visible line (styled, JSON-aware) so every
 		// command resolves with an unambiguous outcome instead of a usage dump.

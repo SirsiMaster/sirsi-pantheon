@@ -1,11 +1,13 @@
 import SwiftUI
 
-// StackLabView is the native inspection surface for the same ADR-066 doctor
+// StackLabDoctorView is the explicit fabric inspection surface for ADR-066;
+// the ordinary StackLabView root is the off-by-default local workspace.
+// This doctor is the same one the CLI exposes and
 // the CLI exposes. It does not scrape a shell transcript or reconstruct wing
 // authority in Swift: Go's typed report remains the sole authority. This view
 // makes an incomplete registry actionable instead of leaving an operator with
 // a command and no route through the product.
-struct StackLabView: View {
+struct StackLabDoctorView: View {
     @ObservedObject var engine: SirsiEngine
     @State private var report: StackLabReport?
     @State private var loadError: String?
