@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,20 @@ var PostgresRolesSQL string
 // value: a ledger this binary does not understand must never be written.
 const postgresSchemaVersion = 25
 
+// postgresMaxConns is the pool cap per process: 4 by default (the ADR-062 §2
+// per-node limit), or SIRSI_ROUTER_PG_MAX_CONNS (1-64) on the router service,
+// where 4 per Cloud Run instance pinned every request behind the pool
+// (2026-10-24 outage: 8/8 connections busy while DB CPU sat at 28%). Keep
+// instances x this value under Cloud SQL max_connections. An unparsable or
+// out-of-range value falls back to 4 rather than failing startup.
+func postgresMaxConns() int {
+	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv("SIRSI_ROUTER_PG_MAX_CONNS")))
+	if err != nil || n < 1 || n > 64 {
+		return 4
+	}
+	return n
+}
+
 // OpenPostgres opens the Ra ledger over a Postgres DSN (ADR-062 §1). The
 // schema must already exist (applied by router_migrator); this never runs
 // DDL. Like OpenPath it is for Resolve() and tests only — the direct-open
@@ -49,7 +64,7 @@ func OpenPostgres(dsn string) (*SQLiteStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: open postgres: %w", err)
 	}
-	db.SetMaxOpenConns(4)
+	db.SetMaxOpenConns(postgresMaxConns())
 	db.SetConnMaxLifetime(30 * time.Minute)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
