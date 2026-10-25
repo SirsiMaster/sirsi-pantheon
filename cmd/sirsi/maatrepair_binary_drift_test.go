@@ -546,6 +546,9 @@ func TestMaatBinaryDriftCommandRetainsRejectAndUnverifiableBeforeZeroUpdaterCall
 
 func TestMaatBinaryDriftCobraSerializesConcurrentPreviewConfirmations(t *testing.T) {
 	journal, evidence, self, target := installMaatBinaryDriftFixture(t)
+	installMaatBinaryDriftSeams(t, journal, self, target, func() (*guard.DoctorReport, error) { return maatBinaryDriftFixtureReport(true), nil }, func() (*selfupdate.DriftReport, error) {
+		return maatBinaryDriftFixtureInventory(self, target, true), nil
+	})
 	safeJournal := &concurrentBinaryDriftJournal{rows: append([]maat.Decision(nil), journal.decisions...)}
 	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return safeJournal, nil }
 	var calls atomic.Int32
@@ -643,8 +646,8 @@ func (j *projectionReadbackFailMaatJournal) FindByEvidence(string, string) (maat
 
 func TestMaatBinaryDriftProjectionDebtDoesNotRetryUpdater(t *testing.T) {
 	base, evidence, self, target := installMaatBinaryDriftFixture(t)
-	updates := installMaatBinaryDriftSeams(t, base, self, target, func() (*guard.DoctorReport, error) { return maatBinaryDriftFixtureReport(false), nil }, func() (*selfupdate.DriftReport, error) {
-		return maatBinaryDriftFixtureInventory(self, target, false), nil
+	updates := installMaatBinaryDriftSeams(t, base, self, target, func() (*guard.DoctorReport, error) { return maatBinaryDriftFixtureReport(true), nil }, func() (*selfupdate.DriftReport, error) {
+		return maatBinaryDriftFixtureInventory(self, target, true), nil
 	})
 	journal := &projectionFailMaatJournal{maatTestJournal: base}
 	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return journal, nil }
@@ -906,8 +909,8 @@ func TestMaatBinaryDriftReconcileClosesTypedPreInvocationGapWithoutUpdater(t *te
 
 func TestMaatBinaryDriftReconcileRebuildsMissingProjectionIntentWithoutUpdater(t *testing.T) {
 	journal, evidence, self, target := installMaatBinaryDriftFixture(t)
-	updates := installMaatBinaryDriftSeams(t, journal, self, target, func() (*guard.DoctorReport, error) { return maatBinaryDriftFixtureReport(false), nil }, func() (*selfupdate.DriftReport, error) {
-		return maatBinaryDriftFixtureInventory(self, target, false), nil
+	updates := installMaatBinaryDriftSeams(t, journal, self, target, func() (*guard.DoctorReport, error) { return maatBinaryDriftFixtureReport(true), nil }, func() (*selfupdate.DriftReport, error) {
+		return maatBinaryDriftFixtureInventory(self, target, true), nil
 	})
 	preview, err := currentMaatBinaryDriftPreview(evidence)
 	if err != nil {
