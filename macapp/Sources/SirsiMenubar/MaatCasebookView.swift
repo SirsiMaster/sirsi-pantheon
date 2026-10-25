@@ -30,7 +30,8 @@ struct MaatWorkspaceView: View {
     var body: some View {
         MaatWorkspaceRecoveryFrame(
             recovery: engine.maatCaseOperations.preparedPreflightRecovery,
-            content: AnyView(workspaceContent))
+            content: AnyView(workspaceContent),
+            diagnostic: engine.maatCaseOperations.diagnosticRecord)
     }
 
     private var workspaceContent: some View {
@@ -143,10 +144,6 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
     @State private var credentialPreflightError: String?
     @State private var confirmCredentialPreflight = false
     @State private var credentialPreflightRecorded = false
-    @State private var confirmHostTriage = false
-    @State private var hostTriageInFlight = false
-    @State private var hostTriageResult: MaatSystemOneCommandResult?
-    @State private var hostTriageError: String?
     @State private var didOpenReleasePreflight = false
     let opensReleasePreflight: Bool
 
@@ -206,12 +203,6 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This retains public certificate-name and fingerprint evidence only. It does not read private keys, passwords, notarization material, or contact Apple.")
-        }
-        .confirmationDialog("Observe this Mac for Ma'at System One?", isPresented: $confirmHostTriage, titleVisibility: .visible) {
-            Button("Observe and record") { Task { await recordHostTriage() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Ma'at will run one local health observation, hash that exact report, and record its deterministic result in Casebook. It will not repair services, kill processes, install software, or authorize other work.")
         }
         .onDisappear { sourceImport.cancelReview() }
     }
@@ -547,56 +538,9 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
     }
 
-    // This is the local System One entry point: Ma'at owns the observation,
-    // normalizes and hashes it, then records the exact evidence only after an
-    // explicit confirmation. It replaces the previous "bring your own JSON"
-    // dead-end for ordinary workstation health without making a health screen
-    // an implicit repair or execution authority.
     private var hostTriageControl: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text("Observe this Mac")
-                .sirsiFont(.headline)
-            Text("Create one local, evidence-bound System One health screen. Ma'at will show every active finding with its bounded repair, review, and owner-resolution route in Casebook.")
-                .sirsiFont(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            SnapshotActionButton(disabled: hostTriageInFlight) {
-                confirmHostTriage = true
-            } label: {
-                Label("Observe and record", systemImage: "waveform.path.ecg")
-                    .frame(maxWidth: .infinity)
-            }
-            .accessibilityHint("Runs one local diagnostic and records its exact hashed System One result after confirmation. It does not repair the Mac.")
-            if hostTriageInFlight {
-                ProgressView("Observing this Mac…")
-                    .sirsiFont(.caption)
-            }
-            if let result = hostTriageResult {
-                let gate = result.verdict.gate
-                Label(result.summary, systemImage: hostTriageSymbol(gate: gate))
-                    .sirsiFont(.caption)
-                    .foregroundStyle(hostTriageTint(gate: gate))
-                    .fixedSize(horizontal: false, vertical: true)
-                if gate == "pass" {
-                    Text("The Casebook was refreshed from this exact local observation.")
-                        .sirsiFont(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("The observation was retained. Open the Casebook to follow its repair, review, or owner-resolution route.")
-                        .sirsiFont(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if let hostTriageError {
-                Label(hostTriageError, systemImage: "exclamationmark.triangle.fill")
-                    .sirsiFont(.caption)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        MaatDiagnosticRecordView(model: engine.maatCaseOperations.diagnosticRecord,
+                                 refresh: { await load() })
     }
 
     private var screenImportControl: some View {
@@ -990,44 +934,6 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         guard let invocation = sourceImport.confirm() else { return }
         await invocation.value
         if sourceImport.error == nil && sourceImport.result != nil { await load() }
-    }
-
-    @MainActor private func recordHostTriage() async {
-        guard !hostTriageInFlight else { return }
-        hostTriageInFlight = true
-        hostTriageError = nil
-        let raw = await SirsiEngine.run(args: ["maat", "triage", "--confirm", "--json"], stdin: nil)
-        hostTriageResult = MaatSystemOneCommandResult.decode(raw)
-        if hostTriageResult == nil {
-            hostTriageError = "Ma'at could not record the local observation. No System One outcome was inferred or accepted. Try again, then inspect the local Casebook if the problem persists."
-        } else {
-            await load()
-        }
-        hostTriageInFlight = false
-    }
-
-    // A Casebook append succeeding is not synonymous with a healthy result.
-    // The command carries the deterministic System One gate as evidence, and
-    // this native projection preserves it instead of showing a green success
-    // treatment for a recorded block or escalation.
-    private func hostTriageSymbol(gate: String) -> String {
-        switch gate {
-        case "pass": return "checkmark.seal.fill"
-        case "changes": return "exclamationmark.circle.fill"
-        case "block": return "hand.raised.fill"
-        case "escalate": return "arrow.triangle.branch"
-        default: return "checkmark.circle.fill"
-        }
-    }
-
-    private func hostTriageTint(gate: String) -> Color {
-        switch gate {
-        case "pass": return .green
-        case "changes": return .orange
-        case "block": return .red
-        case "escalate": return gold
-        default: return .secondary
-        }
     }
 
     @MainActor private func inspectReleasePreflight() async {

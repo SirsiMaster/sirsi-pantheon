@@ -76,6 +76,41 @@ Confirmed refusal has an explicit non-recorded envelope containing the safe
 observation, not a top-level recorded-verdict response. Existing native record
 decoders therefore cannot mislabel an unknown/refused record as recorded.
 
+## Native first use and retained delivery
+
+The engine-owned `MaatDiagnosticRecordModel` lives with case operations, outside
+Casebook loading/error/empty branches. The ordinary workspace root exposes its
+local observation and record-recovery controls without constructing a case.
+The System One entry uses the same model and callbacks, not a second writer.
+Unconfirmed observation invokes only `maat triage --json`. Confirmed recording
+uses stdout plus actual exit provenance with the existing thirty-second bound;
+stderr is never concatenated into a purported JSON record.
+
+Readiness inspection uses the existing local memory inspection and exact
+diagnostic pending-intent commands. Genuine uninitialized custody offers the
+existing typed first-use initialization, with separate confirmation, a repeated
+pre-effect inspection and store-UUID readback. No import, adoption, reset,
+service action or automatic record follows initialization. Corrupt/unverifiable
+memory keeps observation available and the adjacent prepared-receipt recovery
+entry accessible. It cannot be replaced or silently initialized.
+
+Selected diagnostic debt retains its complete typed intent and store binding.
+The confirmation is generation-bound, consumed before suspension, and rechecks
+the exact selected bytes before the existing data-only reconciliation command.
+Only that captured ID is submitted; changed/foreign custody is refused. A
+verified result requires matching ID, schema and result digests. Neither empty
+inspection nor reconciliation of an unrelated ID clears an unknown delivery.
+The successful v1 Decision/verdict wire and its recorded summary are unchanged;
+refusal envelopes retain the safe observation without acquiring that summary.
+
+Remaining protocol limitation: if the entire record reply is lost before its
+ID is captured, pending-only inspection cannot identify a completed invocation.
+The UI retains uncertainty and refuses automatic resend; this child does not
+claim a complete transport-lost-ID recovery path. A narrow existing-operation
+correlation/readback continuation needs independent design rather than an
+absence-based reset. Authorized export, installed proof and all other O7/row
+obligations remain open. Native fixtures here are authored, not executed.
+
 ## Upgrade and qualification
 
 Preserve v1 diagnostic schema/field validation, source freshness limits and

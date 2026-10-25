@@ -249,11 +249,14 @@ enum MaatOperationPreflight {
 final class MaatCaseOperationStore: ObservableObject {
     let failureMemoryReceipts = MaatPreflightReceiptReadStore()
     let preparedPreflightRecovery: MaatPreparedPreflightRecovery
+    let diagnosticRecord: MaatDiagnosticRecordModel
     @Published private(set) var records: [MaatOperationKey: MaatOperationRecord] = [:]
     private var historyReads: [MaatOperationKey: (generation: UUID, continuation: MaatExactHistoryContinuation)] = [:]
 
-    init(preparedPreflightRecovery: MaatPreparedPreflightRecovery? = nil) {
+    init(preparedPreflightRecovery: MaatPreparedPreflightRecovery? = nil,
+         diagnosticRecord: MaatDiagnosticRecordModel? = nil) {
         self.preparedPreflightRecovery = preparedPreflightRecovery ?? MaatPreparedPreflightRecovery()
+        self.diagnosticRecord = diagnosticRecord ?? MaatDiagnosticRecordModel()
     }
 
     func record(for key: MaatOperationKey) -> MaatOperationRecord? {

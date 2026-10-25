@@ -5,6 +5,11 @@ import SwiftUI
 struct MaatWorkspaceRecoveryFrame: View {
     @ObservedObject var recovery: MaatPreparedPreflightRecovery
     let content: AnyView
+    var diagnostic: MaatDiagnosticRecordModel? = nil
+
+    var localDiagnostics: MaatDiagnosticRecordView? {
+        diagnostic.map { MaatDiagnosticRecordView(model: $0, refresh: {}) }
+    }
 
     var localMemory: MaatWorkspaceMemoryEntry {
         MaatWorkspaceMemoryEntry(model: recovery)
@@ -14,6 +19,7 @@ struct MaatWorkspaceRecoveryFrame: View {
         VStack(spacing: 0) {
             BackBar(title: "Ma'at")
             localMemory
+            if let localDiagnostics { localDiagnostics }
             content
         }
     }
