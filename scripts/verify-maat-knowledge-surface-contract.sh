@@ -53,6 +53,18 @@ for needle in \
   }
 done
 
+# A lexical adjacency check, not Go AST/semantic proof: the early profile
+# refusal also renders a receipt, so an unrelated Render marker is insufficient.
+if ! /usr/bin/awk '
+  $0 == "\t\tresult, refreshErr := knowledge.RefreshLocal(cmd.Context(), home, source, since, \"\")" {
+    if ((getline) > 0 && $0 == "\t\tmaatKnowledgeRefreshReceipt(time.Since(started), result).Render()") bound++
+  }
+  END { exit(bound == 1 ? 0 : 1) }
+' "$knowledge"; then
+  echo "Ma'at canonical local refresh must render its own adjacent typed result" >&2
+  exit 1
+fi
+
 # Refresh owns its canonical local reader. Never restore a legacy RunE delegate
 # or expose export as an implicit ingestion side effect.
 if /usr/bin/grep -Fq 'seshatIngestCmd.RunE' "$knowledge" ||

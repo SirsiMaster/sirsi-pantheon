@@ -46,13 +46,21 @@ class MaatKnowledgeSurfaceContractTests(unittest.TestCase):
     def test_refresh_requires_context_bound_canonical_call_and_typed_receipt(self):
         for old in (
             'result, refreshErr := knowledge.RefreshLocal(cmd.Context(), home, source, since, "")',
-            'maatKnowledgeRefreshReceipt(time.Since(started), result).Render()',
             'if refreshErr != nil {',
             'if result.State != knowledge.ImportComplete && result.State != knowledge.ImportNoNewItems {',
         ):
             with self.subTest(boundary=old):
                 self.refuses(KNOWLEDGE, old, '// removed canonical refresh boundary',
                              "Ma'at public knowledge refresh contract missing:")
+
+        call = 'result, refreshErr := knowledge.RefreshLocal(cmd.Context(), home, source, since, "")'
+        render = 'maatKnowledgeRefreshReceipt(time.Since(started), result).Render()'
+        canonical = call + '\n\t\t' + render
+        # Mutate only the canonical receipt. The profile-refusal Render remains,
+        # proving that the guard checks adjacency rather than a global marker.
+        self.refuses(KNOWLEDGE, canonical,
+                     call + '\n\t\t// removed canonical result receipt',
+                     "Ma'at canonical local refresh must render its own adjacent typed result")
 
     def test_refresh_requires_each_independent_public_flag(self):
         for kind, name in (('String', 'source'), ('String', 'since'),
