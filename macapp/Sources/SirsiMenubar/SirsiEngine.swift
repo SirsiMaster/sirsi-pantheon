@@ -1967,6 +1967,17 @@ final class SirsiEngine: ObservableObject {
         let exitStatus: Int32?
         let timedOut: Bool
         let launchError: String?
+        // Bounded stderr is retained only so typed read consumers can classify
+        // a closed diagnostic. It must never be rendered as operator text.
+        let stderrData: Data
+
+        init(data: Data, exitStatus: Int32?, timedOut: Bool, launchError: String?, stderrData: Data = Data()) {
+            self.data = data
+            self.exitStatus = exitStatus
+            self.timedOut = timedOut
+            self.launchError = launchError
+            self.stderrData = stderrData
+        }
     }
 
     // runJSON returns STDOUT ONLY (stderr shares the bounded capture budget) so JSON

@@ -180,7 +180,9 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
 
     var body: some View {
         Group {
-            if loading {
+            if let casebook {
+                systemOneBody(casebook)
+            } else if loading {
                 VStack(spacing: 10) {
                     ProgressView()
                     Text("Opening retained System One evidence…")
@@ -188,8 +190,6 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let casebook {
-                systemOneBody(casebook)
             } else if let loadError {
                 VStack { unavailableState(loadError); screenImportControl; LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),model:engine.legacyRelayMaintenance) }
             } else {
@@ -272,13 +272,25 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 MaybeScroll {
                     VStack(alignment: .leading, spacing: 16) {
                         summary(screens: screens, calibrations: calibrations, history: casebook.history)
+                        if loading {
+                            Label("Refreshing history; the current page remains visible.", systemImage: "arrow.clockwise")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         if casebook.journalIntegrity.invalidCount > 0 {
                             MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
                         }
                         if let loadError {
-                            Label("History refresh failed; the previous page remains visible. \(loadError)", systemImage: "exclamationmark.triangle.fill")
-                                .sirsiFont(.subheadline)
-                                .foregroundStyle(.orange)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Label(loadError, systemImage: "exclamationmark.triangle.fill")
+                                    .sirsiFont(.subheadline)
+                                    .foregroundStyle(.orange)
+                                if historyRefresh.state.failure == .staleSnapshot {
+                                    Button("Restart history from the latest snapshot") { Task { await load() } }
+                                        .buttonStyle(.borderedProminent)
+                                        .disabled(loading)
+                                }
+                            }
                         }
                         resolutionLane(screens)
                         hostTriageControl
@@ -311,7 +323,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                             Label(history.coverage == "partial" ? "Continue history search" : "Load older", systemImage: "clock.arrow.circlepath")
                         }
                         .buttonStyle(.borderless)
-                        .disabled(loading)
+                        .disabled(loading || historyRefresh.state.failure == .staleSnapshot)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -341,6 +353,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 if let cursor = history?.nextCursor {
                     Button("Continue history search") { Task { await load(cursor: cursor) } }
                         .buttonStyle(.borderedProminent)
+                        .disabled(loading || historyRefresh.state.failure == .staleSnapshot)
                 }
             }
         } else if casebook.historyEmptyState == .olderPage {
@@ -353,6 +366,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 if let cursor = history?.nextCursor {
                     Button("Load older System One history") { Task { await load(cursor: cursor) } }
                         .buttonStyle(.borderedProminent)
+                        .disabled(loading || historyRefresh.state.failure == .staleSnapshot)
                 }
             }
         } else if casebook.historyEmptyState == .invalidHistory {
@@ -394,6 +408,9 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                     : "\(history.candidateMatches) matches scanned so far · history is incomplete.")
                     .sirsiFont(.caption)
                     .foregroundStyle(.secondary)
+                if let progress = history.boundedProgressText {
+                    Text(progress).sirsiFont(.caption).foregroundStyle(.secondary)
+                }
             } else if let history, history.countScope == "after-cursor" {
                 Text("This page shows matches after its cursor; whole-query totals are unknown.")
                     .sirsiFont(.caption)
@@ -1340,10 +1357,10 @@ struct MaatKnownFailureProposalsView: View {
     var body: some View {
         VStack(spacing: 0) {
             if showsBackBar { BackBar(title: "Ma'at casebook") }
-            if loading {
-                loadingState
-            } else if let casebook {
+            if let casebook {
                 casebookBody(casebook)
+            } else if loading {
+                loadingState
             } else if let loadError {
                 failureState(loadError)
             } else {
@@ -1421,14 +1438,26 @@ struct MaatKnownFailureProposalsView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(casebook.summary, history: casebook.history)
+                    if loading {
+                        Label("Refreshing history; the current page remains visible.", systemImage: "arrow.clockwise")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if casebook.journalIntegrity.invalidCount > 0 {
                         MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
                     }
                     searchField
                     if let loadError {
-                        Label("Refresh failed; the previous page remains visible. \(loadError)", systemImage: "exclamationmark.triangle.fill")
-                            .sirsiFont(.subheadline)
-                            .foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label(loadError, systemImage: "exclamationmark.triangle.fill")
+                                .sirsiFont(.subheadline)
+                                .foregroundStyle(.orange)
+                            if historyRefresh.state.failure == .staleSnapshot {
+                                Button("Restart history from the latest snapshot") { Task { await load() } }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(loading)
+                            }
+                        }
                     }
                     let visible = casebook.cases
                     if visible.isEmpty, casebook.historyEmptyState == .incomplete, let cursor = casebook.history?.nextCursor {
@@ -1438,6 +1467,7 @@ struct MaatKnownFailureProposalsView: View {
                                 .foregroundStyle(.secondary)
                             Button("Continue history search") { Task { await load(cursor: cursor) } }
                                 .buttonStyle(.borderedProminent)
+                                .disabled(loading || historyRefresh.state.failure == .staleSnapshot)
                         }
                     } else if visible.isEmpty, casebook.historyEmptyState == .olderPage, let cursor = casebook.history?.nextCursor {
                         VStack(alignment: .leading, spacing: 8) {
@@ -1446,6 +1476,7 @@ struct MaatKnownFailureProposalsView: View {
                                 .foregroundStyle(.secondary)
                             Button("Load older decisions") { Task { await load(cursor: cursor) } }
                                 .buttonStyle(.borderedProminent)
+                                .disabled(loading || historyRefresh.state.failure == .staleSnapshot)
                         }
                     } else if visible.isEmpty, casebook.historyEmptyState == .invalidHistory {
                         Text("No valid decision matched this page. Invalid journal rows prevent a complete absence conclusion.")
@@ -1497,10 +1528,14 @@ struct MaatKnownFailureProposalsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Decision casebook")
                 .sirsiFont(.title3, weight: .bold)
-            Text(summaryDetail(summary))
+            Text(summaryDetail(summary, history: casebook.history))
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
-            if let history, history.countScope == "after-cursor" {
+            if let history, history.coverage == "partial" {
+                Text(history.boundedProgressText ?? "History search remains incomplete; no whole-history total is available.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let history, history.countScope == "after-cursor" {
                 Text("This page covers matches after its cursor; whole-query totals are unknown.")
                     .sirsiFont(.caption)
                     .foregroundStyle(.secondary)
@@ -1523,8 +1558,12 @@ struct MaatKnownFailureProposalsView: View {
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
     }
 
-    private func summaryDetail(_ summary: MaatCasebookSummary) -> String {
-        guard summary.total > 0 else { return "No decisions match this page" }
+    private func summaryDetail(_ summary: MaatCasebookSummary, history: MaatHistoryWindow?) -> String {
+        guard summary.total > 0 else {
+            return history?.coverage == "partial"
+                ? "No matches in this bounded scan chunk; history remains incomplete."
+                : "No decisions match this page"
+        }
         if summary.urgent > 0 { return "Start with the decisions on this page that need a response." }
         if summary.open > 0 { return "\(summary.open) decision\(summary.open == 1 ? "" : "s") on this page still need attention." }
         return "All decisions on this page are resolved."
@@ -3448,6 +3487,35 @@ enum MaatHistoryEmptyState: Equatable {
     case records, incomplete, olderPage, invalidHistory, afterCursor, empty, unavailable
 }
 
+enum MaatHistoryRefreshFailure: Equatable {
+    case cancelled
+    case timedOut
+    case unavailable
+    case commandFailed
+    case malformedResponse
+    case invalidResponse
+    case staleSnapshot
+
+    var message: String {
+        switch self {
+        case .cancelled:
+            return "History refresh was cancelled; the previous page remains visible. Retry when ready."
+        case .timedOut:
+            return "History refresh timed out; the previous page remains visible. Retry when the local read can finish."
+        case .unavailable:
+            return "The local history command could not be completed; the previous page remains visible. Retry the read."
+        case .commandFailed:
+            return "The local history command returned an unclassified error; the previous page remains visible. Retry or refresh."
+        case .malformedResponse:
+            return "The local history response was malformed; the previous page remains visible. Retry the read."
+        case .invalidResponse:
+            return "The local history response did not match the requested scope or continuation; the previous page remains visible. Refresh to start a new snapshot."
+        case .staleSnapshot:
+            return "The saved history cursor belongs to an older snapshot. The previous page remains visible; restart from the latest snapshot."
+        }
+    }
+}
+
 struct MaatCasebookProjection: Decodable {
     let cases: [MaatCase]
     let summary: MaatCasebookSummary
@@ -3525,6 +3593,16 @@ struct MaatHistoryWindow: Decodable {
     let nextCursor: String?
     let totalComplete: Bool
     let total: Int?
+    let scannedRecords: Int?
+    let scannedBytes: Int64?
+
+    var boundedProgressText: String? {
+        guard coverage == "partial" else { return nil }
+        guard let scannedRecords, scannedRecords >= 0, let scannedBytes, scannedBytes >= 0 else {
+            return "This history scan is incomplete; no whole-history result is available yet."
+        }
+        return "This bounded read scanned \(scannedRecords) journal rows (\(scannedBytes) bytes). Results remain incomplete."
+    }
 
     enum CodingKeys: String, CodingKey {
         case scope, snapshot, returned, coverage, total
@@ -3539,12 +3617,15 @@ struct MaatHistoryWindow: Decodable {
         case hasMoreKnown = "has_more_known"
         case nextCursor = "next_cursor"
         case totalComplete = "total_complete"
+        case scannedRecords = "scanned_records"
+        case scannedBytes = "scanned_bytes"
     }
 }
 
 struct MaatHistoryRefreshState {
     private(set) var projection: MaatCasebookProjection?
     private(set) var error: String?
+    private(set) var failure: MaatHistoryRefreshFailure?
     private(set) var query: String
     private(set) var loading: Bool
     private var pending: MaatHistoryRefreshRequest?
@@ -3552,6 +3633,7 @@ struct MaatHistoryRefreshState {
     init(projection: MaatCasebookProjection?, error: String? = nil, query: String = "") {
         self.projection = projection
         self.error = error
+        failure = nil
         self.query = query
         loading = projection == nil
     }
@@ -3569,7 +3651,7 @@ struct MaatHistoryRefreshState {
                   history?.queryID.isEmpty == false, history?.snapshot.isEmpty == false else {
                 pending = nil
                 loading = false
-                error = "This continuation does not belong to the displayed query. Refresh to start a new snapshot."
+                setFailure(.invalidResponse)
                 return nil
             }
         }
@@ -3586,26 +3668,56 @@ struct MaatHistoryRefreshState {
         pending = nil
         loading = false
         if cancelled {
-            error = "History refresh was cancelled; the previous page remains visible. Refresh to start a new snapshot."
+            setFailure(.cancelled)
             return true
         }
-        guard let next = MaatCasebookView.decode(read), let history = next.history, history.scope == request.scope else {
-            error = "History refresh failed; the previous page remains visible. Refresh to start a new snapshot."
+        if read.timedOut {
+            setFailure(.timedOut)
+            return true
+        }
+        if read.launchError != nil || read.exitStatus == nil {
+            setFailure(.unavailable)
+            return true
+        }
+        if let exitStatus = read.exitStatus, exitStatus != 0 {
+            setFailure(request.cursor != nil && Self.isExactStaleSnapshotFailure(read) ? .staleSnapshot : .commandFailed)
+            return true
+        }
+        guard let next = MaatCasebookView.decode(read) else {
+            setFailure(.malformedResponse)
+            return true
+        }
+        guard let history = next.history, history.scope == request.scope else {
+            setFailure(.invalidResponse)
             return true
         }
         if request.cursor != nil {
             guard history.queryID == request.queryID, history.snapshot == request.snapshot else {
-                error = "The history continuation changed query or snapshot. The previous page remains visible; refresh to start fresh."
+                setFailure(.staleSnapshot)
                 return true
             }
         }
         projection = next
         query = request.query
         error = nil
+        failure = nil
         return true
     }
 
     func isCurrent(_ request: MaatHistoryRefreshRequest) -> Bool { pending == request }
+
+    private mutating func setFailure(_ failure: MaatHistoryRefreshFailure) {
+        self.failure = failure
+        error = failure.message
+    }
+
+    private static func isExactStaleSnapshotFailure(_ read: SirsiEngine.JSONCommandRead) -> Bool {
+        guard read.exitStatus == 1, !read.timedOut, read.launchError == nil, read.data.isEmpty,
+              let stderr = String(data: read.stderrData, encoding: .utf8) else { return false }
+        let message = "maat decision history: snapshot changed; refresh the query"
+        let normalized = SirsiEngine.stripANSI(stderr).trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized == message || normalized == "𓁵 \(message)"
+    }
 }
 
 struct MaatHistoryRefreshRequest: Equatable, Sendable {
