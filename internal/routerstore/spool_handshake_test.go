@@ -25,7 +25,9 @@ func realHandshakeLeaf(t *testing.T) error {
 	}
 	var mu sync.Mutex
 	var held []net.Conn
+	accepted := make(chan struct{})
 	go func() {
+		defer close(accepted)
 		for {
 			c, err := ln.Accept()
 			if err != nil {
@@ -38,6 +40,7 @@ func realHandshakeLeaf(t *testing.T) error {
 	}()
 	defer func() {
 		_ = ln.Close()
+		<-accepted
 		mu.Lock()
 		for _, c := range held {
 			_ = c.Close()

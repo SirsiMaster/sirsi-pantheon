@@ -1103,6 +1103,8 @@ func neverReachedService(err error) bool {
 // message merely mentions the phrase, or a joined error with several causes,
 // must stay OUTCOME UNKNOWN (codex-pantheon review of #1206). Timeout() is not
 // used either, because the post-send response-header timeout also reports it.
+// This is safe for forward only because its scoped client forbids redirects:
+// a later redirected handshake says nothing about an earlier received POST.
 func isTLSHandshakeTimeout(err error) bool {
 	ue, ok := err.(*url.Error)
 	if !ok {
@@ -1193,7 +1195,16 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 		rl.Log.Error("relay: outcome unknown after forward", "agent", agent, "method", req.Method, "id", id, "cause", cause)
 		return fail(http.StatusBadGateway, fmt.Sprintf("relay: %s id %s: OUTCOME UNKNOWN — %s; re-query before retrying a mutation", req.Method, id, cause))
 	}
-	resp, err := rl.Client.Do(httpReq)
+	// A redirect can occur after the canonical service already received a POST.
+	// A later redirected dial/TLS failure must never make that original request
+	// look never-reached and eligible for replay. Refuse redirects for this
+	// forward only; keep the shared timeout, transport/TLS pins and other client
+	// state intact, including its redirect policy for unrelated operations.
+	forwardClient := *rl.Client
+	forwardClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := forwardClient.Do(httpReq)
 	// rs-30 SAFE re-dial (ADR-062 relay trust boundary): if the first attempt
 	// PROVABLY never reached the service (neverReachedService — a dial/DNS-phase
 	// failure, the shape a dropped half-open connection surfaces once it is
@@ -1207,10 +1218,10 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 	// (response lost mid-flight) is NEVER retried here; it falls through to the
 	// OUTCOME-UNKNOWN branch below, the exact discipline the durable outbox uses.
 	if err != nil && neverReachedService(err) {
-		rl.Client.CloseIdleConnections()
+		forwardClient.CloseIdleConnections()
 		if hr2, berr := buildReq(); berr == nil {
 			rl.Log.Warn("relay: forward never reached service, re-dialing once on a fresh connection", "agent", agent, "method", req.Method, "id", id, "err", err.Error())
-			resp, err = rl.Client.Do(hr2)
+			resp, err = forwardClient.Do(hr2)
 		}
 	}
 	if err != nil {

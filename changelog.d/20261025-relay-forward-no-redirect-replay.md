@@ -1,0 +1,1 @@
+- Prevent relay forwards from automatically following redirects, so a later redirected TLS/dial failure cannot replay an original POST already received by the canonical service. Preserve the shared transport, pins, timeout and client policy; add actual307/308 no-replay controls and join owned stalled-handshake fixture cleanup.
