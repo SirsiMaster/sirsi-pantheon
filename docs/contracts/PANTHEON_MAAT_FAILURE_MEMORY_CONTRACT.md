@@ -457,5 +457,32 @@ no-replay, projection/readback debt and no-updater reconciliation. No tests,
 builds, vet, lint, CLI, model, service or installer were run by this source
 author. This closes only the bounded G03 O3/O8 binary-drift memory slice as a
 source candidate; raw self-update and commercial installer/update routes remain
-open, and Main owns qualification and release decisions. No SNE authority,
-shared schema or new Store/DB was introduced.
+open at this checkpoint, and Main owns qualification and release decisions. No
+SNE authority, shared schema or new Store/DB was introduced.
+
+### Existing raw self-update route source continuation (2026-10-25)
+
+The existing `sirsi self-update --confirm` Cobra route now binds the actual
+interactive preview to a digest of the complete stamped running identity,
+schema ceiling, and ordered raw target identities before the confirmation
+prompt. It still uses the existing provenance/schema gates, interactive
+confirmation, install lock, and `selfupdate.SafeReplace`; Homebrew-owned targets
+are refused before admission and remain with their owner. The initialized Store
+retains and reads back the complete v2 preflight receipt, projects the opaque
+retained receipt through the existing canonical failure-memory decision row,
+then records an attempt and a read-back invocation marker before `.new`
+staging. Exact post-replacement target inode/hash/owner/mode and live-schema
+observations are retained. A terminal outcome carries its deterministic
+projection intent. Serialized `self-update --reconcile` can record the bounded
+known-not-invoked fact only when the durable invocation marker is absent, or
+perform idempotent journal append/readback to close terminal projection debt.
+An invocation without a terminal outcome remains unresolved and does not replay
+`SafeReplace`.
+
+Authored inert Store and actual Cobra-route fixtures are source only. No tests,
+builds, signing, installer, service, or product CLI were run by this author.
+This is an unqualified bounded raw self-update source candidate. The Homebrew
+binary-drift route remains separately qualified only by Main; commercial
+whole-app update/install and O4 rollback remain open, and installed behavior is
+not claimed. Main owns all qualification and release decisions. No new Store,
+DB, registry lane, generic runner, or SNE authority was introduced.
