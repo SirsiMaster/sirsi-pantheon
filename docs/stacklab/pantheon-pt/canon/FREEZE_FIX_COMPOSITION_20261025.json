@@ -6,8 +6,8 @@
     "tree": "e0dae007221eb22948149e4f602c415a2d53faef"
   },
   "source_checkpoint": {
-    "commit": "72232f2d1f0bc91a86f917c72c40da3a06117923",
-    "tree": "c736d87bb42a0be6b1b08215de2adeff6ccb11c6",
+    "commit": "47b73fcf838a98f07e786f2aaaf68e4fad471ec6",
+    "tree": "dd42a826efb9dfec866b3b003daae80308bb8150",
     "purpose": "Exact code checkpoint before this ordinary canon record; no self-hash claim"
   },
   "components": [
@@ -58,6 +58,16 @@
       ],
       "accepted_source_review_sha256": "90a199e62abcc7628a085921ab580623e21ccad43cdb0b661d2b4f75b4322104",
       "boundary": "47 authored tests/five controls and actual own-route completion unrun; no new credentials or authorization"
+    },
+    {
+      "name": "Managed native app update, memory recovery and shared operation custody",
+      "source": "b0a23116012d31278379414250d846ff6ccc0e85",
+      "imported_commits": [
+        "3ed82820837d23a430ea08bb9f2b7462aed792e4",
+        "b0a23116012d31278379414250d846ff6ccc0e85"
+      ],
+      "accepted_source_review_sha256": "9039651266b6ab470c2a50be12660a4735acdf3d333d3a2e1b6c0dff1c84f3ae",
+      "boundary": "Canonical Go authority unchanged; native command/capture lifetime fence does not certify external Installer lifetime. New tests and combined source qualification unrun."
     }
   ],
   "custom_composition": [
@@ -65,12 +75,14 @@
       "commit": "8154c78f05798efe02eb1983ce85b1b52e08bb5e",
       "path": "internal/dashboard/ui/app.js",
       "intent": "Canonical Fabric host facts/overview plus existing explicit memory diagnostics",
-      "review": "pending",
+      "review": {
+        "scope": "app.js semantic union only",
+        "sha256": "3884873874e250cabd484099ffde3ec910ecc0947cd291a77ad0e75a78616c14"
+      },
       "preserved_failure": "Initial resolver assertion failed and intermediate imported commit contained conflict markers. Corrected before any build or publication; no runtime credit claimed."
     }
   ],
   "pending_source": [
-    "Managed app-update memory recovery child of3ed82820 requires stale-state compile and shared in-flight custody corrections before inclusion.",
     "Full append-tolerant history needs bounded-budget closure; current candidate includes explicit stale-cursor recovery only.",
     "SSA-owned DC01 authenticated claim/session-bind atomicity still unfixed in public137; frontend exact-ID improvement does not discharge it."
   ],
@@ -81,5 +93,10 @@
     "candidate_publication": "NOT_RUN",
     "rule": "A combined source tree is not equivalent to any individually tested donor. Attribute prior evidence narrowly and qualify final composition."
   },
-  "delivery": "One existing normal release train and one publisher after final qualification; no version/tag/publication created by this source record."
+  "delivery": "One existing normal release train and one publisher after final qualification; no version/tag/publication created by this source record.",
+  "prior_composition_review": {
+    "commit": "75a6a0595f428c595fe17026b54ede26707c6d83",
+    "sha256": "2e989be9bc95afd201a7c632486b3fd046f68e5e594f19f13a98832c7e93542c",
+    "scope": "Finite source preservation before the managed-update import; not combined runtime acceptance."
+  }
 }
