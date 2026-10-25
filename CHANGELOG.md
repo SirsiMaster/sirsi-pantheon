@@ -8,6 +8,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.136] — 2026-10-24
 
+### Fixed
+- **Task recovery authorization refusals report HTTP 403, not a server fault.** The live staged v0.24.136 canary correctly refused a foreign-lane request but exposed a plain-error HTTP 500. The initial own-lane guard now returns the existing typed lane-scope error before request validation or any task transaction. Actual authenticated scoped and operator-token tests cover both inspection and claim, require HTTP 403, and preserve both task rows and the resume audit. The failed canary and private signed candidate remain historical evidence; neither was promoted or published.
+
+- **Router service: the Postgres connection pool can be sized.** The pool was hard-coded at 4 connections per process. On Cloud Run that capped each instance at 4 concurrent ledger queries, and in the 2026-10-24 outage all 8 connections across 2 instances were busy while the database CPU sat at 28%. `SIRSI_ROUTER_PG_MAX_CONNS` (1-64) now sets it. The default stays 4, so nothing changes until a deploy sets it. Keep instances × value under Cloud SQL `max_connections`.
+
 - Explicitly establish0700 on owned positive failure-memory fixture roots rather
   than relying on a private test umask. Retain the hosted022 failure and causal
   reproduction, public0755-root refusal and all production ownership/privacy

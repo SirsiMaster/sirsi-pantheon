@@ -2,6 +2,17 @@
 
 ## 2026-10-24 — v0.24.136 release candidate
 
+- Return the existing typed lane-scope authorization error before task recovery
+  validation or transaction entry. The actual private4ab cloud canary refused
+  foreign authority with HTTP500; authenticated scoped/operator inspection and
+  claim controls now require403 and unchanged own/foreign task rows and audit.
+  Preserve that failed canary and its signed artifacts; no public release or
+  host adoption is inferred from the source correction.
+
+- Retain the concurrently merged bounded PostgreSQL pool configuration:
+  default4, explicit1–64, invalid values fall back4. Pool sizing is not evidence
+  of deployed capacity, outage recovery or additional database authority.
+
 - Establish private0700 positive failure-memory fixtures explicitly under public
   test umasks; preserve production policy and a public0755 refusal regression.
 
