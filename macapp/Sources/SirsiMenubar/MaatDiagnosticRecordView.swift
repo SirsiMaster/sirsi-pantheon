@@ -10,6 +10,8 @@ struct MaatDiagnosticRecordView: View {
     let observeTitle = "Observe locally"
     let inspectTitle = "Inspect record readiness"
 
+    var completedDetails: [String] { model.completed?.details ?? [] }
+
     func inspect() async { await model.inspect() }
     func observe() async { await model.observe() }
     private func review(_ action: MaatDiagnosticRecordModel.Action) {
@@ -35,6 +37,15 @@ struct MaatDiagnosticRecordView: View {
                         .sirsiFont(.caption, weight: .semibold)
                     ForEach(maatSystemOneDisplayFindings(value.findings)) { finding in
                         Text("\(finding.severity): \(finding.claim)").sirsiFont(.caption)
+                    }
+                }
+                if !completedDetails.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Last verified completed operation — historical result")
+                            .sirsiFont(.caption, weight: .semibold)
+                        ForEach(Array(completedDetails.enumerated()), id: \.offset) { _, line in
+                            Text(line).sirsiFont(.caption).textSelection(.enabled)
+                        }
                     }
                 }
                 if let message = model.message {

@@ -5,10 +5,12 @@ import UniformTypeIdentifiers
 // one operator authority. Seshat's ingestion compatibility commands are not a
 // second Pantheon surface: Ma'at is where a person inspects the resulting
 // evidence, classifications, and decisions.
-struct MaatWorkspaceView: View {
+@MainActor struct MaatWorkspaceView: View {
     @ObservedObject var engine: SirsiEngine
     @Environment(\.snapshotMode) private var snapshotMode
     @State private var section: MaatWorkspaceSection = .systemOne
+    @StateObject private var systemOneHistory: MaatHistoryRefreshStore
+    @StateObject private var decisionHistory: MaatHistoryRefreshStore
     let preloadedCasebook: MaatCasebookProjection?
     let preloadedKnowledge: MaatKnowledgeProjection?
     let opensReleasePreflight: Bool
@@ -18,8 +20,12 @@ struct MaatWorkspaceView: View {
     init(engine: SirsiEngine, preloadedCasebook: MaatCasebookProjection? = nil,
          preloadedKnowledge: MaatKnowledgeProjection? = nil,
          opensReleasePreflight: Bool = false, apolloContext: ApolloPlan? = nil,
-         relayOutboxContext: RelayOutboxResolutionContext? = nil) {
+         relayOutboxContext: RelayOutboxResolutionContext? = nil,
+         systemOneHistory: MaatHistoryRefreshStore? = nil,
+         decisionHistory: MaatHistoryRefreshStore? = nil) {
         self.engine = engine
+        _systemOneHistory = StateObject(wrappedValue: systemOneHistory ?? MaatHistoryRefreshStore(projection: preloadedCasebook))
+        _decisionHistory = StateObject(wrappedValue: decisionHistory ?? MaatHistoryRefreshStore(projection: preloadedCasebook))
         self.preloadedCasebook = preloadedCasebook
         self.preloadedKnowledge = preloadedKnowledge
         self.opensReleasePreflight = opensReleasePreflight
@@ -31,7 +37,13 @@ struct MaatWorkspaceView: View {
         MaatWorkspaceRecoveryFrame(
             recovery: engine.maatCaseOperations.preparedPreflightRecovery,
             content: AnyView(workspaceContent),
-            diagnostic: engine.maatCaseOperations.diagnosticRecord)
+            diagnostic: engine.maatCaseOperations.diagnosticRecord,
+            diagnosticRefresh: refreshDiagnosticHistory)
+    }
+
+    @MainActor private func refreshDiagnosticHistory() async {
+        await systemOneHistory.refresh(scope: "system-one")
+        await decisionHistory.refresh(scope: "all")
     }
 
     private var workspaceContent: some View {
@@ -84,9 +96,10 @@ struct MaatWorkspaceView: View {
                 switch section {
                 case .systemOne:
                     MaatSystemOneView(engine: engine, section: $section, preloaded: preloadedCasebook,
-                                      opensReleasePreflight: opensReleasePreflight)
+                                      opensReleasePreflight: opensReleasePreflight,
+                                      historyStore: systemOneHistory, diagnosticRefresh: refreshDiagnosticHistory)
                 case .decisions:
-                    MaatCasebookView(engine: engine, preloaded: preloadedCasebook, showsBackBar: false)
+                    MaatCasebookView(engine: engine, preloaded: preloadedCasebook, showsBackBar: false, historyStore: decisionHistory)
                 case .knowledge:
                     MaatKnowledgeView(engine: engine, preloaded: preloadedKnowledge, showsBackBar: false)
                 case .proposals:
@@ -146,13 +159,16 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
     @State private var credentialPreflightRecorded = false
     @State private var didOpenReleasePreflight = false
     let opensReleasePreflight: Bool
+    let diagnosticRefresh: (() async -> Void)?
 
     init(engine: SirsiEngine, section: Binding<MaatWorkspaceSection>, preloaded: MaatCasebookProjection? = nil,
-         opensReleasePreflight: Bool = false) {
+         opensReleasePreflight: Bool = false, historyStore: MaatHistoryRefreshStore? = nil,
+         diagnosticRefresh: (() async -> Void)? = nil) {
         self.engine = engine
         _section = section
-        _historyRefresh = StateObject(wrappedValue: MaatHistoryRefreshStore(projection: preloaded))
+        _historyRefresh = StateObject(wrappedValue: historyStore ?? MaatHistoryRefreshStore(projection: preloaded))
         self.opensReleasePreflight = opensReleasePreflight
+        self.diagnosticRefresh = diagnosticRefresh
     }
 
     var body: some View {
@@ -540,7 +556,10 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
 
     private var hostTriageControl: some View {
         MaatDiagnosticRecordView(model: engine.maatCaseOperations.diagnosticRecord,
-                                 refresh: { await load() })
+                                 refresh: {
+                                     if let diagnosticRefresh { await diagnosticRefresh() }
+                                     else { await load() }
+                                 })
     }
 
     private var screenImportControl: some View {
@@ -1302,10 +1321,12 @@ struct MaatKnownFailureProposalsView: View {
     @State private var knowledgeRefreshResult: String?
     @State private var knowledgeRefreshError: String?
 
-    init(engine: SirsiEngine, preloaded: MaatCasebookProjection? = nil, showsBackBar: Bool = true) {
+    init(engine: SirsiEngine, preloaded: MaatCasebookProjection? = nil, showsBackBar: Bool = true,
+         historyStore: MaatHistoryRefreshStore? = nil) {
         self.engine = engine
         self.showsBackBar = showsBackBar
-        _historyRefresh = StateObject(wrappedValue: MaatHistoryRefreshStore(projection: preloaded))
+        _query = State(initialValue: historyStore?.state.query ?? "")
+        _historyRefresh = StateObject(wrappedValue: historyStore ?? MaatHistoryRefreshStore(projection: preloaded))
     }
 
     var body: some View {
@@ -3518,6 +3539,10 @@ struct MaatHistoryRefreshState {
         self.query = query
         loading = projection == nil
     }
+
+    // A write refresh must not replace an in-flight newly selected filter with
+    // the older committed query. Cursor reuse still requires a fresh snapshot.
+    var refreshQuery: String { pending?.query ?? query }
 
     mutating func begin(scope: String, query requestedQuery: String? = nil, cursor: String? = nil) -> MaatHistoryRefreshRequest? {
         let nextQuery = (requestedQuery ?? query).trimmingCharacters(in: .whitespacesAndNewlines)

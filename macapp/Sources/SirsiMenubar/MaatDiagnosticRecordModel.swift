@@ -11,6 +11,25 @@ import SwiftUI
         let generation: UUID
         let context: Data
     }
+    // One bounded historical completion, separate from current observation and
+    // readiness. Inspection/navigation must not erase its exact result evidence.
+    enum Completion: Equatable {
+        case initialized(store: String, readbackState: String, importedIncidents: Bool)
+        case recorded(id: String, store: String, snapshot: String, decision: String)
+        case reconciled(id: String, store: String, state: String, intent: String, decision: String, verdict: String)
+
+        var details: [String] {
+            switch self {
+            case let .initialized(store, readback, imported):
+                return ["Initialization verified", "Store: \(store)", "Readback: \(readback)", "Imported incidents: \(imported ? "yes" : "no")", "No observation or action was recorded by initialization."]
+            case let .recorded(id, store, snapshot, decision):
+                return ["Record verified", "Record: \(id)", "Store: \(store)", "Snapshot: \(snapshot)", "Decision: \(decision)", "Recording is not a health or repair success."]
+            case let .reconciled(id, store, state, intent, decision, verdict):
+                return ["Exact delivery reconciled", "Record: \(id)", "Store: \(store)", "State: \(state)", "Intent SHA256: \(intent)", "Decision: \(decision.isEmpty ? "none" : decision)", "Verdict SHA256: \(verdict.isEmpty ? "none" : verdict)", "No observation was rerun or record resent."]
+            }
+        }
+    }
+    @Published private(set) var completed: Completion?
     struct Pending: Identifiable {
         let id: String
         let store: String
@@ -120,10 +139,11 @@ import SwiftUI
                   let uuid = object["store_uuid"] as? String,
                   let verified = await read(Self.inspectArguments), verified.exitStatus == 0,
                   let after = try? JSONDecoder().decode(MaatFailureMemoryStatus.self, from: verified.data),
-                  after.state == "ready", after.storeUUID == uuid else {
+                  after.state == "ready", after.storeUUID == uuid, uuid.utf8.count <= 64 else {
                 message = "Initialization outcome is not verified. Inspect local memory before another action; it will not be reset or initialized again automatically."; return false
             }
             memory = after; memoryBytes = verified.data
+            completed = .initialized(store: uuid, readbackState: after.state, importedIncidents: false)
             message = "Private local memory initialized and read back. No incidents imported or observation recorded. Observe afresh and review a new record confirmation."
             return true
         case .record:
@@ -146,8 +166,11 @@ import SwiftUI
                object["record_state"] as? String == "recorded_verified",
                let id = object["record_id"] as? String, MaatCapturedPreflightIdentity.digest(id),
                let value = try? JSONDecoder().decode(MaatSystemOneCommandResult.self, from: result.data),
-               !value.decisionEvidence.isEmpty, !value.snapshotEvidence.isEmpty {
+               !value.decisionEvidence.isEmpty, !value.snapshotEvidence.isEmpty,
+               value.decisionEvidence.utf8.count <= 256, value.snapshotEvidence.utf8.count <= 256,
+               store.utf8.count <= 64 {
                 recorded = value; observation = value.verdict; deliveryUnknown = false
+                completed = .recorded(id: id, store: store, snapshot: value.snapshotEvidence, decision: value.decisionEvidence)
                 message = value.summary; return true
             }
             if let refusal = try? JSONDecoder().decode(Refusal.self, from: result.data), refusal.schema == Self.schema {
@@ -168,9 +191,13 @@ import SwiftUI
                   let value = try? JSONDecoder().decode(Reconciliation.self, from: result.data),
                   value.schema == Self.schema, value.id == id, MaatCapturedPreflightIdentity.digest(value.intent_sha256),
                   ["recorded_verified", "not_submitted"].contains(value.state),
-                  value.state != "recorded_verified" || (!value.decision_evidence.isEmpty && MaatCapturedPreflightIdentity.digest(value.verdict_sha256)) else {
+                  value.state != "recorded_verified" || (!value.decision_evidence.isEmpty && MaatCapturedPreflightIdentity.digest(value.verdict_sha256)),
+                  value.decision_evidence.utf8.count <= 256, value.verdict_sha256.utf8.count <= 64,
+                  store.utf8.count <= 64 else {
                 message = "Exact delivery remains unverifiable. Retained intent remains available; inspect again. No observation or record was resent."; return false
             }
+            completed = .reconciled(id: id, store: store, state: value.state,
+                                    intent: value.intent_sha256, decision: value.decision_evidence, verdict: value.verdict_sha256)
             pending.removeAll { $0.id == id }
             // Only resolution of the matching unknown intent may clear this latch.
             // A fresh inspection alone (including an empty list) cannot do so.

@@ -129,3 +129,34 @@ source fixtures, not execution evidence. Main owns normal/race/vet/lint/build an
 independent review. No model, service, installed journal or authorized export
 operation was run by the author. Full O7/other seven rows and original historical
 receipt/installed obligations are not retired by this child.
+
+## Native result/refresh correction (source candidate)
+
+Readiness inspection and the last verified completed operation are separate.
+One bounded typed historical result retains initialization's exact store/ready
+readback/no-import fact, or a recorded/reconciled ID and existing evidence/digest
+fields. Automatic inspection, a failed later operation, and navigation do not
+replace that result with a generic readiness label. Its historical heading does
+not label a newer refusal or observation as recorded, healthy or repaired.
+There is no new receipt/correlation API or synthesized observation on reconcile.
+The lost-reply-before-ID limitation and inherited consumer source findings remain
+open pending the separately owned canonical correction/composition.
+
+The ordinary workspace owns its existing System One/Decisions history stores
+and injects them into the unchanged browse views. Both diagnostic entry points
+refresh those stores after verified completion using their selected queries and
+a new snapshot, without replaying an old cursor or remounting the workspace.
+An in-flight selected query takes precedence over an older committed filter;
+existing generation/cancellation fences retain the latest page on late failure,
+success or cancellation. Standalone browse views retain their default ownership.
+The only history read seam is per-instance read-only runJSONRead with its existing
+bounded canonical argv. No generic executor/store/mutation override is added.
+
+Seven authored regressions extend MaatDiagnosticRecordTests: actual root
+confirmed -> automatic inspect -> query-owned history refresh/remount; exact
+recorded_verified/not_submitted reconciliation result retention; initialization
+readback retention; late refresh vs new filter; pending selected-query refresh;
+canceled root refresh retaining its completed result and prior page; and
+oversized completion evidence refusing without clearing unknown delivery.
+All existing11 record tests remain unchanged. Source only: no author build/test,
+window/UI/runtime or broader O7/eight-operation completion is claimed.

@@ -217,4 +217,221 @@ import XCTest
         await model.inspect();XCTAssertEqual(model.memory?.state,"ready")
         XCTAssertNil(model.approval(.record),"Fresh inspection must not waive canceled unknown delivery")
     }
+    private actor RootHistoryProbe {
+        var calls: [[String]] = []
+        var holdNext = false
+        var held: CheckedContinuation<SirsiEngine.JSONCommandRead, Never>?
+        var heldScope = "system-one"
+        func hold() { holdNext = true }
+        func isHeld() -> Bool { held != nil }
+        func arguments() -> [[String]] { calls }
+        func read(_ args: [String]) async -> SirsiEngine.JSONCommandRead {
+            calls.append(args)
+            let scope = args.firstIndex(of: "--scope").map { args[$0 + 1] } ?? "invalid"
+            if holdNext {
+                holdNext = false; heldScope = scope
+                return await withCheckedContinuation { held = $0 }
+            }
+            return Self.page(scope: scope, snapshot: "read-\(calls.count)")
+        }
+        func release() {
+            holdNext = false
+            held?.resume(returning: Self.page(scope: heldScope, snapshot: "late-old-refresh"))
+            held = nil
+        }
+        nonisolated static func page(scope: String, snapshot: String) -> SirsiEngine.JSONCommandRead {
+            let raw = """
+            {"cases":[],"summary":{"total":0,"open":0,"urgent":0,"high":0,"resolved":0},
+             "journal_integrity":{"invalid_count":0,"issues":[]},
+             "history":{"scope":"\(scope)","query_id":"fixture-query","snapshot":"\(snapshot)",
+             "returned":0,"candidate_matches":0,"count_scope":"query","candidate_matches_complete":true,
+             "page_size":50,"coverage":"complete","has_more":false,"has_more_known":true,"total_complete":true,"total":0}}
+            """
+            return .init(data: Data(raw.utf8), exitStatus: 0, timedOut: false, launchError: nil)
+        }
+    }
+
+    private func successfulRecordReader() throws -> MaatDiagnosticRecordModel.Reader {
+        let status = try reply(ready), noDebt = try reply(empty)
+        var result = verdict
+        result["record_state"] = "recorded_verified"; result["record_id"] = id
+        result["snapshot_evidence"] = "diagnostic:sha256:" + id
+        result["decision_evidence"] = "maat-system-one:sha256=" + id
+        let success = try reply(result)
+        return { args in
+            if args == MaatDiagnosticRecordModel.inspectArguments { return status }
+            if args == MaatDiagnosticRecordModel.pendingArguments { return noDebt }
+            XCTAssertEqual(args, ["maat", "triage", "--confirm", "--json"])
+            return success
+        }
+    }
+
+    func testActualRootConfirmedRefreshesBothQueryOwnedHistoriesAndRetainsResultOnRemount() async throws {
+        let systemProbe = RootHistoryProbe(), decisionProbe = RootHistoryProbe()
+        let system = MaatHistoryRefreshStore(read: { await systemProbe.read($0) })
+        let decisions = MaatHistoryRefreshStore(read: { await decisionProbe.read($0) })
+        await system.load(scope: "system-one", query: "system-filter") { await systemProbe.read($0) }
+        await decisions.load(scope: "all", query: "decision-filter") { await decisionProbe.read($0) }
+        let model = MaatDiagnosticRecordModel(uid: 501, reader: try successfulRecordReader())
+        let engine = SirsiEngine(maatCaseOperations: MaatCaseOperationStore(diagnosticRecord: model))
+        let root = MaatWorkspaceView(engine: engine, systemOneHistory: system, decisionHistory: decisions)
+        let frame = try XCTUnwrap(root.body as? MaatWorkspaceRecoveryFrame)
+        let control = try XCTUnwrap(frame.localDiagnostics)
+        await control.inspect()
+        let approval = try XCTUnwrap(model.approval(.record))
+        await control.confirmed(approval)
+        let systemCalls = await systemProbe.arguments(), decisionCalls = await decisionProbe.arguments()
+        XCTAssertEqual(systemCalls.count, 2); XCTAssertEqual(decisionCalls.count, 2)
+        XCTAssertEqual(systemCalls.last, maatCasebookHistoryArguments(scope: "system-one", query: "system-filter"))
+        XCTAssertEqual(decisionCalls.last, maatCasebookHistoryArguments(scope: "all", query: "decision-filter"))
+        XCTAssertEqual(system.state.query, "system-filter"); XCTAssertEqual(decisions.state.query, "decision-filter")
+        XCTAssertEqual(model.completed, .recorded(id: id, store: store,
+            snapshot: "diagnostic:sha256:" + id, decision: "maat-system-one:sha256=" + id))
+        let remounted = MaatWorkspaceView(engine: engine, systemOneHistory: system, decisionHistory: decisions)
+        let again = try XCTUnwrap((remounted.body as? MaatWorkspaceRecoveryFrame)?.localDiagnostics)
+        XCTAssertTrue(again.model === model)
+        XCTAssertEqual(again.completedDetails, control.completedDetails)
+        XCTAssertTrue(again.completedDetails.contains("Record: " + id))
+        await again.confirmed(approval)
+        let after = await systemProbe.arguments()
+        XCTAssertEqual(after.count, 2, "Consumed consent must not refresh or record again")
+    }
+
+    func testActualConfirmedReconciliationRetainsExactTypedResultAfterInspectionAndRemount() async throws {
+        for state in ["recorded_verified", "not_submitted"] {
+            let status = try reply(ready), noDebt = try reply(empty)
+            let debt = try reply(["schema":"sirsi.maat.diagnostic-record.v1", "pending":[intent()]])
+            let decision = state == "recorded_verified" ? "maat-system-one:sha256=" + id : ""
+            let verdictSHA = state == "recorded_verified" ? id : ""
+            let result = try reply(["schema":"sirsi.maat.diagnostic-record.v1", "id":id, "state":state,
+                                    "intent_sha256":id, "decision_evidence":decision, "verdict_sha256":verdictSHA])
+            var done = false, effects = 0, refreshes = 0
+            let model = MaatDiagnosticRecordModel(uid:501) { args in
+                if args == MaatDiagnosticRecordModel.inspectArguments { return status }
+                if args == MaatDiagnosticRecordModel.pendingArguments { return done ? noDebt : debt }
+                XCTAssertEqual(args, ["maat","triage","--reconcile-record",self.id,"--confirm","--json"])
+                effects += 1; done = true; return result
+            }
+            let view = MaatDiagnosticRecordView(model:model, refresh:{ refreshes += 1 })
+            await view.inspect()
+            let approval = try XCTUnwrap(model.approval(.reconcile(id)))
+            await view.confirmed(approval)
+            XCTAssertTrue(model.pending.isEmpty)
+            XCTAssertEqual(model.completed, .reconciled(id:id, store:store, state:state, intent:id, decision:decision, verdict:verdictSHA))
+            XCTAssertNil(model.recorded, "Reconciliation must not synthesize a new observed/recorded verdict")
+            XCTAssertTrue(view.completedDetails.contains("State: " + state))
+            XCTAssertTrue(view.completedDetails.contains("Intent SHA256: " + id))
+            let remounted = MaatDiagnosticRecordView(model:model, refresh:{ refreshes += 1 })
+            await remounted.inspect()
+            XCTAssertEqual(remounted.completedDetails, view.completedDetails)
+            await remounted.confirmed(approval)
+            XCTAssertEqual(effects, 1); XCTAssertEqual(refreshes, 1)
+        }
+    }
+
+    func testActualConfirmedInitializationRetainsVerifiedReadbackIndependentlyOfReadiness() async throws {
+        let absent = try reply(["state":"uninitialized"]), status = try reply(ready), noDebt = try reply(empty)
+        let initialized = try reply(["status":"initialized","store_uuid":store,"imported_incidents":false])
+        var exists = false, effects = 0
+        let model = MaatDiagnosticRecordModel(uid:501) { args in
+            if args == MaatDiagnosticRecordModel.inspectArguments { return exists ? status : absent }
+            if args == MaatDiagnosticRecordModel.pendingArguments { return noDebt }
+            XCTAssertEqual(args, maatCasebookFailureMemoryArguments(.initialize))
+            effects += 1; exists = true; return initialized
+        }
+        let view = MaatDiagnosticRecordView(model:model, refresh:{})
+        await view.inspect(); let approval = try XCTUnwrap(model.approval(.initialize))
+        await view.confirmed(approval)
+        XCTAssertEqual(model.completed, .initialized(store:store, readbackState:"ready", importedIncidents:false))
+        XCTAssertTrue(view.completedDetails.contains("Store: " + store))
+        XCTAssertTrue(view.completedDetails.contains("Readback: ready"))
+        XCTAssertNil(model.recorded); XCTAssertNil(model.observation)
+        await view.inspect()
+        XCTAssertEqual(model.completed, .initialized(store:store, readbackState:"ready", importedIncidents:false))
+        await view.confirmed(approval); XCTAssertEqual(effects,1)
+    }
+
+    func testRootRefreshLateReplyCannotRollBackNewHistoryFilter() async throws {
+        let probe = RootHistoryProbe()
+        let system = MaatHistoryRefreshStore(read: { await probe.read($0) })
+        await system.load(scope:"system-one", query:"old-filter") { await probe.read($0) }
+        let decisionsProbe = RootHistoryProbe()
+        let decisions = MaatHistoryRefreshStore(read:{ await decisionsProbe.read($0) })
+        let model = MaatDiagnosticRecordModel(uid:501, reader:try successfulRecordReader())
+        let engine = SirsiEngine(maatCaseOperations:MaatCaseOperationStore(diagnosticRecord:model))
+        let root = MaatWorkspaceView(engine:engine,systemOneHistory:system,decisionHistory:decisions)
+        let control = try XCTUnwrap((root.body as? MaatWorkspaceRecoveryFrame)?.localDiagnostics)
+        await control.inspect(); let approval = try XCTUnwrap(model.approval(.record))
+        await probe.hold()
+        let task = Task { @MainActor in await control.confirmed(approval) }
+        for _ in 0..<1000 { if await probe.isHeld() { break }; await Task.yield() }
+        let held = await probe.isHeld(); XCTAssertTrue(held)
+        await system.load(scope:"system-one",query:"new-filter") { await probe.read($0) }
+        await probe.release(); await task.value
+        XCTAssertEqual(system.state.query,"new-filter")
+        XCTAssertNotEqual(system.state.projection?.history?.snapshot,"late-old-refresh")
+        XCTAssertNil(system.state.error); XCTAssertFalse(system.state.loading)
+    }
+
+    func testWriteRefreshUsesPendingSelectedQueryAndStartsFreshSnapshot() async throws {
+        let probe = RootHistoryProbe()
+        let history = MaatHistoryRefreshStore(read:{await probe.read($0)})
+        await history.load(scope:"all",query:"committed") {await probe.read($0)}
+        await probe.hold()
+        let selected = Task { @MainActor in
+            await history.load(scope:"all",query:"new-selection") {await probe.read($0)}
+        }
+        for _ in 0..<1000 {if await probe.isHeld(){break};await Task.yield()}
+        let held = await probe.isHeld();XCTAssertTrue(held)
+        await history.refresh(scope:"all")
+        await probe.release();await selected.value
+        XCTAssertEqual(history.state.query,"new-selection")
+        let calls = await probe.arguments()
+        XCTAssertEqual(calls.last,maatCasebookHistoryArguments(scope:"all",query:"new-selection"))
+        XCTAssertFalse(calls.last?.contains("--cursor") ?? true)
+        XCTAssertNil(history.state.error)
+    }
+
+    func testCancelledRootRefreshKeepsCompletedResultAndPriorProjection() async throws {
+        let probe = RootHistoryProbe(), decisionsProbe = RootHistoryProbe()
+        let system = MaatHistoryRefreshStore(read:{await probe.read($0)})
+        await system.load(scope:"system-one",query:"retained") {await probe.read($0)}
+        let prior = system.state.projection?.history?.snapshot
+        let decisions = MaatHistoryRefreshStore(read:{await decisionsProbe.read($0)})
+        let model = MaatDiagnosticRecordModel(uid:501,reader:try successfulRecordReader())
+        let engine = SirsiEngine(maatCaseOperations:MaatCaseOperationStore(diagnosticRecord:model))
+        let root = MaatWorkspaceView(engine:engine,systemOneHistory:system,decisionHistory:decisions)
+        let control = try XCTUnwrap((root.body as? MaatWorkspaceRecoveryFrame)?.localDiagnostics)
+        await control.inspect();let approval = try XCTUnwrap(model.approval(.record))
+        await probe.hold()
+        let task = Task { @MainActor in await control.confirmed(approval) }
+        for _ in 0..<1000 {if await probe.isHeld(){break};await Task.yield()}
+        let held = await probe.isHeld();XCTAssertTrue(held)
+        task.cancel();await probe.release();await task.value
+        XCTAssertEqual(system.state.projection?.history?.snapshot,prior)
+        XCTAssertFalse(system.state.loading)
+        XCTAssertTrue(system.state.error?.contains("cancelled") == true)
+        XCTAssertNotNil(model.completed)
+        XCTAssertTrue(control.completedDetails.contains("Record: " + id))
+        let unseen = await decisionsProbe.arguments();XCTAssertTrue(unseen.isEmpty)
+    }
+
+    func testOversizedCompletionEvidenceRefusesWithoutClearingUnknownDelivery() async throws {
+        let status = try reply(ready), noDebt = try reply(empty)
+        var value = verdict
+        value["record_state"] = "recorded_verified";value["record_id"] = id
+        value["snapshot_evidence"] = "diagnostic:sha256:" + id
+        value["decision_evidence"] = String(repeating:"x",count:257)
+        let oversized = try reply(value)
+        let model = MaatDiagnosticRecordModel(uid:501) {args in
+            if args == MaatDiagnosticRecordModel.inspectArguments{return status}
+            if args == MaatDiagnosticRecordModel.pendingArguments{return noDebt}
+            return oversized
+        }
+        await model.inspect();let approval = try XCTUnwrap(model.approval(.record))
+        let result = await model.confirm(approval)
+        XCTAssertFalse(result);XCTAssertNil(model.completed);XCTAssertNil(model.recorded)
+        XCTAssertTrue(model.deliveryUnknown);XCTAssertNil(model.approval(.record))
+    }
+
 }
