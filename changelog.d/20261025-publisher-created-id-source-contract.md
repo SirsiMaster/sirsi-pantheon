@@ -1,1 +1,0 @@
-- Reconcile the cumulative commercial release source verifier with the explicit private-draft POST publisher and retained creation identity, preserving tag/source binding, paired readback, Apple trust and no-clobber checks; add inert full-verifier mutation controls for the executing creation invariants.

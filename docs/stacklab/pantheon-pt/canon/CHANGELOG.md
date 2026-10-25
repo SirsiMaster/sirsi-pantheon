@@ -1,5 +1,130 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-24 — v0.24.136 release candidate
+
+- Prevent relay forwards from automatically following redirects, so a later redirected TLS/dial failure cannot replay an original POST already received by the canonical service. Preserve the shared transport, pins, timeout and client policy; add actual307/308 no-replay controls and join owned stalled-handshake fixture cleanup.
+- Reconcile the cumulative commercial release source verifier with the explicit private-draft POST publisher and retained creation identity, preserving tag/source binding, paired readback, Apple trust and no-clobber checks; add inert full-verifier mutation controls for the executing creation invariants.
+- Retain the controlled diagnostic workflow in its existing navigation frame so Back preserves pending/unknown re-screen receipts and once-only write custody; keep disappearance cancellation and fresh-read checks unchanged.
+- Remove an unused private history reader wrapper; retain the counted reader and all history bounds unchanged.
+- Open canonical local System One findings in Pantheon's existing controlled resolver after a fresh identity-bound diagnostic read. Preserve the original case, dedicated repair custody, separate repair consent, and a once-only confirmed fresh-screen return path; never execute retained recovery hints or infer resolution from re-observation.
+- Compose the independently qualified archive, operational watch, credential observation, native partial-receipt, model-routing, original-task recovery and release-publication deltas on released 134 plus Ra's merged fleet-check. Preserve current package modes and normal release custody. Combined tests, independent acceptance and commercial release are not inferred from donor qualification; original ledger obligations remain open until their full proof is satisfied.
+- Recognize the exact canonical relay health summary as validated root metadata
+  during supported root-relay refresh. Preserve real queue checks and unknown
+  entry refusal; allow validated atomic summary replacement between bounded
+  namespace observations, while retaining publication staging as busy/debt.
+  This source candidate has no installed-success claim. Main retained the
+  deployed-layout and actual-publisher ENOTDIR regression on test-only `9238be90`.
+- Relay: a stalled TLS handshake is recognised by net/http's own error, not by its text.
+- Retain the exact GitHub draft ID returned by one authenticated creation,
+  then verify that selected draft directly instead of rediscovering it through
+  changing release-list pages. Preserve full bounded absence proof before
+  creation, recheck the remote tag, require HTTP201 and exact private ID/tag
+  fields, and retain unknown creation outcomes without another create/upload.
+  Keep private paired-byte readback, Apple verification, publish-last ordering,
+  public-byte readback and no-overwrite behavior. Inert regressions cover the
+  observed post-create ambiguity class and malformed/unknown/drifting identity;
+  actual service acceptance remains proof for the next normal release.
+- Correct the a622 source-review findings: map optional `json_object` from the
+  existing selected Pantheon profile to three-state capability evidence for
+  that exact endpoint/model, and preserve `--route` consent when measured
+  alarms stop model inference. Format/determinism flags alone do not construct
+  the provider ladder or bypass the heuristic stop. Inert fixtures cover the
+  real profile/resolver/Cobra/HTTP path and selection isolation. No installed
+  profile, SNE schema/service, credential or deterministic wire mode changes;
+  qualification remains unrun at this source checkpoint.
+- Restore original optional model-router JSON-generation and determinism inputs
+  with explicit unknown/unsupported capability refusals, shared effective
+  requirements across routing/override/fallback, direct-provider checks, and
+  redacted requested/effective mode evidence. `ask --response-format=json-object`
+  is distinct from the unchanged `--json` envelope. JSON+stream is refused;
+  malformed/incomplete JSON never causes replay. Existing configured backends
+  gain no inferred capability or invented determinism wire mode. Source-only
+  fixtures and qualification preparation do not establish installed completion.
+- Put the inert ask-generation fixture helper's error return last and adjust
+  its callers to satisfy ST1008. No production code, test inputs or assertions
+  change. The prior b3 qualification remains retained as failed at lint; this
+  source-only correction does not claim a new qualification result.
+- Preserve context-window qualification across local, remote-escalation and
+  judgment routes, including malformed-class and negative-context refusal.
+- Preserve Cobra-selected human/JSON writers and themed output while adding
+  the new generation and streaming paths.
+- Surface synthesized stream EOF/cancellation once after partial output,
+  retaining decision-journal failures without fallback or replay. Combined
+  release qualification remains separate from the donor's finite evidence.
+- Execute the closed typed read-only `maat.active-incident/v1` recurrence guard
+  only for verified active exact-scope incidents. Bind evaluated guard identity
+  to embedded implementation/dispatch source, not a hash of a caller's label.
+- Unsupported matching IDs/versions return unverifiable. Terminal/out-of-scope
+  incidents do not execute guards or appear as measured checks; mixed outcomes
+  retain actual checks without claiming complete evaluation. No incident rewrite,
+  imported command, host probe, new service or authorization is introduced.
+- Open catalog leaves nonblocking before retained-FD regular-file and bounded-read
+  checks, refusing FIFOs without waiting for a peer.
+- Author dispatch/scope/digest, FIFO/size, reopen/failed-write debt, independent
+  concurrency and journal-failure regressions; update the StackLab component and
+  upgrade contract. Tests/builds have not been executed by this source producer.
+  Historical342 receipt custody, all eight authoritative operation integrations,
+  wider surface convergence and installed proof remain separate/open.
+- Bind the existing closed Ma'at repair to the canonical running engine and
+  ordinary HOME through the shared local plist, installer and inspector APIs;
+  remove its developer-checkout dependency without changing legacy routed run.
+- Preserve ordinary owned 0755 `.sirsi`/`maat` ancestors without chmod or
+  sentinel changes, while keeping the actual failure-memory root private;
+  recheck the complete EDA snapshot under the attempt-admission lock.
+- Route repair review through the bounded local inspector, including exact
+  legacy/unloaded metadata findings while refusing disabled or unknown state;
+  retain historical projection separately from a fresh current observation.
+- Make `liveness-watch status` require the exact local configuration and loaded
+  state rather than plist-file presence alone. Source-only; qualification and
+  installed behavior remain unclaimed, and the other seven Ma'at operational
+  rows remain open.
+- Keep standalone persistent installation on the same packaged-engine
+  resolver/verifier, and accept bounded signed `launchctl list` status values
+  while continuing to refuse malformed tables.
+- Correct the default-store existence probe to use the actual one-result
+  `unix.Fstatat` contract without changing its ENOENT/refusal checks.
+- Explicitly set liveness `OpenStore` test roots to 0700; preserve the
+  production private-root validator unchanged.
+- Assert the native read-only probe sequence including both independent
+  `launchctl print-disabled` observations; forbidden operations still fail.
+- Validate HOME ownership from a no-follow native directory descriptor rather
+  than asserting an `os.Lstat` platform `Sys` value is `unix.Stat_t`.
+- Bind the existing managed liveness-watch repair to the fixed per-user Ma'at
+  failure-memory store, exact reviewed action manifest, unchanged exact-scope
+  preflight, durable attempt, and fresh exact post-action observation.
+- Add explicit no-import first-use initialization and fail-closed inspection of
+  interrupted, missing, unbound, or corrupt store state. Native Casebook presents
+  confirmed initialization and safe inspect/re-observe controls through fixed
+  canonical-engine arguments; it does not direct the operator to Terminal.
+- No SNE source authority, shared interchange schema, other operational row, or
+  model/credential behavior changes. This is source-only and unqualified; the
+  other seven integrations and installed proof remain open.
+- Fence both native Ma'at history loaders by refresh generation. Delayed or
+  cancelled responses cannot replace a newer page or query; current failures
+  retain the latest committed projection and its matching continuation.
+- Keep Ma'at history filters ahead of bounded page selection, preserve explicit
+  empty-array and query-versus-after-cursor provenance, and continue exact native
+  action reads only across the same query and snapshot. Owner acceptance can
+  locate an old exact review through a separate bounded strict journal scan;
+  tolerant history cursors never authorize mutation.
+- Retain exact native read progress across explicitly continued interactions,
+  bind it to the selected action generation, and keep raw evidence multiplicity
+  separate from hidden relationship rows. Charge selected-record rereads and
+  limit finalization to the remaining budget or one bounded dependency bundle;
+  empty, incomplete, after-cursor and failed-refresh states remain distinct.
+- Project binary updater outcomes and unresolved attempts through the same
+  Casebook overlay before history status/text filtering and page selection.
+  Preserve binary-only repair success separately from other findings and failed
+  floors, and retain typed inspect/re-screen routes and receipt search.
+- Owner acceptance keeps its strict journal mutation path. Source fixtures and
+  static inspection do not qualify installed behavior or execute an updater.
+- Carry the merged Ra TLS-handshake retry/outbox correction into the full
+  corrective candidate. Keep its complete seven-input scope and unresolved
+  runtime obligations active while SSA publishes the separately ready fixes
+  through one normal commercial release train. The next released baseline is
+  the starting point for subsequent integration, not permission to discard
+  unfinished application work or relabel diagnostic passes as repairs.
+
 ## 2026-10-24 — v0.24.135 release candidate
 
 Ready135 qualifies the merged TLS/fleet corrections, bounded release helpers,

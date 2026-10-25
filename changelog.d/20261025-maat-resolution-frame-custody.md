@@ -1,1 +1,0 @@
-- Retain the controlled diagnostic workflow in its existing navigation frame so Back preserves pending/unknown re-screen receipts and once-only write custody; keep disappearance cancellation and fresh-read checks unchanged.
