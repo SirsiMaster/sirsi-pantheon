@@ -204,7 +204,8 @@
         "cmd/sirsi/maatrepair_binary_drift.go",
         "internal/maat/memory_diagnostic_request.go",
         "macapp/Sources/SirsiMenubar/MaatDiagnosticResolution.swift",
-        "internal/maat/memory_diagnostic_discovery.go"
+        "internal/maat/memory_diagnostic_discovery.go",
+        "macapp/Sources/SirsiMenubar/MaatDiagnosticCorrelation.swift"
       ],
       "tests": [
         "cmd/sirsi/maattriage_test.go",
@@ -220,7 +221,9 @@
         "macapp/Tests/SirsiMenubarTests/MaatDiagnosticResolutionTests.swift",
         "internal/maat/memory_diagnostic_discovery_test.go",
         "internal/maat/memory_diagnostic_not_submitted_test.go",
-        "cmd/sirsi/maattriage_request_discovery_test.go"
+        "cmd/sirsi/maattriage_request_discovery_test.go",
+        "macapp/Tests/SirsiMenubarTests/MaatDiagnosticCorrelationFixture.swift",
+        "macapp/Tests/SirsiMenubarTests/MaatDiagnosticCorrelationTests.swift"
       ],
       "inputs": [
         "one complete local Doctor report",
@@ -258,7 +261,13 @@
         "compose DIAGNOSTIC_REQUEST_V1.md with the engine-owned native adapter and retained completion/query-owned refresh; never infer request identity or replay permission from empty lists",
         "page both restart-discovery collections with one query/snapshot and explicit coverage/cursor; reject drift and restart fresh without splicing partial snapshots",
         "complete exact retained not_submitted result WAL before journal-absence inference; never waive unrelated/corrupt/missing custody",
-        "reject explicitly empty request selectors before legacy fallback; omission alone retains legacy command behavior"
+        "reject explicitly empty request selectors before legacy fallback; omission alone retains legacy command behavior",
+        "compose accepted 73d request/page Go API; retain one engine-owned request UUID before prepare and invoke at most once",
+        "discover complete same-snapshot page chains; no first-page empty inference or total128 cap; preserve typed completed receipts on partial/stale/cancel/remount",
+        "resolve-first exact request actor/store/intent/result debt without replay; dedicated fresh-screen uses the same engine-owned model",
+        "merge this component metadata only into the newer31-component catalogue; never replace its full recipe with this older29-component donor",
+        "native adapter source and inert interop fixtures only; Main normal-window and Go-to-native execution pending",
+        "see docs/stacklab/maat/canon/DIAGNOSTIC_NATIVE_REQUEST_ADAPTER_V1.md"
       ]
     },
     {

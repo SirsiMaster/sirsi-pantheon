@@ -94,3 +94,22 @@ setup in `memory_test.go`/`memoryguard_test.go`, using the exact855 private help
 and public0755 no-chmod refusal fixture without its API adaptations. Production
 mode policy and all old assertions remain unchanged; whole-core normal/race
 under022 is required rather than narrowing away these tests.
+
+O7 native request consumer continuation: `MaatDiagnosticCorrelation.swift` decodes
+the accepted73d canonical request/record/page DTOs. `MaatDiagnosticRecordModel`
+retains the request key before preparation, verifies prepared custody, submits
+once, then reads that exact request; uncertain preparation/invocation is read or
+confirmed-resolve only. Discovery follows one query/snapshot chain with eight
+pages per UI turn and explicit continuation, rather than a total128-row cap. A
+completed chain is revalidated against the producer's full-namespace snapshot
+before new preparation. `MaatDiagnosticRecordView` exposes partial/restart/debt
+and retained typed receipts; `MaatDiagnosticResolution.recordFreshScreen` uses
+the engine-owned model rather than a second legacy submitter. Existing
+query-owned refresh and UI1/UI2 completion retention remain. Corresponding
+record/resolution/correlation tests include129 historical rows, cancellation,
+snapshot drift, missing preparation, exact tuple refusal and an external
+Go-produced wire input (explicit skip without Main artifact). This child has
+not been built/tested by its author; actual interoperability, normal-window
+acceptance and installed/full-O7 acceptance remain open. See
+[consumer boundary](DIAGNOSTIC_NATIVE_REQUEST_ADAPTER_V1.md).
+

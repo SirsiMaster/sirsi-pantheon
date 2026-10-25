@@ -7,8 +7,18 @@ import Foundation
 final class MaatHistoryRefreshStore: ObservableObject {
     @Published private(set) var state: MaatHistoryRefreshState
 
-    init(projection: MaatCasebookProjection? = nil) {
+    typealias Reader = @Sendable ([String]) async -> SirsiEngine.JSONCommandRead
+    private let reader: Reader
+    init(projection: MaatCasebookProjection? = nil,
+         read: @escaping Reader = { await SirsiEngine.runJSONRead(args: $0) }) {
         state = MaatHistoryRefreshState(projection: projection)
+        self.reader = read
+    }
+
+    // A verified write starts a new snapshot of the committed query; its old
+    // cursor is not replayed. load retains the existing generation/cancel fence.
+    func refresh(scope: String) async {
+        await load(scope: scope, query: state.refreshQuery, run: reader)
     }
 
     func load(scope: String, query: String? = nil, cursor: String? = nil,

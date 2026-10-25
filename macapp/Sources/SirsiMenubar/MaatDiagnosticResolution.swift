@@ -83,10 +83,8 @@ func maatCurrentDiagnosticResolution(verdict: MaatSystemOneVerdict, finding: Maa
     @Published private(set) var message = "Read the current local diagnostic, then review its controlled resolution. Reading does not repair anything."
     @Published private(set) var busy = false
     @Published private(set) var screenResult: MaatSystemOneCommandResult?
-    @Published private(set) var screenReceipt: CommandExecution?
     @Published private(set) var screenAttempted = false
     private var generation = UUID()
-    private var screenInvocation: RemediationInvocation?
 
     func refresh(verdict: MaatSystemOneVerdict, finding retained: MaatSystemOneFinding,
                  localHost: String, read: () async -> SirsiEngine.JSONCommandRead) async {
@@ -135,34 +133,26 @@ func maatCurrentDiagnosticResolution(verdict: MaatSystemOneVerdict, finding: Maa
     // repeated completion cannot replay even this journal write. It is never
     // an updater/installer retry, and never closes the historical case.
     func recordFreshScreen(localHost: String = maatLocalDiagnosticHost() ?? "",
-                           capture: ([String]) async -> CommandExecution) async {
-        guard !busy, screenInvocation == nil else { return }
-        let invocation = RemediationInvocation()
-        screenInvocation = invocation
-        screenAttempted = true
-        finding = nil
-        generation = UUID()
-        busy = true
+                           using correlation: MaatDiagnosticRecordModel) async {
+        guard !busy, !screenAttempted else { return }
+        screenAttempted = true; finding = nil; generation = UUID(); busy = true
         defer { busy = false }
-        let receipt = await invocation.executeOnce(args: ["maat", "triage", "--confirm", "--json"],
-            authorize: { !Task.isCancelled }, capture: capture)
-        screenReceipt = receipt
-        guard let receipt, receipt.complete, receipt.exitCode == 0,
-              let result = try? JSONDecoder().decode(MaatSystemOneCommandResult.self, from: receipt.stdoutData),
+        await correlation.inspect()
+        guard !Task.isCancelled, let approval = correlation.approval(.record), await correlation.confirm(approval),
+              let result = correlation.recorded,
               result.verdict.contract.isEmpty, result.verdict.schemaVersion == 1,
               result.verdict.subject.kind == "host", result.verdict.subject.ref == "diagnostic",
               maatDiagnosticHostMatches(result.verdict.subject, localHost: localHost),
               maatDiagnosticSHA256(result.verdict.subject.headSHA),
-              result.snapshotEvidence == "diagnostic:sha256=" + result.verdict.subject.headSHA,
-              result.decisionEvidence.hasPrefix("maat-system-one:sha256="),
-              maatDiagnosticSHA256(String(result.decisionEvidence.dropFirst("maat-system-one:sha256=".count))),
-              ["pass", "changes", "block", "escalate"].contains(result.verdict.gate) else {
-            message = "A fresh screen was not confirmed. Inspect Casebook before attempting another write; this action will not replay. The original case remains preserved."
+              result.snapshotEvidence == "diagnostic:sha256=" + result.verdict.subject.headSHA else {
+            message = "A fresh screen was not confirmed. Inspect Casebook and the engine-owned exact request recovery below; this action will not replay. The original case remains preserved."
             return
         }
         screenResult = result
+        await correlation.refreshRecordedHistory()
         message = "A separate fresh observation was recorded. It does not prove that a repair caused recovery or accept the original case. Continue in Casebook to review its evidence and any remaining findings."
     }
+
 }
 
 @MainActor struct MaatDiagnosticResolutionView: View {
@@ -243,9 +233,9 @@ func maatCurrentDiagnosticResolution(verdict: MaatSystemOneVerdict, finding: Maa
                         Text(result.summary).sirsiFont(.body)
                         Text(result.decisionEvidence).sirsiFont(.caption, design: .monospaced).textSelection(.enabled)
                     }
-                    if model.screenResult == nil, let receipt = model.screenReceipt {
-                        Text(receipt.displayText).sirsiFont(.caption, design: .monospaced).textSelection(.enabled)
-                    }
+                    MaatDiagnosticRecordView(model: engine.maatCaseOperations.diagnosticRecord, refresh: {
+                        await engine.maatCaseOperations.diagnosticRecord.refreshRecordedHistory()
+                    })
                     NavLink { MaatCasebookView(engine: engine) } label: {
                         Label("Continue in Ma'at Casebook", systemImage: "book.closed")
                     }.buttonStyle(.bordered).disabled(model.busy)
@@ -256,7 +246,7 @@ func maatCurrentDiagnosticResolution(verdict: MaatSystemOneVerdict, finding: Maa
             Button("Record fresh screen") {
                 guard screenTask == nil, diagnosticTask == nil else { return }
                 screenTask = Task {
-                    await model.recordFreshScreen { args in await SirsiEngine.runCaptured(args: args) }
+                    await model.recordFreshScreen(using: engine.maatCaseOperations.diagnosticRecord)
                     screenTask = nil
                 }
             }
