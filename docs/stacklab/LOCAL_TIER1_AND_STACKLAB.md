@@ -34,10 +34,13 @@ Direct ordinary CLI use and normal fabric invocation retain their existing paths
 ## LF01–03 custody corrections
 
 Local scope refuses real/effective root and mismatched user/group identities.
-The child leader is observed without reaping through the already-used Darwin
-proc_pidinfo API. Darwin Python has wait flags but no os.waitid entrypoint, so no
-unavailable waitid primitive is assumed. Every local group signal rechecks its
-retained leader start/parent and member UIDs. Quiescence is checked before reap
+The child leader's start/parent is retained through Darwin proc_pidinfo before
+payload release. Terminal observation uses public libSystem waitid with
+WEXITED|WNOHANG|WNOWAIT and the SDK's LP64 siginfo_t ABI; Python's absent
+os.waitid wrapper is not assumed. A positive exact owned-child PID/UID/status
+receipt keeps the exited child waitable; ECHILD, malformed/foreign results or an
+unavailable libproc read alone never prove exit. Every local group signal checks
+its retained leader binding and member UIDs. Quiescence is checked before reap
 and actual group absence after reap. Unknown/reused leaders are never signalled.
 
 A durable per-execution refusal fence is written under the existing kernel lock
@@ -75,6 +78,15 @@ durability steps under the same lock; original debt bytes remain archived.
 Conflicting, malformed, foreign or still-live evidence refuses. No retry signals
 or replays the payload, and empty state alone cannot authorize clearing a fence.
 The new fault fixtures are authored evidence, not executed native qualification.
+
+The first native owned-true qualification of1c compiled the Go CLI but refused
+the local execution: libproc did not supply the terminal process identity, and
+the process-table parser rejected an unrelated macOS UID -2 row. The successor
+accepts signed UID syntax without treating a negative/foreign UID as eligible.
+It uses the non-reaping owned-child receipt above for terminal observation and
+exited-anchor custody. That actual failed run, its private debt and fence remain
+retained; no author cleanup or retroactive success is claimed. Main must prove
+the real wait ABI and lifecycle again before crediting the larger suites.
 
 ## Installed Stack Lab, off by default
 

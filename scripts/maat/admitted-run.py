@@ -222,24 +222,82 @@ def local_group_snapshot(group):
     probe = subprocess.run(['/bin/ps', '-axo', 'pid=,ppid=,pgid=,uid=,stat='], capture_output=True, text=True, timeout=2)
     if probe.returncode or len(probe.stdout)>1<<20:
         raise Refused('Local process-group observation unavailable')
-    rows=[]
+    rows=[]; observed=False
     for line in probe.stdout.splitlines():
+        if not line.strip():continue  # Empty ps header with explicit '=' columns.
         parts=line.split()
-        if len(parts)!=5 or not all(x.isdigit() for x in parts[:4]):
+        if (len(parts)!=5 or not all(re.fullmatch(r'[0-9]+', x) for x in parts[:3])
+                or not re.fullmatch(r'-?[0-9]+', parts[3])):
             raise Refused('Local process-group observation malformed')
+        observed=True
         if int(parts[2])==group:
             rows.append(dict(pid=int(parts[0]),ppid=int(parts[1]),pgid=int(parts[2]),uid=int(parts[3]),status=parts[4]))
+    if not observed:raise Refused('Local process-group enumeration is empty/unknown')
     return rows
 
 
+class _Sigval(ctypes.Union):
+    _fields_ = [('integer',ctypes.c_int),('pointer',ctypes.c_void_p)]
+
+
+class _Siginfo(ctypes.Structure):
+    # Public Darwin sys/signal.h siginfo_t, arm64/x86_64 LP64. No proc/argv read.
+    _fields_ = [('signo',ctypes.c_int),('error',ctypes.c_int),('code',ctypes.c_int),
+                ('pid',ctypes.c_int),('uid',ctypes.c_uint32),('status',ctypes.c_int),
+                ('address',ctypes.c_void_p),('value',_Sigval),('band',ctypes.c_long),
+                ('reserved',ctypes.c_ulong*7)]
+
+
+def local_child_terminal(child, wait=None):
+    """Non-reaping kernel receipt for our exact child; ECHILD is not absence.
+
+    Python's Darwin os module omits waitid, but libSystem exposes the public C
+    interface. Constants/layout below are from SDK sys/wait.h and sys/signal.h.
+    A live libproc start identity was retained before releasing the payload;
+    WNOWAIT keeps this exact exited child waitable, preventing PID reuse before
+    the controller's sole later wait/reap. No unavailable libproc read implies exit.
+    """
+    if (sys.platform!='darwin' or type(child.pid) is not int or child.pid<=1
+            or ctypes.sizeof(ctypes.c_void_p)!=8 or ctypes.sizeof(_Siginfo)!=104
+            or _Siginfo.pid.offset!=12 or _Siginfo.status.offset!=20):
+        raise Refused('Owned child wait ABI unavailable')
+    if wait is None:
+        library=ctypes.CDLL('/usr/lib/libSystem.B.dylib',use_errno=True)
+        wait=library.waitid
+        wait.argtypes=[ctypes.c_int,ctypes.c_uint32,ctypes.POINTER(_Siginfo),ctypes.c_int]
+        wait.restype=ctypes.c_int
+    info=_Siginfo()
+    # P_PID=1; WNOHANG=1, WEXITED=4, WNOWAIT=0x20. Never consumes the child.
+    if wait(1,child.pid,ctypes.byref(info),1|4|0x20)!=0:
+        raise Refused('Owned child wait observation failed (errno '+str(ctypes.get_errno())+'); no exit or absence inferred')
+    if info.pid==0:
+        if any((info.signo,info.error,info.code,info.uid,info.status)):
+            raise Refused('Malformed empty owned child wait observation')
+        return None
+    if info.pid!=child.pid or info.uid!=os.getuid() or info.signo!=signal.SIGCHLD or info.error:
+        raise Refused('Owned child wait PID/UID/signal differs')
+    if info.code==1 and 0<=info.status<=255:  # CLD_EXITED
+        return info.status
+    if info.code in (2,3) and 0<info.status<signal.NSIG:  # CLD_KILLED/DUMPED
+        return -info.status
+    raise Refused('Unknown owned child terminal status')
+
+
+def local_anchor_matches(child, birth):
+    if not birth:return False
+    try:
+        return process_identity(child.pid)==(os.getpid(),birth)
+    except Refused:
+        # libproc may omit an exited process. Only a positive non-reaping
+        # kernel receipt for our already-bound direct child replaces that read.
+        return local_child_terminal(child) is not None
+
+
 def local_wait_terminal(child, timeout):
-    # Darwin Python has no os.waitid. Public BSD info observes a zombie without
-    # waitpid/reaping, retaining the leader as a kernel identity anchor.
     deadline=time.monotonic()+timeout
     while time.monotonic()<deadline:
-        row=native_process_info(child.pid)
-        if row.status==5:  # SZOMB, sys/proc.h; pbi_xstatus is wait status.
-            return os.waitstatus_to_exitcode(row.xstatus)
+        status=local_child_terminal(child)
+        if status is not None:return status
         time.sleep(0.02)
     raise subprocess.TimeoutExpired('owned local child',timeout)
 
@@ -248,7 +306,7 @@ def local_stop_owned(child, birth):
     for sig in (None,signal.SIGTERM,signal.SIGKILL):
         rows=local_group_snapshot(child.pid)
         anchor=next((x for x in rows if x['pid']==child.pid),None)
-        if not birth or anchor is None or process_identity(child.pid)!=(os.getpid(),birth):
+        if anchor is None or not local_anchor_matches(child,birth):
             raise Refused('Local child identity anchor absent/changed; no signal sent')
         if any(x['uid']!=os.getuid() for x in rows):
             raise Refused('Foreign UID in local group; no signal sent')
@@ -259,7 +317,7 @@ def local_stop_owned(child, birth):
             return
         if sig is not None:
             # Revalidate immediately before each signal; never a reaped PID.
-            if process_identity(child.pid)!=(os.getpid(),birth):
+            if not local_anchor_matches(child,birth):
                 raise Refused('Local child start changed before signal')
             os.killpg(child.pid,sig)
         end=time.monotonic()+0.5
@@ -272,7 +330,7 @@ def local_stop_owned(child, birth):
         # the same anchored quiescence/reap/absence path before falling through.
         rows=local_group_snapshot(child.pid)
         anchor=next((x for x in rows if x['pid']==child.pid),None)
-        if not birth or anchor is None or process_identity(child.pid)!=(os.getpid(),birth):
+        if anchor is None or not local_anchor_matches(child,birth):
             raise Refused('Local child identity changed after signal wait; no further signal')
         if any(x['uid']!=os.getuid() for x in rows):
             raise Refused('Foreign UID after local signal wait')
