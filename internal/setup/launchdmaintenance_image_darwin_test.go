@@ -57,8 +57,13 @@ func TestMaintenanceKernelCDHashOwnedSelfChild(t *testing.T) {
 	}
 
 	pid := child.Process.Pid
-	identity, err := maintenanceLoadedImageIdentity(pid, servicedrain.MaintenanceStart, maintenanceKernelCDHash)
-	if err != nil || identity.PID != pid || identity.KernelStart == "" || len(identity.CDHash) != 40 {
+	var starts []string
+	identity, err := maintenanceLoadedImageIdentity(pid, func(pid int) (string, error) {
+		start, err := servicedrain.MaintenanceStart(pid)
+		starts = append(starts, start)
+		return start, err
+	}, maintenanceKernelCDHash)
+	if err != nil || identity.PID != pid || identity.KernelStart == "" || len(identity.CDHash) != 40 || len(starts) != 2 || starts[0] != identity.KernelStart || starts[1] != identity.KernelStart {
 		t.Fatalf("owned child kernel identity = %+v, err=%v", identity, err)
 	}
 	candidate, err := hex.DecodeString(identity.CDHash)
