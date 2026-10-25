@@ -17,8 +17,17 @@ private func maatDiagnosticSHA256(_ value: String) -> Bool {
 }
 
 private func maatHostDiagnosticID(_ check: String) -> String {
-    let digest = SHA256.hash(data: Data(check.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
+    let digest = SHA256.hash(data: Data(check.trimmingCharacters(in: .whitespacesAndNewlines).utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
     return "host-health-" + digest
+}
+
+func maatDiagnosticHostMatches(_ subject: MaatSystemOneSubject, localHost: String) -> Bool {
+    let host = localHost.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !host.isEmpty, host.utf8.count <= 1024, subject.kind == "host", subject.ref == "diagnostic" else { return false }
+    guard let binding = subject.hostBinding, !binding.isEmpty else { return subject.repo == host }
+    guard binding == "sirsi.maat.local-host-sha256.v1" else { return false }
+    let digest = SHA256.hash(data: Data(host.utf8)).map { String(format: "%02x", $0) }.joined()
+    return subject.repo == "local-host-" + digest
 }
 
 func maatUsesDedicatedDiagnosticCustody(_ finding: MaatSystemOneFinding) -> Bool {
@@ -34,7 +43,7 @@ func maatHasLocalDiagnosticCustody(_ verdict: MaatSystemOneVerdict,
     let head = verdict.subject.headSHA
     return verdict.contract.isEmpty && verdict.schemaVersion == 1 &&
         verdict.subject.kind == "host" && verdict.subject.ref == "diagnostic" &&
-        !localHost.isEmpty && verdict.subject.repo == localHost &&
+        maatDiagnosticHostMatches(verdict.subject, localHost: localHost) &&
         maatDiagnosticSHA256(head) &&
         finding.category == "host-health" &&
         finding.id.hasPrefix("host-health-") && finding.id.utf8.count == 24 &&
@@ -142,7 +151,7 @@ func maatCurrentDiagnosticResolution(verdict: MaatSystemOneVerdict, finding: Maa
               let result = try? JSONDecoder().decode(MaatSystemOneCommandResult.self, from: receipt.stdoutData),
               result.verdict.contract.isEmpty, result.verdict.schemaVersion == 1,
               result.verdict.subject.kind == "host", result.verdict.subject.ref == "diagnostic",
-              !localHost.isEmpty, result.verdict.subject.repo == localHost,
+              maatDiagnosticHostMatches(result.verdict.subject, localHost: localHost),
               maatDiagnosticSHA256(result.verdict.subject.headSHA),
               result.snapshotEvidence == "diagnostic:sha256=" + result.verdict.subject.headSHA,
               result.decisionEvidence.hasPrefix("maat-system-one:sha256="),

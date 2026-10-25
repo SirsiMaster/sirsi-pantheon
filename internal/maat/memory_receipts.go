@@ -113,6 +113,14 @@ func (s *Store) retainPreflightReceiptWithWrite(r PreflightReceipt, write func(s
 		return StoredPreflightReceipt{}, err
 	}
 	defer s.unlock()
+	return s.retainPreflightReceiptLocked(r, write)
+}
+
+// Caller holds the same memory lock across a correlated diagnostic invocation.
+func (s *Store) retainPreflightReceiptLocked(r PreflightReceipt, write func(string, int, string, []byte) error) (StoredPreflightReceipt, error) {
+	if r.RegistrySnapshotVersion != 2 || r.validate() != nil {
+		return StoredPreflightReceipt{}, errors.New("maat memory: retention requires a complete current v2 receipt")
+	}
 	var identity unix.Stat_t
 	if err := unix.Fstat(s.rootFD, &identity); err != nil {
 		return StoredPreflightReceipt{}, err

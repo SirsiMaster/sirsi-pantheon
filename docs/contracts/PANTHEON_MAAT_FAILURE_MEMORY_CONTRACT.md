@@ -255,6 +255,25 @@ open.
 
 ## Privacy, publication and recovery ownership
 
+### O7 confirmed local diagnostic record source continuation (2026-10-25)
+
+The existing `maat triage --confirm` entry now has a source-only scoped adapter:
+closed privacy-filtered observation provenance/freshness, full-manifest memory
+preflight and retained receipt, durable record intent before `RecordSystemOne`,
+existing journal append-once and exact complete readback, then a deterministic
+result. Known pre-append refusal is `not_submitted`; uncertain delivery is debt
+and never automatically resent. Inspection/reconciliation are data-only, without
+host re-observation or journal append. Pure local observation remains available
+with memory state/admission explicitly distinguished. See the exact
+[O7 boundary and upgrade recipe](../stacklab/maat/canon/DIAGNOSTIC_RECORD_V1.md).
+
+This is the current confirmed local-record slice only. No diagnostics-specific
+authorized export owner was established at9350, and no new export was invented.
+Generic JSON output is not blanket sharing permission. All full-row O7 export,
+other diagnostic callers, native/installed qualification and original historical
+execution obligations remain open pending separately bound evidence. No eight-row
+or whole-Ma'at completion follows from this source.
+
 Local diagnostic paths, process arguments, model contents, prompts and credentials
 remain local. A hash is not permission to transmit sensitive evidence. Sharing
 requires a privacy-safe derived receipt and existing explicit export authority;
