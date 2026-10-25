@@ -101,7 +101,16 @@ for required in \
         exit 1
     }
 done
-for required in '"--draft"' '"--verify-tag"' '"--draft=false"' 'readback(release, True)' \
+# The publisher now creates one source-bound private draft via POST and retains
+# that response's validated identity. Retired CLI option strings are not proof
+# of the executing route. These source checks complement its inert behavioral
+# fixtures; they do not establish live GitHub or Apple acceptance.
+for required in '"--method", "POST"' '"-F", "draft=true"' \
+    '"--jq", "{id,tag_name,draft}"' '"tag_name=" + tag' \
+    '"target_commitish=" + expected_commit' 'selected_id = identity["id"]' \
+    'identity.get("draft") is not True' \
+    'record.update(release_id=selected_id, creation_outcome="draft_identity_received")' \
+    '"--draft=false"' 'readback(release, True)' \
     'local_unchanged()' 'check_tag()' '"stapler", "validate"' '"--check-signature"'; do
     /usr/bin/grep -Fq -- "$required" "$publisher" || {
         echo "draft publication/readback contract missing: $required" >&2; exit 1;
