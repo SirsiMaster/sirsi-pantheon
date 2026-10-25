@@ -86,5 +86,12 @@ class SameHostDispatch(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(calls,[]);self.assertEqual(observed,[])
         self.assertIn('SELF_DISPATCH=conditional',result.stdout);self.assertIn('LOCAL_COMMAND=',result.stdout);self.assertIn('REMOTE_COMMAND=',result.stdout)
 
+    def test_metadata_cleanup_fatal_status_starts_no_supervisor_or_ssh(self):
+        # The production selector's killed/unreaped boundary is separately
+        # injected by LocalityPolicy; this invokes the actual shell on its78.
+        result,calls,_,observed=self.invoke(decision=78,transport='direct')
+        self.assertEqual(result.returncode,78);self.assertEqual(calls,[])
+        self.assertEqual(result.stdout,'');self.assertEqual(len(observed),1)
+
 
 if __name__=='__main__':unittest.main()

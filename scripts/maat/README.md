@@ -402,3 +402,7 @@ bounded closed JSON diagnostic to stderr, never payload stdout or a caller-chose
 path. Main correlates selector parent PID -> exec supervisor -> normal native
 receipt; no new receipt framework is added. `admitted-run.py` is unchanged and
 still derives its own resource/registration/admission under its existing policy.
+
+Metadata cleanup uncertainty is terminal78 (no later route). The configured
+account query shares the bounded owned-child mechanism with ioreg/ifconfig;
+confirmed timeout/error is ordinary unknown, never invented local ownership.

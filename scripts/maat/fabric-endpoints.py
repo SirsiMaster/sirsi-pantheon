@@ -8,7 +8,7 @@ import argparse
 import ipaddress
 import json
 import os
-import pwd
+from types import SimpleNamespace
 import re
 import selectors
 import time
@@ -37,6 +37,11 @@ TB_RANGE = ipaddress.ip_network("10.96.0.0/16")
 
 
 class PolicyError(Exception):
+    pass
+
+
+class MetadataCleanupError(Exception):
+    """Owned metadata child termination/reaping is uncertain: no next route."""
     pass
 
 
@@ -86,7 +91,7 @@ def metadata_output(argv, limit):
             try:
                 process.wait(timeout=1)
             except subprocess.TimeoutExpired as exc:
-                raise PolicyError('native metadata child cleanup unconfirmed') from exc
+                raise MetadataCleanupError('native metadata child cleanup unconfirmed') from exc
             finally:
                 if process.stdout is not None:
                     process.stdout.close()
@@ -178,16 +183,46 @@ def locality(target, interfaces, native_uuid, uid, euid, account):
     return 'local', 'kernel-endpoint-and-own-uid', owner[0]
 
 
+_ACCOUNT_QUERY = ('import json,pwd,sys; row=pwd.getpwnam(sys.argv[1]); '
+                  'print(json.dumps({"name":row.pw_name,"uid":row.pw_uid}))')
+
+
+def parse_account(text, expected_name):
+    """Only the configured native account's closed name/UID result is accepted."""
+    def unique_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate account field')
+            result[key] = value
+        return result
+    if not isinstance(text, str) or len(text) > 1024:
+        return None
+    try:
+        row = json.loads(text, object_pairs_hook=unique_pairs)
+    except (ValueError, TypeError):
+        return None
+    if (not isinstance(row, dict) or set(row) != {'name','uid'}
+            or row['name'] != expected_name or type(row['uid']) is not int
+            or not 0 <= row['uid'] <= 0xffffffff):
+        return None
+    return SimpleNamespace(pw_name=row['name'], pw_uid=row['uid'])
+
+
+def native_account(name):
+    # Exact configured name as argv data; isolated stdlib child shares the same
+    # three-second/output/kill/wait boundary as other native metadata. No lookup
+    # runs synchronously in the selector process; errors remain safe unknown.
+    return parse_account(metadata_output(['/usr/bin/python3','-I','-c',_ACCOUNT_QUERY,name],1024),name)
+
+
 def dispatch(target):
     # No caller address, UUID, hostname, output pathname or grant parameter.
     uid, euid = os.getuid(), os.geteuid()
     native_uuid = parse_native_uuid(metadata_output(['/usr/sbin/ioreg','-rd1','-c','IOPlatformExpertDevice'],65536))
     try:
         interfaces = parse_interfaces(metadata_output(['/sbin/ifconfig','-a'],262144))
-        try:
-            account = pwd.getpwnam(PEERS[target]['user'])
-        except (KeyError, OSError):
-            account = None
+        account = native_account(PEERS[target]['user'])
         decision, reason, interface = locality(target, interfaces, native_uuid, uid, euid, account)
     except PolicyError:
         decision, reason, interface = 'ssh', 'interface-inventory-unavailable', None
@@ -371,6 +406,9 @@ def main(argv=None):
         # One raw tunnel, one SSH handshake, one remote command. No auth retries.
         tunnel = relay_ssh(via, proxy, address) if via else nc_args(address, proxy)
         os.execv(tunnel[0], tunnel)
+    except MetadataCleanupError:
+        print("REFUSED: native metadata child cleanup unconfirmed", file=sys.stderr)
+        return 78
     except PolicyError as exc:
         print("REFUSED: " + str(exc), file=sys.stderr)
         return 78

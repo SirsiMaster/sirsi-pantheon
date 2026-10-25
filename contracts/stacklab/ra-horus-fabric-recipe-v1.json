@@ -300,7 +300,7 @@
       "inputs": [
         "closed target and exact enrolled numeric destination from existing endpoint table",
         "bounded native kernel interface inventory + observed native UUID",
-        "real/effective kernel UID and existing target account",
+        "real/effective kernel UID and bounded closed configured-account child result",
         "own scope verified by unchanged normal native executor",
         "exact work/CPU/timeout/literal argv",
         "existing proxy and strict host pins for remote/unknown"
@@ -317,7 +317,7 @@
         "publish reviewed shell/selector pair together; admitted-run separate owner untouched",
         "require exact unique active non-loopback kernel ownership; never DNS/hostname/model/ambient authority or empty-ID SameMachine",
         "retain actual UUID only as executor observation; no fabricated target binding",
-        "local admission and SSH/auth failure terminal, never fallback to another route",
+        "local admission, metadata cleanup uncertainty and SSH/auth failure terminal; no next route",
         "retain payload mask, literal argv and normal real executor/receipt/completion semantics",
         "qualify all existing/new inert suites and causal controls under Main, then actual own M5 route",
         "source-only unrun; no installed/all-peer SSH/task completion claim"

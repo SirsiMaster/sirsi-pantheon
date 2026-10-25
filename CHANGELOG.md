@@ -15,6 +15,10 @@
 
 - Scope web Fabric freshness and lane drilldown to their own observation; keep compact native attention visible and bind local engine telemetry to the existing this-mac route.
 - Add direct app-wiring, machine-binding and compact-projection regression fixtures. Qualification remains Main-owned and pending.
+## Same-host dispatch metadata lifecycle correction (source candidate)
+
+- Keep unconfirmed owned metadata-child cleanup terminal; bound configured-account resolution through the same strict child lifecycle. Add direct timeout/cleanup/closed-result and shell no-execution fixtures. Source-only, unrun.
+
 ## Existing own-target native dispatch correction (source candidate)
 
 - Select the normal local executor only for exact enrolled endpoint kernel ownership and native UUID/UID/account evidence; retain strict remote SSH/proxy and terminal failure semantics. No enrollment, credential, grant or supervisor-policy change.

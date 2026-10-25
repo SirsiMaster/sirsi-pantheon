@@ -74,3 +74,26 @@ then invoke the reviewed SOURCE pair for its actual own `/usr/bin/true` route.
 Retain actual interface/endpoint/native UUID/UID/PID, native executor thread,
 admission/execution/terminal and completion/release. No source/fixture result is
 installed adoption, successful SSH authentication, all-peer parity or task closure.
+
+## 469 review metadata-lifecycle correction (source-only)
+
+Cleanup uncertainty has a distinct fatal exception, outside ordinary invalid
+inventory handling. A killed metadata child whose reap cannot be confirmed
+terminates selector78; the shell never starts a supervisor/SSH on that status.
+Confirmed timeout/error remains safe unknown/status3 under the original strict
+remote policy. ioreg, ifconfig and account metadata now have the same lifecycle.
+
+The exact configured account lookup executes in an isolated fixed Python stdlib
+child through the existing three-second/byte-limit/kill/wait reader, not synchronously
+in the selector. Only unique exact JSON name/UID fields, the exact configured name
+and an integer native UID are admitted; raw errors/stderr are discarded. No new
+enrollment/service, environment proof, output path or receipt mechanism.
+
+Direct fixtures inject real reader cleanup code at its mocked process boundary:
+ifconfig and account killed/unreaped -> terminal78; account timeout with confirmed
+reap -> unknown; malformed/failed account result -> unknown. The actual-shell
+fixture verifies fatal78 starts no supervisor or SSH. Account lookup in the parent
+is guarded against in those fixtures; no real native query is used as a control.
+Architecture acceptance is attributed to Main's coordination and the independent
+contract review, not invented direct human approval. Source/runtime verdicts stay
+separate; original ledger closure still requires Main qualification/actual own route.

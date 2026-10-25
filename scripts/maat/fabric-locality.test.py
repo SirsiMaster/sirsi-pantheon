@@ -97,19 +97,80 @@ class LocalityPolicy(unittest.TestCase):
             self.assertIsNone(policy.metadata_output(['/sbin/ifconfig','-a'],8));process.kill.assert_called_once()
 
     def test_dispatch_observation_is_closed_stderr_only_and_parent_pid_is_native(self):
-        facts={'/sbin/ifconfig':INVENTORY,'/usr/sbin/ioreg':'"IOPlatformUUID" = "'+UUID+'"'}
-        with patch.object(policy,'metadata_output',side_effect=lambda argv,limit:facts[argv[0]]) as read,patch.object(policy.os,'getuid',return_value=501),patch.object(policy.os,'geteuid',return_value=501),patch.object(policy.pwd,'getpwnam',return_value=AGENT),patch.object(policy.os,'getpid',return_value=555),patch.object(policy.os,'getppid',return_value=444),patch.object(policy,'runtime_proxy',side_effect=AssertionError('locality not network')),patch.object(policy.os,'execv',side_effect=AssertionError('selector grants no execution')),redirect_stdout(io.StringIO()) as output,redirect_stderr(io.StringIO()) as error:
+        facts={'/sbin/ifconfig':INVENTORY,'/usr/sbin/ioreg':'"IOPlatformUUID" = "'+UUID+'"','/usr/bin/python3':json.dumps({'name':AGENT.pw_name,'uid':AGENT.pw_uid})}
+        with patch.object(policy,'metadata_output',side_effect=lambda argv,limit:facts[argv[0]]) as read,patch.object(policy.os,'getuid',return_value=501),patch.object(policy.os,'geteuid',return_value=501),patch.object(policy.os,'getpid',return_value=555),patch.object(policy.os,'getppid',return_value=444),patch.object(policy,'runtime_proxy',side_effect=AssertionError('locality not network')),patch.object(policy.os,'execv',side_effect=AssertionError('selector grants no execution')),redirect_stdout(io.StringIO()) as output,redirect_stderr(io.StringIO()) as error:
             self.assertEqual(policy.main(['dispatch','m5']),0)
             self.assertEqual(output.getvalue(),'')
             row=json.loads(error.getvalue());self.assertEqual(row['decision'],'local');self.assertEqual(row['exec_parent_pid'],444);self.assertEqual(row['selector_pid'],555)
             self.assertEqual(set(row),{'schema','decision','reason','target','endpoint','native_machine_id','interface','uid','euid','selector_pid','exec_parent_pid','authority'})
             self.assertEqual(row['native_machine_id'],UUID);self.assertNotIn('agent',row)
-            self.assertEqual(read.call_count,2)
+            self.assertEqual(read.call_count,3)
 
     def test_unavailable_inventory_retains_remote_without_network_or_raw_error(self):
         with patch.object(policy,'metadata_output',return_value=None),patch.object(policy,'select_endpoint',side_effect=AssertionError('dispatch never probes')),redirect_stdout(io.StringIO()) as out,redirect_stderr(io.StringIO()) as err:
             self.assertEqual(policy.main(['dispatch','m5']),3);self.assertEqual(out.getvalue(),'')
             self.assertEqual(json.loads(err.getvalue())['reason'],'interface-inventory-unavailable')
+
+    def test_bounded_account_result_requires_exact_name_uid_and_unique_fields(self):
+        good=json.dumps({'name':AGENT.pw_name,'uid':501})
+        row=policy.parse_account(good,AGENT.pw_name)
+        self.assertEqual((row.pw_name,row.pw_uid),(AGENT.pw_name,501))
+        for raw in (None,'{}','[]','not json',good+'{}',
+                    '{"name":"thekryptodragon","uid":502,"uid":501}',
+                    json.dumps({'name':AGENT.pw_name,'uid':501,'extra':True}),
+                    *[json.dumps({'name':AGENT.pw_name,'uid':value}) for value in (True,'501',501.0,-1,1<<32)],
+                    *[json.dumps({'name':value,'uid':501}) for value in ('prefix-'+AGENT.pw_name,AGENT.pw_name+'-suffix','')]):
+            with self.subTest(raw=raw):self.assertIsNone(policy.parse_account(raw,AGENT.pw_name))
+
+    def metadata_boundary_dispatch(self, stage, uncertain):
+        # Exercise real metadata_output kill/wait code with a mocked owned child.
+        # No native executable/account lookup is invoked by this fixture.
+        read_actual=policy.metadata_output
+        stream=Mock();process=Mock(stdout=stream);process.poll.return_value=None
+        process.wait.side_effect=policy.subprocess.TimeoutExpired('private fixture diagnostic',1) if uncertain else None
+        process.wait.return_value=0
+        ready=MagicMock();ready.get_map.return_value={1:SimpleNamespace(fileobj=stream)}
+        calls=[]
+        def read(argv,limit):
+            calls.append((argv,limit))
+            if argv[0]==stage:return read_actual(argv,limit)
+            if argv[0]=='/usr/sbin/ioreg':return '"IOPlatformUUID" = "'+UUID+'"'
+            if argv[0]=='/sbin/ifconfig':return INVENTORY
+            if argv[0]=='/usr/bin/python3':return json.dumps({'name':AGENT.pw_name,'uid':501})
+            raise AssertionError('unexpected metadata child')
+        with patch('pwd.getpwnam',side_effect=AssertionError('account lookup must stay in bounded child')),patch.object(policy,'metadata_output',side_effect=read),patch.object(policy.subprocess,'Popen',return_value=process) as spawn,patch.object(policy.selectors,'DefaultSelector') as select,patch.object(policy.time,'monotonic',side_effect=[0,4]),patch.object(policy.os,'getuid',return_value=501),patch.object(policy.os,'geteuid',return_value=501),patch.object(policy,'select_endpoint',side_effect=AssertionError('no SSH/probe after cleanup uncertainty')),patch.object(policy.os,'execv',side_effect=AssertionError('no executor from selector')),redirect_stdout(io.StringIO()) as out,redirect_stderr(io.StringIO()) as err:
+            select.return_value.__enter__.return_value=ready
+            result=policy.main(['dispatch','m5'])
+        process.kill.assert_called_once();process.wait.assert_called_once_with(timeout=1);stream.close.assert_called_once()
+        self.assertEqual(out.getvalue(),'');self.assertNotIn('private fixture diagnostic',err.getvalue())
+        self.assertEqual(spawn.call_args.args[0][0],stage)
+        return result,err.getvalue(),calls,spawn.call_args.args[0]
+
+    def test_ifconfig_cleanup_uncertainty_is_terminal_not_remote_unknown(self):
+        result,error,calls,_=self.metadata_boundary_dispatch('/sbin/ifconfig',True)
+        self.assertEqual(result,78,'cleanup uncertainty must be terminal before any SSH route')
+        self.assertIn('cleanup unconfirmed',error)
+        self.assertEqual([x[0][0] for x in calls],['/usr/sbin/ioreg','/sbin/ifconfig'])
+
+    def test_bounded_account_timeout_after_confirmed_cleanup_stays_unknown(self):
+        result,error,calls,argv=self.metadata_boundary_dispatch('/usr/bin/python3',False)
+        self.assertEqual(result,3)
+        self.assertEqual(json.loads(error)['reason'],'account-not-local-owner')
+        self.assertEqual(argv,['/usr/bin/python3','-I','-c',policy._ACCOUNT_QUERY,AGENT.pw_name])
+        self.assertEqual(calls[-1][1],1024)
+
+    def test_account_cleanup_uncertainty_is_terminal_before_next_route(self):
+        result,error,calls,_=self.metadata_boundary_dispatch('/usr/bin/python3',True)
+        self.assertEqual(result,78,'cleanup uncertainty must be terminal before any SSH route')
+        self.assertIn('cleanup unconfirmed',error);self.assertEqual(len(calls),3)
+
+    def test_account_error_or_malformed_output_never_selects_local(self):
+        for account in (None,'malformed','{}'):
+            def read(argv,limit):
+                return {'/sbin/ifconfig':INVENTORY,'/usr/sbin/ioreg':'"IOPlatformUUID" = "'+UUID+'"','/usr/bin/python3':account}[argv[0]]
+            with self.subTest(account=account),patch.object(policy,'metadata_output',side_effect=read),redirect_stdout(io.StringIO()) as out,redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(policy.main(['dispatch','m5']),3)
+                self.assertEqual(out.getvalue(),'');self.assertEqual(json.loads(err.getvalue())['reason'],'account-not-local-owner')
 
 
 if __name__=='__main__':unittest.main()
