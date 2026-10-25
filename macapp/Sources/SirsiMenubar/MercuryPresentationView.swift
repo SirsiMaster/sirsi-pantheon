@@ -97,7 +97,7 @@ struct MercurySnapshotPresentation: View {
         return VStack(alignment: .center, spacing: 10) {
             Text(title).sirsiFont(12, weight: .semibold).tracking(2).foregroundStyle(color)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(number).font(.system(size: 60, weight: .light)).minimumScaleFactor(0.4).lineLimit(1)
+                Text(number).sirsiFont(60, weight: .light).minimumScaleFactor(0.4).lineLimit(1)
                 Text(unit).sirsiFont(18)
             }.foregroundStyle(number == "—" ? Color.secondary : color)
             Text(note.uppercased()).sirsiFont(12, weight: .semibold).tracking(1)

@@ -347,9 +347,9 @@ struct MaatLocalPreventionEntry: View {
         let state = model.state(entry, "")
         VStack(alignment: .leading, spacing: 8) {
             Button("Review local recurrence prevention") { confirmScreen = true }.disabled(state.busy)
-            Text("Record an exact local prevention screen, without repairing or changing health. Retained failure and unknown action debt remain binding.").font(.caption).foregroundStyle(.secondary)
+            Text("Record an exact local prevention screen, without repairing or changing health. Retained failure and unknown action debt remain binding.").sirsiFont(.caption).foregroundStyle(.secondary)
             if state.busy { ProgressView("Reading and retaining exact local memory…") }
-            if let message = state.message { Text(message).font(.caption) }
+            if let message = state.message { Text(message).sirsiFont(.caption) }
             if let next = state.nextCase { NavLink { destination(next) } label: { Label("Open retained local prevention", systemImage: "shield.lefthalf.filled") } }
         }.confirmationDialog("Record the current local prevention screen?", isPresented: $confirmScreen) {
             Button("Record and inspect local prevention") { model.recordPreventionScreen(entry) }
@@ -368,8 +368,8 @@ struct MaatLocalPreventionDetail: View {
     var body: some View {
         let state = model.state(entry, key)
         VStack(alignment: .leading, spacing: 8) {
-            Text("Local recurrence prevention").font(.headline)
-            Text(key).font(.caption).textSelection(.enabled)
+            Text("Local recurrence prevention").sirsiFont(.headline)
+            Text(key).sirsiFont(.caption).textSelection(.enabled)
             Button("Inspect exact failure and owner history") { model.inspect(entry, key) }.disabled(state.busy)
             if let view = state.view {
                 failureFacts(view)
@@ -388,10 +388,10 @@ struct MaatLocalPreventionDetail: View {
             if let pending = state.pendingPlanSHA { Button("Reconcile retained consent without repair replay") { model.reconcile(entry, key, sha: pending) }.disabled(state.busy) }
             ForEach(state.offers, id: \.plan_sha256) { offer in Button("Inspect and reconcile retained \(offer.effect)") { model.reconcile(entry, key, sha: offer.plan_sha256) }.disabled(state.busy) }
             Button("Review a new local action") { model.reviewNewAction(entry, key) }.disabled(state.busy)
-            Text("This observes a fresh local case. It never replays the installer or carries old consent into a new repair.").font(.caption).foregroundStyle(.secondary)
+            Text("This observes a fresh local case. It never replays the installer or carries old consent into a new repair.").sirsiFont(.caption).foregroundStyle(.secondary)
             if let next = state.nextCase { NavLink { destination(next) } label: { Label("Open fresh local case", systemImage: "arrow.right.circle") } }
             if state.busy { ProgressView("Ma’at is verifying the exact retained workflow…"); Button("Cancel current request") { model.cancel(entry, key) } }
-            if let message = state.message { Text(message).font(.caption).foregroundStyle(.secondary) }
+            if let message = state.message { Text(message).sirsiFont(.caption).foregroundStyle(.secondary) }
         }
         .onChange(of: conclusion) { _ in model.invalidate(entry, key) }
         .onChange(of: effect) { _ in model.invalidate(entry, key) }
@@ -403,26 +403,26 @@ struct MaatLocalPreventionDetail: View {
     @ViewBuilder private func failureFacts(_ view: MaatLocalFailureRead) -> some View {
         VStack(alignment: .leading, spacing: 6) {
                 Text("Prevention: \(view.head.status). \(view.health)")
-                Text("Occurrence \(view.head.key)\nBody \(view.head.body_sha256)\nProof \(view.head.evidence_sha256)").font(.caption)
+                Text("Occurrence \(view.head.key)\nBody \(view.head.body_sha256)\nProof \(view.head.evidence_sha256)").sirsiFont(.caption)
                 Text("Direct attempt \(view.completion.attempt_id): \(view.completion.invocation), \(view.completion.observation), \(view.completion.recorded_at_utc)")
-                Text("Originating preflight \(view.preflight_receipt_sha256); evaluated \(view.originating_preflight.evaluated_at_utc). \(view.current_fact_reference)").font(.caption)
-                ForEach(Array((view.originating_preflight.evaluated_guards ?? []).enumerated()), id: \.offset) { _, guardRecord in Text("Guard \(guardRecord.ID) / \(guardRecord.Version): \(guardRecord.SHA256)").font(.caption) }
-                ForEach(Array((view.originating_preflight.measured_checks ?? []).enumerated()), id: \.offset) { _, check in Text("\(check.IncidentKey): \(check.Status) / \(check.Outcome); proof \(check.EvidenceSHA256)").font(.caption) }
-                Text("Original action \(view.originating_preflight.action.component) / \(view.originating_preflight.action.profile) / \(view.originating_preflight.action.operation)\nManifest \(view.originating_preflight.action_manifest_sha256)\nRegistry v\(view.originating_preflight.registry_snapshot_version ?? 0) \(view.originating_preflight.registry_snapshot_sha256)").font(.caption)
-                ForEach(Array((view.originating_preflight.incident_keys ?? []).enumerated()), id: \.offset) { _, key in Text("Original incident \(key)").font(.caption) }
-                ForEach(Array((view.originating_preflight.recovery_actions ?? []).enumerated()), id: \.offset) { _, action in Text("\(action.label) [\(action.id)]: \(action.instruction)").font(.caption) }
-                Text("Original recovery reference: \(view.originating_preflight.recovery_reference)").font(.caption)
+                Text("Originating preflight \(view.preflight_receipt_sha256); evaluated \(view.originating_preflight.evaluated_at_utc). \(view.current_fact_reference)").sirsiFont(.caption)
+                ForEach(Array((view.originating_preflight.evaluated_guards ?? []).enumerated()), id: \.offset) { _, guardRecord in Text("Guard \(guardRecord.ID) / \(guardRecord.Version): \(guardRecord.SHA256)").sirsiFont(.caption) }
+                ForEach(Array((view.originating_preflight.measured_checks ?? []).enumerated()), id: \.offset) { _, check in Text("\(check.IncidentKey): \(check.Status) / \(check.Outcome); proof \(check.EvidenceSHA256)").sirsiFont(.caption) }
+                Text("Original action \(view.originating_preflight.action.component) / \(view.originating_preflight.action.profile) / \(view.originating_preflight.action.operation)\nManifest \(view.originating_preflight.action_manifest_sha256)\nRegistry v\(view.originating_preflight.registry_snapshot_version ?? 0) \(view.originating_preflight.registry_snapshot_sha256)").sirsiFont(.caption)
+                ForEach(Array((view.originating_preflight.incident_keys ?? []).enumerated()), id: \.offset) { _, key in Text("Original incident \(key)").sirsiFont(.caption) }
+                ForEach(Array((view.originating_preflight.recovery_actions ?? []).enumerated()), id: \.offset) { _, action in Text("\(action.label) [\(action.id)]: \(action.instruction)").sirsiFont(.caption) }
+                Text("Original recovery reference: \(view.originating_preflight.recovery_reference)").sirsiFont(.caption)
 
-                ForEach(view.events, id: \.event_key) { event in Text("\(event.recorded_at_utc): \(event.kind), \(event.status), \(event.reason)\nPredecessor \(event.predecessor_event_key)").font(.caption) }
+                ForEach(view.events, id: \.event_key) { event in Text("\(event.recorded_at_utc): \(event.kind), \(event.status), \(event.reason)\nPredecessor \(event.predecessor_event_key)").sirsiFont(.caption) }
                 ForEach(view.dispositions, id: \.plan_sha256) { receipt in receiptView(receipt) }
         }
     }
     @ViewBuilder private func receiptView(_ receipt: MaatLocalDispositionReceipt) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Accepted — not repaired").font(.headline)
+            Text("Accepted — not repaired").sirsiFont(.headline)
             Text(receipt.effect == "retire-local-prevention" ? "This local prevention was lifted for the named occurrence." : "Conclusion only; this local prevention remains active.")
             Text(receipt.conclusion)
-            Text("Occurrence \(receipt.occurrence_key); body \(receipt.occurrence_body_sha256)\nPlan \(receipt.plan_sha256)\n\(receipt.recorded_at_utc); \(receipt.health)").font(.caption)
+            Text("Occurrence \(receipt.occurrence_key); body \(receipt.occurrence_body_sha256)\nPlan \(receipt.plan_sha256)\n\(receipt.recorded_at_utc); \(receipt.health)").sirsiFont(.caption)
         }
     }
 }

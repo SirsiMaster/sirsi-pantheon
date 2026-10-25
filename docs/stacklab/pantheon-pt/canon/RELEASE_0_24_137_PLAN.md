@@ -87,6 +87,12 @@ maintenance code. Relocate its unchanged implementation and JSON import into
 the existing Darwin journal source. No wire format, algorithm or runtime
 behavior changes; qualify Linux setup lint and the complete native setup
 tests before normal incremental push and a fresh exact-head protected CI.
+The next hosted guard identified21 unscaled text sites in the new retained
+preflight/local-prevention and Mercury views. Route those exact sites through
+the existing sirsiFont helpers, preserving native semantic fonts at scale1,
+explicit60/44-point light numerals, layout, controls and effect semantics.
+No guard exemption or new visual world is introduced. Qualify the complete
+structural guard and strict native Swift Release tests before publication.
 
 - Main integrated receipt SHA256
   `3e5da51f47b1bfa4569737705261dc76e4d121243d4473ff53f199793b22c70e`:

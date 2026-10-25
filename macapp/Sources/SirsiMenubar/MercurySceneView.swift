@@ -119,11 +119,11 @@ struct MercuryHardwareScene: View {
                 .stroke(ghost ? Color.red.opacity(0.6) : emerald.opacity(0.45), style: StrokeStyle(lineWidth: 1.3, dash: ghost || card.family == "generic" ? [6, 5] : []))
             VStack(spacing: 4) {
                 Text("CPU").sirsiFont(12, weight: .semibold).tracking(2).foregroundStyle(.secondary)
-                Text(cpuText).font(.system(size: 44, weight: .light))
+                Text(cpuText).sirsiFont(44, weight: .light)
                 Spacer(minLength: 30)
                 VStack(spacing: 4) {
                     Text(calibration == "calibrated" ? "GPU" : "GPU · " + calibration).sirsiFont(12, weight: .semibold).tracking(1).foregroundStyle(.secondary)
-                    Text(gpuText).font(.system(size: 44, weight: .light))
+                    Text(gpuText).sirsiFont(44, weight: .light)
                 }.padding(.horizontal, 14).padding(.vertical, 4)
                     .background(card.family == "laptop" ? Color.black.opacity(0.7) : .clear)
                     .clipShape(RoundedRectangle(cornerRadius: 6))

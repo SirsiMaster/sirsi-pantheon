@@ -178,7 +178,7 @@ struct MaatRetainedPreflightDetail: View {
                     .disabled(state.busy || MaatCapturedPreflightIdentity(evidence: entry.evidence) == nil)
             }
             if let read = state.receipt {
-                Text("Historical preflight — \(read.receipt.decision)").font(.headline)
+                Text("Historical preflight — \(read.receipt.decision)").sirsiFont(.headline)
                 Text("Evaluated \(read.receipt.evaluated_at_utc); read \(read.read_at_utc). Registry \(read.registry_relation). This historical receipt authorizes no action.")
                 Text("Schema: \(read.receipt.schema)")
                 Text("Store: \(read.store_binding.state) \(read.store_binding.store_uuid ?? "")")
