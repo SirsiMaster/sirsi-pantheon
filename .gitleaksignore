@@ -2,3 +2,7 @@
 # not an authentication value. Only this historical rule/path/line is ignored;
 # no file, rule, later commit or future value is exempted. See release137 plan.
 6f40fe3ab4a3ca09d6fd86d6f5fe4b0cec674c75:macapp/Sources/SirsiMenubar/LegacyRelayOperationState.swift:generic-api-key:38
+# Verified false positive: a fixed UUID used only as a mocked diagnostic
+# request ID in XCTest, not an authentication key. Exact historical finding
+# only; no whole-file, UUID-pattern, rule, future-value or commit exclusion.
+5cb42bf18cec186cddf587f3033f19e4335a2c91:macapp/Tests/SirsiMenubarTests/MaatDiagnosticCorrelationTests.swift:generic-api-key:7
