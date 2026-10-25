@@ -27,7 +27,7 @@ type localLifecycleFixture struct {
 
 func beginLocalLifecycleFixture(t *testing.T) *localLifecycleFixture {
 	t.Helper()
-	home := t.TempDir()
+	home := defaultStoreTestHome(t)
 	if err := os.Chmod(home, 0o700); err != nil {
 		t.Fatal(err)
 	}

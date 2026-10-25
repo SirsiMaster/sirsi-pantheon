@@ -23,6 +23,12 @@ func TestMaatKnowledgeHTTPLiteralSearch(t *testing.T) {
 	if err := os.Mkdir(home, 0700); err != nil {
 		t.Fatal(err)
 	}
+	// Darwin's temporary root may contain /var -> /private/var. Resolve only
+	// this owned fixture; production still rejects symlinked path components.
+	home, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
 	archive, err := knowledge.Open(home)
 	if err != nil {
 		t.Fatal(err)

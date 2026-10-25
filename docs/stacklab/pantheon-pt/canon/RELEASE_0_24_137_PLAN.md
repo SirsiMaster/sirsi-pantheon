@@ -62,6 +62,13 @@ parent, not a claim that this child has an unchanged Go file hash.
 
 ## Existing qualification and exact limits
 
+The ordinary full deep gate subsequently exposed two fixture families using
+Darwin's symlinked temporary-root spelling with component-wise no-follow
+production readers. Canonicalize only those owned test homes (reusing the
+existing default-store test helper); do not relax production path validation.
+The failed full gate is retained, and focused reruns plus the ordinary full
+protected gate must establish the corrected source before publication.
+
 - Main integrated receipt SHA256
   `3e5da51f47b1bfa4569737705261dc76e4d121243d4473ff53f199793b22c70e`:
   module verification,976 selected named Go passes each normal/race mode and
