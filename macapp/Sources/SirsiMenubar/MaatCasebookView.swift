@@ -3125,7 +3125,7 @@ private struct MaatCaseDetailView: View {
                 Text(findings.count == 1 ? "Screen finding" : "Screen findings")
                     .sirsiFont(.caption, weight: .bold)
                     .foregroundStyle(.secondary)
-                ForEach(findings) { finding in
+                ForEach(maatSystemOneDisplayFindings(findings)) { finding in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .firstTextBaseline, spacing: 7) {
                             Text(finding.severity.capitalized)
@@ -3962,6 +3962,23 @@ struct MaatSystemOneFinding: Decodable, Identifiable {
     var location: String {
         guard !file.isEmpty else { return "" }
         return line > 0 ? "\(file):\(line)" : file
+    }
+}
+
+// Presentation only. Do not reorder the retained verdict or recompute its
+// evidence: canonical wire order is by ID, while people see blockers first.
+func maatSystemOneDisplayFindings(_ findings:[MaatSystemOneFinding])->[MaatSystemOneFinding]{
+    func rank(_ severity:String)->Int{
+        switch severity{
+        case "block","critical","error":return 0
+        case "major","warning":return 1
+        case "minor":return 2
+        default:return 3
+        }
+    }
+    return findings.sorted{
+        let left=rank($0.severity),right=rank($1.severity)
+        return left==right ? $0.id<$1.id:left<right
     }
 }
 

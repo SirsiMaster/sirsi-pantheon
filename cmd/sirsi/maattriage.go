@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -110,8 +111,28 @@ func maatHostSystemOneScreen(report *guard.DoctorReport, host string, _ int64) (
 		return maat.SystemOneScreen{}, "", err
 	}
 	// Only bounded status codes enter the screen; producer prose stays local.
+	// Keep the observation/presentation screen critical-first. Screen separately
+	// canonicalizes a copied slice by ID for verdict bytes and retained hashes.
+	findings := append([]maat.ScreenFinding(nil), verdict.Findings...)
+	rank := func(severity string) int {
+		switch severity {
+		case "block":
+			return 0
+		case "major":
+			return 1
+		default:
+			return 2
+		}
+	}
+	sort.SliceStable(findings, func(i, j int) bool {
+		left, right := rank(findings[i].Severity), rank(findings[j].Severity)
+		if left != right {
+			return left < right
+		}
+		return findings[i].ID < findings[j].ID
+	})
 	return maat.SystemOneScreen{Subject: verdict.Subject, FeatherWeight: verdict.FeatherWeight, Confidence: verdict.Confidence,
-		Findings: verdict.Findings, Floor: verdict.Floor, Model: verdict.Model}, "diagnostic:sha256=" + observation.SourceSHA256, nil
+		Findings: findings, Floor: verdict.Floor, Model: verdict.Model}, "diagnostic:sha256=" + observation.SourceSHA256, nil
 }
 
 func init() {

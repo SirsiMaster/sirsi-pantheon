@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,12 +71,69 @@ func TestMaatHostSystemOneScreenMapsLiveDiagnosticsToClosedEvidence(t *testing.T
 	if len(screen.Findings) != 2 || screen.Findings[0].Severity != "block" || !strings.Contains(screen.Findings[0].FixHint, "Level 3") {
 		t.Fatalf("screen findings = %#v", screen.Findings)
 	}
+	for _, finding := range screen.Findings {
+		if finding.Evidence != maat.CanonicalHostFindingEvidence(screen.Subject.HeadSHA, map[string]string{"block": "Disk Space", "major": "RAM Pressure"}[finding.Severity]) || finding.RepairID != "" {
+			t.Fatalf("closed finding provenance/repair changed: %+v", finding)
+		}
+		for _, level := range []string{"Level 1:", "Level 2:", "Level 3:"} {
+			if !strings.Contains(finding.FixHint, level) {
+				t.Fatalf("recovery level missing: %+v", finding)
+			}
+		}
+		if strings.Contains(finding.Claim, "critically full") || strings.Contains(finding.FixHint, "sirsi clean") || strings.Contains(finding.FixHint, "sirsi relieve") {
+			t.Fatal("raw producer prose or executable fix escaped privacy projection")
+		}
+	}
 	verdict, err := maat.Screen(screen)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if verdict.Gate != maat.GateBlock {
 		t.Fatalf("gate = %q, want block", verdict.Gate)
+	}
+}
+
+func TestMaatHostCriticalFirstPresentationPreservesCanonicalVerdict(t *testing.T) {
+	report := &guard.DoctorReport{Timestamp: time.Now().UTC(), Score: 60, Findings: []guard.DiagnosticFinding{
+		{Check: "RAM Pressure", Severity: guard.SeverityWarn, Message: "PRIVATE_PRESENTATION_CANARY"},
+		{Check: "Disk Space", Severity: guard.SeverityCritical, Fix: "PRIVATE_FIX_CANARY"},
+		{Check: "App Crashes (7d)", Severity: guard.SeverityCritical},
+	}}
+	raw, _, err := maatHostSystemOneScreen(report, "fixture-host", 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw.Findings) != 3 || raw.Findings[0].Severity != "block" || raw.Findings[1].Severity != "block" || raw.Findings[2].Severity != "major" || raw.Findings[0].ID > raw.Findings[1].ID {
+		t.Fatalf("critical-first/tie ordering lost: %+v", raw.Findings)
+	}
+	canonical, err := maat.Screen(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation, err := maatDiagnosticObservation(report, "fixture-host")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := observation.Verdict()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotBytes, err := json.Marshal(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBytes, err := json.Marshal(expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotBytes) != string(wantBytes) || canonical.Gate != maat.GateBlock {
+		t.Fatal("presentation ordering changed canonical verdict/hash policy")
+	}
+	if raw.Findings[0].Severity != "block" {
+		t.Fatal("canonicalization mutated raw presentation slice")
+	}
+	if strings.Contains(string(gotBytes), "PRIVATE_PRESENTATION_CANARY") || strings.Contains(string(gotBytes), "PRIVATE_FIX_CANARY") {
+		t.Fatal("privacy weakened by ordering repair")
 	}
 }
 
