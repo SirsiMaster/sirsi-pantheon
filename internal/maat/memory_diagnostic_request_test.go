@@ -1,7 +1,6 @@
 package maat
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -19,78 +18,59 @@ func TestDiagnosticRequestUncommittedResultBytesStayPendingUntilDataOnlyCommit(t
 		t.Fatal(err)
 	}
 	id, _ := m.Digest()
-	fault := ""
-	j.before = func(Decision) {
-		raw, err := os.ReadFile(filepath.Join(root, "attempts", id+diagnosticIntentSuffix))
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		var intent DiagnosticRecordIntent
-		if err := json.Unmarshal(raw, &intent); err != nil {
-			t.Error(err)
-			return
-		}
-		ih, err := diagnosticSHA(intent)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		v, err := m.Observation.Verdict()
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		vd, err := diagnosticSHA(v)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		result := DiagnosticRecordResult{DiagnosticRecordSchema, id, ih, "maat-system-one:sha256=" + vd, vd, "recorded_verified"}
-		bytes, err := json.Marshal(result)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		write, err := newWriteIntent("attempts", id+diagnosticResultSuffix, bytes)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		fault = filepath.Join(root, "writes", write.Key+".committed.json")
-		if err := os.Mkdir(fault, 0o700); err != nil {
-			t.Error(err)
-		}
-	}
-	r, err := s.BeginDiagnosticRequest(diagnosticRequestTestID)
+	session, err := s.BeginDiagnosticRequest(diagnosticRequestTestID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = r.Record(m.Observation, j, func() error { return nil })
-	if closeErr := r.Close(); closeErr != nil {
+	defer func() { _ = session.Close() }()
+	fault := interruptDiagnosticResultCommit(t, session, id, "recorded_verified")
+	_, recordErr := session.Record(m.Observation, j, func() error { return nil })
+	if closeErr := session.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	if err == nil || fault == "" {
-		t.Fatal("missing exact commit fault")
+	if !errors.Is(recordErr, errDiagnosticResultCommitInterrupted) || fault.hits != 1 || fault.key == "" || len(fault.bytes) == 0 {
+		t.Fatal("fixture did not reach exact post-target result commit", recordErr, fault.hits)
 	}
-	if err := os.Remove(fault); err != nil {
+	path := filepath.Join(root, "attempts", id+diagnosticResultSuffix)
+	retained, err := os.ReadFile(path)
+	if err != nil || string(retained) != string(fault.bytes) {
+		t.Fatal("actual complete result target absent/changed", recordErr, err)
+	}
+	commitPath := filepath.Join(root, "writes", fault.key+".committed.json")
+	if _, err := os.Stat(commitPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("interruption unexpectedly committed", err)
+	}
+	if err := s.Close(); err != nil {
 		t.Fatal(err)
-	} // own deliberately empty fault directory only
-	if _, err := os.Stat(filepath.Join(root, "attempts", id+diagnosticResultSuffix)); err != nil {
-		t.Fatal("fixture never reached result bytes", err)
 	}
-	read, err := s.ReadDiagnosticRequest(diagnosticRequestTestID)
+	reopened, err := OpenDefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reopened.Close() }()
+	read, err := reopened.ReadDiagnosticRequest(diagnosticRequestTestID)
 	if err != nil || read.State != "pending" || read.Result != nil {
 		t.Fatal("uncommitted result promoted", read, err)
 	}
-	page, err := s.QueryDiagnosticDiscovery(DiagnosticDiscoveryQuery{})
+	page, err := reopened.QueryDiagnosticDiscovery(DiagnosticDiscoveryQuery{})
 	history := page.Records
 	if err != nil || page.History.Coverage != HistoryCoverageComplete || len(history) != 1 || history[0].State != "pending" || history[0].Result != nil {
 		t.Fatal("history promoted uncommitted result", history, err)
 	}
-	read, err = s.ResolveDiagnosticRequest(diagnosticRequestTestID, j)
+	read, err = reopened.ResolveDiagnosticRequest(diagnosticRequestTestID, j)
 	if err != nil || read.State != "recorded_verified" {
 		t.Fatal(read, err)
+	}
+	commitBytes, err := os.ReadFile(commitPath)
+	if err != nil {
+		t.Fatal("exact result WAL did not commit", err)
+	}
+	var commit writeCommit
+	if decodeDiagnosticCanonical(commitBytes, &commit) != nil || commit.Schema != MemorySchema || commit.IntentKey != fault.key {
+		t.Fatal("wrong committed WAL tuple")
+	}
+	if after, err := os.ReadFile(path); err != nil || string(after) != string(retained) {
+		t.Fatal("complete result bytes replaced", err)
 	}
 	if j.count() != 1 {
 		t.Fatal("data-only commit replayed append")

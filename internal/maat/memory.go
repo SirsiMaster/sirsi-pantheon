@@ -323,6 +323,9 @@ type Store struct {
 	lockFD       int
 	attemptsFD   int
 	storeUUID    string
+	// Private per-instance interruption seam. Production constructors leave it
+	// nil; fixtures can fail only after the real target's durable readback.
+	beforeWriteCommit func(writeIntent) error
 }
 
 // writeIntent is a tiny, create-only write-ahead record.  It is durable before
@@ -969,6 +972,11 @@ func (s *Store) createOrVerify(namespace string, parentFD int, name string, expe
 		// being accepted until a retry proves completion or an explicit resolver
 		// handles the residue.
 		return fmt.Errorf("maat memory: governed write remains prepared: %w", err)
+	}
+	if s.beforeWriteCommit != nil {
+		if err := s.beforeWriteCommit(intent); err != nil {
+			return fmt.Errorf("maat memory: governed write commit interrupted after target readback: %w", err)
+		}
 	}
 	commitBytes, err := json.Marshal(writeCommit{Schema: MemorySchema, IntentKey: intent.Key})
 	if err != nil {

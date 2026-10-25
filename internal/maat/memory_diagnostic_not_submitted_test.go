@@ -1,7 +1,6 @@
 package maat
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -31,38 +30,11 @@ func TestDiagnosticRequestCompleteNotSubmittedResultCommitRecoversBeforeJournalI
 	defer func() { _ = session.Close() }()
 	id, _ := m.Digest()
 	checks := 0
-	fault := ""
-	commitKey := ""
+	fault := interruptDiagnosticResultCommit(t, session, id, "not_submitted")
 	verify := func() error {
 		checks++
 		if checks == 1 {
 			return nil
-		}
-		raw, err := os.ReadFile(filepath.Join(root, "attempts", id+diagnosticIntentSuffix))
-		if err != nil {
-			return err
-		}
-		var intent DiagnosticRecordIntent
-		if err = json.Unmarshal(raw, &intent); err != nil {
-			return err
-		}
-		ih, err := diagnosticSHA(intent)
-		if err != nil {
-			return err
-		}
-		result := DiagnosticRecordResult{Schema: DiagnosticRecordSchema, ID: id, IntentSHA256: ih, State: "not_submitted"}
-		bytes, err := json.Marshal(result)
-		if err != nil {
-			return err
-		}
-		write, err := newWriteIntent("attempts", id+diagnosticResultSuffix, bytes)
-		if err != nil {
-			return err
-		}
-		commitKey = write.Key
-		fault = filepath.Join(root, "writes", write.Key+".committed.json")
-		if err = os.Mkdir(fault, 0o700); err != nil {
-			return err
 		}
 		return errors.New("owned second provenance check refuses before append")
 	}
@@ -70,20 +42,25 @@ func TestDiagnosticRequestCompleteNotSubmittedResultCommitRecoversBeforeJournalI
 	if closeErr := session.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	if !errors.Is(recordErr, ErrDiagnosticNotSubmitted) || checks != 2 || fault == "" || base.count() != 0 {
-		t.Fatal("fault did not hit exact pre-append result commit", recordErr, checks, base.count())
+	if !errors.Is(recordErr, ErrDiagnosticNotSubmitted) || !errors.Is(recordErr, errDiagnosticResultCommitInterrupted) || checks != 2 || fault.hits != 1 || base.count() != 0 {
+		t.Fatal("fault did not hit exact pre-append terminal commit", recordErr, checks, fault.hits, base.count())
 	}
-	retained, err := os.ReadFile(filepath.Join(root, "attempts", id+diagnosticResultSuffix))
-	if err != nil {
-		t.Fatal("complete terminal bytes not retained", err)
+	path := filepath.Join(root, "attempts", id+diagnosticResultSuffix)
+	retained, err := os.ReadFile(path)
+	if err != nil || string(retained) != string(fault.bytes) {
+		t.Fatal("actual complete terminal bytes not retained", recordErr, err)
 	}
 	var terminal DiagnosticRecordResult
-	if err = json.Unmarshal(retained, &terminal); err != nil || terminal.State != "not_submitted" {
-		t.Fatal("wrong retained terminal target", terminal, err)
+	if decodeDiagnosticCanonical(retained, &terminal) != nil || terminal.State != "not_submitted" {
+		t.Fatal("wrong retained terminal target")
 	}
-	if err = os.Remove(fault); err != nil {
+	commitPath := filepath.Join(root, "writes", fault.key+".committed.json")
+	if _, err := os.Stat(commitPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("interruption unexpectedly committed", err)
+	}
+	if err := s.Close(); err != nil {
 		t.Fatal(err)
-	} // exact fixture-owned empty directory only
+	}
 	reopened, err := OpenDefaultStore()
 	if err != nil {
 		t.Fatal(err)
@@ -100,13 +77,18 @@ func TestDiagnosticRequestCompleteNotSubmittedResultCommitRecoversBeforeJournalI
 	if base.count() != 0 || j.lookups != 0 || checks != 2 {
 		t.Fatal("data-only recovery inferred journal absence or re-observed", base.count(), j.lookups, checks)
 	}
-	if _, err := os.Stat(filepath.Join(root, "writes", commitKey+".committed.json")); err != nil {
-		t.Fatal("exact WAL not committed", err)
+	commitBytes, err := os.ReadFile(commitPath)
+	if err != nil {
+		t.Fatal("exact terminal WAL did not commit", err)
+	}
+	var commit writeCommit
+	if decodeDiagnosticCanonical(commitBytes, &commit) != nil || commit.Schema != MemorySchema || commit.IntentKey != fault.key {
+		t.Fatal("wrong committed terminal WAL tuple")
 	}
 	if _, err := reopened.BeginDiagnosticRequest(diagnosticRequestTestID); err == nil {
 		t.Fatal("old request reopened")
 	}
-	if after, err := os.ReadFile(filepath.Join(root, "attempts", id+diagnosticResultSuffix)); err != nil || string(after) != string(retained) {
+	if after, err := os.ReadFile(path); err != nil || string(after) != string(retained) {
 		t.Fatal("terminal bytes replaced", err)
 	}
 }
