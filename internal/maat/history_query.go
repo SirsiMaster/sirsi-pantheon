@@ -926,11 +926,6 @@ func verifyHistorySnapshot(file *os.File, path, expected string) error {
 	return nil
 }
 
-func readHistoryDecisionAt(file *os.File, offset int64) (Decision, error) {
-	decision, _, err := readHistoryDecisionAtCount(file, offset)
-	return decision, err
-}
-
 func readHistoryDecisionAtCount(file *os.File, offset int64) (Decision, int64, error) {
 	if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		return Decision{}, 0, fmt.Errorf("maat decision history: seek selected row: %w", err)

@@ -1,0 +1,1 @@
+- Remove an unused private history reader wrapper; retain the counted reader and all history bounds unchanged.
