@@ -218,7 +218,11 @@ func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			done := make(chan error, 1)
-			go func() { done <- relay.Serve(ctx) }()
+			serveFinished := make(chan struct{})
+			go func() {
+				defer close(serveFinished)
+				done <- relay.Serve(ctx)
+			}()
 			var releaseAckOnce sync.Once
 			releaseAck := func() {
 				if logWriter != nil {
@@ -229,7 +233,7 @@ func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) 
 				cancel()
 				releaseAck()
 				select {
-				case <-done:
+				case <-serveFinished:
 				case <-time.After(time.Second):
 					t.Error("Serve did not join during fixture cleanup")
 				}
