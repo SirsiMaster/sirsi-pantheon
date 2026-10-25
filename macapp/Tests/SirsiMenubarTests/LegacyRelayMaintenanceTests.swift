@@ -104,6 +104,10 @@ import XCTest
         await model.reviewAction("recover", expected: try XCTUnwrap(model.transaction))
         XCTAssertEqual(model.actionApproval?.operation, "recover", "The existing exact-transaction recovery control must become available")
         XCTAssertNotNil(model.error, "The nonzero command result remains visible alongside the retained transaction")
+        let notice = try XCTUnwrap(model.statusNotice)
+        XCTAssertTrue(notice.contains("retirement has not been requested"))
+        XCTAssertTrue(notice.contains("Use Resume"))
+        XCTAssertTrue(notice.contains("was not published"))
     }
 
     func testPreparedTransactionWithoutTerminalResultRemainsUnknown() async throws {
@@ -133,35 +137,36 @@ import XCTest
     func testPreparedTerminalWithWrongIdentityOrPlanRemainsUnknown() async throws {
         let fixture = LegacyRelayFixture()
         let planned = try fixture.preview()
-        let cases: [(String, [String: Any])] = [
+        let cases: [(String, [String: Any], Bool)] = [
             ("unbound", {
                 var value = fixture.transaction("prepared")
                 var plan = value["plan"] as! [String: Any]
                 plan["profile"] = "foreign-profile"
                 value["plan"] = plan
                 return value
-            }()),
+            }(), false),
             ("wrong-id", {
                 var value = fixture.transaction("prepared")
                 value["id"] = String(repeating: "c", count: 32)
                 return value
-            }()),
+            }(), false),
             ("wrong-plan", {
                 var value = fixture.transaction("prepared")
                 var plan = value["plan"] as! [String: Any]
                 plan["sha256"] = String(repeating: "c", count: 64)
                 value["plan"] = plan
                 return value
-            }())
+            }(), false),
+            ("contradictory-safe-for-new-preview", fixture.transaction("prepared"), true)
         ]
 
-        for (name, status) in cases {
+        for (name, status, safeForNewPreview) in cases {
             fixture.saved = nil
             let malformed = try fixture.result([
                 "ticket_json": fixture.ticketJSON(),
                 "status": status,
                 "terminal": true,
-                "safe_for_new_preview": false
+                "safe_for_new_preview": safeForNewPreview
             ], exit: 1)
             let model = LegacyRelayMaintenanceModel(directory: scope, capture: { args, _, _, authorize in
                 XCTAssertTrue(authorize())
@@ -177,6 +182,8 @@ import XCTest
             XCTAssertNotNil(model.outstanding, name)
             XCTAssertNil(model.transaction, name)
             XCTAssertFalse(model.lifecycleDebt, name)
+            XCTAssertNil(model.actionApproval, name)
+            XCTAssertNil(model.confirmation(), name)
         }
     }
 

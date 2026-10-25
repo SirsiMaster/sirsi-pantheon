@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,10 @@ import (
 	"testing"
 	"time"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // End to end through files: a real Handler behind httptest stands in for the
 // service, the Relay forwards with the host token, and a RemoteStore over
@@ -132,7 +137,7 @@ func TestSpoolRelayShutdownJoinsForwardBeforeServeReturns(t *testing.T) {
 }
 
 func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) {
-	for _, mode := range []string{"forward", "startup-recovery"} {
+	for _, mode := range []string{"forward", "startup-recovery", "queued-ack"} {
 		t.Run(mode, func(t *testing.T) {
 			spool := t.TempDir()
 			lane := filepath.Join(spool, "retained")
@@ -150,18 +155,28 @@ func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) 
 			if err := writeAtomic(requestPath, spoolRequest{Method: "Read", Headers: map[string]string{}, Body: []byte(`{}`)}, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			// Force response publication to fail without replacing or deleting the
-			// original request evidence.
+			// Force either a terminal response or queued acknowledgment publication
+			// to fail without replacing retained request evidence.
 			if err := os.Mkdir(filepath.Join(lane, "res", id+".json"), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			var calls atomic.Int32
-			svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				calls.Add(1)
-				_, _ = io.WriteString(w, `{"result":[]}`)
-			}))
-			t.Cleanup(svc.Close)
-			relay := &Relay{Spool: spool, Base: svc.URL, Token: "fixture"}
+			var client *http.Client
+			base := "http://service.invalid"
+			if mode == "queued-ack" {
+				client = &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+					calls.Add(1)
+					return nil, &url.Error{Op: "Post", URL: base, Err: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("fixture unreachable")}}
+				})}
+			} else {
+				svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					calls.Add(1)
+					_, _ = io.WriteString(w, `{"result":[]}`)
+				}))
+				t.Cleanup(svc.Close)
+				base, client = svc.URL, svc.Client()
+			}
+			relay := &Relay{Spool: spool, Base: base, Token: "fixture", Client: client}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			done := make(chan error, 1)
@@ -182,12 +197,19 @@ func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) 
 			case <-time.After(time.Second):
 				t.Fatal("Serve did not finish its bounded shutdown")
 			}
-			if _, err := os.Stat(filepath.Join(lane, "inflight", id+".json")); err != nil {
-				t.Fatalf("unsettled request evidence was not retained: %v", err)
+			retainedDir := "inflight"
+			if mode == "queued-ack" {
+				retainedDir = "outbox"
+			}
+			if _, err := os.Stat(filepath.Join(lane, retainedDir, id+".json")); err != nil {
+				t.Fatalf("unsettled request evidence was not retained in %s: %v", retainedDir, err)
 			}
 			wantCalls := int32(1)
 			if mode == "startup-recovery" {
 				wantCalls = 0
+			}
+			if mode == "queued-ack" {
+				wantCalls = 2 // one bounded safe re-dial, both provably pre-send
 			}
 			if got := calls.Load(); got != wantCalls {
 				t.Fatalf("unexpected forward count: got %d want %d", got, wantCalls)
@@ -625,12 +647,20 @@ func TestSpoolRelayNewLaneIsNotBlockedBySlowLane(t *testing.T) {
 	}
 }
 
-// A backlog inside one lane must not spin the discovery loop, and cancellation
-// must return promptly while that backlog is still pending.
+// A backlog inside one lane must not spin, and cancellation joins the active
+// forward while leaving the two queued requests untouched.
 func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 	spool := t.TempDir()
+	oldParallel := relayLaneParallel
+	relayLaneParallel = 1
+	t.Cleanup(func() { relayLaneParallel = oldParallel })
 	release := make(chan struct{})
-	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { <-release; _, _ = w.Write([]byte(`{"result":[]}`)) }))
+	entered := make(chan struct{}, 2)
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		entered <- struct{}{}
+		<-release
+		_, _ = w.Write([]byte(`{"result":[]}`))
+	}))
 	t.Cleanup(svc.Close)
 	// LIFO cleanup releases the held handlers BEFORE server Close, even if a
 	// preceding assertion fails. Otherwise the actual failure is hidden by a
@@ -642,7 +672,7 @@ func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(spool, "lane-q", "req"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"1-1-a", "1-2-b"} { // two pending in the SAME lane
+	for _, id := range []string{"1-1-a", "1-2-b", "1-3-c"} { // active plus two queued in the SAME lane
 		if err := writeAtomic(filepath.Join(spool, "lane-q", "req", id+".json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -651,22 +681,88 @@ func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 	t.Cleanup(cancel)
 	done := make(chan struct{})
 	go func() { _ = rl.Serve(ctx); close(done) }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("relay did not begin the first queued request")
+	}
 	observedFrom := time.Now()
-	time.Sleep(600 * time.Millisecond) // first request held upstream, second queued behind it
+	time.Sleep(600 * time.Millisecond) // first request held upstream, two remain queued
 	observedFor := time.Since(observedFrom)
 	if n, max := rl.scans.Load(), int32(observedFor/spoolPoll)+2; n > max {
 		t.Fatalf("discovery spun: %d scans in %s with a %s poll (max %d)", n, observedFor, spoolPoll, max)
 	}
-	start := time.Now()
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(300 * time.Millisecond):
-		t.Fatal("Serve did not return within 300 ms of cancellation while a backlog was pending")
+		t.Fatal("Serve returned before its already-active forward settled")
+	case <-time.After(30 * time.Millisecond):
 	}
-	_ = start
-	free() // let the held worker finish before TempDir cleanup
-	time.Sleep(100 * time.Millisecond)
+	free()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not return after the active forward settled")
+	}
+	for _, id := range []string{"1-2-b", "1-3-c"} {
+		if _, err := os.Stat(filepath.Join(spool, "lane-q", "req", id+".json")); err != nil {
+			t.Fatalf("canceled relay consumed queued request %s: %v", id, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(spool, "lane-q", "res", "1-1-a.json")); err != nil {
+		t.Fatalf("active request did not settle before shutdown: %v", err)
+	}
+}
+
+func TestSpoolRelayCancellationStopsOutboxAfterActiveForward(t *testing.T) {
+	spool := t.TempDir()
+	agent := "outbox-lane"
+	for _, dir := range []string{"outbox", "inflight"} {
+		if err := os.MkdirAll(filepath.Join(spool, agent, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"1-1-a", "1-2-b"} {
+		if err := writeAtomic(filepath.Join(spool, agent, "outbox", id+".json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	free := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(free)
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		entered <- struct{}{}
+		<-release
+		_, _ = io.WriteString(w, `{"result":[]}`)
+	}))
+	t.Cleanup(svc.Close)
+	relay := &Relay{Spool: spool, Base: svc.URL, Token: "fixture", Client: svc.Client(), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	wake := make(chan struct{}, 1)
+	go func() { relay.laneWorker(ctx, agent, wake); close(done) }()
+	wake <- struct{}{}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("lane did not begin the first held outbox item")
+	}
+	cancel()
+	free()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("lane did not stop after its active outbox forward settled")
+	}
+	if _, err := os.Stat(filepath.Join(spool, agent, "outbox", "1-2-b.json")); err != nil {
+		t.Fatalf("canceled lane consumed later outbox item: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(spool, agent, "outbox", "1-1-a.json")); !os.IsNotExist(err) {
+		t.Fatalf("positively delivered active outbox item was not settled: %v", err)
+	}
 }
 
 // A worker consuming its wake quickly must not turn the next discovery pass

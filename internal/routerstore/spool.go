@@ -319,6 +319,8 @@ func (t *spoolTransport) nextID() string {
 
 // RoundTrip publishes the request atomically and waits for the response file.
 func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	callCtx, callCancel := context.WithTimeout(r.Context(), t.wait)
+	defer callCancel()
 	method := strings.TrimPrefix(r.URL.Path, "/v1/call/")
 	if method == "" || method == r.URL.Path {
 		return nil, fmt.Errorf("spool: not a router call: %s", r.URL.Path)
@@ -350,11 +352,9 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	// A canceled/paused call has not published anything; the existing uncertainty
 	// classification still governs requests already consumed by the relay.
-	admissionCtx, admissionCancel := context.WithTimeout(r.Context(), t.wait)
-	defer admissionCancel()
 	var admission *os.File
 	for {
-		admission, rerr = lockSpoolAdmission(admissionCtx, root, false)
+		admission, rerr = lockSpoolAdmission(callCtx, root, false)
 		if rerr == nil {
 			break
 		}
@@ -366,18 +366,24 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 		timer := time.NewTimer(spoolPoll)
 		select {
-		case <-admissionCtx.Done():
+		case <-callCtx.Done():
 			timer.Stop()
-			return nil, fmt.Errorf("spool admission: router refresh is still pending; request not published, retry after the retained maintenance transaction completes: %w", admissionCtx.Err())
+			return nil, fmt.Errorf("spool admission: router refresh is still pending; request not published, retry after the retained maintenance transaction completes: %w", callCtx.Err())
 		case <-timer.C:
 		}
 	}
 	defer admission.Close()
+	if err := callCtx.Err(); err != nil {
+		return nil, fmt.Errorf("spool admission: request not published: %w", err)
+	}
 	reqDir, resDir := filepath.Join(t.agent, "req"), filepath.Join(t.agent, "res")
 	// t.agent itself (<spool>/<agent>) is included: the relay needs to traverse
 	// INTO it, not just into its req/res/slots children, and MkdirAll creates
 	// it as an intermediate directory with the same requested mode.
 	for _, d := range []string{t.agent, reqDir, resDir, filepath.Join(t.agent, "slots")} {
+		if err := callCtx.Err(); err != nil {
+			return nil, fmt.Errorf("spool admission: request not published: %w", err)
+		}
 		if err := mkdirTrustedIn(root, d, dirMode, trustGID); err != nil {
 			return nil, fmt.Errorf("spool: %w", err)
 		}
@@ -389,8 +395,14 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	defer func() { _ = root.Remove(slot) }()
+	if err := callCtx.Err(); err != nil {
+		return nil, fmt.Errorf("spool admission: request not published: %w", err)
+	}
 	id := t.nextID()
 	reqPath := filepath.Join(reqDir, id+".json")
+	if err := callCtx.Err(); err != nil {
+		return nil, fmt.Errorf("spool admission: request not published: %w", err)
+	}
 	if err := writeAtomicRoot(root, reqPath, req, fileMode); err != nil {
 		return nil, fmt.Errorf("spool: publish %s id %s: %w", method, id, err)
 	}
@@ -407,9 +419,10 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 		return fmt.Errorf("spool: %s id %s: OUTCOME UNKNOWN — a relay consumed the request but no response arrived (%s); re-query before retrying a mutation", method, id, cause)
 	}
-	ctx := r.Context()
-	deadline := t.now().Add(t.wait)
 	for {
+		if err := callCtx.Err(); err != nil {
+			return nil, uncertain(err.Error())
+		}
 		if f, oerr := root.Open(resPath); oerr == nil {
 			// A response file exists, so the request was consumed and forwarded:
 			// any defect in the file is an UNCERTAIN outcome for the caller.
@@ -434,12 +447,9 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			return &http.Response{StatusCode: sr.Status, Status: http.StatusText(sr.Status), Header: http.Header{"Content-Type": {"application/json"}},
 				Body: io.NopCloser(bytes.NewReader(sr.Body)), ContentLength: int64(len(sr.Body)), Request: r}, nil
 		}
-		if t.now().After(deadline) {
-			return nil, uncertain(fmt.Sprintf("no response within %s", t.wait))
-		}
 		select {
-		case <-ctx.Done():
-			return nil, uncertain(ctx.Err().Error())
+		case <-callCtx.Done():
+			return nil, uncertain(callCtx.Err().Error())
 		case <-time.After(spoolPoll):
 		}
 	}
@@ -824,6 +834,9 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 		files, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "req", "*.json"))
 		sort.Strings(files)
 		for _, f := range files {
+			if ctx.Err() != nil {
+				return
+			}
 			mu.Lock()
 			dup := started[f]
 			mu.Unlock()
@@ -833,6 +846,12 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 			select {
 			case sem <- struct{}{}:
 			case <-ctx.Done():
+				return
+			}
+			// A ready semaphore can win select even when cancellation is also
+			// ready. Recheck before claiming this queued file or starting work.
+			if ctx.Err() != nil {
+				<-sem
 				return
 			}
 			mu.Lock()
@@ -847,13 +866,16 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 					mu.Unlock()
 					<-sem
 				}()
-				rl.handleOne(agent, f)
+				rl.handleOne(ctx, agent, f)
 			}(f)
+		}
+		if ctx.Err() != nil {
+			return
 		}
 		// ADR-069: re-forward any messages held during a prior outage, in order.
 		// If some are still unreachable, schedule a backed-off re-wake so they
 		// drain when the cloud returns — without hot-looping.
-		if rl.drainOutbox(agent) > 0 {
+		if rl.drainOutbox(ctx, agent) > 0 && ctx.Err() == nil {
 			rl.scheduleOutboxRewake(ctx, agent)
 		}
 	}
@@ -862,13 +884,28 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 // handleOne consumes one request atomically (rename into inflight/ BEFORE the
 // HTTP forward; a failed rename means another relay owns it), publishes the
 // response, then deletes the in-flight file last. Returns whether it forwarded.
-func (rl *Relay) handleOne(agent, f string) bool {
+func (rl *Relay) handleOne(ctx context.Context, agent, f string) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	id := strings.TrimSuffix(filepath.Base(f), ".json")
 	inflight := filepath.Join(rl.Spool, agent, "inflight", id+".json")
 	if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
 		return false
 	}
+	if ctx.Err() != nil {
+		return false
+	}
 	if err := os.Rename(f, inflight); err != nil {
+		return false
+	}
+	// If cancellation won after the pre-rename check, restore the untouched
+	// request instead of starting another forward during shutdown.
+	if ctx.Err() != nil {
+		if err := os.Rename(inflight, f); err != nil {
+			rl.settlementFailed.Store(true)
+			rl.Log.Error("relay: canceled request could not be restored; retained inflight", "agent", agent, "id", id, "err", err)
+		}
 		return false
 	}
 	rl.handled.Add(1)
@@ -930,14 +967,27 @@ const (
 // post-send OUTCOME-UNKNOWN result is parked for audit — never auto-deleted and
 // never auto-re-forwarded, because the service may already have committed it.
 // The client already received QUEUED_FOR_RETRY, so no response is re-published.
-func (rl *Relay) retryOutboxOne(agent, f string) outboxOutcome {
+func (rl *Relay) retryOutboxOne(ctx context.Context, agent, f string) outboxOutcome {
+	if ctx.Err() != nil {
+		return outboxHeld
+	}
 	id := strings.TrimSuffix(filepath.Base(f), ".json")
 	inflight := filepath.Join(rl.Spool, agent, "inflight", id+".json")
 	if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
 		return outboxHeld // could not stage — leave it in the outbox, stop the drain
 	}
+	if ctx.Err() != nil {
+		return outboxHeld
+	}
 	if err := os.Rename(f, inflight); err != nil {
 		return outboxHeld // lost the race / gone — treat as still held, stop the drain
+	}
+	if ctx.Err() != nil {
+		if err := os.Rename(inflight, f); err != nil {
+			rl.settlementFailed.Store(true)
+			rl.Log.Error("relay: canceled outbox item could not be restored; retained inflight", "agent", agent, "id", id, "err", err)
+		}
+		return outboxHeld
 	}
 	sr := rl.forward(agent, id, inflight)
 	switch {
@@ -969,11 +1019,11 @@ func (rl *Relay) retryOutboxOne(agent, f string) outboxOutcome {
 // reachable, forwarding the later one first would violate ADR-069's
 // ordered-release guarantee. The frontier (the first non-delivered item and
 // everything after it) is left for the next wake.
-func (rl *Relay) drainOutbox(agent string) int {
+func (rl *Relay) drainOutbox(ctx context.Context, agent string) int {
 	held, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "outbox", "*.json"))
 	sort.Strings(held)
 	for i, f := range held {
-		if rl.retryOutboxOne(agent, f) != outboxDelivered {
+		if ctx.Err() != nil || rl.retryOutboxOne(ctx, agent, f) != outboxDelivered {
 			// Stop at the frontier. Count the rest as unresolved so the caller
 			// schedules a backed-off re-wake to drain from here next time.
 			return len(held) - i
@@ -1009,7 +1059,7 @@ func (rl *Relay) serveOnce() int {
 	sort.Strings(files)
 	n := 0
 	for _, f := range files {
-		if rl.handleOne(filepath.Base(filepath.Dir(filepath.Dir(f))), f) {
+		if rl.handleOne(context.Background(), filepath.Base(filepath.Dir(filepath.Dir(f))), f) {
 			n++
 		}
 	}
@@ -1028,7 +1078,7 @@ func (rl *Relay) serveOnce() int {
 	sort.Strings(lanes) // deterministic: lanes in name order
 	for _, agent := range lanes {
 		before, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "outbox", "*.json"))
-		remaining := rl.drainOutbox(agent)
+		remaining := rl.drainOutbox(context.Background(), agent)
 		n += len(before) - remaining // items delivered before this lane's frontier
 	}
 	return n

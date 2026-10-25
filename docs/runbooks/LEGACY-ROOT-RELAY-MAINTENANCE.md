@@ -10,11 +10,14 @@ profiles, or Horus/surface/model ownership.
 The current spool client takes the existing shared directory lock before it
 creates a lane or publishes a request and retains it through response readback.
 When the durable legacy-maintenance marker or preparation is present, a current
-client waits within its existing 30-second call budget without creating a lane,
-slot or request. If the budget expires, the command reports that the request was
-not published and may be retried after the exact retained transaction is
-resolved. The maintenance UI keeps a typed `prepared` transaction actionable
-through its existing reviewed Resume/Abort controls; it does not report a drain.
+client uses one existing 30-second call budget across admission and response
+readback. While the marker or preparation is present it waits without creating
+a lane, slot or request. If that budget expires before publication, the command
+reports that the request was not published and may be retried after the exact
+retained transaction is resolved; after publication, the existing consumed or
+outcome-unknown classification applies. The maintenance UI keeps a typed
+`prepared` transaction actionable through its existing reviewed Resume/Abort
+controls; it does not report a drain.
 The owner waits for current shared calls under the same physical directory's
 exclusive lock before retirement. If that bounded wait expires, the prepared
 transaction remains held for explicit recovery. The current relay tracks and

@@ -157,6 +157,44 @@ func TestSpoolAdmissionPendingMaintenanceWaitDoesNotPublishAndCanResume(t *testi
 		t.Fatalf("call did not resume after retained hold cleared: %v", err)
 	}
 }
+
+func TestSpoolAdmissionAndResponseShareOneCallBudget(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, servicedrain.MaintenanceMarkerName)
+	if err := os.WriteFile(marker, []byte("retained transaction fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tr := newSpoolTransport(dir, "budget-lane")
+	tr.wait = 400 * time.Millisecond
+	req, err := http.NewRequest(http.MethodPost, "http://spool/v1/call/Inbox", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	result := make(chan error, 1)
+	go func() {
+		_, callErr := tr.RoundTrip(req) // no caller deadline: transport owns one shared budget
+		result <- callErr
+	}()
+	time.Sleep(330 * time.Millisecond)
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("withheld response unexpectedly succeeded")
+		}
+		if elapsed := time.Since(started); elapsed > 560*time.Millisecond {
+			t.Fatalf("admission time was reset for response waiting: total call took %s", elapsed)
+		}
+	case <-time.After(230 * time.Millisecond):
+		t.Fatal("response wait received a fresh full budget after admission")
+	}
+	if pending, _ := filepath.Glob(filepath.Join(dir, "budget-lane", "req", "*.json")); len(pending) != 0 {
+		t.Fatalf("request remained pending after the bounded call: %v", pending)
+	}
+}
 func TestSpoolAdmissionRefusesSymlink(t *testing.T) {
 	dir := t.TempDir()
 	link := filepath.Join(t.TempDir(), "alias")
