@@ -124,7 +124,7 @@ func appUpdatePlanFixture(t *testing.T) maintenanceInstallerPlan {
 		t.Fatal(err)
 	}
 	name := "SirsiPantheon-0.24.200-arm64.pkg"
-	return maintenanceInstallerPlan{Schema: 1, Release: "0.24.200", Package: filepath.Join(stage, name),
+	return maintenanceInstallerPlan{Schema: 1, CurrentRelease: "0.24.136", Release: "0.24.200", Package: filepath.Join(stage, name),
 		PackageURL: "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.200/" + name,
 		SHA256:     strings.Repeat("a", 64), Device: 1, Inode: 2, Bytes: 2048, Implementation: strings.Repeat("b", 64),
 		EngineSHA256: strings.Repeat("c", 64), InstallerIdentity: "Developer ID Installer: Sirsi Technologies Inc. (9D382WV988)",
@@ -151,7 +151,12 @@ func installAppUpdateFixture(t *testing.T, plan maintenanceInstallerPlan, handof
 			stages++
 			return plan, nil
 		},
-		revalidate: func(context.Context, *updater.Release, maintenanceInstallerPlan) error { return nil },
+		stageRollback: func(context.Context, string, *updater.Release) (maintenanceInstallerPlan, error) {
+			stages++
+			return plan, nil
+		},
+		revalidate:         func(context.Context, *updater.Release, maintenanceInstallerPlan) error { return nil },
+		revalidateRollback: func(context.Context, *updater.Release, maintenanceInstallerPlan) error { return nil },
 		observe: func(context.Context) (maat.AppUpdateObservation, error) {
 			store.observed++
 			if installed && handoffs > 0 && handoffErr == nil {
@@ -160,7 +165,7 @@ func installAppUpdateFixture(t *testing.T, plan maintenanceInstallerPlan, handof
 					AppCDHash: plan.AppUpdateIdentity.AppCDHash, AppSignatureVerified: true,
 					HelperSignatureVerified: true, DependenciesPresent: true, ObservedAtUTC: time.Now().UTC()}, nil
 			}
-			return maat.AppUpdateObservation{Release: "0.24.136", BundleID: plan.TargetBundleID, AppPath: plan.TargetAppPath,
+			return maat.AppUpdateObservation{Release: plan.CurrentRelease, BundleID: plan.TargetBundleID, AppPath: plan.TargetAppPath,
 				HelperPath: plan.TargetHelperPath, HelperSHA256: strings.Repeat("e", 64), AppSignatureVerified: true,
 				EmbeddedHelperSHA256: strings.Repeat("e", 64), AppCDHash: strings.Repeat("f", 40),
 				HelperSignatureVerified: true, DependenciesPresent: true, ObservedAtUTC: time.Now().UTC()}, nil
@@ -190,11 +195,11 @@ func TestAppUpdateSchemaRefusalAndDriftNeverReachInstaller(t *testing.T) {
 				revalidate: func(context.Context, *updater.Release, maintenanceInstallerPlan) error { return nil },
 				observe: func(context.Context) (maat.AppUpdateObservation, error) {
 					if store.pending != nil && handoffs == 0 && mode == "target-changed-before-handoff" {
-						return maat.AppUpdateObservation{Release: "0.24.136", BundleID: plan.TargetBundleID, AppPath: plan.TargetAppPath,
+						return maat.AppUpdateObservation{Release: plan.CurrentRelease, BundleID: plan.TargetBundleID, AppPath: plan.TargetAppPath,
 							HelperPath: plan.TargetHelperPath, HelperSHA256: strings.Repeat("e", 64), EmbeddedHelperSHA256: strings.Repeat("e", 64),
 							AppCDHash: strings.Repeat("a", 40), AppSignatureVerified: true, HelperSignatureVerified: true, DependenciesPresent: true, ObservedAtUTC: time.Now().UTC()}, nil
 					}
-					return maat.AppUpdateObservation{Release: "0.24.136", BundleID: plan.TargetBundleID, AppPath: plan.TargetAppPath,
+					return maat.AppUpdateObservation{Release: plan.CurrentRelease, BundleID: plan.TargetBundleID, AppPath: plan.TargetAppPath,
 						HelperPath: plan.TargetHelperPath, HelperSHA256: strings.Repeat("e", 64), EmbeddedHelperSHA256: strings.Repeat("e", 64),
 						AppCDHash: strings.Repeat("f", 40), AppSignatureVerified: true, HelperSignatureVerified: true, DependenciesPresent: true, ObservedAtUTC: time.Now().UTC()}, nil
 				},
@@ -327,6 +332,42 @@ func TestMaatAppUpdateRevalidatorChecksPackageAfterTrustInspection(t *testing.T)
 	}
 }
 
+func TestMaatAppRollbackRevalidatorRejectsPackageMutationAfterTrustInspection(t *testing.T) {
+	plan := appUpdatePlanFixture(t)
+	plan.CurrentRelease = "0.24.138"
+	plan.Release = "0.24.137"
+	plan.Package = filepath.Join(filepath.Dir(plan.Package), "SirsiPantheon-0.24.137-arm64.pkg")
+	plan.PackageURL = "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.pkg"
+	plan.AppUpdateIdentity.CandidateVersion.Version = "0.24.137"
+	if err := os.WriteFile(plan.Package, []byte("retained exact rollback package"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	stat, err := maintenanceInstallerFileHash(plan.Package, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.SHA256, plan.Device, plan.Inode, plan.Bytes = stat.SHA256, stat.Device, stat.Inode, stat.Bytes
+	release := &updater.Release{TagName: "v0.24.137", Assets: []updater.Asset{
+		{Name: filepath.Base(plan.Package), BrowserDownloadURL: plan.PackageURL, Size: plan.Bytes, Digest: "sha256:" + plan.SHA256},
+		{Name: "SirsiPantheon-0.24.137-arm64.dmg", BrowserDownloadURL: "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.dmg", Size: 8, Digest: "sha256:" + strings.Repeat("a", 64)},
+	}}
+	oldInspector := maatAppUpdatePackageInspector
+	maatAppUpdatePackageInspector = func(context.Context, string, string) (maintenancePackageInspection, error) {
+		if err := os.WriteFile(plan.Package, []byte("changed during package trust inspection"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return maintenancePackageInspection{Capability: setup.LegacyAppCapability{Implementation: plan.Implementation}, EngineSHA256: plan.EngineSHA256,
+			EmbeddedHelperSHA256: plan.AppUpdateIdentity.EmbeddedHelperSHA256, AppCDHash: plan.AppUpdateIdentity.AppCDHash,
+			CandidateVersion: plan.AppUpdateIdentity.CandidateVersion, InstallerIdentity: plan.InstallerIdentity,
+			Notarization: plan.Notarization, TargetBundleID: plan.TargetBundleID, TargetAppPath: plan.TargetAppPath,
+			TargetHelperPath: plan.TargetHelperPath, Dependencies: plan.Dependencies}, nil
+	}
+	t.Cleanup(func() { maatAppUpdatePackageInspector = oldInspector })
+	if err := revalidateMaatAppRollbackPackage(context.Background(), release, plan); err == nil {
+		t.Fatal("changed retained rollback package passed final identity readback")
+	}
+}
+
 func TestInstalledAppObserverHashesActualSignedAppHelperPair(t *testing.T) {
 	for _, mode := range []string{"exact", "different-embedded-helper", "linked-helper"} {
 		t.Run(mode, func(t *testing.T) {
@@ -410,6 +451,148 @@ func TestInstallAppReleaseWithMaatHandsOffOnceAndRequiresInstalledReadback(t *te
 	decisions, err := journal.Recent(10)
 	if err != nil || len(decisions) != 1 || decisions[0].Kind != "failure memory preflight" || decisions[0].Determination != "pass" {
 		t.Fatalf("full scoped preflight was not projected through the real journal before handoff: %+v err=%v", decisions, err)
+	}
+}
+
+func TestInstallAppRollbackWithMaatUsesExactOlderPKGOnceAndReadsBackPair(t *testing.T) {
+	plan := appUpdatePlanFixture(t)
+	plan.Release = "0.24.137"
+	plan.Package = filepath.Join(filepath.Dir(plan.Package), "SirsiPantheon-0.24.137-arm64.pkg")
+	plan.PackageURL = "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.pkg"
+	plan.AppUpdateIdentity.CandidateVersion.Version = "0.24.137"
+	plan.CurrentRelease = "0.24.138"
+	store, journal, handoffs, stages := installAppUpdateFixture(t, plan, nil, true)
+	if err := installAppRollbackWithMaat(&updater.Release{TagName: "v0.24.137"}); err != nil {
+		t.Fatal(err)
+	}
+	if store.started != 1 || store.ended != 1 || *handoffs != 1 || *stages != 1 || store.pending != nil || store.last.Observation.Release != "0.24.137" {
+		t.Fatalf("rollback did not retain one intent and read back the exact restored pair: starts=%d terminal=%d handoffs=%d stages=%d pending=%v outcome=%+v", store.started, store.ended, *handoffs, *stages, store.pending != nil, store.last)
+	}
+	if store.last.AttemptID == "" {
+		t.Fatal("rollback terminal outcome lost its exact retained attempt link")
+	}
+	decisions, err := journal.Recent(10)
+	if err != nil || len(decisions) != 1 || decisions[0].Kind != "failure memory preflight" || decisions[0].Determination != "pass" {
+		t.Fatalf("rollback did not retain its exact whole-app preflight projection: %+v err=%v", decisions, err)
+	}
+}
+
+func TestAppRollbackRefusesIncompatibleSchemaOrForeignReleaseBeforeHandoff(t *testing.T) {
+	for _, mode := range []string{"newer", "candidate-below-live", "foreign-tag"} {
+		t.Run(mode, func(t *testing.T) {
+			plan := appUpdatePlanFixture(t)
+			plan.Release = "0.24.137"
+			plan.Package = filepath.Join(filepath.Dir(plan.Package), "SirsiPantheon-0.24.137-arm64.pkg")
+			plan.PackageURL = "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.pkg"
+			plan.AppUpdateIdentity.CandidateVersion.Version = "0.24.137"
+			plan.CurrentRelease = "0.24.138"
+			if mode == "candidate-below-live" {
+				plan.AppUpdateIdentity.CandidateVersion.RouterSchemaMax = 24
+			}
+			store, _, handoffs, stages := installAppUpdateFixture(t, plan, nil, false)
+			release := &updater.Release{TagName: "v0.24.137"}
+			if mode == "newer" {
+				plan.Release = "0.24.200"
+				plan.Package = filepath.Join(filepath.Dir(plan.Package), "SirsiPantheon-0.24.200-arm64.pkg")
+				plan.PackageURL = "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.200/SirsiPantheon-0.24.200-arm64.pkg"
+				plan.AppUpdateIdentity.CandidateVersion.Version = "0.24.200"
+				release.TagName = "v0.24.200"
+			}
+			if mode == "foreign-tag" {
+				release.TagName = "v0.24.134"
+			}
+			err := installAppRollbackWithMaat(release)
+			if err == nil || *handoffs != 0 || store.started != 0 || *stages > 1 {
+				t.Fatalf("rollback refusal mode %s crossed compatibility/custody fence: err=%v handoffs=%d starts=%d stages=%d", mode, err, *handoffs, store.started, *stages)
+			}
+		})
+	}
+}
+
+func TestAppRollbackMissingOrForeignPKGIdentityHasZeroEffect(t *testing.T) {
+	for _, mode := range []string{"missing-digest", "foreign-source", "foreign-signer", "foreign-dependency"} {
+		t.Run(mode, func(t *testing.T) {
+			plan := appUpdatePlanFixture(t)
+			plan.Release = "0.24.137"
+			plan.Package = filepath.Join(filepath.Dir(plan.Package), "SirsiPantheon-0.24.137-arm64.pkg")
+			plan.PackageURL = "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.pkg"
+			plan.AppUpdateIdentity.CandidateVersion.Version = "0.24.137"
+			switch mode {
+			case "missing-digest":
+				plan.SHA256 = ""
+			case "foreign-source":
+				plan.PackageURL = "https://foreign.invalid/SirsiPantheon-0.24.137-arm64.pkg"
+			case "foreign-signer":
+				plan.InstallerIdentity = "foreign installer"
+			case "foreign-dependency":
+				plan.Dependencies = []string{"/Applications/Other.app"}
+			}
+			store, _, handoffs, stages := installAppUpdateFixture(t, plan, nil, false)
+			if err := installAppRollbackWithMaat(&updater.Release{TagName: "v0.24.137"}); err == nil {
+				t.Fatalf("%s passed rollback identity validation", mode)
+			}
+			if store.started != 0 || *handoffs != 0 || *stages != 1 {
+				t.Fatalf("%s caused a durable action or Installer effect: starts=%d handoffs=%d stages=%d", mode, store.started, *handoffs, *stages)
+			}
+		})
+	}
+}
+
+func TestAppRollbackUncertainOrFailedPostcheckNeverReplaysInstaller(t *testing.T) {
+	for _, mode := range []string{"ambiguous-handoff", "wrong-installed-pair"} {
+		t.Run(mode, func(t *testing.T) {
+			plan := appUpdatePlanFixture(t)
+			plan.Release = "0.24.137"
+			plan.Package = filepath.Join(filepath.Dir(plan.Package), "SirsiPantheon-0.24.137-arm64.pkg")
+			plan.PackageURL = "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.pkg"
+			plan.AppUpdateIdentity.CandidateVersion.Version = "0.24.137"
+			store, _, handoffs, stages := installAppUpdateFixture(t, plan, nil, mode == "ambiguous-handoff")
+			if mode == "ambiguous-handoff" {
+				maatAppUpdateDependencies.handoff = func(context.Context, string) error {
+					(*handoffs)++
+					return errors.New("Installer handoff outcome unknown")
+				}
+			}
+			err := installAppRollbackWithMaat(&updater.Release{TagName: "v0.24.137"})
+			if err == nil || store.pending == nil || *handoffs != 1 || *stages != 1 {
+				t.Fatalf("rollback uncertainty was hidden: err=%v pending=%v handoffs=%d stages=%d", err, store.pending != nil, *handoffs, *stages)
+			}
+			attemptID := store.pending.ID
+			handled, reconcileErr := reconcilePendingMaatAppUpdate()
+			if !handled || *handoffs != 1 || *stages != 1 {
+				t.Fatalf("rollback reconciliation replayed the exact action: handled=%v err=%v handoffs=%d stages=%d", handled, reconcileErr, *handoffs, *stages)
+			}
+			if mode == "ambiguous-handoff" {
+				if reconcileErr != nil || store.pending != nil || store.last.AttemptID != attemptID {
+					t.Fatalf("exact installed rollback was not recovered by data-only readback: err=%v pending=%+v outcome=%+v", reconcileErr, store.pending, store.last)
+				}
+			} else if reconcileErr == nil || store.pending == nil || store.pending.ID != attemptID {
+				t.Fatalf("wrong installed pair did not preserve exact unresolved debt: err=%v pending=%+v", reconcileErr, store.pending)
+			}
+		})
+	}
+}
+
+func TestAppRollbackKnownPrehandoffRefusalRetainsNotInvokedAndDoesNotOpenInstaller(t *testing.T) {
+	plan := appUpdatePlanFixture(t)
+	plan.Release = "0.24.137"
+	plan.Package = filepath.Join(filepath.Dir(plan.Package), "SirsiPantheon-0.24.137-arm64.pkg")
+	plan.PackageURL = "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.pkg"
+	plan.AppUpdateIdentity.CandidateVersion.Version = "0.24.137"
+	store, _, handoffs, stages := installAppUpdateFixture(t, plan, nil, false)
+	var revalidations int
+	maatAppUpdateDependencies.revalidateRollback = func(context.Context, *updater.Release, maintenanceInstallerPlan) error {
+		revalidations++
+		if revalidations == 2 {
+			return errors.New("exact selected PKG custody changed before handoff")
+		}
+		return nil
+	}
+	if err := installAppRollbackWithMaat(&updater.Release{TagName: "v0.24.137"}); err == nil {
+		t.Fatal("changed selected rollback PKG crossed the final custody check")
+	}
+	if store.started != 1 || *handoffs != 0 || *stages != 1 || store.pending != nil || store.last.Determination != "not-invoked" {
+		t.Fatalf("known rollback refusal was not durably classified before handoff: starts=%d handoffs=%d stages=%d pending=%v outcome=%+v", store.started, *handoffs, *stages, store.pending != nil, store.last)
 	}
 }
 

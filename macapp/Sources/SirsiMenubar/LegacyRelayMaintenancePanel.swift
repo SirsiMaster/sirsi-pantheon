@@ -17,13 +17,16 @@ struct LegacyRelayMaintenancePanel: View {
     @State private var approvedRestore: LegacyRelayMaintenanceModel.RestoreApproval?
     @State private var approvedInstaller: LegacyRelayMaintenanceModel.InstallerApproval?
     @State private var confirmInstaller=false
+    @State private var rollbackRelease=""
+    @State private var approvedRollback:AppRollbackSelection?
+    @State private var confirmRollback=false
     @State private var approvedPublicBinding:LegacyRelayMaintenanceModel.PublicBindingApproval?
     @State private var confirmPublicBinding=false
 
     init(directory:URL,model:LegacyRelayMaintenanceModel){self.directory=directory;self.model=model}
 
     var body: some View {
-        DisclosureGroup("Legacy root relay maintenance") {
+        DisclosureGroup("Pantheon and legacy relay maintenance") {
             VStack(alignment:.leading,spacing:10){
                 Text("Optional fallback for a recognized legacy root relay. Pantheon stays unprivileged; macOS asks permission for only the reviewed operation using the protected installed engine. Producer-covered maintenance remains separate.")
                     .sirsiFont(.caption).foregroundStyle(.secondary)
@@ -36,6 +39,15 @@ struct LegacyRelayMaintenancePanel: View {
                 HStack {
                     Button("Check compatible Installer"){Task{await model.prepareInstaller()}}.buttonStyle(.bordered)
                     Button("Recheck installed pair"){Task{await model.recheckInstalledPair()}}.buttonStyle(.bordered)
+                }.disabled(model.busy||snapshotMode)
+                Divider()
+                Text("Restore one exact older Pantheon release through the retained Ma'at package workflow.")
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
+                HStack {
+                    TextField("Exact older recovery-capable release, e.g. 0.24.137", text:$rollbackRelease).textFieldStyle(.roundedBorder)
+                    Button("Review rollback") {
+                        if let selection=AppRollbackSelection(release:rollbackRelease) { approvedRollback=selection;confirmRollback=true }
+                    }.buttonStyle(.bordered).disabled(model.busy||snapshotMode||AppRollbackSelection(release:rollbackRelease)==nil)
                 }.disabled(model.busy||snapshotMode)
                 if let installer=model.installer {
                     Text("Verified normal PKG · \(installer.release)").sirsiFont(.caption)
@@ -101,6 +113,10 @@ struct LegacyRelayMaintenancePanel: View {
             Button("Open verified Installer"){if let approvedInstaller{_ = model.install(approvedInstaller)};approvedInstaller=nil}
             Button("Cancel",role:.cancel){approvedInstaller=nil}
         }message:{Text("Release: \(approvedInstaller?.release ?? "unavailable")\nPackage: \(approvedInstaller?.package ?? "unavailable")\nSHA256: \(approvedInstaller?.digest ?? "unavailable")\nPantheon rechecks the exact package before opening macOS Installer. Installation and a fresh installed-pair check remain separate; no service is restarted.")}
+        .confirmationDialog("Restore this exact Pantheon release?",isPresented:$confirmRollback,titleVisibility:.visible){
+            Button("Confirm exact app rollback",role:.destructive){if let approvedRollback{Task{await model.rollback(to:approvedRollback)}};approvedRollback=nil}
+            Button("Cancel",role:.cancel){approvedRollback=nil}
+        }message:{Text("Selected signed release: \(approvedRollback?.release ?? "unavailable")\nThe existing whole-app owner rechecks the installed app, live schema, official PKG identity and dependencies; it retains a Ma'at receipt and attempt before one normal Installer handoff. Exact installed app/helper readback is required. An ambiguous handoff is never replayed automatically.")}
         .confirmationDialog("Reconcile this public operation binding?",isPresented:$confirmPublicBinding,titleVisibility:.visible){
             Button("Confirm public binding reconciliation"){if let approvedPublicBinding{_ = model.rebindPublicState(approvedPublicBinding)};approvedPublicBinding=nil}
             Button("Cancel",role:.cancel){approvedPublicBinding=nil}
@@ -115,7 +131,7 @@ struct LegacyRelayMaintenancePanel: View {
         }message:{Text("Transaction: \(selectedTransaction?.id ?? "unavailable")\nPlan: \(selectedTransaction?.plan.sha256 ?? "unavailable")\nAbort only restores scoped admission while the original is verified alive. Resume never certifies old remote outcomes or replays retained envelopes.")}
         .onChange(of:directory){value in model.changeDirectory(value)}
         .onAppear{model.changeDirectory(directory)}
-        .onDisappear{approved=nil;approvedRestore=nil;approvedPublicBinding=nil;confirmPublicBinding=false}
+        .onDisappear{approved=nil;approvedRestore=nil;approvedPublicBinding=nil;approvedRollback=nil;confirmPublicBinding=false;confirmRollback=false}
     }
     private var publicBindingSummary:String {
         guard let approvedPublicBinding else{return "No reviewed public binding"}

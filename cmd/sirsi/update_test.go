@@ -23,6 +23,46 @@ func TestInstallAppReleaseRefusesBrokenVersionBeforeAssets(t *testing.T) {
 	}
 }
 
+func TestRunUpdateRollbackRequiresExplicitConfirmationBeforeStoreOrNetwork(t *testing.T) {
+	oldVersion, oldConfirm := updateRollbackVersion, updateConfirmRollback
+	oldClient := newUpdateClient
+	updateRollbackVersion, updateConfirmRollback = "0.24.136", false
+	newUpdateClient = func() *updater.Client { t.Fatal("unconfirmed rollback reached release client"); return nil }
+	defer func() {
+		updateRollbackVersion, updateConfirmRollback, newUpdateClient = oldVersion, oldConfirm, oldClient
+	}()
+	if err := runUpdate(updateCmd, nil); err == nil || !strings.Contains(err.Error(), "--confirm-rollback") {
+		t.Fatalf("unconfirmed exact rollback was not refused before external work: %v", err)
+	}
+}
+
+func TestUpdateCobraParsesExactRollbackFlagAndRequiresConfirmation(t *testing.T) {
+	oldVersion, oldConfirm := updateRollbackVersion, updateConfirmRollback
+	oldCLI, oldApp := updateInstallCLI, updateInstallApp
+	oldClient := newUpdateClient
+	updateInstallCLI, updateInstallApp = false, false
+	updateRollbackVersion, updateConfirmRollback = "", false
+	newUpdateClient = func() *updater.Client { t.Fatal("unconfirmed Cobra rollback reached release client"); return nil }
+	updateCmd.SetArgs([]string{"--rollback-version", "0.24.136"})
+	defer func() {
+		updateCmd.SetArgs(nil)
+		updateRollbackVersion, updateConfirmRollback = oldVersion, oldConfirm
+		updateInstallCLI, updateInstallApp, newUpdateClient = oldCLI, oldApp, oldClient
+	}()
+	if err := updateCmd.Execute(); err == nil || !strings.Contains(err.Error(), "--confirm-rollback") {
+		t.Fatalf("Cobra did not preserve explicit rollback confirmation requirement: %v", err)
+	}
+}
+
+func TestInstallAppRollbackReleaseRejectsTagMismatch(t *testing.T) {
+	oldVersion := updateRollbackVersion
+	updateRollbackVersion = "0.24.136"
+	defer func() { updateRollbackVersion = oldVersion }()
+	if err := installAppRollbackRelease(&updater.Release{TagName: "v0.24.137"}); err == nil || !strings.Contains(err.Error(), "tag changed") {
+		t.Fatalf("different release tag passed exact rollback selection: %v", err)
+	}
+}
+
 func TestRunUpdate_NoCompleteCommercialReleaseIsRecoverableForInstallRequests(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

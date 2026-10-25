@@ -23,6 +23,19 @@ struct LegacyRelayPlan: Codable, Equatable {
     }
 }
 
+// Exact native-to-CLI rollback request. The CLI still rechecks the installed
+// version, official release metadata, package custody and Ma'at admission.
+struct AppRollbackSelection: Equatable {
+    let release: String
+    init?(release: String) {
+        guard release.range(of: #"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$"#, options: .regularExpression) != nil else { return nil }
+        let parts = release.split(separator: ".").compactMap { UInt64($0) }
+        guard parts.count == 3, parts[0] > 0 || parts[1] > 24 || (parts[1] == 24 && parts[2] >= 137) else { return nil }
+        self.release = release
+    }
+    var commandArguments: [String] { ["update", "--rollback-version", release, "--confirm-rollback"] }
+}
+
 struct LegacyRelayTransaction: Codable, Equatable {
     let id: String
     let revision: UInt64
@@ -152,6 +165,25 @@ enum LegacyRelayAppHost {
         guard result.complete,result.exitCode==0,let plan=try?JSONDecoder().decode(InstallerEnvelope.self,from:result.stdoutData),plan.valid else {error=detail(result);return}
         installer=InstallerApproval(release:plan.release,package:plan.package,digest:plan.sha256,bytes:result.stdoutData,generation:token)
         statusNotice="Compatible signed/notarized PKG verified. Review and open normal Installer, then recheck the installed app/helper pair. No service action was performed."
+    }
+
+    func rollback(to selection: AppRollbackSelection) async {
+        guard !busy, installerTimeout.isFinite, installerTimeout > 0, installerTimeout <= 130 else { return }
+        busy = true; error = nil; installerReceipt = nil; statusNotice = nil
+        let token = generation, scope = directory, deadline = ProcessInfo.processInfo.systemUptime + installerTimeout
+        let result = await installerCapture(selection.commandArguments, nil, scope, {
+            self.generation == token && ProcessInfo.processInfo.systemUptime < deadline
+        })
+        installerReceipt = result
+        busy = false
+        guard !Task.isCancelled, generation == token, ProcessInfo.processInfo.systemUptime < deadline else {
+            error = "Rollback result is not verified. Inspect the retained Ma'at attempt before another selection; Installer is never replayed automatically."
+            return
+        }
+        guard result.complete, result.exitCode == 0 else { error = detail(result); return }
+        statusNotice = result.stdout.isEmpty
+            ? "The exact rollback command completed. Read the retained Ma'at attempt and installed app/helper identity."
+            : result.stdout
     }
     func install(_ approved:InstallerApproval)->Task<Void,Never>? {
         guard !busy,installer==approved,generation==approved.generation,installerTimeout.isFinite,installerTimeout>0,installerTimeout<=130 else{return nil}

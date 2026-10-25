@@ -35,6 +35,22 @@ import XCTest
         XCTAssertEqual(model.transaction?.phase, "completed")
     }
 
+    func testTypedRollbackSelectionUsesOnlyExactCurrentCLICommand() async throws {
+        let f = LegacyRelayFixture()
+        let selection = try XCTUnwrap(AppRollbackSelection(release: "0.24.137"))
+        XCTAssertNil(AppRollbackSelection(release: "latest"))
+        XCTAssertNil(AppRollbackSelection(release: "0.24.136"))
+        XCTAssertNil(AppRollbackSelection(release: "0.24.137/../0.24.200"))
+        var argv = [[String]]()
+        let model = LegacyRelayMaintenanceModel(directory: f.scope, installerCapture: { args, _, _, authorize in
+            XCTAssertTrue(authorize()); argv.append(args)
+            return CommandExecution(stdout: Data("Ma'at rollback attempt retained".utf8), exitCode: 0, childState: .exitConfirmed)
+        }, storage: f.storage)
+        await model.rollback(to: selection)
+        XCTAssertEqual(argv, [["update", "--rollback-version", "0.24.137", "--confirm-rollback"]])
+        XCTAssertTrue(model.statusNotice?.contains("rollback attempt retained") == true)
+    }
+
     func testChangedOrUnverifiedPackageNeverOpensInstaller() async throws {
         for failure in ["changed", "trust-refused", "canceled"] {
             let f = LegacyRelayFixture()

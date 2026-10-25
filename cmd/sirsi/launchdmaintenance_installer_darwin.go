@@ -29,6 +29,7 @@ import (
 
 type maintenanceInstallerPlan struct {
 	Schema            int                           `json:"schema"`
+	CurrentRelease    string                        `json:"current_release,omitempty"`
 	Release           string                        `json:"release"`
 	Package           string                        `json:"package"`
 	PackageURL        string                        `json:"package_url"`
@@ -88,6 +89,14 @@ func sameMaintenanceStrings(left, right []string) bool {
 }
 
 func maintenancePackageAsset(current string, rel *updater.Release) (*updater.Asset, error) {
+	return maintenancePackageAssetDirection(current, rel, false)
+}
+
+func maintenanceRollbackPackageAsset(current string, rel *updater.Release) (*updater.Asset, error) {
+	return maintenancePackageAssetDirection(current, rel, true)
+}
+
+func maintenancePackageAssetDirection(current string, rel *updater.Release, rollback bool) (*updater.Asset, error) {
 	if rel == nil {
 		return nil, errors.New("No complete supported release is published. Recheck releases; the installed app is unchanged.")
 	}
@@ -96,8 +105,12 @@ func maintenancePackageAsset(current string, rel *updater.Release) (*updater.Ass
 	if !maintenanceVersionRE.MatchString(candidate) || !maintenanceVersionRE.MatchString(current) {
 		return nil, errors.New("An official app release is required before Installer preparation.")
 	}
-	if candidate != current {
-		if err := updater.ValidateUpdateVersion(current, candidate); err != nil {
+	if rollback || candidate != current {
+		validate := updater.ValidateUpdateVersion
+		if rollback {
+			validate = updater.ValidateRollbackVersion
+		}
+		if err := validate(current, candidate); err != nil {
 			return nil, err
 		}
 	}
@@ -347,12 +360,20 @@ func maintenanceInstallerFileHash(path string, stage bool) (maintenanceInstaller
 }
 
 func stageMaintenanceInstaller(ctx context.Context, current string, ops maintenanceInstallerOps) (maintenanceInstallerPlan, error) {
+	return stageMaintenanceInstallerDirection(ctx, current, ops, false)
+}
+
+func stageMaintenanceRollbackInstaller(ctx context.Context, current string, ops maintenanceInstallerOps) (maintenanceInstallerPlan, error) {
+	return stageMaintenanceInstallerDirection(ctx, current, ops, true)
+}
+
+func stageMaintenanceInstallerDirection(ctx context.Context, current string, ops maintenanceInstallerOps, rollback bool) (maintenanceInstallerPlan, error) {
 	var result maintenanceInstallerPlan
 	rel, err := ops.release()
 	if err != nil {
 		return result, err
 	}
-	asset, err := maintenancePackageAsset(current, rel)
+	asset, err := maintenancePackageAssetDirection(current, rel, rollback)
 	if err != nil {
 		return result, err
 	}
@@ -383,6 +404,7 @@ func stageMaintenanceInstaller(ctx context.Context, current string, ops maintena
 		return result, errors.New("Inspected package differs from the selected published bytes; no Installer handoff")
 	}
 	result.Schema = 1
+	result.CurrentRelease = strings.TrimPrefix(current, "v")
 	result.Release = inspection.Capability.Release
 	result.PackageURL = asset.BrowserDownloadURL
 	result.Implementation = inspection.Capability.Implementation

@@ -94,6 +94,21 @@ import XCTest
         }
     }
 
+    func testRollbackBridgeAcceptsOnlyTypedExactVersionCommand()async{
+        var submitted=[[String]]()
+        let reader=LegacyRelayInstallerCapture(qualify:{"/owned/inert/sirsi"},invoke:{_,args,_,authorize in
+            XCTAssertTrue(authorize());submitted.append(args)
+            return CommandExecution(stdout:Data("retained attempt".utf8),exitCode:0,childState:.exitConfirmed)
+        })
+        let exact=await reader.capture(args:["update","--rollback-version","0.24.137","--confirm-rollback"],authorize:{true})
+        XCTAssertTrue(exact.complete)
+        let malformed=await reader.capture(args:["update","--rollback-version","0.24.137","--confirm-rollback","--app"],authorize:{true})
+        XCTAssertEqual(malformed.childState,.notStarted)
+        let belowReaderFloor=await reader.capture(args:["update","--rollback-version","0.24.136","--confirm-rollback"],authorize:{true})
+        XCTAssertEqual(belowReaderFloor.childState,.notStarted)
+        XCTAssertEqual(submitted,[["update","--rollback-version","0.24.137","--confirm-rollback"]])
+    }
+
     func testModelRechecksDeadlineImmediatelyBeforeOpeningInstaller()async throws{
         let f=LegacyRelayFixture(),raw=try selection(f)
         var calls=0,opens=0

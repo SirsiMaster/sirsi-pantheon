@@ -59,6 +59,26 @@ func TestMaintenanceInstallerClosedAssetSelection(t *testing.T) {
 	}
 }
 
+func TestMaintenanceRollbackAssetRequiresExactOlderCompletePair(t *testing.T) {
+	selected := maintenanceReleaseFixture([]byte("inert rollback package bytes"))
+	selected.TagName = "v0.24.137"
+	for i := range selected.Assets {
+		selected.Assets[i].Name = strings.ReplaceAll(selected.Assets[i].Name, "0.24.200", "0.24.137")
+		selected.Assets[i].BrowserDownloadURL = strings.ReplaceAll(selected.Assets[i].BrowserDownloadURL, "v0.24.200", "v0.24.137")
+	}
+	asset, err := maintenanceRollbackPackageAsset("0.24.138", selected)
+	if err != nil || asset == nil || asset.Name != "SirsiPantheon-0.24.137-arm64.pkg" {
+		t.Fatalf("exact complete older commercial pair refused: asset=%+v err=%v", asset, err)
+	}
+	if _, err := maintenanceRollbackPackageAsset("0.24.138", maintenanceReleaseFixture([]byte("inert package"))); err == nil {
+		t.Fatal("newer package passed rollback selection")
+	}
+	selected.Assets = selected.Assets[:1]
+	if _, err := maintenanceRollbackPackageAsset("0.24.138", selected); err == nil {
+		t.Fatal("partial older package pair passed rollback selection")
+	}
+}
+
 func TestMaintenanceInstallerStagesAndRechecksCapturedBytes(t *testing.T) {
 	// Only the transport and trust probes are injected. The actual command,
 	// private staging, checksum, retained-file and captured-selection checks run.

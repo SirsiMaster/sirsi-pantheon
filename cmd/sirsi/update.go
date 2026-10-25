@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -12,9 +13,11 @@ import (
 )
 
 var (
-	updateInstallCLI bool
-	updateInstallApp bool
-	newUpdateClient  = updater.NewClient
+	updateInstallCLI      bool
+	updateInstallApp      bool
+	updateRollbackVersion string
+	updateConfirmRollback bool
+	newUpdateClient       = updater.NewClient
 )
 
 var updateCmd = &cobra.Command{
@@ -25,6 +28,8 @@ var updateCmd = &cobra.Command{
   sirsi update          Check only — report the newest release + any advisories.
   sirsi update --cli    Open the exact signed Pantheon package in macOS Installer (CLI compatibility alias).
   sirsi update --app    Open the exact signed Pantheon package in macOS Installer.
+  sirsi update --rollback-version 0.24.136 --confirm-rollback
+                         Restore one explicitly selected, older signed app release.
 
 The package handoff is not an installed-success claim. Ma'at retains an exact
 update intent before opening Installer and reads the installed app, helper,
@@ -35,7 +40,17 @@ automatically.`,
 }
 
 func runUpdate(_ *cobra.Command, _ []string) error {
-	if updateInstallCLI || updateInstallApp {
+	if updateRollbackVersion != "" {
+		if updateInstallCLI || updateInstallApp {
+			return errors.New("select either normal app update or exact rollback version, not both")
+		}
+		if !updateConfirmRollback {
+			return errors.New("exact rollback requires --confirm-rollback; no package was staged")
+		}
+	} else if updateConfirmRollback {
+		return errors.New("--confirm-rollback requires an exact --rollback-version")
+	}
+	if updateInstallCLI || updateInstallApp || updateRollbackVersion != "" {
 		if handled, err := reconcilePendingMaatAppUpdate(); handled || err != nil {
 			return err
 		}
@@ -45,6 +60,13 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 	// generous client for both the check and the release fetch.
 	c := newUpdateClient()
 	c.HTTPClient = &http.Client{Timeout: 20 * time.Second}
+	if updateRollbackVersion != "" {
+		rel, err := c.ReleaseForVersion(updateRollbackVersion)
+		if err != nil {
+			return fmt.Errorf("fetch exact selected rollback release: %w", err)
+		}
+		return installAppRollbackRelease(rel)
+	}
 
 	res := c.Check(version)
 	if res.Error != nil {
@@ -101,8 +123,23 @@ func installAppRelease(rel *updater.Release) error {
 	return installAppReleaseWithMaat(rel)
 }
 
+// installAppRollbackRelease accepts only the exact release selected by the
+// operator. Installed-version direction and compatibility are rechecked from
+// the observed app inside the Ma'at owner before package staging or handoff.
+func installAppRollbackRelease(rel *updater.Release) error {
+	if rel == nil {
+		return errors.New("missing selected rollback release; installed product preserved")
+	}
+	if rel.TagName != "v"+strings.TrimPrefix(updateRollbackVersion, "v") {
+		return errors.New("selected rollback release tag changed; installed product preserved")
+	}
+	return installAppRollbackWithMaat(rel)
+}
+
 func init() {
 	updateCmd.Flags().BoolVar(&updateInstallCLI, "cli", false, "open the verified unified Pantheon package in macOS Installer (compatibility alias)")
 	updateCmd.Flags().BoolVar(&updateInstallApp, "app", false, "open the verified Pantheon package in macOS Installer")
+	updateCmd.Flags().StringVar(&updateRollbackVersion, "rollback-version", "", "exact older commercial Pantheon release to restore")
+	updateCmd.Flags().BoolVar(&updateConfirmRollback, "confirm-rollback", false, "confirm the exact selected whole-app rollback")
 	rootCmd.AddCommand(updateCmd)
 }

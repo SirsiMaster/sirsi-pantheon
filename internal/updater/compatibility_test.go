@@ -32,3 +32,29 @@ func TestValidateUpdateVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateRollbackVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name, current, candidate string
+		allowed                  bool
+	}{
+		{"supported older release", "0.24.200", "v0.24.199", true},
+		{"minimum recovery-capable reader", "0.24.138", "0.24.137", true},
+		{"candidate newer", "0.24.199", "0.24.200", false},
+		{"same release", "0.24.200", "v0.24.200", false},
+		{"below recovery-capable reader floor", "0.24.138", "0.24.136", false},
+		{"unstamped current", "dev", "0.24.115", false},
+		{"malformed explicit selection", "0.24.200", "latest", false},
+		{"overflowing version component", "0.24.200", "0.24.999999999999999999999999", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateRollbackVersion(tc.current, tc.candidate)
+			if tc.allowed && err != nil {
+				t.Fatal(err)
+			}
+			if !tc.allowed && !errors.Is(err, ErrIncompatibleUpdate) {
+				t.Fatalf("expected incompatible-update refusal, got %v", err)
+			}
+		})
+	}
+}

@@ -253,6 +253,32 @@ self-update source continuation below adds only the existing `SafeReplace`
 route. O2/O3 installed qualification and O4's full rollback acceptance remain
 open.
 
+### Whole-app rollback source candidate (2026-10-25)
+
+The existing `sirsi update --rollback-version <exact-version> --confirm-rollback`
+route selects one exact official commercial release through the existing
+release client. It accepts only an older recovery-capable release at or above
+v0.24.137, where the target contains the app-update attempt reader needed to
+reconcile handoff debt. Existing PKG staging and inspection verify the published
+DMG/PKG pair, exact PKG digest and file identity, Developer ID Installer
+signature, notarization, app/helper identity, schema ceiling, and closed
+dependency paths before the existing Ma'at whole-app preflight and durable
+attempt are admitted. The typed action manifest and its digest bind both the
+exact selected release and the observed current release, so rollback direction
+is retained without changing the persisted manifest schema.
+
+The current app maintenance panel presents an exact-version field and
+confirmation, then the existing native app bridge invokes only the bundled
+trusted CLI command using its typed selection. Installer remains the normal
+macOS package handoff. The app/helper observation must match the selected
+release, signatures, embedded helper pair, CDHash, required paths, and
+dependencies before Ma'at records completion. An ambiguous handoff or failed
+readback stays attached to the durable attempt and later invocations perform
+readback only; they never replay Installer. This source candidate is not yet
+qualified. It does not change schema migration behavior and does not claim raw
+self-update, alternate Installer routes, config-only restoration, or
+installed/runtime rollback evidence.
+
 ## Privacy, publication and recovery ownership
 
 Local diagnostic paths, process arguments, model contents, prompts and credentials
