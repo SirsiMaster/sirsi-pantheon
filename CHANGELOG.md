@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
-- Add an explicit exact-version whole-app rollback candidate through the existing signed-PKG, Ma'at preflight/attempt, and installed app/helper readback owner. Ambiguous handoffs remain data-only unresolved; source awaits Main qualification.
+- Add an explicit exact-version whole-app rollback candidate through the existing signed-PKG, Ma’at preflight/attempt, and installed app/helper readback owner. Rollback now requires the selected signed target helper to report the retained-attempt recovery schema; the native app exposes a data-only attempt recheck. Ambiguous handoffs remain unresolved and never replay Installer. Source awaits Main qualification.
 
 ## [0.24.137] — 2026-10-25
 

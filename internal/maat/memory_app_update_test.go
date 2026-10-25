@@ -86,12 +86,13 @@ func TestAppRollbackManifestBindsExactOlderVersionPair(t *testing.T) {
 	manifest.PackageURL = "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.pkg"
 	manifest.PackagePath = filepath.Join(os.TempDir(), "sirsi-maintenance-installer-fixture", manifest.PackageName)
 	manifest.CandidateVersion.Version = "0.24.137"
+	manifest.CurrentRelease = "0.24.138"
 	first, err := manifest.Digest()
 	if err != nil {
 		t.Fatalf("exact older compatible package rejected: %v", err)
 	}
 	changed := manifest
-	changed.CurrentRelease = "0.24.138"
+	changed.CurrentRelease = "0.24.139"
 	second, err := changed.Digest()
 	if err != nil || first == second {
 		t.Fatalf("action digest did not bind exact selected/current version pair: first=%s second=%s err=%v", first, second, err)
@@ -689,4 +690,12 @@ func exactAppUpdateObservation(manifest AppUpdateManifest, stamp time.Time) AppU
 		HelperSHA256: manifest.ExpectedInstalledHelperSHA256, EmbeddedHelperSHA256: manifest.ExpectedEmbeddedHelperSHA256,
 		AppCDHash: manifest.ExpectedAppCDHash, AppSignatureVerified: true, HelperSignatureVerified: true,
 		DependenciesPresent: true, ObservedAtUTC: stamp}
+}
+
+func TestAppUpdateRecoveryCapabilityNamesExistingReaderContract(t *testing.T) {
+	capability := CurrentAppUpdateRecoveryCapability()
+	if capability.Schema != AppUpdateRecoveryCapabilitySchema || capability.ManifestSchema != AppUpdateManifestSchema || capability.StoreMemorySchema != MemorySchema ||
+		!capability.PendingRead || !capability.InstalledResolve {
+		t.Fatalf("whole-app attempt reader capability is incomplete: %+v", capability)
+	}
 }

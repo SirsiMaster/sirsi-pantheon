@@ -36,15 +36,20 @@ struct LegacyRelayMaintenancePanel: View {
                     Button("Read current transaction"){Task{await model.readStatus()}}.buttonStyle(.bordered)
                 }.disabled(snapshotMode)
                 if let notice=model.statusNotice {Text(notice).sirsiFont(.caption).foregroundStyle(.secondary)}
+                if let report=model.maatAppAttemptReport, report.state == "unresolved" || report.state == "resolved" {
+                    Text("Retained Ma’at attempt \(report.attemptID ?? "unavailable") · source \(report.currentRelease ?? "unknown") · target \(report.targetRelease ?? "unknown") · \(report.state)")
+                        .sirsiFont(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                }
                 HStack {
                     Button("Check compatible Installer"){Task{await model.prepareInstaller()}}.buttonStyle(.bordered)
                     Button("Recheck installed pair"){Task{await model.recheckInstalledPair()}}.buttonStyle(.bordered)
+                    Button("Recheck retained Ma’at app attempt"){Task{await model.recheckMaatAppAttempt()}}.buttonStyle(.bordered)
                 }.disabled(model.busy||snapshotMode)
                 Divider()
                 Text("Restore one exact older Pantheon release through the retained Ma'at package workflow.")
                     .sirsiFont(.caption).foregroundStyle(.secondary)
                 HStack {
-                    TextField("Exact older recovery-capable release, e.g. 0.24.137", text:$rollbackRelease).textFieldStyle(.roundedBorder)
+                    TextField("Exact older release (target recovery support is checked from its signed helper)", text:$rollbackRelease).textFieldStyle(.roundedBorder)
                     Button("Review rollback") {
                         if let selection=AppRollbackSelection(release:rollbackRelease) { approvedRollback=selection;confirmRollback=true }
                     }.buttonStyle(.bordered).disabled(model.busy||snapshotMode||AppRollbackSelection(release:rollbackRelease)==nil)

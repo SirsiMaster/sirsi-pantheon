@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/updater"
 	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
@@ -28,24 +29,25 @@ import (
 )
 
 type maintenanceInstallerPlan struct {
-	Schema            int                           `json:"schema"`
-	CurrentRelease    string                        `json:"current_release,omitempty"`
-	Release           string                        `json:"release"`
-	Package           string                        `json:"package"`
-	PackageURL        string                        `json:"package_url"`
-	SHA256            string                        `json:"sha256"`
-	Device            uint64                        `json:"device"`
-	Inode             uint64                        `json:"inode"`
-	Bytes             int64                         `json:"bytes"`
-	Implementation    string                        `json:"implementation"`
-	EngineSHA256      string                        `json:"engine_sha256"`
-	AppUpdateIdentity *maintenanceAppUpdateIdentity `json:"app_update_identity,omitempty"`
-	InstallerIdentity string                        `json:"installer_identity"`
-	Notarization      string                        `json:"notarization"`
-	TargetBundleID    string                        `json:"target_bundle_id"`
-	TargetAppPath     string                        `json:"target_app_path"`
-	TargetHelperPath  string                        `json:"target_helper_path"`
-	Dependencies      []string                      `json:"dependencies"`
+	Schema                      int                               `json:"schema"`
+	CurrentRelease              string                            `json:"current_release,omitempty"`
+	Release                     string                            `json:"release"`
+	Package                     string                            `json:"package"`
+	PackageURL                  string                            `json:"package_url"`
+	SHA256                      string                            `json:"sha256"`
+	Device                      uint64                            `json:"device"`
+	Inode                       uint64                            `json:"inode"`
+	Bytes                       int64                             `json:"bytes"`
+	Implementation              string                            `json:"implementation"`
+	EngineSHA256                string                            `json:"engine_sha256"`
+	AppUpdateIdentity           *maintenanceAppUpdateIdentity     `json:"app_update_identity,omitempty"`
+	AppUpdateRecoveryCapability *maat.AppUpdateRecoveryCapability `json:"app_update_recovery_capability,omitempty"`
+	InstallerIdentity           string                            `json:"installer_identity"`
+	Notarization                string                            `json:"notarization"`
+	TargetBundleID              string                            `json:"target_bundle_id"`
+	TargetAppPath               string                            `json:"target_app_path"`
+	TargetHelperPath            string                            `json:"target_helper_path"`
+	Dependencies                []string                          `json:"dependencies"`
 }
 
 type maintenanceAppUpdateIdentity struct {
@@ -55,17 +57,18 @@ type maintenanceAppUpdateIdentity struct {
 }
 
 type maintenancePackageInspection struct {
-	Capability           setup.LegacyAppCapability
-	EngineSHA256         string
-	EmbeddedHelperSHA256 string
-	AppCDHash            string
-	CandidateVersion     modversion.Info
-	InstallerIdentity    string
-	Notarization         string
-	TargetBundleID       string
-	TargetAppPath        string
-	TargetHelperPath     string
-	Dependencies         []string
+	Capability                  setup.LegacyAppCapability
+	EngineSHA256                string
+	EmbeddedHelperSHA256        string
+	AppCDHash                   string
+	CandidateVersion            modversion.Info
+	AppUpdateRecoveryCapability maat.AppUpdateRecoveryCapability
+	InstallerIdentity           string
+	Notarization                string
+	TargetBundleID              string
+	TargetAppPath               string
+	TargetHelperPath            string
+	Dependencies                []string
 }
 
 type maintenanceInstallerOps struct {
@@ -158,19 +161,33 @@ func maintenanceDownload(ctx context.Context, endpoint, dest string) error {
 }
 
 func inspectMaintenancePKG(ctx context.Context, path, release string) (maintenancePackageInspection, error) {
-	return inspectPantheonPKG(ctx, path, release, true)
+	return inspectPantheonPKG(ctx, path, release, true, false)
 }
 
 func inspectAppUpdatePKG(ctx context.Context, path, release string) (maintenancePackageInspection, error) {
-	return inspectPantheonPKG(ctx, path, release, false)
+	return inspectPantheonPKG(ctx, path, release, false, false)
 }
 
-func inspectPantheonPKG(ctx context.Context, path, release string, requireCurrentEngine bool) (maintenancePackageInspection, error) {
+func inspectAppRollbackPKG(ctx context.Context, path, release string) (maintenancePackageInspection, error) {
+	return inspectPantheonPKG(ctx, path, release, false, true)
+}
+
+func decodeAppUpdateRecoveryCapability(raw []byte) (maat.AppUpdateRecoveryCapability, error) {
+	var capability maat.AppUpdateRecoveryCapability
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&capability) != nil || decoder.Decode(new(any)) != io.EOF || capability != maat.CurrentAppUpdateRecoveryCapability() {
+		return maat.AppUpdateRecoveryCapability{}, errors.New("selected rollback target has an incompatible whole-app attempt recovery schema")
+	}
+	return capability, nil
+}
+
+func inspectPantheonPKG(ctx context.Context, path, release string, requireCurrentEngine, requireAppUpdateRecovery bool) (maintenancePackageInspection, error) {
 	var inspection maintenancePackageInspection
 	const installerIdentity = "Developer ID Installer: Sirsi Technologies Inc. (9D382WV988)"
 	const notarization = "Notarized Developer ID"
 	// These are normal read-only package/signature tools. No installer or
-	// script payload is executed. The one helper probe runs unprivileged.
+	// script payload is executed. Candidate helper identity/capability probes run unprivileged.
 	signature, err := maintenanceInstallerRead(ctx, "/usr/sbin/pkgutil", "--check-signature", path)
 	if err != nil || !strings.Contains(string(signature), installerIdentity) {
 		return inspection, errors.New("Installer signature is not the canonical Sirsi identity; do not open.")
@@ -223,6 +240,7 @@ func inspectPantheonPKG(ctx context.Context, path, release string, requireCurren
 	var expected string
 	var candidateVersion modversion.Info
 	var cap setup.LegacyAppCapability
+	var recoveryCapability maat.AppUpdateRecoveryCapability
 	for _, helper := range []string{pkgHelper, appHelper} {
 		h, err := maintenanceInstallerFileHash(helper, false)
 		if err != nil {
@@ -263,6 +281,20 @@ func inspectPantheonPKG(ctx context.Context, path, release string, requireCurren
 			return inspection, errors.New("Package helper contracts differ.")
 		}
 		cap = next
+		if requireAppUpdateRecovery {
+			recoveryRaw, capabilityErr := maintenanceInstallerRead(ctx, helper, "update", "--app-update-recovery-capability")
+			if capabilityErr != nil {
+				return inspection, errors.New("selected rollback target lacks the whole-app attempt recovery reader")
+			}
+			candidateCapability, capabilityErr := decodeAppUpdateRecoveryCapability(recoveryRaw)
+			if capabilityErr != nil {
+				return inspection, capabilityErr
+			}
+			if recoveryCapability.Schema != "" && recoveryCapability != candidateCapability {
+				return inspection, errors.New("rollback target app/helper recovery readers differ")
+			}
+			recoveryCapability = candidateCapability
+		}
 	}
 	currentCapability := legacyAppCapability()
 	if cap.Schema != currentCapability.Schema || cap.Protocol != currentCapability.Protocol || !cap.Native ||
@@ -280,7 +312,7 @@ func inspectPantheonPKG(ctx context.Context, path, release string, requireCurren
 		}
 	}
 	inspection = maintenancePackageInspection{Capability: cap, EngineSHA256: expected, EmbeddedHelperSHA256: expected, AppCDHash: appCDHash,
-		CandidateVersion: candidateVersion, InstallerIdentity: installerIdentity,
+		CandidateVersion: candidateVersion, AppUpdateRecoveryCapability: recoveryCapability, InstallerIdentity: installerIdentity,
 		Notarization: notarization, TargetBundleID: "ai.sirsi.pantheon", TargetAppPath: "/Applications/Pantheon.app",
 		TargetHelperPath: "/usr/local/libexec/sirsi-pantheon/sirsi",
 		Dependencies:     []string{"/Applications/Pantheon.app", "/usr/local/libexec/sirsi-pantheon/sirsi"}}
@@ -412,6 +444,10 @@ func stageMaintenanceInstallerDirection(ctx context.Context, current string, ops
 	if inspection.CandidateVersion.Binary != "" {
 		result.AppUpdateIdentity = &maintenanceAppUpdateIdentity{EmbeddedHelperSHA256: inspection.EmbeddedHelperSHA256,
 			AppCDHash: inspection.AppCDHash, CandidateVersion: inspection.CandidateVersion}
+	}
+	if inspection.AppUpdateRecoveryCapability.Schema != "" {
+		capability := inspection.AppUpdateRecoveryCapability
+		result.AppUpdateRecoveryCapability = &capability
 	}
 	result.InstallerIdentity = inspection.InstallerIdentity
 	result.Notarization = inspection.Notarization

@@ -39,10 +39,11 @@ func TestValidateRollbackVersion(t *testing.T) {
 		allowed                  bool
 	}{
 		{"supported older release", "0.24.200", "v0.24.199", true},
-		{"minimum recovery-capable reader", "0.24.138", "0.24.137", true},
+		{"older release with reader checked by exact package inspection", "0.24.138", "0.24.137", true},
+		{"older release below former guessed floor", "0.24.138", "0.24.136", true},
 		{"candidate newer", "0.24.199", "0.24.200", false},
 		{"same release", "0.24.200", "v0.24.200", false},
-		{"below recovery-capable reader floor", "0.24.138", "0.24.136", false},
+		{"below supported protocol floor", "0.24.138", "0.24.114", false},
 		{"unstamped current", "dev", "0.24.115", false},
 		{"malformed explicit selection", "0.24.200", "latest", false},
 		{"overflowing version component", "0.24.200", "0.24.999999999999999999999999", false},

@@ -130,6 +130,10 @@ func appUpdatePlanFixture(t *testing.T) maintenanceInstallerPlan {
 		EngineSHA256: strings.Repeat("c", 64), InstallerIdentity: "Developer ID Installer: Sirsi Technologies Inc. (9D382WV988)",
 		AppUpdateIdentity: &maintenanceAppUpdateIdentity{EmbeddedHelperSHA256: strings.Repeat("c", 64), AppCDHash: strings.Repeat("d", 40),
 			CandidateVersion: modversion.Info{Binary: "sirsi", Version: "0.24.200", Commit: "fixture", RouterSchemaMax: 25}},
+		AppUpdateRecoveryCapability: func() *maat.AppUpdateRecoveryCapability {
+			capability := maat.CurrentAppUpdateRecoveryCapability()
+			return &capability
+		}(),
 		Notarization: "Notarized Developer ID", TargetBundleID: "ai.sirsi.pantheon", TargetAppPath: "/Applications/Pantheon.app",
 		TargetHelperPath: "/usr/local/libexec/sirsi-pantheon/sirsi", Dependencies: []string{"/Applications/Pantheon.app", "/usr/local/libexec/sirsi-pantheon/sirsi"}}
 }
@@ -351,18 +355,18 @@ func TestMaatAppRollbackRevalidatorRejectsPackageMutationAfterTrustInspection(t 
 		{Name: filepath.Base(plan.Package), BrowserDownloadURL: plan.PackageURL, Size: plan.Bytes, Digest: "sha256:" + plan.SHA256},
 		{Name: "SirsiPantheon-0.24.137-arm64.dmg", BrowserDownloadURL: "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.dmg", Size: 8, Digest: "sha256:" + strings.Repeat("a", 64)},
 	}}
-	oldInspector := maatAppUpdatePackageInspector
-	maatAppUpdatePackageInspector = func(context.Context, string, string) (maintenancePackageInspection, error) {
+	oldInspector := maatAppRollbackPackageInspector
+	maatAppRollbackPackageInspector = func(context.Context, string, string) (maintenancePackageInspection, error) {
 		if err := os.WriteFile(plan.Package, []byte("changed during package trust inspection"), 0600); err != nil {
 			t.Fatal(err)
 		}
 		return maintenancePackageInspection{Capability: setup.LegacyAppCapability{Implementation: plan.Implementation}, EngineSHA256: plan.EngineSHA256,
 			EmbeddedHelperSHA256: plan.AppUpdateIdentity.EmbeddedHelperSHA256, AppCDHash: plan.AppUpdateIdentity.AppCDHash,
-			CandidateVersion: plan.AppUpdateIdentity.CandidateVersion, InstallerIdentity: plan.InstallerIdentity,
+			CandidateVersion: plan.AppUpdateIdentity.CandidateVersion, AppUpdateRecoveryCapability: *plan.AppUpdateRecoveryCapability, InstallerIdentity: plan.InstallerIdentity,
 			Notarization: plan.Notarization, TargetBundleID: plan.TargetBundleID, TargetAppPath: plan.TargetAppPath,
 			TargetHelperPath: plan.TargetHelperPath, Dependencies: plan.Dependencies}, nil
 	}
-	t.Cleanup(func() { maatAppUpdatePackageInspector = oldInspector })
+	t.Cleanup(func() { maatAppRollbackPackageInspector = oldInspector })
 	if err := revalidateMaatAppRollbackPackage(context.Background(), release, plan); err == nil {
 		t.Fatal("changed retained rollback package passed final identity readback")
 	}
@@ -454,6 +458,44 @@ func TestInstallAppReleaseWithMaatHandsOffOnceAndRequiresInstalledReadback(t *te
 	}
 }
 
+func TestMaatAppAttemptRecheckWithNoPendingIsDataOnly(t *testing.T) {
+	store := newAppUpdateFixtureStore(t)
+	previous := maatAppUpdateDependencies
+	stageCalls, handoffCalls, observeCalls := 0, 0, 0
+	maatAppUpdateDependencies = maatAppUpdateOps{
+		storeStatus: maat.InspectDefaultStore, openStore: store.open,
+		stageRollback: func(context.Context, string, *updater.Release) (maintenanceInstallerPlan, error) {
+			stageCalls++
+			return maintenanceInstallerPlan{}, nil
+		},
+		handoff: func(context.Context, string) error { handoffCalls++; return nil },
+		observe: func(context.Context) (maat.AppUpdateObservation, error) {
+			observeCalls++
+			return maat.AppUpdateObservation{}, nil
+		},
+	}
+	t.Cleanup(func() { maatAppUpdateDependencies = previous })
+	report, err := reconcileMaatAppUpdateReport()
+	if err != nil || report.State != "no_pending_attempt" || report.AttemptID != "" || stageCalls != 0 || handoffCalls != 0 || observeCalls != 0 {
+		t.Fatalf("empty recovery read unexpectedly staged, observed or handed off: report=%+v err=%v stage=%d observe=%d handoff=%d", report, err, stageCalls, observeCalls, handoffCalls)
+	}
+}
+
+func TestAppRollbackTargetWithoutAttemptReaderRefusesBeforeDurableIntent(t *testing.T) {
+	plan := appUpdatePlanFixture(t)
+	plan.Release = "0.24.137"
+	plan.Package = filepath.Join(filepath.Dir(plan.Package), "SirsiPantheon-0.24.137-arm64.pkg")
+	plan.PackageURL = "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.pkg"
+	plan.AppUpdateIdentity.CandidateVersion.Version = "0.24.137"
+	plan.CurrentRelease = "0.24.138"
+	plan.AppUpdateRecoveryCapability = nil // exact .137 package with only legacy relay capability
+	store, _, handoffs, stages := installAppUpdateFixture(t, plan, nil, false)
+	err := installAppRollbackWithMaat(&updater.Release{TagName: "v0.24.137"})
+	if err == nil || !strings.Contains(err.Error(), "attempt recovery reader/schema") || store.started != 0 || *handoffs != 0 || *stages != 1 {
+		t.Fatalf("target without retained-attempt reader crossed rollback boundary: err=%v starts=%d handoffs=%d stages=%d", err, store.started, *handoffs, *stages)
+	}
+}
+
 func TestInstallAppRollbackWithMaatUsesExactOlderPKGOnceAndReadsBackPair(t *testing.T) {
 	plan := appUpdatePlanFixture(t)
 	plan.Release = "0.24.137"
@@ -517,6 +559,7 @@ func TestAppRollbackMissingOrForeignPKGIdentityHasZeroEffect(t *testing.T) {
 			plan.Package = filepath.Join(filepath.Dir(plan.Package), "SirsiPantheon-0.24.137-arm64.pkg")
 			plan.PackageURL = "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.pkg"
 			plan.AppUpdateIdentity.CandidateVersion.Version = "0.24.137"
+			plan.CurrentRelease = "0.24.138"
 			switch mode {
 			case "missing-digest":
 				plan.SHA256 = ""
@@ -546,6 +589,7 @@ func TestAppRollbackUncertainOrFailedPostcheckNeverReplaysInstaller(t *testing.T
 			plan.Package = filepath.Join(filepath.Dir(plan.Package), "SirsiPantheon-0.24.137-arm64.pkg")
 			plan.PackageURL = "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.pkg"
 			plan.AppUpdateIdentity.CandidateVersion.Version = "0.24.137"
+			plan.CurrentRelease = "0.24.138"
 			store, _, handoffs, stages := installAppUpdateFixture(t, plan, nil, mode == "ambiguous-handoff")
 			if mode == "ambiguous-handoff" {
 				maatAppUpdateDependencies.handoff = func(context.Context, string) error {
@@ -558,16 +602,16 @@ func TestAppRollbackUncertainOrFailedPostcheckNeverReplaysInstaller(t *testing.T
 				t.Fatalf("rollback uncertainty was hidden: err=%v pending=%v handoffs=%d stages=%d", err, store.pending != nil, *handoffs, *stages)
 			}
 			attemptID := store.pending.ID
-			handled, reconcileErr := reconcilePendingMaatAppUpdate()
-			if !handled || *handoffs != 1 || *stages != 1 {
-				t.Fatalf("rollback reconciliation replayed the exact action: handled=%v err=%v handoffs=%d stages=%d", handled, reconcileErr, *handoffs, *stages)
+			report, reconcileErr := reconcileMaatAppUpdateReport()
+			if *handoffs != 1 || *stages != 1 || report.AttemptID != attemptID || report.TargetRelease != "0.24.137" {
+				t.Fatalf("native data-only recheck lost retained ownership or replayed action: report=%+v err=%v handoffs=%d stages=%d", report, reconcileErr, *handoffs, *stages)
 			}
 			if mode == "ambiguous-handoff" {
-				if reconcileErr != nil || store.pending != nil || store.last.AttemptID != attemptID {
-					t.Fatalf("exact installed rollback was not recovered by data-only readback: err=%v pending=%+v outcome=%+v", reconcileErr, store.pending, store.last)
+				if reconcileErr != nil || report.State != "resolved" || report.Observation == nil || report.Observation.Release != "0.24.137" || store.pending != nil || store.last.AttemptID != attemptID {
+					t.Fatalf("exact installed rollback was not recovered by native data-only readback: report=%+v err=%v pending=%+v outcome=%+v", report, reconcileErr, store.pending, store.last)
 				}
-			} else if reconcileErr == nil || store.pending == nil || store.pending.ID != attemptID {
-				t.Fatalf("wrong installed pair did not preserve exact unresolved debt: err=%v pending=%+v", reconcileErr, store.pending)
+			} else if reconcileErr == nil || report.State != "unresolved" || store.pending == nil || store.pending.ID != attemptID {
+				t.Fatalf("wrong installed pair did not preserve exact unresolved debt: report=%+v err=%v pending=%+v", report, reconcileErr, store.pending)
 			}
 		})
 	}
@@ -579,6 +623,7 @@ func TestAppRollbackKnownPrehandoffRefusalRetainsNotInvokedAndDoesNotOpenInstall
 	plan.Package = filepath.Join(filepath.Dir(plan.Package), "SirsiPantheon-0.24.137-arm64.pkg")
 	plan.PackageURL = "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v0.24.137/SirsiPantheon-0.24.137-arm64.pkg"
 	plan.AppUpdateIdentity.CandidateVersion.Version = "0.24.137"
+	plan.CurrentRelease = "0.24.138"
 	store, _, handoffs, stages := installAppUpdateFixture(t, plan, nil, false)
 	var revalidations int
 	maatAppUpdateDependencies.revalidateRollback = func(context.Context, *updater.Release, maintenanceInstallerPlan) error {

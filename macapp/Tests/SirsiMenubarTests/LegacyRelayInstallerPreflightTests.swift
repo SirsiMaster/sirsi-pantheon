@@ -104,9 +104,15 @@ import XCTest
         XCTAssertTrue(exact.complete)
         let malformed=await reader.capture(args:["update","--rollback-version","0.24.137","--confirm-rollback","--app"],authorize:{true})
         XCTAssertEqual(malformed.childState,.notStarted)
-        let belowReaderFloor=await reader.capture(args:["update","--rollback-version","0.24.136","--confirm-rollback"],authorize:{true})
-        XCTAssertEqual(belowReaderFloor.childState,.notStarted)
-        XCTAssertEqual(submitted,[["update","--rollback-version","0.24.137","--confirm-rollback"]])
+        let olderExact=await reader.capture(args:["update","--rollback-version","0.24.136","--confirm-rollback"],authorize:{true})
+        XCTAssertTrue(olderExact.complete)
+        let recheck=await reader.capture(args:["update","--reconcile-app-attempt"],authorize:{true})
+        XCTAssertTrue(recheck.complete)
+        let malformedRecheck=await reader.capture(args:["update","--reconcile-app-attempt","--rollback-version","0.24.137"],authorize:{true})
+        XCTAssertEqual(malformedRecheck.childState,.notStarted)
+        XCTAssertEqual(submitted,[["update","--rollback-version","0.24.137","--confirm-rollback"],
+                                  ["update","--rollback-version","0.24.136","--confirm-rollback"],
+                                  ["update","--reconcile-app-attempt"]])
     }
 
     func testModelRechecksDeadlineImmediatelyBeforeOpeningInstaller()async throws{

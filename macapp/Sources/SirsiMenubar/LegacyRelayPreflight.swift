@@ -81,7 +81,8 @@ import Foundation
             !args[3].isEmpty && args[3].count <= 16384 && args[3].utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
         let rollback = args.count == 4 && args[0] == "update" && args[1] == "--rollback-version" &&
             AppRollbackSelection(release: args[2]) != nil && args[3] == "--confirm-rollback"
-        guard (prepare || verify || rollback), overallTimeout.isFinite, overallTimeout > 0, overallTimeout <= 130,
+        let recheck = args == ["update", "--reconcile-app-attempt"]
+        guard (prepare || verify || rollback || recheck), overallTimeout.isFinite, overallTimeout > 0, overallTimeout <= 130,
               identityTimeout.isFinite, identityTimeout > 0, identityTimeout <= 8,
               !Task.isCancelled, authorize() else { return CommandExecution(launchError: "Installer or rollback request canceled, expired or unrecognized before preflight.", cancelled: Task.isCancelled) }
         let path: String

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/updater"
 )
@@ -196,5 +197,25 @@ func TestMaintenanceInstallerObservedPackageInfoContract(t *testing.T) {
 				t.Fatal(name, err)
 			}
 		})
+	}
+}
+
+func TestAppRollbackRecoveryCapabilityRequiresExactReaderSchema(t *testing.T) {
+	valid, err := json.Marshal(maat.CurrentAppUpdateRecoveryCapability())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := decodeAppUpdateRecoveryCapability(valid)
+	if err != nil || got != maat.CurrentAppUpdateRecoveryCapability() {
+		t.Fatalf("exact attempt reader capability refused: %+v %v", got, err)
+	}
+	for _, raw := range [][]byte{
+		[]byte(`{"schema":1,"protocol":"root-relay-local-app-v1","native":true}`),
+		[]byte(`{"schema":"sirsi.maat.app-update-recovery.v1","manifest_schema":"wrong","pending_read":true,"installed_resolve":true}`),
+		[]byte(`{}`),
+	} {
+		if _, err := decodeAppUpdateRecoveryCapability(raw); err == nil {
+			t.Fatalf("legacy/missing/mismatched reader capability accepted: %s", raw)
+		}
 	}
 }

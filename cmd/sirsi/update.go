@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,15 +10,18 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/updater"
 )
 
 var (
-	updateInstallCLI      bool
-	updateInstallApp      bool
-	updateRollbackVersion string
-	updateConfirmRollback bool
-	newUpdateClient       = updater.NewClient
+	updateInstallCLI                  bool
+	updateInstallApp                  bool
+	updateRollbackVersion             string
+	updateConfirmRollback             bool
+	updateReconcileAppAttempt         bool
+	updateAppUpdateRecoveryCapability bool
+	newUpdateClient                   = updater.NewClient
 )
 
 var updateCmd = &cobra.Command{
@@ -39,7 +43,42 @@ automatically.`,
 	RunE: runUpdate,
 }
 
-func runUpdate(_ *cobra.Command, _ []string) error {
+const appUpdateReconciliationSchema = "sirsi.maat.app-update-reconciliation.v1"
+
+type appUpdateReconciliationReport struct {
+	Schema         string                     `json:"schema"`
+	State          string                     `json:"state"`
+	AttemptID      string                     `json:"attempt_id,omitempty"`
+	TargetRelease  string                     `json:"target_release,omitempty"`
+	CurrentRelease string                     `json:"current_release,omitempty"`
+	Observation    *maat.AppUpdateObservation `json:"observation,omitempty"`
+	Reason         string                     `json:"reason,omitempty"`
+}
+
+func runUpdate(cmd *cobra.Command, args []string) error {
+	if updateAppUpdateRecoveryCapability {
+		if len(args) != 0 || updateRollbackVersion != "" || updateConfirmRollback || updateInstallCLI || updateInstallApp || updateReconcileAppAttempt {
+			return errors.New("app-update recovery capability is a standalone read-only query")
+		}
+		capability, err := appUpdateRecoveryCapability()
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(capability)
+	}
+	if updateReconcileAppAttempt {
+		if len(args) != 0 || updateRollbackVersion != "" || updateConfirmRollback || updateInstallCLI || updateInstallApp {
+			return errors.New("app-attempt recheck is a standalone data-only operation")
+		}
+		report, err := reconcileMaatAppUpdateReport()
+		if err != nil && report.State == "unverifiable" {
+			report.Reason = err.Error()
+		}
+		if encodeErr := json.NewEncoder(cmd.OutOrStdout()).Encode(report); encodeErr != nil {
+			return encodeErr
+		}
+		return err
+	}
 	if updateRollbackVersion != "" {
 		if updateInstallCLI || updateInstallApp {
 			return errors.New("select either normal app update or exact rollback version, not both")
@@ -141,5 +180,7 @@ func init() {
 	updateCmd.Flags().BoolVar(&updateInstallApp, "app", false, "open the verified Pantheon package in macOS Installer")
 	updateCmd.Flags().StringVar(&updateRollbackVersion, "rollback-version", "", "exact older commercial Pantheon release to restore")
 	updateCmd.Flags().BoolVar(&updateConfirmRollback, "confirm-rollback", false, "confirm the exact selected whole-app rollback")
+	updateCmd.Flags().BoolVar(&updateReconcileAppAttempt, "reconcile-app-attempt", false, "read back and reconcile one retained whole-app attempt without staging or handoff")
+	updateCmd.Flags().BoolVar(&updateAppUpdateRecoveryCapability, "app-update-recovery-capability", false, "report the compiled whole-app attempt recovery reader contract")
 	rootCmd.AddCommand(updateCmd)
 }

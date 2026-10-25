@@ -257,9 +257,12 @@ open.
 
 The existing `sirsi update --rollback-version <exact-version> --confirm-rollback`
 route selects one exact official commercial release through the existing
-release client. It accepts only an older recovery-capable release at or above
-v0.24.137, where the target contains the app-update attempt reader needed to
-reconcile handoff debt. Existing PKG staging and inspection verify the published
+release client. It accepts only an older supported release whose exact
+signed app and protected helper report the whole-app attempt recovery schema
+and pending/installed readback operations. The version number is not used as a
+proxy for that capability. The independently inspected published v0.24.137 package does not
+report that reader and will be refused; a source candidate does not qualify a
+replacement artifact. Existing PKG staging and inspection verify the published
 DMG/PKG pair, exact PKG digest and file identity, Developer ID Installer
 signature, notarization, app/helper identity, schema ceiling, and closed
 dependency paths before the existing Ma'at whole-app preflight and durable
@@ -269,9 +272,11 @@ is retained without changing the persisted manifest schema.
 
 The current app maintenance panel presents an exact-version field and
 confirmation, then the existing native app bridge invokes only the bundled
-trusted CLI command using its typed selection. Installer remains the normal
-macOS package handoff. The app/helper observation must match the selected
-release, signatures, embedded helper pair, CDHash, required paths, and
+trusted CLI command using its typed selection. A separate native recheck reads
+and reconciles the retained Ma’at attempt without staging or handing off a
+package; it remains available after navigation or app remount. Installer remains
+the normal macOS package handoff. The app/helper observation must match the
+selected release, signatures, embedded helper pair, CDHash, required paths, and
 dependencies before Ma'at records completion. An ambiguous handoff or failed
 readback stays attached to the durable attempt and later invocations perform
 readback only; they never replay Installer. This source candidate is not yet

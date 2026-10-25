@@ -18,6 +18,25 @@ import (
 )
 
 const AppUpdateManifestSchema = "sirsi.maat.app-update-action.v2"
+
+// AppUpdateRecoveryCapability is the narrow read/resolve contract required of
+// a rollback target. A signed helper reports this before package handoff; its
+// exact package and helper identities bind the report to the selected bytes.
+type AppUpdateRecoveryCapability struct {
+	Schema            string `json:"schema"`
+	ManifestSchema    string `json:"manifest_schema"`
+	StoreMemorySchema string `json:"store_memory_schema"`
+	PendingRead       bool   `json:"pending_read"`
+	InstalledResolve  bool   `json:"installed_resolve"`
+}
+
+const AppUpdateRecoveryCapabilitySchema = "sirsi.maat.app-update-recovery.v1"
+
+func CurrentAppUpdateRecoveryCapability() AppUpdateRecoveryCapability {
+	return AppUpdateRecoveryCapability{Schema: AppUpdateRecoveryCapabilitySchema,
+		ManifestSchema: AppUpdateManifestSchema, StoreMemorySchema: MemorySchema, PendingRead: true, InstalledResolve: true}
+}
+
 const appUpdateMinimumRelease = "0.24.115"
 
 var appUpdateVersionRE = regexp.MustCompile(`^0\.[0-9]+\.[0-9]+$`)

@@ -39,7 +39,8 @@ import XCTest
         let f = LegacyRelayFixture()
         let selection = try XCTUnwrap(AppRollbackSelection(release: "0.24.137"))
         XCTAssertNil(AppRollbackSelection(release: "latest"))
-        XCTAssertNil(AppRollbackSelection(release: "0.24.136"))
+        XCTAssertNotNil(AppRollbackSelection(release: "0.24.136"))
+        XCTAssertNil(AppRollbackSelection(release: "0.24.114"))
         XCTAssertNil(AppRollbackSelection(release: "0.24.137/../0.24.200"))
         var argv = [[String]]()
         let model = LegacyRelayMaintenanceModel(directory: f.scope, installerCapture: { args, _, _, authorize in
@@ -49,6 +50,22 @@ import XCTest
         await model.rollback(to: selection)
         XCTAssertEqual(argv, [["update", "--rollback-version", "0.24.137", "--confirm-rollback"]])
         XCTAssertTrue(model.statusNotice?.contains("rollback attempt retained") == true)
+    }
+
+    func testRetainedMaatAttemptButtonUsesOnlyDataOnlyRecheckAndShowsReceipt() async throws {
+        let f = LegacyRelayFixture()
+        let retained = Data("{\"schema\":\"sirsi.maat.app-update-reconciliation.v1\",\"state\":\"resolved\",\"attempt_id\":\"a5340000-0000-4000-8000-000000000001\",\"target_release\":\"0.24.137\",\"current_release\":\"0.24.138\",\"observation\":{\"release\":\"0.24.137\"}}".utf8)
+        var argv = [[String]](), installerOpens = 0
+        let model = LegacyRelayMaintenanceModel(directory:f.scope, installerCapture:{ args, _, _, authorize in
+            XCTAssertTrue(authorize()); argv.append(args)
+            return CommandExecution(stdout:retained,exitCode:0,childState:.exitConfirmed)
+        }, openInstaller:{ _ in installerOpens += 1; return true }, storage:f.storage)
+        await model.recheckMaatAppAttempt()
+        XCTAssertEqual(argv, [["update","--reconcile-app-attempt"]])
+        XCTAssertEqual(model.maatAppAttemptReport?.attemptID, "a5340000-0000-4000-8000-000000000001")
+        XCTAssertEqual(model.maatAppAttemptReport?.state, "resolved")
+        XCTAssertTrue(model.statusNotice?.contains("0.24.137") == true)
+        XCTAssertEqual(installerOpens, 0, "Attempt readback is data-only and never opens Installer")
     }
 
     func testChangedOrUnverifiedPackageNeverOpensInstaller() async throws {
