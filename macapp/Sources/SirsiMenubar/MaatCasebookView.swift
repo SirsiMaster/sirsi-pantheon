@@ -28,8 +28,13 @@ struct MaatWorkspaceView: View {
     }
 
     var body: some View {
+        MaatWorkspaceRecoveryFrame(
+            recovery: engine.maatCaseOperations.preparedPreflightRecovery,
+            content: AnyView(workspaceContent))
+    }
+
+    private var workspaceContent: some View {
         VStack(spacing: 0) {
-            BackBar(title: "Ma'at")
             if let context = relayOutboxContext {
                 RelayOutboxResolutionView(engine: engine, context: context)
             } else {

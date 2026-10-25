@@ -289,8 +289,14 @@ prepared intent, the remaining WAL and committed targets, and current store
 device/inode/UUID. No prior preflight Casebook row or manually recovered digest
 is required. Unrelated, missing, truncated or changed debt stays unavailable.
 
-The existing native liveness failure-memory setup displays this captured
-history, even when no receipt row was projected. Review does not write. Separate
+The ordinary native `MaatWorkspaceView` root now always mounts a local memory
+entry above its content, outside all Casebook/loading/error branches. Its
+"Inspect local memory" button exists before any model result, retained detail
+or message; it calls the existing inspector through the engine-owned recovery
+model. No `MaatCase` is needed, including when the Casebook is completely empty
+or unavailable. The existing liveness detail may also reuse the same model.
+The root displays captured history without inventing a receipt row. Review
+does not write. Separate
 confirmation forwards its captured canonical target through the fixed receipt
 command with `--recover --confirm --prepared-target <base64-target>`; this is
 bounded metadata, never imported receipt bytes or a selected filesystem path.
@@ -305,8 +311,15 @@ confirmation once, preserves historical detail after failure/cancellation,
 and invalidates consent on new inspection. Success refreshes memory status;
 ordinary fresh assessment and new action consent remain required. Authored
 fixtures cover the real writer's first-retention interruption, reopen/discovery,
-actual CLI flag wiring and native discovery/confirmation without constructing
-a `MaatCase`. This child is source-only pending Main qualification. The retained
+actual CLI flag wiring and native discovery/confirmation. The root follow-up
+fixtures obtain the real workspace body/frame, invoke the callbacks used by
+its Inspect and confirmed recovery buttons, and require same-entry inspection
+refresh on success with no `MaatCase`. They cover failed/canceled recovery and
+engine-owned remount retention. These are typed production-entry fixtures, not
+AX or visible-window proof. Main's external normal-window inspection remains
+separate. The f0e component qualification does not prove its missing root route:
+that route was absent until this successor. This child is source-only pending
+independent review and Main qualification. The retained
 855 positive receipt is baseline evidence, not child execution or installed
 proof; other operation integrations and full eight-row acceptance remain open.
 

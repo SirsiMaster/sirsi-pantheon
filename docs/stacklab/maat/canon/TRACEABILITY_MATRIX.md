@@ -4,12 +4,21 @@ G02 prepared-receipt reachability: `memory_prepared_receipts.go` and
 `maatmemory_prepared.go` extend the existing memory inspector with a verified
 complete historical reader and exact intent/store target before any Casebook
 preflight projection. `MaatPreparedPreflightRecovery` is owned by the existing
-operation lifetime and mounted in liveness failure-memory setup. Authored
+operation lifetime. The f0e liveness-detail mount alone still required a case;
+the successor mounts `MaatWorkspaceRecoveryFrame` directly as the ordinary
+`MaatWorkspaceView.body`, outside every content branch. Its always-visible
+Inspect control calls the existing inspector before any model state exists.
+Authored
 `TestPreparedReceipt*`,
 `TestMaatPreparedReceiptInspectorAndConfirmedCommandWithoutCasebookRow` and
 `MaatPreparedPreflightRecoveryTests` cover first-retention interruption, immutable
 inspection, exact consent, changed/incomplete/unrelated debt, cancellation and
-fresh-assessment separation without a receipt Casebook row. Existing canonical
+fresh-assessment separation without a receipt Casebook row.
+`MaatWorkspaceRecoveryEntryTests` additionally requires the actual root body/frame
+and production Inspect/confirmation-refresh callbacks across empty/unavailable
+history, success, failure, cancellation and remount; omitting the root frame
+fails this fixture. No AX oracle/skip or visible-window claim is used. External
+normal-window evidence remains separately required. Existing canonical
 receipt recovery remains the only writer. SOURCE ONLY pending Main execution;
 855's 164 normal/164 race and 67 Swift positive receipt stays baseline-bound.
 No installed/full-eight-operation claim follows from this child.

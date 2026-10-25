@@ -107,6 +107,9 @@ struct MaatPreparedPreflightRecoveryView:View {
     let refresh:()async->Void
     @State private var approved:MaatPreparedPreflightRecovery.Approval?
     @State private var confirming=false
+    func recoverConfirmed(_ approval: MaatPreparedPreflightRecovery.Approval) async {
+        if await model.recover(approval) { await refresh() }
+    }
     var body:some View{
         VStack(alignment:.leading,spacing:8){
             if let prepared=model.retained {
@@ -131,7 +134,7 @@ struct MaatPreparedPreflightRecoveryView:View {
             }
         }
         .confirmationDialog("Complete this exact prepared receipt write?",isPresented:$confirming){
-            Button("Complete exact historical receipt"){if let approved{Task{if await model.recover(approved){await refresh()}}};approved=nil}
+            Button("Complete exact historical receipt"){if let approved{Task{await recoverConfirmed(approved)}};approved=nil}
             Button("Cancel",role:.cancel){approved=nil}
         }message:{Text("Receipt: \(approved?.prepared.target.reference.receipt_sha256 ?? "unavailable")\nStore: \(approved?.prepared.target.reference.store_binding.store_uuid ?? "unavailable")\nOnly the captured complete receipt/intent/store tuple is eligible. No missing bytes, projections or actions are manufactured. A fresh normal assessment and new consent remain required.")}
     }
