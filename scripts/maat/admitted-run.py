@@ -2,6 +2,7 @@
 """Cooperative native Ma'at launch supervisor, not a security sandbox."""
 import argparse
 import ctypes
+from dataclasses import dataclass
 import datetime as dt
 import hashlib
 import json
@@ -117,12 +118,16 @@ def native_process_info(pid):
 def process_identity(pid):
     """Read kernel identity without spawning ps or trusting a cached PID."""
     row = native_process_info(pid)
+    return row.ppid, _process_start(row)
+
+
+def _process_start(row):
     # Match Go time.ANSIC / ps lstart, independent of caller locale.
     stamp = time.localtime(row.start_sec)
     start = ('Mon Tue Wed Thu Fri Sat Sun'.split()[stamp.tm_wday]+' '+
              'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split()[stamp.tm_mon-1]+
              f' {stamp.tm_mday:2d} {stamp.tm_hour:02d}:{stamp.tm_min:02d}:{stamp.tm_sec:02d} {stamp.tm_year:04d}')
-    return row.ppid, start
+    return start
 
 
 def local_resource():
@@ -254,12 +259,44 @@ class LocalWaitRefused(Refused):
         super().__init__(reason+': '+json.dumps(observation,sort_keys=True,separators=(',',':')))
 
 
+@dataclass(frozen=True)
+class _LocalChildIdentity:
+    handle: object
+    pid: int
+    parent: int
+    uid: int
+    real_uid: int
+    group: int
+    start: str
+
+
+def local_bind_owned_child(child, birth):
+    # Called on the actual Popen handle while its launch pipe still withholds
+    # the payload. Capture credentials as well as start/parent from live libproc.
+    row=native_process_info(child.pid)
+    if (child.returncode is not None or row.pid!=child.pid or row.ppid!=os.getpid()
+            or row.uid!=os.getuid() or row.ruid!=os.getuid() or os.getuid()<=0
+            or row.pgid!=child.pid or _process_start(row)!=birth):
+        raise Refused('Live owned child UID/start/parent/group binding differs before release')
+    child._sirsi_local_identity=_LocalChildIdentity(child,child.pid,row.ppid,row.uid,row.ruid,row.pgid,birth)
+
+
+def local_owned_identity(child):
+    owned=getattr(child,'_sirsi_local_identity',None)
+    if (not isinstance(owned,_LocalChildIdentity) or owned.handle is not child
+            or owned.pid!=child.pid or owned.parent!=os.getpid() or not owned.start
+            or owned.uid!=os.getuid() or owned.real_uid!=os.getuid() or owned.uid<=0
+            or owned.group!=child.pid or child.returncode is not None):
+        raise Refused('Exact live-bound unreaped Popen custody unavailable; no terminal authority inferred')
+    return owned
+
+
 def local_child_terminal(child, wait=None):
     """Non-reaping kernel receipt for our exact child; ECHILD is not absence.
 
     Python's Darwin os module omits waitid, but libSystem exposes the public C
     interface. Constants/layout below are from SDK sys/wait.h and sys/signal.h.
-    A live libproc start identity was retained before releasing the payload;
+    Live libproc credentials/start and the Popen handle are bound before release;
     WNOWAIT keeps this exact exited child waitable, preventing PID reuse before
     the controller's sole later wait/reap. No unavailable libproc read implies exit.
     """
@@ -267,6 +304,7 @@ def local_child_terminal(child, wait=None):
             or ctypes.sizeof(ctypes.c_void_p)!=8 or ctypes.sizeof(_Siginfo)!=104
             or _Siginfo.pid.offset!=12 or _Siginfo.status.offset!=20):
         raise Refused('Owned child wait ABI unavailable')
+    owned=local_owned_identity(child)
     if wait is None:
         library=ctypes.CDLL('/usr/lib/libSystem.B.dylib',use_errno=True)
         wait=library.waitid
@@ -276,7 +314,7 @@ def local_child_terminal(child, wait=None):
     # P_PID=1; WNOHANG=1, WEXITED=4, WNOWAIT=0x20. Never consumes the child.
     result=wait(1,child.pid,ctypes.byref(info),1|4|0x20)
     observation=dict(api='libSystem.waitid',result=result,errno=ctypes.get_errno() if result else 0,
-                     expected_pid=child.pid,expected_uid=os.getuid(),expected_signal=int(signal.SIGCHLD),
+                     expected_pid=owned.pid,expected_uid=owned.uid,expected_signal=int(signal.SIGCHLD),
                      pid=info.pid,uid=info.uid,signo=info.signo,error=info.error,code=info.code,status=info.status,
                      abi_bytes=ctypes.sizeof(info),pid_offset=_Siginfo.pid.offset,status_offset=_Siginfo.status.offset)
     # Only defined scalar fields: no addresses, reserved bytes, argv or environment.
@@ -286,7 +324,12 @@ def local_child_terminal(child, wait=None):
         if any((info.signo,info.error,info.code,info.uid,info.status)):
             raise LocalWaitRefused('Malformed empty owned child wait observation',observation)
         return None
-    if info.pid!=child.pid or info.uid!=os.getuid() or info.signo!=signal.SIGCHLD or info.error:
+    # XNU kern_exit.c waitid_nocancel/SZOMB zeroes siginfo and does not assign
+    # si_uid. Zero is NOT a root credential or an ownership observation. Require
+    # exact unreaped direct-child custody above; group credentials are separately
+    # observed and checked before any signal/reap/release. Populated foreign UID
+    # remains a refusal, as do foreign PID/signal, ECHILD and unknown status.
+    if info.pid!=owned.pid or info.uid not in (0,owned.uid) or info.signo!=signal.SIGCHLD or info.error:
         raise LocalWaitRefused('Owned child wait PID/UID/signal differs',observation)
     if info.code==1 and 0<=info.status<=255:  # CLD_EXITED
         return info.status
@@ -296,7 +339,8 @@ def local_child_terminal(child, wait=None):
 
 
 def local_anchor_matches(child, birth):
-    if not birth:return False
+    owned=local_owned_identity(child)
+    if not birth or birth!=owned.start:return False
     try:
         return process_identity(child.pid)==(os.getpid(),birth)
     except Refused:
@@ -581,7 +625,10 @@ def supervise_local(command, timeout, record, folder, persist):
         os.close(gate_read);gate_read=None
         parent,birth=process_identity(child.pid)
         if parent!=os.getpid():raise Refused('Local child parent differs')
-        record.update(pid=child.pid, child_start=birth, status='running')
+        local_bind_owned_child(child,birth)
+        owned=local_owned_identity(child)
+        record.update(pid=child.pid, child_start=birth, child_uid=owned.uid,
+                      child_real_uid=owned.real_uid, child_group=owned.group,status='running')
         persist()
         release_local_child(gate_write)
         os.close(gate_write);gate_write=None

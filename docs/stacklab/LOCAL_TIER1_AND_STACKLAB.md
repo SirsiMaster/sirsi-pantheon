@@ -37,8 +37,10 @@ Local scope refuses real/effective root and mismatched user/group identities.
 The child leader's start/parent is retained through Darwin proc_pidinfo before
 payload release. Terminal observation uses public libSystem waitid with
 WEXITED|WNOHANG|WNOWAIT and the SDK's LP64 siginfo_t ABI; Python's absent
-os.waitid wrapper is not assumed. A positive exact owned-child PID/UID/status
-receipt keeps the exited child waitable; ECHILD, malformed/foreign results or an
+os.waitid wrapper is not assumed. The actual Popen handle, PID, parent, start,
+effective/real UID and process group are bound from live libproc before release.
+A positive exact owned-child PID/status receipt keeps that child waitable;
+ECHILD, missing/drifted/reaped handle custody, malformed/foreign results or an
 unavailable libproc read alone never prove exit. Every local group signal checks
 its retained leader binding and member UIDs. Quiescence is checked before reap
 and actual group absence after reap. Unknown/reused leaders are never signalled.
@@ -87,6 +89,15 @@ It uses the non-reaping owned-child receipt above for terminal observation and
 exited-anchor custody. That actual failed run, its private debt and fence remain
 retained; no author cleanup or retroactive success is claimed. Main must prove
 the real wait ABI and lifecycle again before crediting the larger suites.
+
+Apple's published XNU waitid exit branch zeroes siginfo but does not fill si_uid
+([kern_exit.c, xnu-11215.81.4](https://github.com/apple-oss-distributions/xnu/blob/xnu-11215.81.4/bsd/kern/kern_exit.c#L2960-L2997)).
+Thus that zero is not a root/owner credential. Terminal observation requires the
+retained live-child binding above; a populated foreign UID still refuses.
+Cleanup independently requires every observed group member's UID to match before
+signal/reap/release. This explains8eb's observed fields without claiming the
+published source tag is the exact installed kernel. Its diagnostic debt remains
+retained; neither source inspection nor inert fixtures replace Main's real probe.
 
 ## Installed Stack Lab, off by default
 

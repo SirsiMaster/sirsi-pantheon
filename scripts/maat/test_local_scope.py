@@ -16,12 +16,25 @@ runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 
 
+def bind_child(child, birth):
+    child.returncode=None
+    child._sirsi_local_identity=runner._LocalChildIdentity(child,child.pid,os.getpid(),os.getuid(),os.getuid(),child.pid,birth)
+
+
+def owned_child(birth='old'):
+    child=mock.Mock(pid=24680)
+    bind_child(child,birth)
+    return child
+
+
 class LocalScopeTests(unittest.TestCase):
     def setUp(self):
         identity = mock.patch.object(runner, 'process_identity', return_value=(os.getpid(), 'fixture-start'))
         wait = mock.patch.object(runner, 'local_wait_terminal', side_effect=lambda child, timeout: child.wait(timeout=timeout))
         identity.start(); wait.start()
         self.addCleanup(identity.stop); self.addCleanup(wait.stop)
+        binding=mock.patch.object(runner,'local_bind_owned_child',side_effect=bind_child)
+        binding.start();self.addCleanup(binding.stop)
         release=mock.patch.object(runner,'release_local_child')
         self.release=release.start();self.addCleanup(release.stop)
 
@@ -259,7 +272,7 @@ class LocalContinuationTests(unittest.TestCase):
 
 class LocalCustodyTests(unittest.TestCase):
     def test_reaped_or_reused_anchor_never_signals(self):
-        child=mock.Mock(pid=24680)
+        child=owned_child()
         row=dict(pid=child.pid,uid=os.getuid(),status='S')
         for rows,birth in (([],'old'),([row],'new')):
             with self.subTest(rows=rows),mock.patch.object(runner,'local_group_snapshot',return_value=rows), \
@@ -268,7 +281,7 @@ class LocalCustodyTests(unittest.TestCase):
                 kill.assert_not_called();child.wait.assert_not_called()
 
     def test_delayed_group_quiescence_precedes_reap_and_no_unnecessary_signal(self):
-        child=mock.Mock(pid=24680)
+        child=owned_child()
         leader=dict(pid=child.pid,uid=os.getuid(),status='Z')
         member=dict(pid=24681,uid=os.getuid(),status='S')
         snapshots=[[leader,member],[leader,member],[leader],[leader],[]]
@@ -279,7 +292,7 @@ class LocalCustodyTests(unittest.TestCase):
             child.wait.assert_called_once_with(timeout=1);kill.assert_not_called()
 
     def test_timeout_cleanup_signals_only_revalidated_owned_anchor(self):
-        child=mock.Mock(pid=24680);state={'zombie':False,'reaped':False};clock=iter(range(100))
+        child=owned_child();state={'zombie':False,'reaped':False};clock=iter(range(100))
         def snapshot(group):
             return [] if state['reaped'] else [dict(pid=child.pid,uid=os.getuid(),status='Z' if state['zombie'] else 'S')]
         def kill(group,sig):
@@ -297,7 +310,7 @@ class LocalCustodyTests(unittest.TestCase):
             folder=root/('a'*32);folder.mkdir(mode=0o700)
             child=mock.Mock(pid=24680);record={}
             with mock.patch.object(runner.subprocess,'Popen',return_value=child),mock.patch.object(runner,'process_identity',return_value=(os.getpid(),'old')), \
-                    mock.patch.object(runner,'local_wait_terminal',return_value=0),mock.patch.object(runner,'release_local_child'),mock.patch.object(runner,'local_stop_owned',side_effect=runner.Refused('unknown group')):
+                    mock.patch.object(runner,'local_wait_terminal',return_value=0),mock.patch.object(runner,'local_bind_owned_child',side_effect=bind_child),mock.patch.object(runner,'release_local_child'),mock.patch.object(runner,'local_stop_owned',side_effect=runner.Refused('unknown group')):
                 self.assertEqual(runner.supervise_local(['/owned/fake'],10,record,folder,lambda:None),78)
             next_folder=root/('b'*32);next_folder.mkdir(mode=0o700)
             with mock.patch.object(runner.subprocess,'Popen') as spawn:

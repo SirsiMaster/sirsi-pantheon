@@ -24,6 +24,8 @@ class RecoveryPrefixTests(unittest.TestCase):
 
     def test_sigterm_ignored_sigkill_quiescence_completes_without_debt(self):
         child=mock.Mock(pid=24680);state={'killed':False,'reaped':False};clock=iter(range(200))
+        child.returncode=None
+        child._sirsi_local_identity=runner._LocalChildIdentity(child,child.pid,os.getpid(),os.getuid(),os.getuid(),child.pid,'exact-start')
         def snapshot(group):
             self.assertEqual(group,child.pid)
             return [] if state['reaped'] else [dict(pid=child.pid,uid=os.getuid(),status='Z' if state['killed'] else 'S')]
