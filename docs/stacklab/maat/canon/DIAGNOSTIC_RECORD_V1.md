@@ -103,13 +103,15 @@ inspection nor reconciliation of an unrelated ID clears an unknown delivery.
 The successful v1 Decision/verdict wire and its recorded summary are unchanged;
 refusal envelopes retain the safe observation without acquiring that summary.
 
-Remaining protocol limitation: if the entire record reply is lost before its
-ID is captured, pending-only inspection cannot identify a completed invocation.
-The UI retains uncertainty and refuses automatic resend; this child does not
-claim a complete transport-lost-ID recovery path. A narrow existing-operation
-correlation/readback continuation needs independent design rather than an
-absence-based reset. Authorized export, installed proof and all other O7/row
-obligations remain open. Native fixtures here are authored, not executed.
+The former pending-only lookup limitation is addressed by the source protocol
+in [DIAGNOSTIC_REQUEST_V1.md](DIAGNOSTIC_REQUEST_V1.md): retain a durable UUID
+before submission, read pending AND completed exact outcomes, or explicitly
+fence/reconcile under the writer lock without resend. Nash's independent native
+adapter must compose that protocol and UI1/UI2 refresh/completion fixes before
+an app-level closure claim. Older uncorrelated invocations remain historical;
+no request mapping or safe retry is invented from absence. Authorized export,
+installed proof and all other O7/row obligations remain open. Fixtures in this
+source continuation are authored, not executed.
 
 ## Upgrade and qualification
 

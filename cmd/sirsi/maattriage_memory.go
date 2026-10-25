@@ -59,6 +59,9 @@ func maatDiagnosticObservation(report *guard.DoctorReport, host string) (maat.Di
 }
 
 func recordMaatDiagnostic(report *guard.DoctorReport, host string, verdict maat.MaatVerdict, snapshot string) error {
+	return recordMaatDiagnosticWithRequest(report, host, verdict, snapshot, nil)
+}
+func recordMaatDiagnosticWithRequest(report *guard.DoctorReport, host string, verdict maat.MaatVerdict, snapshot string, request *maat.DiagnosticRequestSession) error {
 	observation, err := maatDiagnosticObservation(report, host)
 	if err != nil {
 		return emitMaatDiagnosticRefusal(verdict, "provenance_unknown", "")
@@ -68,6 +71,9 @@ func recordMaatDiagnostic(report *guard.DoctorReport, host string, verdict maat.
 	expectedBytes, expectedErr := json.Marshal(expected)
 	if err != nil || actualErr != nil || expectedErr != nil || string(actualBytes) != string(expectedBytes) {
 		return emitMaatDiagnosticRefusal(verdict, "provenance_changed", "")
+	}
+	if request != nil {
+		return recordRequestedMaatDiagnostic(report, observation, verdict, snapshot, request)
 	}
 	status := maat.InspectDefaultStore()
 	if status.State != maat.DefaultStoreReady {
@@ -117,11 +123,18 @@ func recordMaatDiagnostic(report *guard.DoctorReport, host string, verdict maat.
 	}
 	result, err := store.RecordDiagnostic(manifest, retained, exact, verify)
 	if err != nil {
+		if errors.Is(err, maat.ErrDiagnosticNotRecorded) {
+			return emitMaatDiagnosticRefusal(verdict, "not_recorded", id)
+		}
 		if errors.Is(err, maat.ErrDiagnosticNotSubmitted) {
 			return emitMaatDiagnosticRefusal(verdict, "not_submitted", id)
 		}
 		return emitMaatDiagnosticRefusal(verdict, "delivery_unverified", id)
 	}
+	return emitMaatDiagnosticRecorded(verdict, snapshot, result, id)
+}
+
+func emitMaatDiagnosticRecorded(verdict maat.MaatVerdict, snapshot string, result maat.DiagnosticRecordResult, id string) error {
 	if JsonOutput || maatJSON {
 		return emitJSON(struct {
 			maat.MaatVerdict

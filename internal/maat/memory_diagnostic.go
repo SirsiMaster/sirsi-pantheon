@@ -17,6 +17,7 @@ const diagnosticResultSuffix = ".diagnostic-result.json"
 
 var ErrDiagnosticDeliveryUnknown = errors.New("maat diagnostic: record delivery is unknown; inspect/reconcile only, never resend")
 var ErrDiagnosticNotSubmitted = errors.New("maat diagnostic: journal was not called; fresh observation and confirmation required")
+var ErrDiagnosticNotRecorded = errors.New("maat diagnostic: request durably fenced and exact journal has no matching record; never replay this observation")
 
 type DiagnosticRecordManifest struct {
 	Schema      string                `json:"schema"`
@@ -124,6 +125,10 @@ func (s *Store) RecordDiagnostic(m DiagnosticRecordManifest, h StoredPreflightRe
 		return DiagnosticRecordResult{}, err
 	}
 	defer s.unlock()
+	return s.recordDiagnosticLocked(m, h, j, verifyProvenance, id)
+}
+
+func (s *Store) recordDiagnosticLocked(m DiagnosticRecordManifest, h StoredPreflightReceipt, j DiagnosticRecordJournal, verifyProvenance func() error, id string) (DiagnosticRecordResult, error) {
 	if m.StoreUUID != s.storeUUID || s.storeUUID == "" {
 		return DiagnosticRecordResult{}, errors.New("maat diagnostic: store binding changed")
 	}
@@ -144,6 +149,9 @@ func (s *Store) RecordDiagnostic(m DiagnosticRecordManifest, h StoredPreflightRe
 		}
 		if key == id {
 			if err == nil {
+				if result.State == "not_recorded" {
+					return result, ErrDiagnosticNotRecorded
+				}
 				if result.State == "not_submitted" {
 					return result, ErrDiagnosticNotSubmitted
 				}
@@ -219,7 +227,7 @@ func (s *Store) ReconcileDiagnosticRecord(id string, j DiagnosticRecordJournal) 
 }
 
 func (s *Store) reconcileDiagnosticRecordLocked(intent DiagnosticRecordIntent, j DiagnosticRecordJournal) (DiagnosticRecordResult, error) {
-	if result, err := s.readDiagnosticResultLocked(intent.ID); err == nil && result.State == "not_submitted" {
+	if result, err := s.readDiagnosticResultLocked(intent.ID); err == nil && (result.State == "not_submitted" || result.State == "not_recorded") {
 		data, e := json.Marshal(result)
 		if e != nil {
 			return DiagnosticRecordResult{}, e
@@ -343,7 +351,12 @@ func (s *Store) readDiagnosticResultLocked(id string) (DiagnosticRecordResult, e
 	if decodeDiagnosticCanonical(raw, &result) != nil || result.Schema != DiagnosticRecordSchema || result.ID != id || result.IntentSHA256 != ih {
 		return result, errors.New("maat diagnostic: invalid exact readback result")
 	}
-	if result.State == "not_submitted" && result.VerdictSHA256 == "" && result.DecisionEvidence == "" {
+	if (result.State == "not_submitted" || result.State == "not_recorded") && result.VerdictSHA256 == "" && result.DecisionEvidence == "" {
+		if result.State == "not_recorded" {
+			if err := s.verifyDiagnosticRequestFenceLocked(id); err != nil {
+				return result, err
+			}
+		}
 		return result, nil
 	}
 	if result.State != "recorded_verified" || result.VerdictSHA256 != vd || result.DecisionEvidence != "maat-system-one:sha256="+vd {
@@ -353,9 +366,12 @@ func (s *Store) readDiagnosticResultLocked(id string) (DiagnosticRecordResult, e
 }
 
 func isDiagnosticRecordLeaf(name string) bool {
-	return strings.HasSuffix(name, diagnosticIntentSuffix) || strings.HasSuffix(name, diagnosticResultSuffix)
+	return isDiagnosticRequestLeaf(name) || strings.HasSuffix(name, diagnosticIntentSuffix) || strings.HasSuffix(name, diagnosticResultSuffix)
 }
 func (s *Store) validateDiagnosticRecordLeafLocked(name string) error {
+	if isDiagnosticRequestLeaf(name) {
+		return s.validateDiagnosticRequestLeafLocked(name)
+	}
 	if strings.HasSuffix(name, diagnosticIntentSuffix) {
 		id := strings.TrimSuffix(name, diagnosticIntentSuffix)
 		if !validDigest(id) {

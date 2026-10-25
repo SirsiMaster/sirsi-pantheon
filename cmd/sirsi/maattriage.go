@@ -29,8 +29,27 @@ var maatTriageCmd = &cobra.Command{
 	Short: "Observe this Mac and prepare a Ma'at System One health screen",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateMaatDiagnosticRequestFlags(); err != nil {
+			return err
+		}
+		if maatDiagnosticRequestMetadataSelected() {
+			return inspectMaatDiagnosticRequest()
+		}
 		if maatTriageInspectRecords || maatTriageReconcileRecord != "" {
 			return inspectOrReconcileMaatDiagnostic()
+		}
+		var request *maat.DiagnosticRequestSession
+		if maatTriageRecordRequest != "" {
+			store, err := maat.OpenDefaultStore()
+			if err != nil {
+				return fmt.Errorf("Ma'at diagnostic request custody unavailable; inspect local memory")
+			}
+			request, err = store.BeginDiagnosticRequest(maatTriageRecordRequest)
+			if err != nil {
+				_ = store.Close()
+				return err
+			}
+			defer func() { _ = request.Close(); _ = store.Close() }()
 		}
 		started := time.Now()
 		report, err := maatTriageReadDiagnosis()
@@ -69,7 +88,7 @@ var maatTriageCmd = &cobra.Command{
 			return renderMaatTriage(verdict, snapshotHash, "preview", fmt.Sprintf("Local observation only; provenance %s, memory store %s. No Casebook record or memory admission was performed. A confirmed record requires a fresh scoped preflight.", provenance, status.State), "")
 		}
 
-		return recordMaatDiagnostic(report, host, verdict, snapshotHash)
+		return recordMaatDiagnosticWithRequest(report, host, verdict, snapshotHash, request)
 	},
 }
 
@@ -140,5 +159,10 @@ func init() {
 	maatTriageCmd.Flags().BoolVar(&maatJSON, "json", false, "Output the typed System One screen as JSON")
 	maatTriageCmd.Flags().BoolVar(&maatTriageInspectRecords, "inspect-records", false, "read pending diagnostic record identities without re-observation or resend")
 	maatTriageCmd.Flags().StringVar(&maatTriageReconcileRecord, "reconcile-record", "", "confirm data-only readback of this exact pending diagnostic record; never append")
+	maatTriageCmd.Flags().StringVar(&maatTriagePrepareRequest, "prepare-record-request", "", "durably prepare this canonical UUID before submitting any observation")
+	maatTriageCmd.Flags().StringVar(&maatTriageRecordRequest, "record-request", "", "consume this prepared UUID once for a confirmed observation; never retry")
+	maatTriageCmd.Flags().StringVar(&maatTriageReadRequest, "read-record-request", "", "read the exact pending or completed request without observing or writing")
+	maatTriageCmd.Flags().StringVar(&maatTriageResolveRequest, "resolve-record-request", "", "confirm an exact durable request fence and data-only reconciliation; never resend")
+	maatTriageCmd.Flags().BoolVar(&maatTriageInspectRequests, "inspect-record-requests", false, "read bounded pending and completed request identities after app restart")
 	maatCmd.AddCommand(maatTriageCmd)
 }

@@ -1,4 +1,5 @@
 import XCTest
+import CryptoKit
 @testable import SirsiMenubar
 
 final class MaatDiagnosticResolutionTests: XCTestCase {
@@ -38,6 +39,65 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
         XCTAssertEqual(current.fix, "sirsi clean --include-caution")
         XCTAssertFalse(current.fix?.contains("self-update") == true)
         XCTAssertEqual(v.findings[0].claim, "Historical disk condition")
+    }
+
+    func testTypedPrivateHostBindingMatchesOnlyExactLocalHashAndKeepsLegacyStrict() throws {
+        var object = screenObject()
+        var subject = try XCTUnwrap(object["subject"] as? [String:Any])
+        let digest = SHA256.hash(data:Data(host.utf8)).map{String(format:"%02x",$0)}.joined()
+        subject["repo"] = "local-host-" + digest
+        subject["host_binding"] = "sirsi.maat.local-host-sha256.v1"
+        object["subject"] = subject
+        let current = try verdict(object)
+        XCTAssertTrue(maatHasLocalDiagnosticCustody(current,finding:current.findings[0],localHost:host))
+        XCTAssertFalse(maatHasLocalDiagnosticCustody(current,finding:current.findings[0],localHost:"foreign"))
+        guard case .current = maatCurrentDiagnosticResolution(verdict:current,finding:current.findings[0],localHost:host,read:try read()) else {return XCTFail("private new projection lost fresh-check custody")}
+        for marker in ["", "unknown", "sirsi.maat.local-host-sha256.v2"] {
+            subject["host_binding"] = marker; object["subject"] = subject
+            let invalid = try verdict(object)
+            XCTAssertFalse(maatHasLocalDiagnosticCustody(invalid,finding:invalid.findings[0],localHost:host))
+        }
+        subject["host_binding"] = "sirsi.maat.local-host-sha256.v1";subject["repo"] = "local-host-" + digest + "x";object["subject"] = subject
+        let malformed = try verdict(object)
+        XCTAssertFalse(maatHasLocalDiagnosticCustody(malformed,finding:malformed.findings[0],localHost:host))
+        let legacy = try verdict()
+        XCTAssertTrue(maatHasLocalDiagnosticCustody(legacy,finding:legacy.findings[0],localHost:host))
+    }
+
+    // Main's bound interop row exports actual confirmed CLI output with
+    // TestMaatTriagePrivateRecordedHostReachesExistingBinaryDriftConsumer.
+    // Absence of that external artifact is explicit, never a fake wire PASS.
+    @MainActor func testActualGoRecordedPrivateProjectionRoundTripsNativeCustodyAndFreshScreen() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PANTHEON_TEST_DIAGNOSTIC_WIRE_OUTPUT"] else {
+            throw XCTSkip("Actual Go-produced record artifact must be supplied by the bounded interop qualifier")
+        }
+        let bytes = try Data(contentsOf:URL(fileURLWithPath:path))
+        let result = try JSONDecoder().decode(MaatSystemOneCommandResult.self,from:bytes)
+        let localHost = "fixture-mac"
+        XCTAssertEqual(result.verdict.subject.hostBinding,"sirsi.maat.local-host-sha256.v1")
+        XCTAssertNotEqual(result.verdict.subject.repo,localHost)
+        let receipt = CommandExecution(stdout:bytes,exitCode:0,childState:.exitConfirmed)
+        let model = MaatDiagnosticResolutionModel()
+        await model.recordFreshScreen(localHost:localHost){_ in receipt}
+        XCTAssertNotNil(model.screenResult,"actual Go successful record was rejected by native fresh-screen consumer")
+        let foreign = MaatDiagnosticResolutionModel()
+        await foreign.recordFreshScreen(localHost:"foreign-mac"){_ in receipt}
+        XCTAssertNil(foreign.screenResult)
+        for check in ["Memory Death Spiral","/Users/PRIVATE_UNKNOWN_CHECK --token SECRET_CANARY"] {
+            let suffix = SHA256.hash(data:Data(check.utf8)).prefix(6).map{String(format:"%02x",$0)}.joined()
+            let finding = try XCTUnwrap(result.verdict.findings.first{$0.id == "host-health-" + suffix})
+            XCTAssertTrue(maatHasLocalDiagnosticCustody(result.verdict,finding:finding,localHost:localHost))
+            let fresh = try read(findings:[["check":check,"severity":2,"message":"fresh bounded observation"]])
+            guard case .current = maatCurrentDiagnosticResolution(verdict:result.verdict,finding:finding,localHost:localHost,read:fresh) else {return XCTFail("redacted check lost actual fresh identity")}
+            if case .current = maatCurrentDiagnosticResolution(verdict:result.verdict,finding:finding,localHost:localHost,
+                read:try read(findings:[["check":check+"changed","severity":2,"message":"changed"]])) {XCTFail("changed check matched")}
+        }
+        let dedicated = try XCTUnwrap(result.verdict.findings.first{maatUsesDedicatedDiagnosticCustody($0)})
+        XCTAssertTrue(maatHasLocalDiagnosticCustody(result.verdict,finding:dedicated,localHost:localHost))
+        if case .current = maatCurrentDiagnosticResolution(verdict:result.verdict,finding:dedicated,localHost:localHost,
+            read:try read(findings:[["check":"binary-drift","severity":2,"message":"current"]])) {XCTFail("generic resolver bypassed dedicated custody")}
+        let text = String(decoding:bytes,as:UTF8.self)
+        XCTAssertFalse(text.contains("PRIVATE_UNKNOWN_CHECK"));XCTAssertFalse(text.contains("SECRET_CANARY"))
     }
 
     func testForeignImportedMalformedAndDuplicateCustodyRefuses() throws {

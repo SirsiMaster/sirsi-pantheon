@@ -10,7 +10,27 @@ import (
 	"time"
 )
 
-const DiagnosticObservationSchema = "sirsi.maat.local-diagnostic-observation.v1"
+const DiagnosticObservationSchema = "sirsi.maat.local-diagnostic-observation.v2"
+const diagnosticObservationSchemaV1 = "sirsi.maat.local-diagnostic-observation.v1"
+const DiagnosticHostBinding = "sirsi.maat.local-host-sha256.v1"
+
+// HostBinding selects a closed representation; Repo is never loosely matched.
+// Historical v1 screens without it retain exact local-label matching. The
+// existing security/delivery/identity Boundary policy remains untouched.
+func DiagnosticHostMatches(subject VerdictSubject, localHost string) bool {
+	localHost = strings.TrimSpace(localHost)
+	if localHost == "" || len(localHost) > 1024 || subject.Kind != "host" || subject.Ref != "diagnostic" {
+		return false
+	}
+	if subject.HostBinding == "" {
+		return subject.Repo == localHost
+	}
+	if subject.HostBinding != DiagnosticHostBinding {
+		return false
+	}
+	digest := sha256.Sum256([]byte(localHost))
+	return subject.Repo == "local-host-"+hex.EncodeToString(digest[:])
+}
 
 // No producer prose, paths, process arguments, prompts or credentials enter
 // this projection. Unknown check names become a digest, never retained text.
@@ -38,12 +58,25 @@ func DiagnosticCheckCode(check string) string {
 	if diagnosticChecks[check] {
 		return check
 	}
-	sum := sha256.Sum256([]byte(check))
+	sum := sha256.Sum256([]byte(strings.TrimSpace(check)))
 	return "unclassified-" + hex.EncodeToString(sum[:])
 }
 
+// The redacted code carries the original canonical check digest, not a label
+// to hash again. No unknown producer text is retained or reconstructed.
+func CanonicalDiagnosticFindingID(code string) string {
+	if diagnosticChecks[code] {
+		return CanonicalHostFindingID(code)
+	}
+	digest := strings.TrimPrefix(code, "unclassified-")
+	if !strings.HasPrefix(code, "unclassified-") || !validDigest(digest) {
+		return ""
+	}
+	return "host-health-" + digest[:12]
+}
+
 func (o DiagnosticObservation) Validate() error {
-	if o.Schema != DiagnosticObservationSchema || !validDigest(o.SourceSHA256) || !validDigest(o.HostSHA256) || o.Score < 0 || o.Score > 100 || len(o.Statuses) > 128 {
+	if (o.Schema != DiagnosticObservationSchema && o.Schema != diagnosticObservationSchemaV1) || !validDigest(o.SourceSHA256) || !validDigest(o.HostSHA256) || o.Score < 0 || o.Score > 100 || len(o.Statuses) > 128 {
 		return errors.New("maat diagnostic: invalid bounded observation provenance")
 	}
 	seen := map[string]bool{}
@@ -90,11 +123,21 @@ func (o DiagnosticObservation) Verdict() (MaatVerdict, error) {
 		if strings.HasPrefix(label, "unclassified-") {
 			label = "unclassified local check"
 		}
-		findings = append(findings, ScreenFinding{ID: CanonicalHostFindingID(s.Check), Severity: severity, Category: "host-health",
-			Claim: fmt.Sprintf("%s reports a %s status.", label, word), Evidence: CanonicalHostFindingEvidence(o.SourceSHA256, s.Check), Confidence: 1,
+		id := CanonicalDiagnosticFindingID(s.Check)
+		if o.Schema == diagnosticObservationSchemaV1 {
+			// Historical receipts/results reconstruct their original bytes. Do
+			// not silently reclassify old unversioned host/check projections.
+			id = CanonicalHostFindingID(s.Check)
+		}
+		findings = append(findings, ScreenFinding{ID: id, Severity: severity, Category: "host-health",
+			Claim: fmt.Sprintf("%s reports a %s status.", label, word), Evidence: "diagnostic:sha256=" + o.SourceSHA256 + ":" + strings.TrimPrefix(id, "host-health-"), Confidence: 1,
 			FixHint: "Level 1: re-observe this local check. Level 2: review the typed Ma'at action or record an owner review. Level 3: retain an evidence-bound owner conclusion; recovery text is data, not a command.", RepairID: s.RepairID})
 	}
-	return Screen(SystemOneScreen{Subject: VerdictSubject{Kind: "host", Repo: "local-host-" + o.HostSHA256, Ref: "diagnostic", HeadSHA: o.SourceSHA256},
+	binding := DiagnosticHostBinding
+	if o.Schema == diagnosticObservationSchemaV1 {
+		binding = ""
+	}
+	return Screen(SystemOneScreen{Subject: VerdictSubject{Kind: "host", Repo: "local-host-" + o.HostSHA256, Ref: "diagnostic", HeadSHA: o.SourceSHA256, HostBinding: binding},
 		FeatherWeight: o.Score, Confidence: 1, Findings: findings,
 		Floor: FloorResult{Passed: !o.ObservedAtUTC.IsZero(), Checks: []FloorCheck{{Name: "diagnostic provenance", Passed: !o.ObservedAtUTC.IsZero(), Detail: "Selected status codes and source digest only; producer prose was excluded."}}},
 		Model: ModelStamp{Provider: "maat-local:deterministic", Version: "v1", Local: true}})

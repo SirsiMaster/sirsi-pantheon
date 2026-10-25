@@ -39,7 +39,7 @@ func triageMemoryFixture(t *testing.T) (string, *guard.DoctorReport, *triageMemo
 	t.Cleanup(func() {
 		maatTriageReadDiagnosis, maatTriageHostname, newMaatDecisionJournal, JsonOutput = oldRead, oldHost, oldJournal, oldJSON
 	})
-	for _, name := range []string{"confirm", "json", "inspect-records", "reconcile-record"} {
+	for _, name := range []string{"confirm", "json", "inspect-records", "reconcile-record", "prepare-record-request", "record-request", "read-record-request", "resolve-record-request", "inspect-record-requests"} {
 		f := maatTriageCmd.Flags().Lookup(name)
 		value, changed := f.Value.String(), f.Changed
 		t.Cleanup(func() {
@@ -49,7 +49,7 @@ func triageMemoryFixture(t *testing.T) (string, *guard.DoctorReport, *triageMemo
 			f.Changed = changed
 		})
 	}
-	if err := maatTriageCmd.ParseFlags([]string{"--confirm=false", "--json", "--inspect-records=false", "--reconcile-record="}); err != nil {
+	if err := maatTriageCmd.ParseFlags([]string{"--confirm=false", "--json", "--inspect-records=false", "--reconcile-record=", "--prepare-record-request=", "--record-request=", "--read-record-request=", "--resolve-record-request=", "--inspect-record-requests=false"}); err != nil {
 		t.Fatal(err)
 	}
 	JsonOutput = false

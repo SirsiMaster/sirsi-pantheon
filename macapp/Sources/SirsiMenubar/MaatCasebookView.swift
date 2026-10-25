@@ -3893,7 +3893,8 @@ struct MaatSystemOneSubject: Decodable {
     let ref: String
     let headSHA: String
     let repo: String?
-    enum CodingKeys: String, CodingKey { case kind, ref, repo; case headSHA = "head_sha" }
+    let hostBinding: String?
+    enum CodingKeys: String, CodingKey { case kind, ref, repo; case hostBinding = "host_binding"; case headSHA = "head_sha" }
 }
 
 struct MaatSystemOneFloor: Decodable {

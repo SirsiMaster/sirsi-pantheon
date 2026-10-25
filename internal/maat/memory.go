@@ -654,6 +654,10 @@ func (s *Store) preflightBound(action Scope, manifestDigest string, resolve func
 		return PreflightReceipt{}, err
 	}
 	defer s.unlock()
+	return s.issuePreflightBoundLocked(action, manifestDigest, resolve)
+}
+
+func (s *Store) issuePreflightBoundLocked(action Scope, manifestDigest string, resolve func(string, string) (memoryGuard, bool)) (PreflightReceipt, error) {
 	receipt, evalErr := s.preflightBoundLocked(action, manifestDigest, resolve)
 	if validDigest(receipt.RegistrySnapshotSHA256) {
 		var identity unix.Stat_t
