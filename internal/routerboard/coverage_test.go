@@ -6,6 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 func TestProjectionAndPayloadHelpers(t *testing.T) {
@@ -60,17 +64,10 @@ func TestProjectionAndPayloadHelpers(t *testing.T) {
 	}
 }
 
-func TestPollWithBoundedFakeCLI(t *testing.T) {
+func TestPollUsesOneGenerationWithoutCLIReacquisition(t *testing.T) {
 	tmp := t.TempDir()
 	cli := filepath.Join(tmp, "sirsi")
-	script := `#!/bin/sh
-case "$1 $2 $3" in
-  "router ledger --json") printf '%s' '{"generated_at":"2026-09-27T12:00:00Z","agents":[{"agent":"a","items":[{"id":"i","title":"item","stale":true}],"tasks":[{"task_id":"t1","status":"in-progress","phase":"Build","updated":"2026-09-27T11:59:00Z","subject":"compile"}]}]}' ;;
-  "thread list --json") printf '%s' '[{"thread":{"thread_id":"thr-a","agent_id":"a","workstream":"pantheon"},"idle_seconds":2,"stale":false}]' ;;
-  "router node-status --json") printf '%s' '{"live_threads":[{"agent_id":"a","armed":true,"loop_state":"running"}]}' ;;
-  *) printf '%s' '{}' ;;
-esac
-`
+	script := "#!/bin/sh\nexit 99\n"
 	if err := os.WriteFile(cli, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +75,10 @@ esac
 	if err := os.WriteFile(agents, []byte(`{"agents":{"a":{"type":"software","wake":{"mechanism":"launchagent","launch_agent_label":"a"}}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	b := New(cli, agents, "test-build")
+	read := ledger.FabricRead{Snapshot: ledger.Snapshot{GeneratedAt: time.Now().UTC().Format(time.RFC3339Nano), Agents: []ledger.Agent{{AgentID: "a", Items: []ledger.Item{{ID: "i", Title: "item", Stale: true}}, Tasks: []routerstore.Task{{TaskID: "t1", Status: "in-progress", Phase: "Build", Subject: "compile", Liveness: "active"}}}}}}
+	calls := 0
+	producer := ledger.NewFabricGenerationProducer(func() (ledger.FabricRead, error) { calls++; return read, nil }, "fixture")
+	b := NewWithProducer(cli, agents, "test-build", producer.Read)
 	b.Poll(context.Background())
 	if b.Version() == 0 {
 		t.Fatal("poll did not publish a payload")
@@ -91,11 +91,15 @@ esac
 	if err := json.Unmarshal(body, &shape); err != nil || len(shape.Lanes) != 1 {
 		t.Fatalf("fleet shape = %s/%v", body, err)
 	}
-	// The second sighting is a real transition, so diffAndLog must publish an
-	// event rather than treating every poll as activity.
-	b.diffAndLog("a", []rawTask{{"task_id": "t1", "status": "done", "subject": "compile"}})
-	if len(b.activity) != 1 || b.completed != 1 {
-		t.Fatalf("transition log = %+v completed=%d", b.activity, b.completed)
+	read.Snapshot.Agents[0].Tasks[0].Status = "done"
+	b.Poll(context.Background())
+	encoded, _, valid := b.SnapshotState()
+	var payload Payload
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !valid || len(payload.Activity) != 1 || payload.Counters.Completed != 1 || calls != 2 {
+		t.Fatalf("real shared transition missing: %+v calls=%d", payload, calls)
 	}
 	// Invalid retained payloads are surfaced, never converted to an empty board.
 	b.mu.Lock()

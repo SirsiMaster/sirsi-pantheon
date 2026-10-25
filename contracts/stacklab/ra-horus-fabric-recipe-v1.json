@@ -81,6 +81,13 @@
         "internal/ledger/fabric.go",
         "internal/ledger/fabric_tasks.go",
         "internal/ledger/fabric_presentation.go",
+        "internal/ledger/fabric_generation.go",
+        "internal/ledger/fabric_facts.go",
+        "internal/ledger/fabric_metadata.go",
+        "internal/routerboard/generation.go",
+        "internal/routerboard/http.go",
+        "internal/routerboard/ui/index.html",
+        "internal/dashboard/fabric_generation.go",
         "internal/brand/brand.go",
         "internal/router/readiness_projection.go",
         "internal/dashboard/fabric.go",
@@ -101,6 +108,12 @@
         "internal/ledger",
         "internal/ledger/fabric_join_test.go",
         "internal/ledger/fabric_tasks_test.go",
+        "internal/ledger/fabric_generation_test.go",
+        "internal/routerboard/generation_test.go",
+        "internal/dashboard/fabric_generation_test.go",
+        "internal/routerboard/testdata/generation.test.cjs",
+        "internal/dashboard/testdata/fabric-generation-controls.json",
+        "cmd/sirsi-menubar/fabric_generation_test.go",
         "internal/dashboard/fabric_join_test.go",
         "internal/dashboard/fabric_tasks_test.go",
         "internal/dashboard/router_test.go",
@@ -125,7 +138,8 @@
         "real observed transitions with explicit unseeded coverage",
         "null unavailable host facts; known zero preserved; engine session observation is not readiness",
         "64-row open-task pages, exact task detail/provenance and public-projection digest-bound continuation",
-        "producer-assigned semantic roles with the same brand palette in native and web"
+        "producer-assigned semantic roles with the same brand palette in native and web",
+        "private immutable producer generation with shared facts and detached read-only compatibility adapters; registry/ledger lane union includes taskless services"
       ],
       "writes": [],
       "upgrade_recipe": [
@@ -141,6 +155,11 @@
         "changed task continuation refuses409; explicit first-page refresh is available; no hard count-only truncation",
         "qualify task detail/paging/privacy and semantic token mapping through actual Go JSON consumers",
         "Nexus independent routerboard ledger counts and conditional8734 retirement do not establish R4 same-wire convergence",
+        "existing board-serve keeps its listener, router-board.v1 keys, full Nexus task/phase/step details and SSE; Horus keeps router-surface.v1 and its separate Ra authority plane",
+        "derive common gauges and real transitions once per generation; inclusive active includes blocked as a subset, never sum both",
+        "canonical task liveness and IDLE_WITH_WORK enums must not be re-derived from local age, display labels or heartbeat; service registration is not worker activity",
+        "safe Fabric projection remains bounded and private; existing legacy detail does not widen FabricBoard task rows",
+        "qualify mixed actual Go generation through existing HTTP/menu/Node adapters and existing-consumer readback before R4 closure; do not infer process retirement or cross-process atomic observations",
         "see docs/stacklab/ra/canon/FABRIC_SURFACE_PRODUCER_V1.md; source-only unqualified candidate"
       ]
     },

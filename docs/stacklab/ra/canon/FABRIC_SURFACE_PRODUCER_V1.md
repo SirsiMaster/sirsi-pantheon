@@ -165,3 +165,30 @@ The original empty-stdout/refusal/single-read checks remain. Diagnostics now nam
 the actual output contract, assert errors.Is(readerCause), and verify successful
 selected output is exactly one JSON value. No actual CLI/runtime success is
 claimed by this source correction; Main owns the next full qualification.
+
+### R4 shared generation and retained legacy consumers
+
+The private `FabricGeneration` owns detached bytes of one acquired read and
+producer-computed facts. Each adapter gets a new detached view; accidental JSON
+serialization of the private view emits no raw task/registry data. Registry keys
+and ledger lane IDs are unioned before all projections, including taskless
+services. Unknown runtime remains unknown, not COMPLETE or a worker. Legacy
+task liveness is copied from the canonical task, never recomputed by poll.go.
+
+`routerboard.FromGeneration`, dashboard FleetFromGeneration/BindRouterFabric and
+menu enum counting retain the existing wire/schema boundaries. Board active and
+phase active include blocked; blocked must not be stacked twice. The old board's
+task-based blockers, default phase labels, full task charter/outline/timeline/
+links and phase/step presentation remain in that pre-existing detail contract.
+The canonical Fabric task page stays separately bounded and privacy-filtered.
+Horus control/consumer observations retain their own authority and timestamp;
+binding Fabric does not promote them into worker readiness or answer grants.
+
+Actual mixed Go generation JSON is exported only to an explicit owned fixture
+path for the whole legacy HTML/Node renderer. Inert fixtures check no adapter
+reacquisition, registered taskless service and ledger-only orphan retention,
+missing/stale consumers, honest error/503, SSE invalidation, detached views,
+cancelled reads and rejected changed continuation without history pollution.
+These are authored checks, not execution receipts. Existing source-owner review,
+Main normal/race/Node qualification and actual Nexus/Horus/menu readback are
+required before full R4 acceptance. No standalone/listener retirement is inferred.

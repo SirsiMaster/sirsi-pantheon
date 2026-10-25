@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
-	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 )
@@ -20,29 +19,40 @@ type FabricProducer func() (ledger.FabricBoard, error)
 func (s *Server) apiFabric(w http.ResponseWriter, r *http.Request) {
 	allowNexusOrigin(w, r)
 	w.Header().Set("Cache-Control", "no-store")
+	if !fabricReadMethod(w, r) {
+		return
+	}
 	offset, snapshot, selected, err := fabricTaskSelection(r.URL.RawQuery)
 	if err != nil {
 		writeError(w, "invalid fabric task page selection", http.StatusBadRequest)
 		return
 	}
-	if s.cfg.FabricReadFn != nil {
-		// Serialize read + transition observation: concurrent endpoint reads must
-		// never feed an older snapshot after a newer one and invent a reversal.
-		s.fabricMu.Lock()
-		defer s.fabricMu.Unlock()
-		read, err := s.cfg.FabricReadFn()
-		if err != nil {
-			writeError(w, "fabric production failed", http.StatusBadGateway)
-			return
-		}
-		at, err := time.Parse(time.RFC3339, read.Snapshot.GeneratedAt)
-		if err != nil {
-			writeError(w, "fabric timestamp unavailable", http.StatusBadGateway)
-			return
-		}
-		var page ledger.FabricTaskPage
+	if s.cfg.FabricSource != nil {
+		var generation *ledger.FabricGeneration
 		if selected {
-			page, err = ledger.FabricTasksFrom(read.Snapshot, offset, snapshot)
+			generation, err = s.cfg.FabricSource.ReadPage(r.Context(), offset, snapshot)
+		} else {
+			generation, err = s.cfg.FabricSource.Read(r.Context())
+		}
+		if err != nil {
+			status := http.StatusBadGateway
+			if errors.Is(err, ledger.ErrFabricPageRejected) {
+				status = http.StatusBadRequest
+			}
+			if errors.Is(err, ledger.ErrFabricTasksChanged) {
+				status = http.StatusConflict
+			}
+			writeError(w, "fabric production or page selection unavailable; refresh the task list", status)
+			return
+		}
+		view, err := generation.View()
+		if err != nil {
+			writeError(w, "fabric generation unavailable", http.StatusBadGateway)
+			return
+		}
+		board := view.Board
+		if selected {
+			page, err := ledger.FabricTasksFrom(view.Read.Snapshot, offset, snapshot)
 			if err != nil {
 				status := http.StatusBadRequest
 				if errors.Is(err, ledger.ErrFabricTasksChanged) {
@@ -51,17 +61,9 @@ func (s *Server) apiFabric(w http.ResponseWriter, r *http.Request) {
 				writeError(w, "fabric task page changed or unavailable; refresh the task list", status)
 				return
 			}
-		}
-		transitions := s.fabricFleet.Observe(read.Snapshot, at)
-		read.Evidence.Activity = []ledger.FabricActivity{}
-		read.Evidence.ActivitySeeded = transitions.Seeded
-		for _, event := range transitions.Activity {
-			read.Evidence.Activity = append(read.Evidence.Activity, ledger.FabricActivity{At: event.At, Agent: event.Agent, TaskID: event.TaskID, From: event.From, To: event.To})
-		}
-		board := ledger.FabricFrom(read.Snapshot, read.Node, s.cfg.FabricBuild, read.Evidence)
-		if selected {
 			board.Tasks = page
 		}
+		w.Header().Set("X-Sirsi-Fabric-Generation", view.ID)
 		writeJSON(w, board)
 		return
 	}

@@ -56,6 +56,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 
 	// Find our own binary path for the command runner.
 	selfBin, _ := os.Executable()
+	fabricSource := ledger.NewFabricGenerationProducer(collectDashboardFabricRead, buildversion.Current("sirsi").Version)
 
 	srv := dashboard.New(dashboard.Config{
 		MercuryFn: mercury.NewConfigured().Read,
@@ -80,6 +81,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			return unroutableAgents(repoRoot)
 		},
 		FabricReadFn:        collectDashboardFabricRead,
+		FabricSource:        fabricSource,
 		FabricBuild:         buildversion.Current("sirsi").Version,
 		MaatDecisionsFn:     collectDashboardMaatDecisions,
 		MaatCasebookFn:      collectDashboardMaatCasebook,
@@ -194,6 +196,10 @@ func collectDashboardFabricRead() (ledger.FabricRead, error) {
 	if err != nil {
 		return ledger.FabricRead{}, fmt.Errorf("locate repo root: %w", err)
 	}
+	return collectDashboardFabricReadAtRoot(repoRoot)
+}
+
+func collectDashboardFabricReadAtRoot(repoRoot string) (ledger.FabricRead, error) {
 	now := time.Now().UTC()
 	read, err := ledger.ReadFabric(repoRoot, now)
 	if err != nil {
@@ -204,11 +210,13 @@ func collectDashboardFabricRead() (ledger.FabricRead, error) {
 	return read, nil
 }
 func collectDashboardFabric() (ledger.FabricBoard, error) {
-	read, err := collectDashboardFabricRead()
+	producer := ledger.NewFabricGenerationProducer(collectDashboardFabricRead, buildversion.Current("sirsi").Version)
+	generation, err := producer.Read(context.Background())
 	if err != nil {
 		return ledger.FabricBoard{}, err
 	}
-	return ledger.FabricFrom(read.Snapshot, read.Node, buildversion.Current("sirsi").Version, read.Evidence), nil
+	view, err := generation.View()
+	return view.Board, err
 }
 
 // collectDashboardLedger wires GET /api/ledger (A26 Nexus seam) to the

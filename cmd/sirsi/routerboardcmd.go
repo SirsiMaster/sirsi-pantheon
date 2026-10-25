@@ -12,8 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerboard"
+	buildversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
 
 var (
@@ -89,7 +91,8 @@ func runRouterBoard(_ *cobra.Command, _ []string) error {
 	}
 	agentsJSON := filepath.Join(repoRoot, ".agents", "idea-router", "agents.json")
 
-	b := routerboard.New(bin, agentsJSON, routerboard.BuildID(dir))
+	producer := ledger.NewFabricGenerationProducer(func() (ledger.FabricRead, error) { return collectDashboardFabricReadAtRoot(repoRoot) }, buildversion.Current("sirsi").Version)
+	b := routerboard.NewWithProducer(bin, agentsJSON, routerboard.BuildID(dir), producer.Read)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -110,7 +113,11 @@ func runRouterBoard(_ *cobra.Command, _ []string) error {
 				return fmt.Errorf("board: project fleet shape: %w", err)
 			}
 		} else {
-			body, version = b.Snapshot()
+			var valid bool
+			body, version, valid = b.SnapshotState()
+			if !valid {
+				return fmt.Errorf("board: current producer unavailable")
+			}
 		}
 		if version == 0 || len(body) == 0 {
 			return fmt.Errorf("board: no poll completed — refusing to print an empty payload")

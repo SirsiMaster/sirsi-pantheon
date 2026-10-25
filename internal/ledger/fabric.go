@@ -1,7 +1,9 @@
 package ledger
 
 import (
+	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -98,6 +100,7 @@ type FabricRead struct {
 	Snapshot Snapshot
 	Node     *router.NodeStatus
 	Evidence FabricEvidence
+	Metadata FabricMetadata
 }
 
 func FabricFrom(s Snapshot, ns *router.NodeStatus, build string, inputs ...FabricEvidence) FabricBoard {
@@ -105,7 +108,13 @@ func FabricFrom(s Snapshot, ns *router.NodeStatus, build string, inputs ...Fabri
 	if len(inputs) == 1 {
 		evidence = inputs[0]
 	}
+	return fabricFromFacts(s, ns, build, evidence, fabricFacts(s))
+}
+
+func fabricFromFacts(s Snapshot, ns *router.NodeStatus, build string, evidence FabricEvidence, facts FabricFacts) FabricBoard {
 	b := FabricBoard{
+		Work:             facts.Work,
+		Messages:         facts.Messages,
 		Build:            build,
 		GeneratedAt:      s.GeneratedAt,
 		Health:           FabricHealth{Engine: "unknown", EngineState: "unavailable", Issues: []string{}},
@@ -144,45 +153,8 @@ func FabricFrom(s Snapshot, ns *router.NodeStatus, build string, inputs ...Fabri
 	}
 	for _, a := range s.Agents {
 		lane := FabricLane{Agent: a.AgentID, Registered: FabricRegistration{Router: registered[a.AgentID], Thread: threaded[a.AgentID], Ledger: len(a.Tasks) > 0}}
-		for _, item := range a.Items {
-			b.Messages.Open++
-			if item.AgeSeconds > b.Messages.OldestAgeSeconds {
-				b.Messages.OldestAgeSeconds = item.AgeSeconds
-			}
-		}
-		for _, task := range a.Tasks {
-			b.Work.Total++
-			if task.Updated > lane.LastTouch {
-				lane.LastTouch = task.Updated
-			}
-			switch task.Status {
-			case "done":
-				b.Work.Done++
-			case "blocked":
-				b.Work.Open++
-				b.Work.Blocked++
-				lane.Open++
-				lane.Blocked++
-			case "in-progress":
-				b.Work.Open++
-				lane.Open++
-				if task.Liveness == "stalled" {
-					b.Work.Stalled++
-					lane.Stalled++
-				} else {
-					b.Work.InProgress++
-					lane.Active++
-				}
-			default:
-				b.Work.Open++
-				b.Work.AssignedNotStarted++
-				lane.Open++
-				if task.Liveness == "stalled" {
-					b.Work.Stalled++
-					lane.Stalled++
-				}
-			}
-		}
+		f := facts.Lanes[a.AgentID]
+		lane.Open, lane.Active, lane.Stalled, lane.Blocked, lane.LastTouch = f.Open, f.Active, f.Stalled, f.Blocked, f.LastTouch
 		lane.State = "UNKNOWN"
 		validRuntime := false
 		if state, ok := evidence.Operational[a.AgentID]; ok && state.Agent == a.AgentID {
@@ -218,7 +190,10 @@ func FabricFrom(s Snapshot, ns *router.NodeStatus, build string, inputs ...Fabri
 // ReadFabric reads existing canonical ledger/node/runtime authorities only.
 // In particular it never invokes SuperviseOnce or its reconcile/wake writes.
 func ReadFabric(repoRoot string, now time.Time) (FabricRead, error) {
-	snap, err := Build(repoRoot, "", now, DefaultStaleAfter)
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	snap, threads, err := buildWithThreads(repoRoot, "", now, DefaultStaleAfter)
 	if err != nil {
 		return FabricRead{}, err
 	}
@@ -234,10 +209,15 @@ func ReadFabric(repoRoot string, now time.Time) (FabricRead, error) {
 		return FabricRead{}, err
 	}
 	defer f.Close()
-	unavailable, err := router.ReadLaneRoutability(repoRoot)
+	reg, err := router.LoadRegistry(filepath.Join(repoRoot, ".agents", "idea-router"))
 	if err != nil {
 		return FabricRead{}, err
 	}
+	if reg == nil {
+		return FabricRead{}, fmt.Errorf("fabric registry unavailable")
+	}
+	unavailable := router.UnroutableFromRuntime(reg, threads, now)
+	metadata := captureFabricMetadata(reg, threads, ns)
 	ids, err := f.Store().OperationalAgents()
 	if err != nil {
 		return FabricRead{}, err
@@ -261,12 +241,14 @@ func ReadFabric(repoRoot string, now time.Time) (FabricRead, error) {
 		}
 		operational[agent.AgentID] = value
 	}
-	return FabricRead{Snapshot: snap, Node: ns, Evidence: FabricEvidence{Operational: operational}}, nil
+	return FabricRead{Snapshot: snap, Node: ns, Evidence: FabricEvidence{Operational: operational}, Metadata: metadata}, nil
 }
 func BuildFabric(repoRoot, build string, now time.Time) (FabricBoard, error) {
-	read, err := ReadFabric(repoRoot, now)
+	producer := NewFabricGenerationProducer(func() (FabricRead, error) { return ReadFabric(repoRoot, now) }, build)
+	generation, err := producer.Read(context.Background())
 	if err != nil {
 		return FabricBoard{}, err
 	}
-	return FabricFrom(read.Snapshot, read.Node, build, read.Evidence), nil
+	view, err := generation.View()
+	return view.Board, err
 }

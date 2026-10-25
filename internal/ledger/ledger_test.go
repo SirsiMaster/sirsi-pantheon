@@ -116,13 +116,13 @@ func TestSummarizeSemantics(t *testing.T) {
 			wantTotal: 2, wantDone: 2, wantPct: 100,
 		},
 		{
-			name: "blocked not in active",
+			name: "blocked is a subset of inclusive active",
 			tasks: []routerstore.Task{
 				{Agent: "a", TaskID: "1", Status: "done", ResponsibleParty: "self"},
 				{Agent: "a", TaskID: "2", Status: "in-progress", ResponsibleParty: "self"},
 				{Agent: "a", TaskID: "3", Status: "blocked", ResponsibleParty: "self"},
 			},
-			wantTotal: 3, wantDone: 1, wantActive: 1, wantBlocked: 1, wantPct: 33,
+			wantTotal: 3, wantDone: 1, wantActive: 2, wantBlocked: 1, wantPct: 33,
 		},
 	}
 	for _, tc := range tests {

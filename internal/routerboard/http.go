@@ -64,6 +64,11 @@ func BuildID(dir string) string {
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
+	h.RegisterReadOnly(mux)
+	mux.HandleFunc("/api/arm", h.arm) // existing standalone mutation, never exported by read-only adapters
+}
+
+func (h *Handler) RegisterReadOnly(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.index)
 	mux.HandleFunc("/index.html", h.index)
 	mux.HandleFunc("/router", h.index)
@@ -71,9 +76,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/ledger", h.slice)
 	mux.HandleFunc("/api/tasks", h.slice)
 	mux.HandleFunc("/api/stream", h.stream)
-	mux.HandleFunc("/api/arm", h.arm)
 	// Versioned contract for this standalone board only. This is a DIFFERENT
-	// producer and payload shape (Payload: fleet/board/tasks) than Horus's
+	// payload shape (Payload: fleet/board/tasks) than Horus's
 	// canonical router-surface.v1 (internal/dashboard: lanes/queue/consumers/
 	// attention) — the two must never share a schema name or a consumer that
 	// expects one gets silently fed the other's shape and renders empty lanes.
@@ -177,16 +181,14 @@ func (h *Handler) snapshot(w http.ResponseWriter, r *http.Request) {
 // zeros render as a DEAD FLEET, which is a worse lie than an error.
 func (h *Handler) slice(w http.ResponseWriter, r *http.Request) {
 	body, version, valid := h.board.SnapshotState()
-	if strings.HasPrefix(r.URL.Path, "/api/router/v1/") {
-		h.surfaceHeaders(w, r)
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
+	h.surfaceHeaders(w, r)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -214,16 +216,14 @@ func (h *Handler) slice(w http.ResponseWriter, r *http.Request) {
 // stream pushes the whole payload on every version change, with a keepalive so
 // intermediaries do not reap an idle connection.
 func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
-	if strings.HasPrefix(r.URL.Path, "/api/router/v1/") {
-		h.surfaceHeaders(w, r)
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
+	h.surfaceHeaders(w, r)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -244,7 +244,7 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 

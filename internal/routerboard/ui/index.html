@@ -723,17 +723,17 @@
         <div class="counters">
           <div class="counter done" id="c1">
             <div class="label">Completed / in flight</div>
-            <div class="value" id="c1-v">0 / 0</div>
+            <div class="value" id="c1-v">Unavailable</div>
             <div class="since" id="c1-s"></div>
           </div>
           <div class="counter assigned" id="c2">
             <div class="label">In progress / assigned</div>
-            <div class="value" id="c2-v">0 / 0</div>
+            <div class="value" id="c2-v">Unavailable</div>
             <div class="since" id="c2-s"></div>
           </div>
           <div class="counter stuck" id="c3">
             <div class="label">Stalled / blocked / idle</div>
-            <div class="value" id="c3-v">0</div>
+            <div class="value" id="c3-v">Unavailable</div>
             <div class="since" id="c3-s"></div>
           </div>
         </div>
@@ -871,7 +871,7 @@
       // no parent can issue a router mutation through this surface.
       if (window.parent !== window) {
         window.parent.postMessage(
-          { type: "sirsi.router.ready", schema: "router-surface.v1", surface: "router" },
+          { type: "sirsi.router.ready", schema: "router-board.v1", surface: "router" },
           "*",
         );
       }
@@ -1305,6 +1305,34 @@
 
       let lastCounters = { done: 0, open: 0, stuck: 0 };
 
+      function renderFabricHeadlines(d) {
+        const b = d.fabric, w = b && b.work;
+        const valid = w && Array.isArray(b.lanes) &&
+          ['done','open','in_progress','assigned_not_started','stalled','blocked'].every(k => Number.isSafeInteger(w[k]) && w[k] >= 0);
+        if (!valid) {
+          ['c1-v','c2-v','c3-v'].forEach(id => { document.getElementById(id).textContent = 'Unavailable'; document.getElementById(id).style.color = ''; });
+          document.getElementById('c1-s').textContent = 'Canonical Fabric not supplied; legacy detail is separate.';
+          ['c2-s','c3-s'].forEach(id => { document.getElementById(id).textContent = ''; });
+          return;
+        }
+        const idle = b.lanes.filter(lane => lane.state === 'IDLE_WITH_WORK').length;
+        document.getElementById('c1-v').textContent = `${w.done} / ${w.open}`;
+        document.getElementById('c1-s').textContent = `Tasks · observed ${b.generated_at}`;
+        document.getElementById('c2-v').textContent = `${w.in_progress} / ${w.assigned_not_started}`;
+        document.getElementById('c2-s').textContent = 'Tasks · supervised runtime is separate';
+        document.getElementById('c3-v').textContent = `${w.stalled} / ${w.blocked} / ${idle}`;
+        document.getElementById('c3-s').textContent = 'Tasks stalled / blocked · supervised idle lanes';
+        ['completed','progress','stalled'].forEach((key,i) => {
+          const role = b.presentation && b.presentation.headlines && b.presentation.headlines[key];
+          const swatch = ['ok','gold','warn','ink2','dim'].includes(role) && b.presentation.palette && b.presentation.palette[role];
+          document.getElementById(`c${i+1}-v`).style.color = swatch && /^#[0-9a-fA-F]{6}$/.test(swatch.dark) ? swatch.dark : '';
+        });
+        if (w.open !== lastCounters.open) bump('c2');
+        if (w.done !== lastCounters.done) bump('c1');
+        if (w.stalled + w.blocked !== lastCounters.stuck) bump('c3');
+        lastCounters = {done:w.done, open:w.open, stuck:w.stalled+w.blocked};
+      }
+
       const es = new EventSource("/api/router/v1/stream");
       es.onopen = () => {
         document.getElementById("dot").className = "dot live";
@@ -1356,43 +1384,7 @@
           errEl.textContent = "";
         }
 
-        const openTasks = (d.tasks || []).filter((t) => t.status !== "done");
-        const openCount = openTasks.length;
-        const inProg = openTasks.filter(
-          (t) => t.status === "in-progress",
-        ).length;
-        const stalled = openTasks.filter(
-          (t) => t.liveness === "stalled",
-        ).length;
-        const blocked = openTasks.filter(
-          (t) => t.liveness === "blocked",
-        ).length;
-        const idleLanes = (d.fleet || []).filter(
-          (f) => f.idle_with_work,
-        ).length;
-
-        // Box 1 — completed out of everything in flight this cycle.
-        document.getElementById("c1-v").textContent =
-          d.counters.done + " / " + (d.counters.done + openCount);
-        document.getElementById("c1-s").textContent =
-          `${openCount} still in flight`;
-        // Box 2 — actively worked out of everything assigned and still open.
-        document.getElementById("c2-v").textContent =
-          inProg + " / " + openCount;
-        document.getElementById("c2-s").textContent =
-          `${openCount - inProg} assigned but not started`;
-        // Box 3 — everything not moving, and how many whole lanes are idle.
-        document.getElementById("c3-v").textContent = stalled + blocked;
-        document.getElementById("c3-s").textContent =
-          `${stalled} stalled · ${blocked} blocked · ${idleLanes} idle lane${idleLanes === 1 ? "" : "s"}`;
-        if (openCount !== lastCounters.open) bump("c2");
-        if (d.counters.done !== lastCounters.done) bump("c1");
-        if (stalled + blocked !== lastCounters.stuck) bump("c3");
-        lastCounters = {
-          done: d.counters.done,
-          open: openCount,
-          stuck: stalled + blocked,
-        };
+        renderFabricHeadlines(d);
 
         document.getElementById("activity").innerHTML = d.activity.length
           ? d.activity
@@ -1409,46 +1401,14 @@
           : '<div class="empty">No status changes seen yet this session — this feed only fires on a REAL transition, not a refresh.</div>';
 
         const lanes = d.fleet.map((f) => {
-          const mine = openTasks.filter((t) => t.agent === f.agent);
-          const st = mine.filter((t) => t.liveness === "stalled").length;
-          const bl = mine.filter((t) => t.liveness === "blocked").length;
-          const act = mine.filter((t) => t.liveness === "active").length;
-          const touch = mine.length ? mine.map((t) => t.age).sort()[0] : "";
-          // Precedence matters: a lane with FIVE active tasks and one stalled one
-          // is working, not stalled. Active work outranks a stale straggler
-          // (owner correction 2026-08-05 — codex-inference read 'stalled' while
-          // visibly shipping).
-          let state = "WORKING",
-            col = "var(--green)";
-          // `registered.ledger` is bool(tasks) — it measures whether the lane has a
-          // TASK LEDGER, not whether it is registered. Every lane rendering this way
-          // is present in agents.json (verified 2026-08-06: claude-kfca, claude-io,
-          // owner, horus, user, gemma-pantheon, all the codex-* lanes). Calling them
-          // "not registered" was a false alarm on 17 rows — it reads as a broken
-          // fabric when the truth is "registered, no tasks assigned".
-          if (!f.registered.ledger) {
-            state = "no tasks assigned";
-            col = "var(--muted)";
-          } else if (mine.length === 0) {
-            state = "stopped — no open work";
-            col = "var(--muted)";
-          } else if (act > 0) {
-            state = "WORKING";
-            col = "var(--green)";
-          } else if (f.idle_with_work) {
-            state = "IDLE with work";
-            col = "var(--red)";
-          } else if (bl && bl === mine.length) {
-            state = "fully blocked";
-            col = "var(--amber)";
-          } else if (st) {
-            state = "stalled";
-            col = "var(--red)";
-          } else if (bl) {
-            state = "partly blocked";
-            col = "var(--amber)";
-          }
-          return { ...f, state, col, open: mine.length, st, bl, act, touch };
+          const allowed = ['WORKING','ASSIGNED','IDLE_WITH_WORK','BLOCKED','UNROUTABLE','COMPLETE'];
+          const canonical = allowed.includes(f.state) ? f.state : 'UNKNOWN';
+          const state = canonical === 'IDLE_WITH_WORK' ? 'IDLE with work' : canonical;
+          const role = ['ok','gold','warn','ink2','dim'].includes(f.role) ? f.role : 'dim';
+          const swatch = d.fabric && d.fabric.presentation && d.fabric.presentation.palette && d.fabric.presentation.palette[role];
+          const col = swatch && /^#[0-9a-fA-F]{6}$/.test(swatch.dark) ? swatch.dark : 'var(--muted)';
+          const count = key => Number.isSafeInteger(f[key]) && f[key] >= 0 ? f[key] : null;
+          return { ...f, state, col, open: count('open_tasks'), st: count('stalled'), bl: count('blocked_tasks'), act: count('active'), touch: f.last_touch || '' };
         });
         // ACTIVE FIRST — the owner wants to SEE work happening, not only what is
         // broken. A dashboard that renders only failures makes a busy fleet look
@@ -1485,14 +1445,14 @@
               (l) => `<div class="lane-row ${laneBucket(l.state)}">
         <span class="lname" style="${l.state === "WORKING" ? "" : "color:var(--muted)"}">${esc(l.agent)}</span>
         <span class="lstate" style="color:${l.col}">${esc(l.state)}</span>
-        <span class="ldetail">${l.open} open tasks${l.act ? ` · ${l.act} active` : ""}${l.st ? ` · ${l.st} stalled` : ""}${l.bl ? ` · ${l.bl} blocked` : ""}${l.touch ? ` · last ledger update ${esc(l.touch)}` : ""}</span>
+        <span class="ldetail">${l.open == null ? 'Unknown' : l.open} open tasks${l.act ? ` · ${l.act} active` : ""}${l.st ? ` · ${l.st} stalled` : ""}${l.bl ? ` · ${l.bl} blocked` : ""}${l.touch ? ` · last ledger update ${esc(l.touch)}` : ""}</span>
       </div>`,
             )
             .join("");
 
         const gaps = d.registration_gaps || [];
         document.getElementById("registration").innerHTML = gaps.length
-          ? `<div style="font-size:14.5px;color:var(--red);font-weight:600;margin-bottom:10px"><b>${gaps.length} of ${d.fleet.length} agents are NOT fully registered</b> — present in the router but missing a thread record or a task ledger. A gap means the agent is invisible to the boards.</div>` +
+          ? `<div style="font-size:14.5px;color:var(--amber);font-weight:600;margin-bottom:10px"><b>${gaps.length} worker-lane coverage entries need review.</b> Registration, thread observations and task presence are distinct; services and humans are separate.</div>` +
             d.fleet
               .filter((f) => gaps.includes(f.agent))
               .map(
@@ -1500,14 +1460,14 @@
         <div class="lane-row st-bad" style="grid-template-columns:190px 1fr">
           <span class="lname">${esc(f.agent)}</span>
           <span style="font-size:13.5px">
-            <span style="color:var(--green);font-weight:600">router ✓</span>
-            <span style="color:${f.registered.thread ? "var(--green)" : "var(--red)"};font-weight:600;margin-left:12px">thread ${f.registered.thread ? "✓" : "✗"}</span>
-            <span style="color:${f.registered.ledger ? "var(--green)" : "var(--red)"};font-weight:600;margin-left:12px">ledger ${f.registered.ledger ? "✓" : "✗"}</span>
+            <span>router ${f.registered_known ? (f.registered.router ? '✓' : '✗') : 'unknown'}</span>
+            <span style="margin-left:12px">thread ${f.registered_known ? (f.registered.thread ? '✓' : '✗') : 'unknown'}</span>
+            <span style="margin-left:12px">task records ${f.registered.ledger ? 'present' : 'none supplied'}</span>
           </span>
         </div>`,
               )
               .join("")
-          : '<div class="empty" style="color:var(--green);font-weight:600">All agents fully registered across router, thread and ledger.</div>';
+          : '<div class="empty">No worker-lane coverage entries supplied; this is not a service-health verdict.</div>';
 
         // ONE row per agent — its freshest thread — not every historical record.
         // The raw feed (sirsi thread list) keeps every thread ever registered,

@@ -118,6 +118,7 @@ func TestFabricConcurrentReadsKeepOneRealTransition(t *testing.T) {
 		return fabricReadFixture(state, at), nil
 	}})
 	done := make(chan struct{}, 8)
+	boards := make(chan ledger.FabricBoard, 8)
 	for i := 0; i < 8; i++ {
 		go func() {
 			defer func() { done <- struct{}{} }()
@@ -126,19 +127,30 @@ func TestFabricConcurrentReadsKeepOneRealTransition(t *testing.T) {
 			if w.Code != 200 {
 				t.Errorf("endpoint: %d", w.Code)
 			}
+			var board ledger.FabricBoard
+			if err := json.Unmarshal(w.Body.Bytes(), &board); err != nil {
+				t.Error(err)
+			}
+			boards <- board
 		}()
 	}
 	for i := 0; i < 8; i++ {
 		<-done
 	}
-	s.fabricMu.Lock()
-	defer s.fabricMu.Unlock()
 	if calls != 8 {
 		t.Fatal(calls)
 	}
-	s.fabricFleet.mu.Lock()
-	defer s.fabricFleet.mu.Unlock()
-	if len(s.fabricFleet.events) != 1 {
-		t.Fatal("concurrent reads fabricated transitions")
+	observed := 0
+	for i := 0; i < 8; i++ {
+		board := <-boards
+		if len(board.Activity) > 1 {
+			t.Fatal("concurrent reads fabricated transitions")
+		}
+		if len(board.Activity) == 1 {
+			observed++
+		}
+	}
+	if observed != 7 {
+		t.Fatalf("real transition missing from later generations: %d", observed)
 	}
 }
