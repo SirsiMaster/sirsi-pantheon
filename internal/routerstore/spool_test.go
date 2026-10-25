@@ -26,6 +26,35 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+type blockingLogWriter struct {
+	message string
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+type signalBody struct {
+	read chan struct{}
+	once sync.Once
+}
+
+func (b *signalBody) Read([]byte) (int, error) {
+	b.once.Do(func() { close(b.read) })
+	return 0, io.EOF
+}
+
+func (*signalBody) Close() error { return nil }
+
+func (w *blockingLogWriter) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), w.message) {
+		w.once.Do(func() {
+			close(w.entered)
+			<-w.release
+		})
+	}
+	return len(p), nil
+}
+
 // End to end through files: a real Handler behind httptest stands in for the
 // service, the Relay forwards with the host token, and a RemoteStore over
 // spool:// (no token) mints a session, signs and works the ledger.
@@ -161,9 +190,14 @@ func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) 
 				t.Fatal(err)
 			}
 			var calls atomic.Int32
+			var logWriter *blockingLogWriter
 			var client *http.Client
 			base := "http://service.invalid"
 			if mode == "queued-ack" {
+				logWriter = &blockingLogWriter{
+					message: "queued response publication failed; retained outbox",
+					entered: make(chan struct{}), release: make(chan struct{}),
+				}
 				client = &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 					calls.Add(1)
 					return nil, &url.Error{Op: "Post", URL: base, Err: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("fixture unreachable")}}
@@ -176,19 +210,54 @@ func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) 
 				t.Cleanup(svc.Close)
 				base, client = svc.URL, svc.Client()
 			}
-			relay := &Relay{Spool: spool, Base: base, Token: "fixture", Client: client}
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			if logWriter != nil {
+				logger = slog.New(slog.NewTextHandler(logWriter, nil))
+			}
+			relay := &Relay{Spool: spool, Base: base, Token: "fixture", Client: client, Log: logger}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			done := make(chan error, 1)
 			go func() { done <- relay.Serve(ctx) }()
-			deadline := time.Now().Add(time.Second)
-			for !relay.settlementFailed.Load() && time.Now().Before(deadline) {
-				time.Sleep(time.Millisecond)
+			var releaseAckOnce sync.Once
+			releaseAck := func() {
+				if logWriter != nil {
+					releaseAckOnce.Do(func() { close(logWriter.release) })
+				}
 			}
-			if !relay.settlementFailed.Load() {
-				t.Fatal("response publication failure was not retained")
+			t.Cleanup(func() {
+				cancel()
+				releaseAck()
+				select {
+				case <-done:
+				case <-time.After(time.Second):
+					t.Error("Serve did not join during fixture cleanup")
+				}
+			})
+			if mode == "queued-ack" {
+				// Freeze exactly after sticky settlement failure and before the lane
+				// can begin its ordinary outbox retry; cancellation is then causally
+				// before any retry, without changing production retry behavior.
+				select {
+				case <-logWriter.entered:
+				case <-time.After(time.Second):
+					t.Fatal("queued acknowledgment failure was not reached")
+				}
+				if !relay.settlementFailed.Load() {
+					t.Fatal("queued acknowledgment failure was not retained")
+				}
+				cancel()
+				releaseAck()
+			} else {
+				deadline := time.Now().Add(time.Second)
+				for !relay.settlementFailed.Load() && time.Now().Before(deadline) {
+					time.Sleep(time.Millisecond)
+				}
+				if !relay.settlementFailed.Load() {
+					t.Fatal("response publication failure was not retained")
+				}
+				cancel()
 			}
-			cancel()
 			select {
 			case err := <-done:
 				if !errors.Is(err, errRelaySettlementUnresolved) {
@@ -681,6 +750,15 @@ func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 	t.Cleanup(cancel)
 	done := make(chan struct{})
 	go func() { _ = rl.Serve(ctx); close(done) }()
+	t.Cleanup(func() {
+		cancel()
+		free()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("Serve did not join during backlog fixture cleanup")
+		}
+	})
 	select {
 	case <-entered:
 	case <-time.After(time.Second):
@@ -731,18 +809,27 @@ func TestSpoolRelayCancellationStopsOutboxAfterActiveForward(t *testing.T) {
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	free := func() { releaseOnce.Do(func() { close(release) }) }
-	t.Cleanup(free)
 	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		entered <- struct{}{}
 		<-release
 		_, _ = io.WriteString(w, `{"result":[]}`)
 	}))
 	t.Cleanup(svc.Close)
+	t.Cleanup(free)
 	relay := &Relay{Spool: spool, Base: svc.URL, Token: "fixture", Client: svc.Client(), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	wake := make(chan struct{}, 1)
 	go func() { relay.laneWorker(ctx, agent, wake); close(done) }()
+	t.Cleanup(func() {
+		cancel()
+		free()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("lane did not join during outbox fixture cleanup")
+		}
+	})
 	wake <- struct{}{}
 	select {
 	case <-entered:

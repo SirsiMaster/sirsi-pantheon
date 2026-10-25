@@ -165,31 +165,65 @@ func TestSpoolAdmissionAndResponseShareOneCallBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	tr := newSpoolTransport(dir, "budget-lane")
-	tr.wait = 400 * time.Millisecond
-	req, err := http.NewRequest(http.MethodPost, "http://spool/v1/call/Inbox", nil)
+	tr.wait = 500 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	startedBody := make(chan struct{})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://spool/v1/call/Inbox", &signalBody{read: startedBody})
 	if err != nil {
 		t.Fatal(err)
 	}
-	started := time.Now()
 	result := make(chan error, 1)
+	finished := make(chan struct{})
 	go func() {
+		defer close(finished)
 		_, callErr := tr.RoundTrip(req) // no caller deadline: transport owns one shared budget
 		result <- callErr
 	}()
-	time.Sleep(330 * time.Millisecond)
+	select {
+	case <-startedBody: // RoundTrip created its budget and began reading this request.
+	case <-time.After(time.Second):
+		t.Fatal("RoundTrip did not begin")
+	}
+	started := time.Now()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-finished:
+		case <-time.After(time.Second):
+			t.Error("RoundTrip did not finish during fixture cleanup")
+		}
+	})
+	time.Sleep(180 * time.Millisecond)
 	if err := os.Remove(marker); err != nil {
 		t.Fatal(err)
 	}
+	publicationDeadline := started.Add(350 * time.Millisecond)
+	var published []string
+	for time.Now().Before(publicationDeadline) {
+		published, _ = filepath.Glob(filepath.Join(dir, "budget-lane", "req", "*.json"))
+		if len(published) == 1 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(published) != 1 {
+		t.Fatal("budget regression was not exercised: request never reached published response-wait state")
+	}
+	remaining := time.Until(started.Add(tr.wait + 100*time.Millisecond))
+	if remaining <= 0 {
+		t.Fatal("request was not observed before the original call budget")
+	}
 	select {
 	case err := <-result:
-		if err == nil {
-			t.Fatal("withheld response unexpectedly succeeded")
+		if err == nil || !strings.Contains(err.Error(), "nothing was sent") {
+			t.Fatalf("withheld published request did not retain the no-response classification: %v", err)
 		}
-		if elapsed := time.Since(started); elapsed > 560*time.Millisecond {
+		if elapsed := time.Since(started); elapsed > tr.wait+100*time.Millisecond {
 			t.Fatalf("admission time was reset for response waiting: total call took %s", elapsed)
 		}
-	case <-time.After(230 * time.Millisecond):
-		t.Fatal("response wait received a fresh full budget after admission")
+	case <-time.After(remaining):
+		t.Fatal("published request did not honor the original shared call deadline")
 	}
 	if pending, _ := filepath.Glob(filepath.Join(dir, "budget-lane", "req", "*.json")); len(pending) != 0 {
 		t.Fatalf("request remained pending after the bounded call: %v", pending)
