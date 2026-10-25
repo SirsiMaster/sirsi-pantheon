@@ -146,6 +146,9 @@ func (b nativeServiceBackend) maintenanceOperations() maintenanceOperations {
 	native := b.relayDependencies()
 	var observed servicedrain.MaintenanceReady
 	return maintenanceOperations{
+		appLoad:        j.appState,
+		appPersist:     j.persistAppState,
+		appSync:        j.syncAppState,
 		restorePreview: b.maintenanceRestorePreview,
 		restorePrepare: b.maintenanceRestorePrepare,
 		abortVerify:    b.maintenanceAbortVerify,

@@ -113,7 +113,16 @@ func (c ServiceController) ConfirmLegacyRestore(ctx context.Context, p Maintenan
 	if err != nil {
 		return status, err
 	}
-	err = d.lock(func() (resultErr error) {
+	err = d.lock(func() error {
+		var callErr error
+		status, callErr = confirmLegacyRestoreLocked(ctx, d, p)
+		return callErr
+	})
+	return status, err
+}
+
+func confirmLegacyRestoreLocked(ctx context.Context, d maintenanceOperations, p MaintenanceRestorePlan) (status MaintenanceStatus, err error) {
+	err = func() (resultErr error) {
 		var err error
 		status, err = d.load()
 		if err != nil {
@@ -171,7 +180,7 @@ func (c ServiceController) ConfirmLegacyRestore(ctx context.Context, p Maintenan
 		r.Phase = "verified_current_replacement"
 		err = maintenanceRestoreRecord(d, &status, r)
 		return err
-	})
+	}()
 	return status, err
 }
 

@@ -46,6 +46,28 @@ func TestLegacyAppRequestClosedSelectors(t *testing.T) {
 					r.Artifact = "/owned/artifact"
 				}
 			}
+			if op == "confirm" || op == "recover" || op == "abort" || op == "restore-confirm" {
+				plan := fixtureMaintenancePlan()
+				if r.Legacy != "" {
+					plan.LegacyPayload = r.Legacy
+					plan.SHA256 = maintenanceDigest(plan)
+				}
+				r.PlanSHA256 = plan.SHA256
+				transaction := r.Transaction
+				if transaction == "" {
+					transaction = strings.Repeat("c", 32)
+				}
+				ticket := MaintenanceAppTicket{Schema: 1, Generation: 1, ID: strings.Repeat("d", 32), Nonce: strings.Repeat("e", 32), Operation: op, Plan: plan, Transaction: transaction}
+				if op == "restore-confirm" {
+					restoration := MaintenanceRestorePlan{Transaction: transaction, MaintenanceSHA256: r.PlanSHA256, SHA256: strings.Repeat("f", 64), Revision: 1}
+					raw, _ := json.Marshal(restoration)
+					r.RestoreJSON = string(append(raw, '\n'))
+					ticket.RestoreSHA256 = restoration.SHA256
+					ticket.RestoreRevision = 1
+				}
+				raw, _ := json.Marshal(ticket)
+				r.TicketJSON = string(raw)
+			}
 			got, err := DecodeLegacyAppRequest(encodeAppFixture(t, r))
 			if err != nil || got != r {
 				t.Fatal(got, err)

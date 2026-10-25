@@ -16,14 +16,16 @@ const LegacyAppRequestLimit = 24 * 1024
 // Public selectors only. Local OS authorization is not a registry/agent grant.
 // This envelope cannot select a command, executable, environment or directory.
 type LegacyAppRequest struct {
-	Profile      string `json:"profile"`
-	Operation    string `json:"operation"`
-	EngineSHA256 string `json:"engine_sha256"`
-	Legacy       string `json:"legacy"`
-	Transaction  string `json:"transaction"`
-	PlanSHA256   string `json:"plan_sha256"`
-	Artifact     string `json:"artifact"`
-	RestoreJSON  string `json:"restore_json"`
+	Profile         string `json:"profile"`
+	Operation       string `json:"operation"`
+	EngineSHA256    string `json:"engine_sha256"`
+	Legacy          string `json:"legacy"`
+	Transaction     string `json:"transaction"`
+	PlanSHA256      string `json:"plan_sha256"`
+	Artifact        string `json:"artifact"`
+	RestoreJSON     string `json:"restore_json"`
+	TicketJSON      string `json:"ticket_json"`
+	TargetOperation string `json:"target_operation"`
 }
 
 func DecodeLegacyAppRequest(encoded string) (LegacyAppRequest, error) {
@@ -42,7 +44,7 @@ func DecodeLegacyAppRequest(encoded string) (LegacyAppRequest, error) {
 	if err != nil || token != json.Delim('{') {
 		return result, errors.New("maintenance app: object required")
 	}
-	allowed := map[string]bool{"profile": true, "operation": true, "engine_sha256": true, "legacy": true, "transaction": true, "plan_sha256": true, "artifact": true, "restore_json": true}
+	allowed := map[string]bool{"profile": true, "operation": true, "engine_sha256": true, "legacy": true, "transaction": true, "plan_sha256": true, "artifact": true, "restore_json": true, "ticket_json": true, "target_operation": true}
 	seen := map[string]bool{}
 	for decoder.More() {
 		key, err := decoder.Token()
@@ -84,6 +86,41 @@ func (r LegacyAppRequest) Arguments() ([]string, error) {
 		return nil, bad
 	}
 	args := []string{r.Operation}
+	switch r.Operation {
+	case "prepare-operation":
+		if r.TargetOperation != "recover" && r.TargetOperation != "abort" && r.TargetOperation != "restore-confirm" {
+			return nil, bad
+		}
+		if !appHex(r.Transaction, 16) || !appHex(r.PlanSHA256, 32) || r.Legacy != "" || r.Artifact != "" || r.TicketJSON != "" {
+			return nil, bad
+		}
+		if r.TargetOperation == "restore-confirm" {
+			p, err := DecodeMaintenanceRestorePlan([]byte(r.RestoreJSON))
+			if err != nil || p.Transaction != r.Transaction || p.MaintenanceSHA256 != r.PlanSHA256 {
+				return nil, bad
+			}
+		} else if r.RestoreJSON != "" {
+			return nil, bad
+		}
+		return args, nil
+	case "resolve-operation":
+		if r.Legacy != "" || r.Transaction != "" || r.PlanSHA256 != "" || r.Artifact != "" || r.RestoreJSON != "" || r.TargetOperation != "" {
+			return nil, bad
+		}
+		if _, err := DecodeMaintenanceAppTicket([]byte(r.TicketJSON)); err != nil {
+			return nil, bad
+		}
+		return args, nil
+	case "confirm", "recover", "abort", "restore-confirm":
+		t, err := DecodeMaintenanceAppTicket([]byte(r.TicketJSON))
+		if err != nil || t.Operation != r.Operation || r.TargetOperation != "" {
+			return nil, bad
+		}
+	default:
+		if r.TicketJSON != "" || r.TargetOperation != "" {
+			return nil, bad
+		}
+	}
 	switch r.Operation {
 	case "preview":
 		if !appPath(r.Legacy) || r.Transaction != "" || r.PlanSHA256 != "" || r.Artifact != "" || r.RestoreJSON != "" {

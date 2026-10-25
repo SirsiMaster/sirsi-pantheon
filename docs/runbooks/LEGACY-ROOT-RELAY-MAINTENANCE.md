@@ -10,8 +10,9 @@ profiles, or Horus/surface/model ownership.
 The canonical app engine exposes `launchd legacy-maintenance` with `preview`,
 `confirm`, `status`, `recover`, `abort`, `restore-preview`, and `restore-confirm`.
 There is no arbitrary label, PID, executable
-command, force, `--drained`, timer release, credential mint, or privilege prompt.
-The backend requires real/effective root **and** the existing registered
+command, force, `--drained`, timer release or credential mint. These existing
+registered-agent verbs do not prompt for privilege. Their backend requires
+real/effective root **and** the existing registered
 actor/thread/exact lifecycle-service grant. Authorization happens before the
 physical spool's exclusive publication barrier; no RPC may run under that lock.
 These verbs are the application integration API, not a manual recovery recipe.
@@ -118,12 +119,19 @@ actual privilege dialog or service transition has been run by this work.
 Both sides require the protected root-owned, non-writable, no-follow installed
 engine, no ACLs or hardlinks, exact Sirsi signature and the captured engine hash.
 The app also validates its own signed Pantheon identity. A missing, drifted or
-unverified protected engine is unsupported: the app reports the normal signed
-PKG installation/readback prerequisite and never elevates its user-writable
-bundle CLI or a PATH binary. This candidate does not implement a new installer.
+incompatible protected engine refuses authorization. The panel's Check compatible
+Installer action selects the exact running release's normal PKG through the
+existing updater client. It verifies the published digest, Installer signature,
+Gatekeeper/notary assessment, closed one-app replacement metadata and matching
+native helper capability. Open verified Installer consumes that captured
+selection only after a second byte/identity/trust check. Normal macOS Installer
+remains responsible for installation; Recheck installed pair is a separate
+explicit readback. An older incompatible package or DMG drag-only handoff is not
+offered as helper repair. The app never elevates a user-writable bundle CLI or
+PATH substitute.
 
 Only this entry uses local OS-authorized root authority for the closed root
-profile and seven operations. Its controller authorizer rechecks installed
+profile. Its controller authorizer rechecks installed
 engine identity. The existing registered-agent CLI and remote authorization are
 unchanged. Root revalidates closed fields, complete plan/transaction digests and
 restore bytes before invoking the same controller and journal implementation.
@@ -132,6 +140,15 @@ or lost transport after possible launch is outcome unknown, never denial,
 rollback or proof the root child stopped. Consent is consumed once; a frame-owned
 receipt survives view remount. Status and explicit same-transaction recovery are
 available; uncertain no-history observations do not authorize reconfirmation.
+App preview also persists a bounded admission ticket, not a service transition.
+Under the existing selected-service lock each effect checks the complete ticket
+and records running intent before work. Recovery, abort and restore receive
+separate operation tickets. Check result and prevent delayed submission uses
+that same lock to return a matching terminal result or durably fence late
+arrival. Old/empty status cannot clear another outstanding operation. Only a
+verified fence/result with zero lifecycle debt permits fresh preview and consent.
+The app retains the exact public binding and unknown receipt across navigation
+and restart; it never relabels a running-intent result as never-run.
 Abort re-verifies the original alive and cannot run after retirement may begin.
 Restore accepts only the originally approved replacement bytes and signed identity,
 binds the current protected target and parent, retains create-only backup/stage
@@ -149,9 +166,10 @@ still carries its original scope; possession never supplies a missing grant.
 Missing direct authority, disabled/cancelled intent or drift refuses the action.
 Ordinary modern refresh continues using its existing authority selection.
 
-This resolves the held-spool transport dependency in source for an **already
-privileged and registered controller**. It does not provide a missing privileged
-app host, invent a GUI actor/thread or manufacture a rootless registry.
+That direct route resolves the held-spool dependency for the registered-agent
+controller. The separate ordinary-app adapter uses only narrow OS-authorized
+local root authority and the protected engine; it does not invent a GUI
+actor/thread, change agent authorization or manufacture a rootless registry.
 
 Journal damage, unknown retirement, publication/permission failure or unmatched
 recovery identity remains explicit recovery debt. Recovery reuses this exact

@@ -26,6 +26,12 @@ func maintenanceOwnedDirectory(t *testing.T) (string, *os.File) {
 	if err := os.Chown(path, os.Getuid(), os.Getgid()); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0700 {
+		t.Fatal("private fixture precondition", info, err)
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)

@@ -8,8 +8,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
-	"strings"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
@@ -26,29 +26,27 @@ func newLegacyAppMaintenanceCmd(factory func(context.Context, setup.LegacyAppReq
 			if err != nil {
 				return err
 			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), 90*time.Second)
+			requestContext, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+			defer stop()
+			ctx, cancel := context.WithTimeout(requestContext, 90*time.Second)
 			defer cancel()
 			reply := setup.LegacyAppReply{Schema: 1, Operation: request.Operation}
 			controller, err := factory(ctx, request)
 			if err == nil {
-				selected, selectErr := request.Arguments()
-				err = selectErr
-				if err == nil {
-					inner := newLegacyMaintenanceCmd(controller)
-					inner.SilenceUsage = true
-					inner.SilenceErrors = true
-					var output legacyAppOutput
-					inner.SetContext(ctx)
-					inner.SetArgs(selected)
-					inner.SetIn(strings.NewReader(request.RestoreJSON))
-					inner.SetOut(&output)
-					inner.SetErr(io.Discard)
-					err = inner.Execute()
-					if output.Len() > 0 {
-						if json.Valid(output.Bytes()) {
+				app, ok := controller.(interface {
+					RunLegacyAppMaintenance(context.Context, setup.LegacyAppRequest) (any, error)
+				})
+				if !ok {
+					err = errors.New("maintenance app: durable operation admission unavailable")
+				} else {
+					var result any
+					result, err = app.RunLegacyAppMaintenance(ctx, request)
+					if result != nil {
+						var output legacyAppOutput
+						encodeErr := json.NewEncoder(&output).Encode(result)
+						err = errors.Join(err, encodeErr)
+						if encodeErr == nil {
 							reply.BodyBase64 = base64.StdEncoding.EncodeToString(output.Bytes())
-						} else {
-							err = errors.Join(err, errors.New("maintenance app: controller reply unverified; read status"))
 						}
 					}
 				}

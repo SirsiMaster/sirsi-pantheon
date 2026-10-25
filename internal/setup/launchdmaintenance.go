@@ -93,6 +93,9 @@ type maintenanceReady struct {
 // All effects are instance-local. Only the exact root backend implements this
 // operation; it is deliberately separate from ordinary/strict Refresh.
 type maintenanceOperations struct {
+	appLoad           func() (MaintenanceAppAdmission, error)
+	appPersist        func(MaintenanceAppAdmission, MaintenanceAppAdmission) error
+	appSync           func(MaintenanceAppAdmission) error
 	preview           func(context.Context, string) (MaintenancePlan, error)
 	lock              func(func() error) error
 	load              func() (MaintenanceStatus, error)
@@ -169,6 +172,15 @@ func (c ServiceController) ConfirmLegacyMaintenance(ctx context.Context, p Maint
 	}
 	var result MaintenanceStatus
 	err = d.lock(func() error {
+		var callErr error
+		result, callErr = confirmLegacyMaintenanceLocked(ctx, d, p, "")
+		return callErr
+	})
+	return result, err
+}
+
+func confirmLegacyMaintenanceLocked(ctx context.Context, d maintenanceOperations, p MaintenancePlan, transaction string) (result MaintenanceStatus, err error) {
+	err = func() error {
 		old, err := d.load()
 		if err != nil {
 			return err
@@ -194,11 +206,16 @@ func (c ServiceController) ConfirmLegacyMaintenance(ctx context.Context, p Maint
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		var nonce [16]byte
-		if _, err := rand.Read(nonce[:]); err != nil {
-			return err
+		if transaction == "" {
+			var nonce [16]byte
+			if _, err := rand.Read(nonce[:]); err != nil {
+				return err
+			}
+			transaction = hex.EncodeToString(nonce[:])
+		} else if !appHex(transaction, 16) {
+			return errors.New("legacy maintenance: invalid controller transaction nonce")
 		}
-		result = MaintenanceStatus{Schema: 1, ID: hex.EncodeToString(nonce[:]), Revision: old.Revision,
+		result = MaintenanceStatus{Schema: 1, ID: transaction, Revision: old.Revision,
 			Plan: p, OldOutcomes: "unknown_not_certified_drained"}
 		if d.prepare != nil {
 			if err := d.prepare(result); err != nil {
@@ -213,7 +230,7 @@ func (c ServiceController) ConfirmLegacyMaintenance(ctx context.Context, p Maint
 			return err
 		}
 		return runLegacyMaintenance(ctx, d, &result, false)
-	})
+	}()
 	return result, err
 }
 
@@ -224,6 +241,15 @@ func (c ServiceController) RecoverLegacyMaintenance(ctx context.Context, id, dig
 	}
 	var result MaintenanceStatus
 	err = d.lock(func() error {
+		var callErr error
+		result, callErr = recoverLegacyMaintenanceLocked(ctx, d, id, digest)
+		return callErr
+	})
+	return result, err
+}
+
+func recoverLegacyMaintenanceLocked(ctx context.Context, d maintenanceOperations, id, digest string) (result MaintenanceStatus, err error) {
+	err = func() error {
 		var err error
 		if d.loadRecovery != nil {
 			result, err = d.loadRecovery(id, digest)
@@ -249,7 +275,7 @@ func (c ServiceController) RecoverLegacyMaintenance(ctx context.Context, id, dig
 			return errors.New("legacy maintenance: use exact abort to finish pre-retirement cleanup")
 		}
 		return runLegacyMaintenance(ctx, d, &result, true)
-	})
+	}()
 	return result, err
 }
 
@@ -274,6 +300,15 @@ func (c ServiceController) AbortLegacyMaintenance(ctx context.Context, id, diges
 	}
 	var status MaintenanceStatus
 	err = d.lock(func() error {
+		var callErr error
+		status, callErr = abortLegacyMaintenanceLocked(ctx, d, id, digest)
+		return callErr
+	})
+	return status, err
+}
+
+func abortLegacyMaintenanceLocked(ctx context.Context, d maintenanceOperations, id, digest string) (status MaintenanceStatus, err error) {
+	err = func() error {
 		var err error
 		if d.loadRecovery != nil {
 			status, err = d.loadRecovery(id, digest)
@@ -314,7 +349,7 @@ func (c ServiceController) AbortLegacyMaintenance(ctx context.Context, id, diges
 			}
 			return d.abortFinish(ctx, status)
 		})
-	})
+	}()
 	return status, err
 }
 

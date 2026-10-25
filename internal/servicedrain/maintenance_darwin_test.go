@@ -12,6 +12,9 @@ func TestMaintenanceEndpointCannotBypassModernOrOccupiedPath(t *testing.T) {
 	for _, kind := range []string{"absent", "occupied", "symlink", "loose_parent"} {
 		t.Run(kind, func(t *testing.T) {
 			parent := t.TempDir()
+			if err := os.Chmod(parent, 0700); err != nil {
+				t.Fatal(err)
+			}
 			path := filepath.Join(parent, "selected.sock")
 			switch kind {
 			case "occupied":

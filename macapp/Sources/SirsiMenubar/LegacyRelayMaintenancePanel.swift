@@ -14,6 +14,8 @@ struct LegacyRelayMaintenancePanel: View {
     @State private var pickingRestore=false
     @State private var confirmRestore=false
     @State private var approvedRestore: LegacyRelayMaintenanceModel.RestoreApproval?
+    @State private var approvedInstaller: LegacyRelayMaintenanceModel.InstallerApproval?
+    @State private var confirmInstaller=false
 
     init(directory:URL,model:LegacyRelayMaintenanceModel){self.directory=directory;self.model=model}
 
@@ -23,10 +25,19 @@ struct LegacyRelayMaintenancePanel: View {
                 Text("Optional fallback for a recognized legacy root relay. Pantheon stays unprivileged; macOS asks permission for only the reviewed operation using the protected installed engine. Producer-covered maintenance remains separate.")
                     .sirsiFont(.caption).foregroundStyle(.secondary)
                 HStack {
-                    Button("Choose retained legacy payload"){picker=true}.buttonStyle(.bordered)
-                    Button("Review"){Task{await model.review()}}.buttonStyle(.bordered).disabled(model.selectedFile == nil||model.outcomeUnknown)
+                    Button("Choose retained legacy payload"){picker=true}.buttonStyle(.bordered).disabled(model.busy)
+                    Button("Review"){Task{await model.review()}}.buttonStyle(.bordered).disabled(model.busy||model.selectedFile == nil||model.outcomeUnknown||model.lifecycleDebt)
                     Button("Read current transaction"){Task{await model.readStatus()}}.buttonStyle(.bordered)
+                }.disabled(snapshotMode)
+                if let notice=model.statusNotice {Text(notice).sirsiFont(.caption).foregroundStyle(.secondary)}
+                HStack {
+                    Button("Check compatible Installer"){Task{await model.prepareInstaller()}}.buttonStyle(.bordered)
+                    Button("Recheck installed pair"){Task{await model.recheckInstalledPair()}}.buttonStyle(.bordered)
                 }.disabled(model.busy||snapshotMode)
+                if let installer=model.installer {
+                    Text("Verified normal PKG · \(installer.release)").sirsiFont(.caption)
+                    Button("Open verified Installer"){approvedInstaller=installer;confirmInstaller=true}.buttonStyle(.bordered).disabled(model.busy||snapshotMode)
+                }
                 if let file=model.selectedFile{Text(file.path).sirsiFont(.caption).textSelection(.enabled)}
                 if let plan=model.preview {
                     Text("Selected root relay · PID \(plan.original.pid) · \(plan.original.started)").sirsiFont(.caption)
@@ -40,7 +51,7 @@ struct LegacyRelayMaintenancePanel: View {
                         Button("Resume activation"){select("recover",transaction)}.buttonStyle(.bordered)
                         if ["prepared","abort_requested","aborted"].contains(transaction.phase){Button("Abort preparation"){select("abort",transaction)}.buttonStyle(.bordered)}
                         Button("Review replacement restore"){pickingRestore=true;picker=true}.buttonStyle(.bordered)
-                    }.disabled(model.busy||snapshotMode)
+                    }.disabled(model.busy||model.outcomeUnknown||snapshotMode)
                     if let restore=model.restoreApproval {
                         Text("Only the originally approved signed replacement will be restored. No legacy code or retained envelope will be replayed.").sirsiFont(.caption).foregroundStyle(.secondary)
                         Button("Confirm reviewed replacement restore"){approvedRestore=restore;confirmRestore=true}.buttonStyle(.bordered).disabled(model.busy||snapshotMode)
@@ -49,6 +60,15 @@ struct LegacyRelayMaintenancePanel: View {
                 if model.busy{HStack{ProgressView().controlSize(.small);Text("Inspecting selected maintenance state…").sirsiFont(.caption);Button("Cancel request"){model.cancelInvocation()}.buttonStyle(.bordered)}}
                 if let error=model.error{Text(error).sirsiFont(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
                 if model.outcomeUnknown { Text("The previous operation may still have started. Read its transaction before another confirmation; cancellation did not prove rollback.").sirsiFont(.caption).foregroundStyle(.secondary) }
+                if let operation=model.outstanding {
+                    Text("Outstanding \(operation.operation) · \(operation.ticket?.id ?? "unreadable") · generation \(operation.ticket?.generation ?? 0)").sirsiFont(.caption).textSelection(.enabled)
+                    Button("Check result and prevent delayed submission"){_ = model.resolveOutstanding(operation)}.buttonStyle(.bordered).disabled(model.busy||snapshotMode)
+                }
+                if let previous=model.lastResolved {
+                    DisclosureGroup("Retained previous operation receipt"){
+                        Text("\(previous.operation) · \(previous.ticket?.id ?? "unavailable")\n\(previous.receipt?.issue ?? "Matching terminal result or verified fence recorded; inspect current transaction separately.")").sirsiFont(.caption).textSelection(.enabled)
+                    }
+                }
             }.padding(.top,8)
         }
         .fileImporter(isPresented:$picker,allowedContentTypes:[.item],allowsMultipleSelection:false){result in
@@ -62,6 +82,10 @@ struct LegacyRelayMaintenancePanel: View {
             Button("Restore reviewed replacement"){if let approvedRestore{_ = model.restore(approvedRestore)};approvedRestore=nil}
             Button("Cancel",role:.cancel){approvedRestore=nil}
         }message:{Text("Transaction: \(approvedRestore?.transaction.id ?? "unavailable")\nArtifact: \(approvedRestore?.artifact.path ?? "unavailable")\nRestoration: \(approvedRestore?.digest ?? "unavailable")\nNamed backup and stage debt is retained. Service activation is a separate explicit action.")}
+        .confirmationDialog("Open normal signed Installer?",isPresented:$confirmInstaller,titleVisibility:.visible){
+            Button("Open verified Installer"){if let approvedInstaller{_ = model.install(approvedInstaller)};approvedInstaller=nil}
+            Button("Cancel",role:.cancel){approvedInstaller=nil}
+        }message:{Text("Release: \(approvedInstaller?.release ?? "unavailable")\nPackage: \(approvedInstaller?.package ?? "unavailable")\nSHA256: \(approvedInstaller?.digest ?? "unavailable")\nPantheon rechecks the exact package before opening macOS Installer. Installation and a fresh installed-pair check remain separate; no service is restarted.")}
         .confirmationDialog("Interrupt this exact legacy root relay?",isPresented:$confirming,titleVisibility:.visible){
             Button("Confirm maintenance",role:.destructive){if let approved{_ = model.confirm(approved)};approved=nil}
             Button("Cancel",role:.cancel){approved=nil;model.cancelReview()}
@@ -74,5 +98,12 @@ struct LegacyRelayMaintenancePanel: View {
         .onAppear{model.changeDirectory(directory)}
         .onDisappear{approved=nil;approvedRestore=nil}
     }
-    private func select(_ action:String,_ transaction:LegacyRelayTransaction){selectedAction=action;selectedTransaction=transaction;confirmRecovery=true}
+    private func select(_ action:String,_ transaction:LegacyRelayTransaction){
+        Task{
+            await model.reviewAction(action,expected:transaction)
+            if model.actionApproval?.operation==action,model.actionApproval?.transaction==transaction{
+                selectedAction=action;selectedTransaction=transaction;confirmRecovery=true
+            }
+        }
+    }
 }

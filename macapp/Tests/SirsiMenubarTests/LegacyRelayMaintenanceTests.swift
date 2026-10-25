@@ -19,12 +19,13 @@ import XCTest
     }
 
     func testReviewedConfirmationIsOnceAndNavigationCannotRetarget() async throws {
-        let planned = try result(plan()), retained = try result(transaction("bootstrap_requested"),exit:1)
+        let fixture = LegacyRelayFixture()
+        let planned = try fixture.preview(), retained = try fixture.mutation("confirm")
         var calls = [[String]]()
-        let model = LegacyRelayMaintenanceModel(directory: scope) { args, input, _, authorize in
+        let model = LegacyRelayMaintenanceModel(directory: scope, capture: { args, input, _, authorize in
             XCTAssertNil(input); XCTAssertTrue(authorize()); calls.append(args)
             return args[2] == "preview" ? planned : retained
-        }
+        }, storage: fixture.storage)
         model.select(artifact)
         await model.review()
         let approval = try XCTUnwrap(model.confirmation())
@@ -33,17 +34,18 @@ import XCTest
         await task.value
         XCTAssertEqual(model.transaction?.phase,"bootstrap_requested")
         XCTAssertNotNil(model.error)
-        XCTAssertEqual(calls[1],["launchd","legacy-maintenance","confirm","--legacy-payload",artifact.path,"--expected-plan-sha256",digest,"--confirm-maintenance"])
+        XCTAssertEqual(calls[1],["launchd","legacy-maintenance","confirm","--legacy-payload",artifact.path,"--expected-plan-sha256",digest,"--confirm-maintenance"] + (try fixture.ticketArgs("confirm")))
         model.changeDirectory(URL(fileURLWithPath:"/other"))
         XCTAssertNil(model.resume(try XCTUnwrap(model.transaction)))
         XCTAssertEqual(calls.count,2)
     }
 
     func testCancelledObservationDoesNotPublishPlan() async throws {
-        let planned = try result(plan())
-        let model = LegacyRelayMaintenanceModel(directory: scope) { _, _, _, _ in
+        let fixture = LegacyRelayFixture()
+        let planned = try fixture.preview()
+        let model = LegacyRelayMaintenanceModel(directory: scope, capture: { _, _, _, _ in
             withUnsafeCurrentTask { $0?.cancel() }; return planned
-        }
+        }, storage: fixture.storage)
         model.select(artifact)
         let task = Task { @MainActor in await model.review() }
         await task.value
@@ -51,40 +53,50 @@ import XCTest
     }
 
     func testStatusResumeAndAbortUseExactTransactionAndRetainErrorDebt() async throws {
-        let retained = try result(transaction()), failed = try result(transaction("bootstrap_requested"),exit:1)
+        let fixture = LegacyRelayFixture()
+        let retained = try fixture.status()
         var calls = [[String]]()
-        let model = LegacyRelayMaintenanceModel(directory: scope) { args, _, _, authorize in
-            XCTAssertTrue(authorize()); calls.append(args); return args[2] == "status" ? retained : failed
-        }
+        let model = LegacyRelayMaintenanceModel(directory: scope, capture: { args, _, _, authorize in
+            XCTAssertTrue(authorize()); calls.append(args)
+            if args[2] == "status" { return retained }
+            if args[2] == "prepare-operation" { return try! fixture.preview(args[4]) }
+            return try! fixture.mutation(args[2])
+        }, storage: fixture.storage)
         await model.readStatus()
         let expected = try XCTUnwrap(model.transaction)
+        XCTAssertNil(model.abortBeforeRetirement(expected), "Recovery requires a distinct reviewed ticket")
+        await model.reviewAction("abort", expected: expected)
         let abort = try XCTUnwrap(model.abortBeforeRetirement(expected)); await abort.value
-        XCTAssertEqual(calls[1],["launchd","legacy-maintenance","abort","--transaction",expected.id,"--expected-plan-sha256",digest,"--confirm-maintenance"])
+        XCTAssertEqual(calls[2],["launchd","legacy-maintenance","abort","--transaction",expected.id,"--expected-plan-sha256",digest,"--confirm-maintenance"] + (try fixture.ticketArgs("abort")))
         XCTAssertNotNil(model.error)
         XCTAssertNil(model.resume(expected)) // An old consent cannot select the updated transaction.
-        let resume = try XCTUnwrap(model.resume(try XCTUnwrap(model.transaction))); await resume.value
+        let updated = try XCTUnwrap(model.transaction)
+        await model.reviewAction("recover", expected: updated)
+        let resume = try XCTUnwrap(model.resume(updated)); await resume.value
         XCTAssertEqual(calls.last?[2],"recover")
     }
 
     func testRestoreForwardsCapturedPlanOnceWithoutReencoding() async throws {
-        let retained = try result(transaction())
+        let fixture = LegacyRelayFixture()
+        let retained = try fixture.status()
         let restoreDigest = String(repeating:"c",count:64)
         let restore = try result(["transaction": String(repeating:"b",count:32),"revision":1,"maintenance_sha256":digest,
                                   "artifact": artifact.path,"sha256":restoreDigest,"unknown_preserved_field":"exact captured bytes"])
         var captured: String?
         var operations = [String]()
-        let model = LegacyRelayMaintenanceModel(directory: scope) { args, input, _, authorize in
+        let model = LegacyRelayMaintenanceModel(directory: scope, capture: { args, input, _, authorize in
             XCTAssertTrue(authorize()); operations.append(args[2])
             if args[2] == "restore-preview" { return restore }
-            if args[2] == "restore-confirm" { captured=input; XCTAssertEqual(args.suffix(3),["--expected-restore-sha256",restoreDigest,"--confirm-maintenance"]) }
+            if args[2] == "prepare-operation" { XCTAssertEqual(input, String(decoding: restore.stdoutData, as: UTF8.self)); return try! fixture.preview("restore-confirm") }
+            if args[2] == "restore-confirm" { captured=input; XCTAssertEqual(args,["launchd","legacy-maintenance","restore-confirm","--expected-restore-sha256",restoreDigest,"--confirm-maintenance"] + (try! fixture.ticketArgs("restore-confirm"))); return try! fixture.mutation("restore-confirm") }
             return retained
-        }
+        }, storage: fixture.storage)
         await model.readStatus()
         await model.reviewRestore(artifact:artifact,expected:try XCTUnwrap(model.transaction))
         let approval = try XCTUnwrap(model.restoreApproval)
         let task = try XCTUnwrap(model.restore(approval))
         XCTAssertNil(model.restore(approval)); await task.value
         XCTAssertEqual(captured,String(decoding:restore.stdoutData,as:UTF8.self))
-        XCTAssertEqual(operations,["status","restore-preview","restore-confirm"])
+        XCTAssertEqual(operations,["status","restore-preview","prepare-operation","restore-confirm"])
     }
 }
