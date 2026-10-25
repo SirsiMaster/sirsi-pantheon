@@ -67,6 +67,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			snap := collectDashboardStats()
 			return json.Marshal(snap)
 		},
+		VitalsFn:     collectDashboardVitals,
 		NodeStatusFn: collectDashboardNodeStatus,
 		LedgerFn:     collectDashboardLedger,
 		FleetFn:      collectDashboardFleet,
@@ -119,6 +120,16 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	if nStore != nil {
 		nStore.Close()
 	}
+}
+
+// Explicit browser diagnostics use the exact ranked CLI producer. Periodic
+// dashboard stats do not call this; only GET /api/vitals does.
+func collectDashboardVitals() ([]byte, error) {
+	report, err := sampleVitalsReport(false, 5)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(report)
 }
 
 func collectDashboardMaatDecisions(limit int) ([]maat.Decision, error) {

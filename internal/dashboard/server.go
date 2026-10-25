@@ -31,6 +31,9 @@ type Config struct {
 	// StatsFn returns the current system stats as JSON bytes.
 	// The menubar marshals its own StatsSnapshot; we pass it through.
 	StatsFn func() ([]byte, error)
+	// VitalsFn returns the existing ranked CLI vitals contract on explicit reads.
+	// It is never called by periodic stats collection.
+	VitalsFn func() ([]byte, error)
 	// StelePath is the path to the Stele JSONL ledger.
 	// If empty, defaults to ~/.config/ra/stele.jsonl.
 	StelePath string
@@ -179,6 +182,7 @@ func New(cfg Config) *Server {
 
 	// JSON API endpoints
 	mux.HandleFunc("/api/stats", s.apiStats)
+	mux.HandleFunc("/api/vitals", s.apiVitals)
 	mux.HandleFunc("/api/mercury", s.apiMercury)
 	mux.HandleFunc("/api/notifications", s.apiNotifications)
 	mux.HandleFunc("/api/stele", s.apiStele)
