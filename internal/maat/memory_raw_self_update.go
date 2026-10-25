@@ -706,6 +706,10 @@ func validateRawSelfUpdateOutcome(outcome RawSelfUpdateOutcome, attempt RawSelfU
 	if outcome.Schema != MemorySchema || outcome.AttemptID != attempt.ID || outcome.RecordedAtUTC.IsZero() || !validDigest(outcome.ObservationSHA256) || len(outcome.Detail) > 4096 {
 		return errors.New("maat memory: invalid raw self-update outcome identity")
 	}
+	decisionTime, err := rawSelfUpdateDecisionTime(outcome.RecordedAtUTC)
+	if err != nil || outcome.Decision.Time != decisionTime {
+		return errors.New("maat memory: raw self-update decision time does not match its canonical retained outcome time")
+	}
 	switch outcome.Determination {
 	case "not_invoked":
 		if invocationRecorded || outcome.UpdaterReturned || outcome.PostcheckPassed ||
@@ -745,9 +749,38 @@ func rawSelfUpdateOutcomeDecision(attempt RawSelfUpdateAttempt, outcome RawSelfU
 	} else if outcome.Determination == "failed" {
 		after = "raw self-update returned but the exact post-replacement target identity check failed"
 	}
-	return BuildDiagnosticRepairDecision("sirsi self-update", DiagnosticRepair{
+	decision, err := BuildDiagnosticRepairDecision("sirsi self-update", DiagnosticRepair{
 		Check: "binary-drift", Operation: "sirsi self-update --confirm; preview sha256=" + attempt.Manifest.PreviewBinding,
 		Before: attempt.Manifest.PreviewBinding, After: after, Determination: determination,
 		Detail: fmt.Sprintf("attempt=%s determination=%s fact=%s observation_sha256=%s detail=%s", attempt.ID, outcome.Determination, outcome.FactCode, outcome.ObservationSHA256, outcome.Detail),
 	})
+	if err != nil {
+		return Decision{}, err
+	}
+	decision.Time, err = rawSelfUpdateDecisionTime(outcome.RecordedAtUTC)
+	if err != nil {
+		return Decision{}, err
+	}
+	// Host is projection provenance, not an action-manifest field. Preserve the
+	// original journal host on readback instead of resolving the current host
+	// name again; the first write takes the local host from the canonical builder.
+	if outcome.Decision.Host != "" {
+		decision.Host = outcome.Decision.Host
+	}
+	if err := validateDecision(decision); err != nil {
+		return Decision{}, err
+	}
+	return decision, nil
+}
+
+func rawSelfUpdateDecisionTime(recordedAt time.Time) (string, error) {
+	if recordedAt.IsZero() || recordedAt.Location() != time.UTC {
+		return "", errors.New("maat memory: raw self-update outcome time is not canonical UTC")
+	}
+	canonical := recordedAt.UTC().Format(time.RFC3339Nano)
+	parsed, err := time.Parse(time.RFC3339Nano, canonical)
+	if err != nil || parsed.Location() != time.UTC || !parsed.Equal(recordedAt) {
+		return "", errors.New("maat memory: raw self-update outcome time cannot be represented canonically")
+	}
+	return canonical, nil
 }

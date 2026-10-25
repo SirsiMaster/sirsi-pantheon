@@ -115,6 +115,78 @@ func TestRawSelfUpdateAttemptRetainsExactReceiptAndProjectionDebtUntilReadback(t
 	}
 }
 
+func TestRawSelfUpdateTerminalProjectionIsDeterministicAndTimeBound(t *testing.T) {
+	store, manifest, stored := rawSelfUpdateFixture(t)
+	oldNow := binaryUpdateNow
+	now := time.Now().UTC()
+	binaryUpdateNow = func() time.Time { return now }
+	t.Cleanup(func() { binaryUpdateNow = oldNow })
+	attempt, err := store.BeginRawSelfUpdateAttempt(manifest, stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordRawSelfUpdateInvocation(attempt); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	outcome, err := store.RecordRawSelfUpdateOutcome(attempt, true, strings.Repeat("c", 64), "exact target postcheck passed")
+	if err != nil {
+		t.Fatalf("retain terminal outcome and canonical projection: %v", err)
+	}
+	canonicalTime := outcome.RecordedAtUTC.UTC().Format(time.RFC3339Nano)
+	if outcome.Decision.Time != canonicalTime {
+		t.Fatalf("projection time did not bind the retained outcome time: got=%q want=%q", outcome.Decision.Time, canonicalTime)
+	}
+	if err := validateRawSelfUpdateOutcome(outcome, attempt, true); err != nil {
+		t.Fatalf("exact retained outcome failed validation: %v", err)
+	}
+	history, err := store.RawSelfUpdateReconciliations()
+	if err != nil || len(history) != 1 || history[0].Outcome == nil {
+		t.Fatalf("read back retained terminal outcome: entries=%d err=%v", len(history), err)
+	}
+	retained := *history[0].Outcome
+	if digestEqual(retained, outcome) != nil || retained.Decision.Host == "" {
+		t.Fatal("readback changed the original outcome or omitted its captured projection host")
+	}
+
+	now = now.Add(time.Minute)
+	first, err := rawSelfUpdateOutcomeDecision(attempt, retained)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Minute)
+	second, err := rawSelfUpdateOutcomeDecision(attempt, retained)
+	if err != nil || digestEqual(first, second) != nil || digestEqual(second, retained.Decision) != nil {
+		t.Fatalf("same retained facts produced a different terminal projection: err=%v", err)
+	}
+
+	changedTime := retained
+	changedTime.Decision.Time = outcome.RecordedAtUTC.Add(time.Second).Format(time.RFC3339Nano)
+	changedTime.DecisionSHA256, err = digestJSON(changedTime.Decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRawSelfUpdateOutcome(changedTime, attempt, true); err == nil {
+		t.Fatal("a rehashed projection with a time detached from the retained outcome was accepted")
+	}
+
+	changedBody := retained
+	changedBody.Decision.Why += "; changed projection body"
+	changedBody.DecisionSHA256, err = digestJSON(changedBody.Decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRawSelfUpdateOutcome(changedBody, attempt, true); err == nil {
+		t.Fatal("a rehashed projection with a body detached from the retained facts was accepted")
+	}
+
+	nonCanonicalTime := retained
+	nonCanonicalTime.RecordedAtUTC = retained.RecordedAtUTC.In(time.FixedZone("fixture-zero-offset", 0))
+	if err := validateRawSelfUpdateOutcome(nonCanonicalTime, attempt, true); err == nil {
+		t.Fatal("a noncanonical zero-offset location was accepted as retained UTC")
+	}
+}
+
 func TestRawSelfUpdateFilenameScannerAcceptsCanonicalUUIDAndRejectsUnknownNames(t *testing.T) {
 	t.Run("canonical UUID evidence names remain pending", func(t *testing.T) {
 		store, manifest, stored := rawSelfUpdateFixture(t)
