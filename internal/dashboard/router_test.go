@@ -1,11 +1,13 @@
 package dashboard
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -187,9 +189,38 @@ func TestHomeServesTheDashboardAndItsAssets(t *testing.T) {
 	if !strings.Contains(home, "/assets/fabric.js") {
 		t.Fatal("actual Fabric renderer not mounted")
 	}
-	fabricJS, _, fabricCode := body("/assets/fabric.js")
-	if fabricCode != 200 || !strings.Contains(fabricJS, "Messages pending") || !strings.Contains(fabricJS, "Baseline only") {
+	fabricResponse, err := http.Get(ts.URL + "/assets/fabric.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fabricResponse.Body.Close()
+	fabricBytes, err := io.ReadAll(fabricResponse.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fabricResponse.StatusCode != http.StatusOK {
+		t.Fatalf("Fabric asset HTTP status = %d, body = %q", fabricResponse.StatusCode, fabricBytes)
+	}
+	if contentType, cache := fabricResponse.Header.Get("Content-Type"), fabricResponse.Header.Get("Cache-Control"); contentType != "application/javascript; charset=utf-8" || cache != "no-store" {
+		t.Fatalf("Fabric asset headers: Content-Type=%q Cache-Control=%q", contentType, cache)
+	}
+	// Compare the actual HTTP bytes to the production source leaf, not merely
+	// a label from a 404/fallback body or a separately imitated renderer.
+	productionBytes, err := os.ReadFile("ui/fabric.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := sha256.Sum256(fabricBytes), sha256.Sum256(productionBytes); got != want {
+		t.Fatalf("Fabric served byte digest = %x, production source = %x", got, want)
+	}
+	fabricJS := string(fabricBytes)
+	if !strings.Contains(fabricJS, "Messages pending") || !strings.Contains(fabricJS, "Baseline only") {
 		t.Fatal("actual Fabric module missing stream/coverage labels")
+	}
+	for _, path := range []string{"/assets/fabric.js.map", "/assets/Fabric.js", "/assets/fabric.js/other"} {
+		if _, _, status := body(path); status != http.StatusNotFound {
+			t.Errorf("undeclared Fabric asset %q = %d, want 404", path, status)
+		}
 	}
 	css, _, code := body("/assets/tokens.css")
 	if code != 200 || !strings.Contains(css, "--emerald:") || !strings.Contains(css, "prefers-color-scheme: dark") {

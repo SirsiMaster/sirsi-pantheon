@@ -1,3 +1,7 @@
+## Fabric embedded renderer correction
+
+- Embed and serve the exact Fabric JavaScript asset through the existing closed asset route; strengthen actual HTTP status/header/source-byte assertions without removing label checks. Source-only, unrun.
+
 ## Fabric full-detail destination correction
 
 - Keep the existing BackBar and a real ScrollView around same-store full Fabric detail; add the direct compact-action/navigation wrapper regression. Source-only, unrun.

@@ -130,3 +130,16 @@ The direct regression executes the actual compact action with 300 supplied lanes
 checks the concrete BackBar/ScrollView/content wrapper, and uses the existing Nav
 Back action to recover the same origin frame and observation without another read.
 This is authored structural/action coverage; actual scrolling/AX remains Main-owned.
+
+### Embedded web asset correction (b9 actual qualification failure)
+
+`internal/dashboard/ui.go` embeds the real Fabric renderer and serves only its
+exact `/assets/fabric.js` route through the existing serveEmbedded helper, with
+JavaScript UTF-8 MIME and no-store. The actual HTTP fixture now reports missing
+asset status/body directly, verifies response headers and the SHA-256 of served
+bytes against the production source leaf, retains both stream/coverage label
+assertions, and rejects undeclared suffix/case/child asset names.
+
+The b9 failed dashboard row remains failed and unchanged; later gates were unrun.
+This correction is source-only until Main qualification. A real browser readback
+of the served page/modules is required before full Fabric frontend acceptance.
