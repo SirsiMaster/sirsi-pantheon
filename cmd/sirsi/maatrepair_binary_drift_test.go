@@ -684,8 +684,8 @@ func TestMaatBinaryDriftProjectionDebtDoesNotRetryUpdater(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err == nil || !strings.Contains(err.Error(), "terminal projection debt must be reconciled") {
-		t.Fatalf("pending projection debt did not block another confirmed action: %v", err)
+	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err == nil || err.Error() != "Ma'at binary-drift recovery: this exact screen already has a durable repair attempt or receipt; inspect the retained attempt and create a fresh System One observation before another action" {
+		t.Fatalf("durable same-screen claim did not block another confirmed action before projection debt admission: %v", err)
 	}
 	if *updates != 1 {
 		t.Fatalf("projection debt caused automatic updater replay: calls=%d", *updates)
@@ -727,6 +727,13 @@ func TestMaatBinaryDriftProjectionDebtDoesNotRetryUpdater(t *testing.T) {
 	projected, found, err := base.FindByEvidence("diagnostic verified repair", terminalEvidence)
 	if err != nil || !found || projected.OriginEvidence != evidence || projected.Determination != "failed" {
 		t.Fatalf("exact terminal projection was not read back after data-only reconciliation: row=%+v found=%v err=%v", projected, found, err)
+	}
+	maatRepairBinaryDriftReconcile = false
+	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err == nil || err.Error() != "Ma'at binary-drift recovery: this exact screen already has a durable repair attempt or receipt; inspect the retained attempt and create a fresh System One observation before another action" {
+		t.Fatalf("failed terminal finding did not require a fresh System One observation after projection reconciliation: %v", err)
+	}
+	if *updates != 1 {
+		t.Fatalf("terminal projection reconciliation or same-screen refusal replayed updater: calls=%d", *updates)
 	}
 }
 
