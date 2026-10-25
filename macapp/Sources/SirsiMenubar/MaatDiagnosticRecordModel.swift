@@ -133,6 +133,9 @@ import SwiftUI
                 message = "Memory or delivery history changed after review. Inspect before recording; nothing was submitted."; return false
             }
             // A timeout/cancel/unknown append can never become an automatic retry.
+            // Prior success belongs to its old observation, not this invocation.
+            // In particular, a structured refusal may replace observation below.
+            recorded = nil
             deliveryUnknown = true
             unknownRecordID = nil
             guard let result = await read(["maat", "triage", "--confirm", "--json"]) else {

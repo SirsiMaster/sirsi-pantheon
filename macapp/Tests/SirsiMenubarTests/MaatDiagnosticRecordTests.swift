@@ -127,6 +127,37 @@ import XCTest
         XCTAssertEqual(calls.filter{$0.contains("--reconcile-record")},[["maat","triage","--reconcile-record",id,"--confirm","--json"]])
         XCTAssertEqual(calls.filter{$0 == ["maat","triage","--confirm","--json"]}.count,1)
     }
+    func testLaterRefusalOrUnknownReplyCannotReusePriorRecordedLabel() async throws {
+        for lostReply in [false, true] {
+            let status = try reply(ready), noDebt = try reply(empty)
+            var prior = verdict
+            prior["gate"] = "pass"; prior["record_state"] = "recorded_verified"; prior["record_id"] = id
+            prior["snapshot_evidence"] = "sha256:" + id; prior["decision_evidence"] = "sha256:" + id
+            let success = try reply(prior)
+            let refusal = try reply(["schema":"sirsi.maat.diagnostic-record.v1", "record_state":"delivery_unverified",
+                                     "record_id":id, "observation":verdict], exit:1)
+            var submissions = 0
+            let model = MaatDiagnosticRecordModel(uid:501) { args in
+                if args == MaatDiagnosticRecordModel.inspectArguments { return status }
+                if args == MaatDiagnosticRecordModel.pendingArguments { return noDebt }
+                submissions += 1
+                if submissions == 1 { return success }
+                return lostReply ? .init(data:Data(), exitStatus:nil, timedOut:true, launchError:nil) : refusal
+            }
+            await model.inspect()
+            let first = try XCTUnwrap(model.approval(.record))
+            let recorded = await model.confirm(first); XCTAssertTrue(recorded)
+            XCTAssertEqual(model.recorded?.verdict.gate, "pass")
+            await model.inspect()
+            let next = try XCTUnwrap(model.approval(.record))
+            let failed = await model.confirm(next); XCTAssertFalse(failed)
+            XCTAssertEqual(submissions, 2)
+            XCTAssertNil(model.recorded, "Prior success must not label the later invocation as recorded")
+            XCTAssertTrue(model.deliveryUnknown)
+            XCTAssertEqual(model.observation?.gate, lostReply ? "pass" : "changes")
+            XCTAssertNil(model.approval(.record))
+        }
+    }
     func testUnknownReplyThenEmptyInspectionCannotAuthorizeResend() async throws {
         let status=try reply(ready),noDebt=try reply(empty)
         let model=MaatDiagnosticRecordModel(uid:501){args in
