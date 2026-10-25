@@ -1,0 +1,89 @@
+{
+  "work_item_id": "pantheon136-foreign-auth-http-status-cure-20261025",
+  "agent_id": "sirsi-software-admin",
+  "repo": "/private/tmp/ssa-pantheon136-auth-http-cure-20261025",
+  "status": "draft",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "governance",
+      "read_at": "prior implementation session; exact read timestamp not retained",
+      "notes": "Scaffold creation time is not claimed as a fresh canon read."
+    },
+    {
+      "path": "docs/COMMERCIALIZATION_GATE.md",
+      "role": "scope",
+      "read_at": "prior implementation session; exact read timestamp not retained",
+      "notes": "Finite platform-foundation correction, not whole-product acceptance."
+    },
+    {
+      "path": "docs/ARCHITECTURE_DESIGN.md",
+      "role": "architecture",
+      "read_at": "prior implementation session; exact read timestamp not retained",
+      "notes": "Existing authenticated canonical router and transaction preserved."
+    },
+    {
+      "path": "docs/SAFETY_DESIGN.md",
+      "role": "security",
+      "read_at": "prior implementation session; exact read timestamp not retained",
+      "notes": "Foreign-lane guard runs before transaction; no expanded authority."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "portfolio-canon",
+      "read_at": "prior implementation session; exact read timestamp not retained",
+      "notes": "Portfolio identity and product boundaries retained."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "docs/SAFETY_DESIGN.md",
+      "section": "Existing own-lane authorization boundary",
+      "claim": "Foreign ResumeTaskClaim inspect/claim requests are refused before mutation and return HTTP403 instead of500; no whole-application closure is asserted.",
+      "files_changed": ["internal/routerstore/taskresume.go", "internal/routerstore/taskresume_authorization_http_test.go"],
+      "evidence": ["/private/tmp/ssa-pantheon136-auth-http-green.VVlVz6V4", "/private/tmp/ssa-pantheon136-auth-release-train.SRBO7Lqe/main-ci-terminal.json", "/private/tmp/ssa-pantheon136-eff2-promotion.FeP5xawC/summary.json"]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Finite typed403 correction is in actual public136 eff2/tree88bc; public artifacts unchanged. Whole-product acceptance remains open.",
+    "design": "Same pretransaction own-lane guard now wraps existing ErrLaneScope. Independent source/merge preservation reviews retained; no new RPC authority.",
+    "technical": "Causal actual four500 failures on old4ab; corrected fullrouterstore718 named passes each normal/race with8 explicit skips; exact protected PR/main CI all4success including PostgreSQL. Do not infer unshortened whole-repository race execution from protected CI's -short invocation.",
+    "operational": "Actual finite cloud canary own/old121/foreign403/ownclosePASS; exact image promoted to100 percent, previous49 rollback retained. Three installed136 clients executed ownread/inspectPASS; older loaded host roles remain separate.",
+    "narrative": "StackLab490 merged6880/tree22c081; canonical main and Desktop receipt bytes b9bbdbd4 match; retained SSA native Workspace semantic readback. Finite release library, not all original PRD rows."
+  },
+  "verification": [
+    {
+      "name": "build",
+      "command": "go build ./cmd/sirsi/",
+      "status": "passed",
+      "evidence": "Exact eff2 mainCI40159639134 both build jobs success; actual signed/notarized paired build and source identity retained in public136 publication receipt58be78c0."
+    },
+    {
+      "name": "vet",
+      "command": "go vet ./...",
+      "status": "passed",
+      "evidence": "Original native668d qualification go vet and protected exact-source push recorded in task evidence links; no new rerun claimed."
+    },
+    {
+      "name": "lint",
+      "command": "golangci-lint run ./...",
+      "status": "passed",
+      "evidence": "Exact eff2 mainCI40159639134 Lint job success."
+    },
+    {
+      "name": "test-race",
+      "command": "go test ./... -race",
+      "status": "passed-short-and-full-affected-package",
+      "evidence": "Actual whole-repository protected command used -v -race -short -coverprofile=coverage.out; actual full affected routerstore package normal/race qualification retained. Exact unshortened whole-repository command is NOT claimed by this draft."
+    }
+  ],
+  "working_status": {
+    "environment": "Public136 exact eff2 cloud image and signed Mac package, single canonical router",
+    "how_verified": "Retained real cloud execution, exact promotion receipt and independently read/hashmatched three-Mac installed-client milestone da468e82",
+    "observed_result": "Finite cloud foreign refusal403 plus own/old-client success and cleanup; host own read-only inspection success. No loaded-role/M5-off/whole-product completion.",
+    "verified_at": "2026-10-25T05:29:00Z"
+  },
+  "handoffs": [],
+  "blockers": []
+}
