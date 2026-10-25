@@ -45,6 +45,7 @@ type Asset struct {
 	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
 	Size               int64  `json:"size"`
+	Digest             string `json:"digest,omitempty"`
 }
 
 // Advisory represents a post-release notice (roadblocks, critical bugs, etc).
