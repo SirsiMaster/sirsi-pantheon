@@ -249,6 +249,10 @@ func (s *Store) pendingLivenessWatchAttemptLocked() (LivenessWatchAttempt, error
 	outcomes := map[string]LivenessWatchOutcome{}
 	for _, name := range names {
 		switch {
+		case isDiagnosticRecordLeaf(name):
+			if err := s.validateDiagnosticRecordLeafLocked(name); err != nil {
+				return LivenessWatchAttempt{}, err
+			}
 		case strings.HasSuffix(name, ".started.json"):
 			id := strings.TrimSuffix(name, ".started.json")
 			if !validUUID(id) {
@@ -406,6 +410,10 @@ func (s *Store) pendingLivenessWatchProjectionsLocked() ([]LivenessWatchProjecti
 	receipts := make(map[string]LivenessWatchProjectionReceipt)
 	for _, name := range names {
 		switch {
+		case isDiagnosticRecordLeaf(name):
+			if err := s.validateDiagnosticRecordLeafLocked(name); err != nil {
+				return nil, err
+			}
 		case strings.HasSuffix(name, ".projection.json"):
 			id := strings.TrimSuffix(name, ".projection.json")
 			if !validUUID(id) {

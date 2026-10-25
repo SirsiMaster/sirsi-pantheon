@@ -1,5 +1,16 @@
 # Traceability matrix — Ma'at
 
+O7 local confirmed diagnostics record: `cmd/sirsi/maattriage{,_memory}.go` uses
+`diagnostic_observation.go` and `memory_diagnostic.go` for bounded coded privacy,
+exact full-manifest receipt/intent, existing `RecordSystemOne` through atomic
+append-once, strict readback and data-only debt reconciliation. Shared liveness
+history recognizes and validates only the new closed diagnostic filenames.
+`memory_diagnostic_test.go` and `maattriage_memory_test.go` author causal actual
+entry/file-journal coverage; existing triage tests retain closed repair/gate
+assertions with explicit provenance/private-store preconditions. Source only;
+no execution, export authority, native installed or full-O7 completion claim.
+See [O7 scope and upgrade](DIAGNOSTIC_RECORD_V1.md).
+
 G02 prepared-receipt reachability: `memory_prepared_receipts.go` and
 `maatmemory_prepared.go` extend the existing memory inspector with a verified
 complete historical reader and exact intent/store target before any Casebook

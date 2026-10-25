@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -33,7 +35,7 @@ func TestMaatHostV1WarningRepairsRemainDeterministicWithoutCalibration(t *testin
 			if got := guard.ResolutionFor(finding); got != tc.route {
 				t.Fatalf("fixture route=%q want=%q", got, tc.route)
 			}
-			report := &guard.DoctorReport{Score: 92, Findings: []guard.DiagnosticFinding{finding}}
+			report := &guard.DoctorReport{Timestamp: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC), Score: 92, Findings: []guard.DiagnosticFinding{finding}}
 			s, _, err := maatHostSystemOneScreen(report, "fixture-host", 0)
 			if err != nil {
 				t.Fatal(err)
@@ -62,7 +64,7 @@ func TestMaatHostSystemOneScreenMapsLiveDiagnosticsToClosedEvidence(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if screen.Subject.Kind != "host" || screen.Subject.Repo != "m5" || !strings.HasPrefix(evidence, "diagnostic:sha256=") {
+	if screen.Subject.Kind != "host" || !strings.HasPrefix(screen.Subject.Repo, "local-host-") || !strings.HasPrefix(evidence, "diagnostic:sha256=") {
 		t.Fatalf("screen identity = %#v, evidence = %q", screen.Subject, evidence)
 	}
 	if len(screen.Findings) != 2 || screen.Findings[0].Severity != "block" || !strings.Contains(screen.Findings[0].FixHint, "Level 3") {
@@ -89,16 +91,16 @@ func TestMaatHostSystemOneScreenMapsKnownHostRepairsToClosedActions(t *testing.T
 	}
 	repairs := map[string]string{}
 	for _, finding := range screen.Findings {
-		repairs[finding.Claim] = finding.RepairID
+		repairs[finding.ID] = finding.RepairID
 	}
-	if repairs["managed labels are disabled"] != maat.SystemOneRepairLaunchdDisabled {
-		t.Fatalf("disabled override repair = %q, want closed Ma'at repair", repairs["managed labels are disabled"])
+	if repairs[maat.CanonicalHostFindingID(maatRepairLaunchdDisabledCheck)] != maat.SystemOneRepairLaunchdDisabled {
+		t.Fatalf("disabled override repair = %q, want closed Ma'at repair", repairs[maat.CanonicalHostFindingID(maatRepairLaunchdDisabledCheck)])
 	}
-	if repairs["liveness watch is absent"] != maat.SystemOneRepairLivenessWatch {
-		t.Fatalf("liveness repair = %q, want closed Ma'at repair", repairs["liveness watch is absent"])
+	if repairs[maat.CanonicalHostFindingID(maatRepairLivenessWatchCheck)] != maat.SystemOneRepairLivenessWatch {
+		t.Fatalf("liveness repair = %q, want closed Ma'at repair", repairs[maat.CanonicalHostFindingID(maatRepairLivenessWatchCheck)])
 	}
-	if repairs["disk is full"] != "" {
-		t.Fatalf("generic doctor Fix became executable repair id %q", repairs["disk is full"])
+	if repairs[maat.CanonicalHostFindingID("Disk Space")] != "" {
+		t.Fatalf("generic doctor Fix became executable repair id %q", repairs[maat.CanonicalHostFindingID("Disk Space")])
 	}
 }
 
@@ -112,15 +114,23 @@ func TestMaatHostSystemOneScreenRejectsMissingAuthority(t *testing.T) {
 }
 
 func TestMaatTriageRecordsOnlyAfterConfirmation(t *testing.T) {
+	home := t.TempDir()
+	if err := os.Chmod(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	if _, err := maat.InitializeDefaultStore(); err != nil {
+		t.Fatal(err)
+	}
 	oldFactory, oldRead, oldHost, oldConfirm, oldJSON, oldMaatJSON := newMaatDecisionJournal, maatTriageReadDiagnosis, maatTriageHostname, maatTriageConfirm, JsonOutput, maatJSON
 	t.Cleanup(func() {
 		newMaatDecisionJournal, maatTriageReadDiagnosis, maatTriageHostname = oldFactory, oldRead, oldHost
 		maatTriageConfirm, JsonOutput, maatJSON = oldConfirm, oldJSON, oldMaatJSON
 	})
-	journal := &maatTestJournal{}
+	journal := &maat.FileDecisionJournal{Path: filepath.Join(home, "owned-diagnostics.jsonl")}
 	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return journal, nil }
 	maatTriageReadDiagnosis = func() (*guard.DoctorReport, error) {
-		return &guard.DoctorReport{Timestamp: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC), Score: 91, Findings: []guard.DiagnosticFinding{{Check: "RAM Pressure", Severity: guard.SeverityOK, Message: "healthy"}}}, nil
+		return &guard.DoctorReport{Timestamp: time.Now().UTC(), Score: 91, Findings: []guard.DiagnosticFinding{{Check: "RAM Pressure", Severity: guard.SeverityOK, Message: "healthy"}}}, nil
 	}
 	maatTriageHostname = func() (string, error) { return "m5", nil }
 	JsonOutput, maatJSON = false, false
@@ -129,15 +139,15 @@ func TestMaatTriageRecordsOnlyAfterConfirmation(t *testing.T) {
 	if err := maatTriageCmd.RunE(maatTriageCmd, nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(journal.decisions) != 0 {
-		t.Fatalf("preview wrote decisions: %#v", journal.decisions)
+	if decisions, err := journal.Recent(100); err != nil || len(decisions) != 0 {
+		t.Fatalf("preview wrote decisions: %#v %v", decisions, err)
 	}
 
 	maatTriageConfirm = true
 	if err := maatTriageCmd.RunE(maatTriageCmd, nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(journal.decisions) != 1 || journal.decisions[0].SystemOne == nil || journal.decisions[0].SystemOne.Subject.Kind != "host" {
-		t.Fatalf("recorded decisions = %#v", journal.decisions)
+	if decisions, err := journal.Recent(100); err != nil || len(decisions) != 1 || decisions[0].SystemOne == nil || decisions[0].SystemOne.Subject.Kind != "host" || !strings.HasPrefix(decisions[0].OriginEvidence, "maat-diagnostic-record:") {
+		t.Fatalf("recorded decisions = %#v %v", decisions, err)
 	}
 }

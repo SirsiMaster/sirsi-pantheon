@@ -1,12 +1,8 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -32,14 +28,17 @@ var maatTriageCmd = &cobra.Command{
 	Short: "Observe this Mac and prepare a Ma'at System One health screen",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if maatTriageInspectRecords || maatTriageReconcileRecord != "" {
+			return inspectOrReconcileMaatDiagnostic()
+		}
 		started := time.Now()
 		report, err := maatTriageReadDiagnosis()
 		if err != nil {
-			return fmt.Errorf("Ma'at System One: observe this Mac: %w", err)
+			return fmt.Errorf("Ma'at System One: local diagnostic observation is unavailable")
 		}
 		host, err := maatTriageHostname()
 		if err != nil {
-			return fmt.Errorf("Ma'at System One: resolve local host identity: %w", err)
+			return fmt.Errorf("Ma'at System One: local host provenance is unavailable")
 		}
 		screen, snapshotHash, err := maatHostSystemOneScreen(report, host, time.Since(started).Milliseconds())
 		if err != nil {
@@ -51,28 +50,25 @@ var maatTriageCmd = &cobra.Command{
 		}
 
 		if !maatTriageConfirm {
-			if JsonOutput || maatJSON {
-				return emitJSON(verdict)
+			status := maat.InspectDefaultStore()
+			provenance := "fresh"
+			observation, obsErr := maatDiagnosticObservation(report, host)
+			if obsErr != nil || observation.ValidateFresh() != nil {
+				provenance = "unknown"
 			}
-			return renderMaatTriage(verdict, snapshotHash, "preview", "Ma'at observed this Mac but did not write the Casebook. Review the deterministic screen, then confirm recording.", "")
+			if JsonOutput || maatJSON {
+				return emitJSON(struct {
+					maat.MaatVerdict
+					MemoryState     maat.DefaultStoreState `json:"memory_state"`
+					Provenance      string                 `json:"diagnostic_provenance"`
+					MemoryPreflight string                 `json:"memory_preflight"`
+					Recorded        bool                   `json:"recorded"`
+				}{verdict, status.State, provenance, "not_performed", false})
+			}
+			return renderMaatTriage(verdict, snapshotHash, "preview", fmt.Sprintf("Local observation only; provenance %s, memory store %s. No Casebook record or memory admission was performed. A confirmed record requires a fresh scoped preflight.", provenance, status.State), "")
 		}
 
-		journal, err := newMaatDecisionJournal()
-		if err != nil {
-			return fmt.Errorf("Ma'at System One: open local Casebook: %w", err)
-		}
-		decision, err := maat.RecordSystemOne(journal, "sirsi maat triage", verdict)
-		if err != nil {
-			return fmt.Errorf("Ma'at System One: retain local health screen: %w", err)
-		}
-		if JsonOutput || maatJSON {
-			return emitJSON(struct {
-				maat.MaatVerdict
-				SnapshotEvidence string `json:"snapshot_evidence"`
-				DecisionEvidence string `json:"decision_evidence"`
-			}{MaatVerdict: verdict, SnapshotEvidence: snapshotHash, DecisionEvidence: decision.Evidence})
-		}
-		return renderMaatTriage(verdict, snapshotHash, string(verdict.Gate), systemOneSummary(verdict), decision.Evidence)
+		return recordMaatDiagnostic(report, host, verdict, snapshotHash)
 	},
 }
 
@@ -97,81 +93,31 @@ func renderMaatTriage(verdict maat.MaatVerdict, snapshotHash, status, summary, d
 	} else {
 		result.NextActions = []output.NextAction{{
 			Label: "Record this screen", Command: "sirsi maat triage --confirm",
-			Description: "Write this exact local observation to Ma'at Casebook after you review its deterministic gate.",
+			Description: "Observe again and request one memory-preflight-bound local record; no prior preview is reused as authority.",
 		}}
 	}
 	result.Render()
 	return nil
 }
 
-func maatHostSystemOneScreen(report *guard.DoctorReport, host string, latencyMS int64) (maat.SystemOneScreen, string, error) {
-	if report == nil {
-		return maat.SystemOneScreen{}, "", fmt.Errorf("Ma'at System One: diagnostic returned no report")
-	}
-	host = strings.TrimSpace(host)
-	if host == "" {
-		return maat.SystemOneScreen{}, "", fmt.Errorf("Ma'at System One: local host identity is empty")
-	}
-	raw, err := json.Marshal(report)
+func maatHostSystemOneScreen(report *guard.DoctorReport, host string, _ int64) (maat.SystemOneScreen, string, error) {
+	observation, err := maatDiagnosticObservation(report, host)
 	if err != nil {
-		return maat.SystemOneScreen{}, "", fmt.Errorf("Ma'at System One: hash local diagnostic: %w", err)
+		return maat.SystemOneScreen{}, "", err
 	}
-	sum := sha256.Sum256(raw)
-	snapshotHash := "diagnostic:sha256=" + hex.EncodeToString(sum[:])
-	findings := make([]maat.ScreenFinding, 0)
-	for _, finding := range report.Findings {
-		if finding.Severity < guard.SeverityWarn {
-			continue
-		}
-		severity := "major"
-		if finding.Severity >= guard.SeverityCritical {
-			severity = "block"
-		}
-		resolution := guard.ResolutionFor(finding)
-		fixHint := "Level 1: re-run this exact observation after conditions change. Level 2: record a Ma'at owner review. Level 3: accept an evidence-bound owner conclusion in Casebook."
-		if finding.Check == maatRepairBinaryDriftCheck && resolution == guard.ResolutionRepair {
-			fixHint = "Level 1: review Ma'at's fresh Homebrew-only updater preview in Casebook. Level 2: confirm the exact supported update; unmanaged or changed targets are refused. Level 3: inspect the fresh diagnostic and retained repair result."
-		} else if finding.Fix != "" {
-			fixHint = "Level 1: " + finding.Fix + ". Level 2: record a Ma'at owner review if the bounded repair cannot resolve it. Level 3: accept an evidence-bound owner conclusion in Casebook."
-		}
-		repairID := ""
-		// This maps exact doctor findings to exact Ma'at-owned recoveries. It
-		// does not make doctor.Fix executable and it does not expose a generic
-		// repair field to imported System One evidence.
-		if resolution == guard.ResolutionRepair {
-			switch finding.Check {
-			case maatRepairLaunchdDisabledCheck:
-				repairID = maat.SystemOneRepairLaunchdDisabled
-			case maatRepairLivenessWatchCheck:
-				repairID = maat.SystemOneRepairLivenessWatch
-			case "binary-drift":
-				repairID = maat.SystemOneRepairBinaryDrift
-			}
-		}
-		findings = append(findings, maat.ScreenFinding{
-			ID: maat.CanonicalHostFindingID(finding.Check), Severity: severity, Category: "host-health",
-			Claim: finding.Message, Evidence: snapshotHash + ":" + stableMaatFindingID(finding.Check), Confidence: 1,
-			FixHint: fixHint, RepairID: repairID,
-		})
+	verdict, err := observation.Verdict()
+	if err != nil {
+		return maat.SystemOneScreen{}, "", err
 	}
-	if latencyMS < 0 {
-		latencyMS = 0
-	}
-	return maat.SystemOneScreen{
-		Subject:       maat.VerdictSubject{Kind: "host", Repo: host, Ref: "diagnostic", HeadSHA: hex.EncodeToString(sum[:])},
-		FeatherWeight: report.Score, Confidence: 1, Findings: findings,
-		Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "diagnostic observation", Passed: true, Detail: "one complete local doctor report was hashed before screening"}}},
-		Model: maat.ModelStamp{Provider: "maat-local:deterministic", Version: "v1", Local: true, LatencyMS: int(latencyMS)},
-	}, snapshotHash, nil
-}
-
-func stableMaatFindingID(check string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(check)))
-	return hex.EncodeToString(sum[:6])
+	// Only bounded status codes enter the screen; producer prose stays local.
+	return maat.SystemOneScreen{Subject: verdict.Subject, FeatherWeight: verdict.FeatherWeight, Confidence: verdict.Confidence,
+		Findings: verdict.Findings, Floor: verdict.Floor, Model: verdict.Model}, "diagnostic:sha256=" + observation.SourceSHA256, nil
 }
 
 func init() {
 	maatTriageCmd.Flags().BoolVar(&maatTriageConfirm, "confirm", false, "Record the exact local health screen in Ma'at Casebook")
 	maatTriageCmd.Flags().BoolVar(&maatJSON, "json", false, "Output the typed System One screen as JSON")
+	maatTriageCmd.Flags().BoolVar(&maatTriageInspectRecords, "inspect-records", false, "read pending diagnostic record identities without re-observation or resend")
+	maatTriageCmd.Flags().StringVar(&maatTriageReconcileRecord, "reconcile-record", "", "confirm data-only readback of this exact pending diagnostic record; never append")
 	maatCmd.AddCommand(maatTriageCmd)
 }
