@@ -122,19 +122,11 @@ async function inspectMemory(){
  finally{state.memoryBusy=false;if(state.view==='host')render()}
 }
 function vHost(d){
-<<<<<<< HEAD
- var st=state.stats||{},s=d.swap;
- var ram=st.ram_percent!=null?Math.round(st.ram_percent):null;
- return (state.hostErr?'<p class="stale-banner">Host refresh failed · '+esc(state.hostErr)+'</p>':'')+'<div class="grid g2">'+
- '<div class="card kpi with-ring">'+ring(ram||0,ram>85?'var(--danger)':ram>70?'var(--warn)':'var(--emerald)')+'<div><h2>Memory</h2><div class="v">'+(ram==null?'—':ram+'%')+'</div><div class="l">'+(st.used_ram?Math.round(st.used_ram/1073741824*10)/10+' GB used of '+Math.round(st.total_ram/1073741824)+' GB':'')+'</div></div></div>'+
- '<div class="card"><h2>Swap hygiene</h2>'+(s?'<div style="font-size:24px;font-weight:700;letter-spacing:-.02em">'+esc(s.verdict.replace('-',' '))+'</div><p class="sub">'+Math.round(s.used_mib)+' of '+Math.round(s.total_mib)+' MiB allocated · '+s.free_pct+'% free · paging delta '+(s.delta_pages<0?'not measurable yet':s.delta_pages+' pages')+'</p><p style="margin-top:12px">Correctness-only diagnosis: <b>'+(s.correctness_only_ok==null?'unknown':s.correctness_only_ok?'eligible':'not eligible')+'</b><br>Release-timing qualification: <b>'+(s.release_timing_ok==null?'unknown':s.release_timing_ok?'eligible':'not eligible')+'</b></p>'+(s.restart_proposed?'<p style="color:var(--danger);margin-top:12px"><b>A coordinated restart is proposed</b> for the owner and workload owners. Nothing was restarted.</p>':'')+'<p class="sub" style="margin-top:12px">Sampled '+rel(s.at)+'. Allocation is not paging: the verdict comes from swap movement between samples.</p>':'<p class="sub">No receipt yet. Run <span class="mono">sirsi swap-hygiene</span>.</p>')+'</div></div>'+memoryDiagnostics();
-=======
  var s=d.swap,h=state.fleet&&state.fleet.health;
  var ram=h&&h.ram_pct!=null?h.ram_pct:null;
  return fabricReceipt()+'<div class="grid g2">'+
  '<div class="card"><h2>Host facts — canonical Fabric observation</h2><p>RAM availability complement: '+(ram==null?'Unavailable':esc(ram)+'%')+'</p><p>Capacity: '+(h&&h.total_ram!=null?esc(h.total_ram)+' bytes':'Unavailable')+' · CPU cores: '+(h&&h.cpu_cores!=null?esc(h.cpu_cores):'Unavailable')+'</p><p>Swap: '+(h&&h.swap!=null?esc(h.swap)+' bytes':'Unavailable')+' · Engine session: '+esc(h&&h.engine||'unknown')+' · '+esc(h&&h.engine_state||'unavailable')+' (not readiness proof)</p><p>Fabric observed '+esc(state.fleet&&state.fleet.generated_at||'Unavailable')+'</p></div>'+
- '<div class="card"><h2>Swap hygiene — retained separate receipt</h2>'+(s?'<div style="font-size:24px;font-weight:700;letter-spacing:-.02em">'+esc(s.verdict.replace('-',' '))+'</div><p class="sub">'+Math.round(s.used_mib)+' of '+Math.round(s.total_mib)+' MiB allocated · '+s.free_pct+'% free · paging delta '+(s.delta_pages<0?'not measurable yet':s.delta_pages+' pages')+'</p><p style="margin-top:12px">Correctness-only diagnosis: <b>'+(s.correctness_only_ok==null?'unknown':s.correctness_only_ok?'eligible':'not eligible')+'</b><br>Release-timing qualification: <b>'+(s.release_timing_ok==null?'unknown':s.release_timing_ok?'eligible':'not eligible')+'</b></p>'+(s.restart_proposed?'<p style="color:var(--danger);margin-top:12px"><b>A coordinated restart is proposed</b> for the owner and workload owners. Nothing was restarted.</p>':'')+'<p class="sub" style="margin-top:12px">Sampled '+rel(s.at)+'. Allocation is not paging: the verdict comes from swap movement between samples.</p>':'<p class="sub">No receipt yet. Run <span class="mono">sirsi swap-hygiene</span>.</p>')+'</div></div>';
->>>>>>> a330d4f7 (fix(fabric): join canonical runtime health and observed transitions across surfaces)
+ '<div class="card"><h2>Swap hygiene — retained separate receipt</h2>'+(s?'<div style="font-size:24px;font-weight:700;letter-spacing:-.02em">'+esc(s.verdict.replace('-',' '))+'</div><p class="sub">'+Math.round(s.used_mib)+' of '+Math.round(s.total_mib)+' MiB allocated · '+s.free_pct+'% free · paging delta '+(s.delta_pages<0?'not measurable yet':s.delta_pages+' pages')+'</p><p style="margin-top:12px">Correctness-only diagnosis: <b>'+(s.correctness_only_ok==null?'unknown':s.correctness_only_ok?'eligible':'not eligible')+'</b><br>Release-timing qualification: <b>'+(s.release_timing_ok==null?'unknown':s.release_timing_ok?'eligible':'not eligible')+'</b></p>'+(s.restart_proposed?'<p style="color:var(--danger);margin-top:12px"><b>A coordinated restart is proposed</b> for the owner and workload owners. Nothing was restarted.</p>':'')+'<p class="sub" style="margin-top:12px">Sampled '+rel(s.at)+'. Allocation is not paging: the verdict comes from swap movement between samples.</p>':'<p class="sub">No receipt yet. Run <span class="mono">sirsi swap-hygiene</span>.</p>')+'</div></div>'+memoryDiagnostics();
 }
 var RENDER={overview:vOverview,lanes:vLanes,queue:vQueue,releases:vReleases,failures:vFailures,host:vHost};
 function render(){
@@ -150,13 +142,8 @@ function render(){
  if(stopMercury){stopMercury();stopMercury=null}
  if(state.view==='fleet'){el.innerHTML=(state.fleetErr?'<p class="stale-banner">Fleet refresh failed · '+esc(state.fleetErr)+'</p>':'')+vFleet();bindFabricLanes(el);return}
  if(state.view==='host'){el.innerHTML=vHost(state.data||{});return}
-<<<<<<< HEAD
- if(!state.data){el.innerHTML=state.err?'<div class="card err-card"><h2>Router unavailable</h2>'+esc(state.err)+'</div>':skeleton();return}
- var opened=Array.from(el.querySelectorAll('details[open]')).map(function(x){return x.dataset.release});el.innerHTML=(state.err?'<p class="stale-banner">Retained snapshot · '+esc(state.data.generated_at||'time unknown')+' · '+esc(state.err)+'</p>':'')+RENDER[state.view](state.data);el.querySelectorAll('details').forEach(function(x){x.open=opened.includes(x.dataset.release)});
-=======
  if(!state.data){el.innerHTML=(state.view==='overview'?fabricHeadlines():'')+(state.err?'<div class="card err-card"><h2>Router unavailable</h2>'+esc(state.err)+'</div>':skeleton());return}
  var opened=Array.from(el.querySelectorAll('details[open]')).map(function(x){return x.dataset.release});el.innerHTML=(state.err?'<p class="stale-banner">Retained snapshot · '+esc(state.data.generated_at||'time unknown')+' · '+esc(state.err)+'</p>':'')+(state.view==='overview'?fabricHeadlines():'')+RENDER[state.view](state.data);el.querySelectorAll('details').forEach(function(x){x.open=opened.includes(x.dataset.release)});
->>>>>>> a330d4f7 (fix(fabric): join canonical runtime health and observed transitions across surfaces)
  if(state.view==='lanes')bindLanes();
  if(key){var replacement=document.getElementById(key);if(replacement){replacement.focus({preventScroll:true});if(start!=null&&replacement.setSelectionRange)replacement.setSelectionRange(start,end)}}
  window.scrollTo(0,scroll);
