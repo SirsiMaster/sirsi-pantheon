@@ -2,6 +2,15 @@ import XCTest
 @testable import SirsiMenubar
 
 final class CoreContractsTests: XCTestCase {
+    func testPeriodicMemoryVitalsRequestsSummaryAndDecodesEmptyTop() throws {
+        XCTAssertEqual(SirsiEngine.vitalsReadArguments, ["vitals", "--summary", "--json"])
+        let raw = #"{"total_bytes":51539607552,"used_bytes":34359738368,"free_bytes":17179869184,"swap_used_bytes":42,"pressure":"normal","pressure_source":"fixture","top":[]}"#
+        let read = try JSONDecoder().decode(MemoryVitals.self, from: Data(raw.utf8))
+        XCTAssertEqual(read.usedBytes, 34359738368)
+        XCTAssertEqual(read.swapUsedBytes, 42)
+        XCTAssertEqual(read.top?.count, 0)
+    }
+
     func testStackLabReportTreatsNullCollectionsAsAnEmptyTypedReport() {
         let raw = #"""
         {"roster":["stacklab.wing.maat"],"findings":null}

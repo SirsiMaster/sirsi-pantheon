@@ -141,14 +141,7 @@ func setHapiFootprintFn(fn func(int) (uint64, error)) {
 }
 
 func defaultHapiSample() (MemSample, error) {
-	// TotalRAMBytes is the same hw.memsize probe DetectHardware runs, minus the
-	// ~600ms system_profiler GPU detour a memory sample never needed — this keeps
-	// the `sirsi vitals` fast path (and every Hapi tick) well under its budget.
-	s := MemSample{TotalRAM: seba.TotalRAMBytes(), FreeBytes: hapiFreeRAMBytes()}
-	total := s.TotalRAM
-	if total > 0 {
-		s.FreePercent = float64(s.FreeBytes) / float64(total) * 100
-	}
+	s := memorySummary()
 	top, err := hapiTopByRSS(12)
 	if err != nil {
 		return s, err
@@ -157,12 +150,27 @@ func defaultHapiSample() (MemSample, error) {
 	return s, nil
 }
 
+// memorySummary shares the governor's capacity/free definition without any
+// process enumeration, footprint/broker reads, sorting or ranking.
+func memorySummary() MemSample {
+	// TotalRAMBytes is the same hw.memsize probe DetectHardware runs, minus the
+	// ~600ms system_profiler GPU detour a memory sample never needed — this keeps
+	// the `sirsi vitals` fast path (and every Hapi tick) well under its budget.
+	s := MemSample{TotalRAM: hapiTotalRAMFn(), FreeBytes: hapiFreeRAMBytes(), Top: []MemProc{}}
+	total := s.TotalRAM
+	if total > 0 {
+		s.FreePercent = float64(s.FreeBytes) / float64(total) * 100
+	}
+	return s
+}
+
 // hapiVMStatFn / hapiPsFn are the raw command seams (Rule A16) so the vm_stat/ps
 // parsers below are unit-testable with canned output, without reading real
 // system state. Production keeps the real commands.
 var (
-	hapiVMStatFn = func() ([]byte, error) { return exec.Command("vm_stat").Output() }
-	hapiPsFn     = func() ([]byte, error) { return exec.Command("ps", "-axo", "pid,rss,comm").Output() }
+	hapiTotalRAMFn = seba.TotalRAMBytes
+	hapiVMStatFn   = func() ([]byte, error) { return exec.Command("vm_stat").Output() }
+	hapiPsFn       = func() ([]byte, error) { return exec.Command("ps", "-axo", "pid,rss,comm").Output() }
 )
 
 // hapiFreeRAMBytes reads vm_stat and returns reclaimable memory: free + inactive
@@ -253,6 +261,10 @@ func hapiTopByRSS(topN int) ([]MemProc, error) {
 // SampleMemory returns a one-shot read of system memory + the largest resident
 // processes. Exported for the `sirsi hapi` CLI and the menubar status surface.
 func SampleMemory() (MemSample, error) { return hapiSample() }
+
+// SampleMemorySummary is the read-only capacity sampler for periodic surfaces.
+// Explicit diagnostics and Hapi continue to use SampleMemory's ranked sample.
+func SampleMemorySummary() (MemSample, error) { return memorySummary(), nil }
 
 // ClassifyMem maps a sample to a pressure tier using the given free-RAM percent
 // thresholds (lower free % = higher tier). This is the FALLBACK path: when the

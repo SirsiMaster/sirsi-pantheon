@@ -635,11 +635,12 @@ final class SirsiEngine: ObservableObject {
     @Published var reopenTick = 0
 
     // Memory-First (canon: RAM is the pre-eminent view, not storage). Live
-    // vitals from `sirsi vitals --json`; drives the Home lead card.
+    // Periodic capacity reads never request whole-host process ranking.
     @Published var vitals: MemoryVitals?
+    nonisolated static let vitalsReadArguments = ["vitals", "--summary", "--json"]
 
     func fetchVitals() async {
-        let data = await Self.runJSON(args: ["vitals", "--json"])
+        let data = await Self.runJSON(args: Self.vitalsReadArguments)
         if let v = try? JSONDecoder().decode(MemoryVitals.self, from: data) {
             vitals = v
         }
