@@ -105,13 +105,33 @@ sessions, nonces or a second router store.
 
 ## Application and remaining limits
 
-The baseline has no privilege-acquiring native lifecycle action host. This
-candidate wires Casebook preview, immutable confirmation, cancellation, status,
-resume, pre-retirement abort and exact replacement restoration to the canonical
-engine capture API. That capture requires an already-root signed Pantheon app
-process; an ordinary user app is explicitly unsupported. No sudo, administrator
-prompt, helper daemon or fabricated actor is substituted. Root-host deployment
-and native installed execution remain unready, not inferred from source tests.
+The GUI remains unprivileged. Its frame-owned maintenance model now sends one
+bounded typed public request through the existing macOS administrator-dialog
+mechanism to `/usr/local/libexec/sirsi-pantheon/sirsi launchd legacy-maintenance-app`.
+The AppleScript source and executable are constant; base64 request data is a
+separate argument and shell-quoted by AppleScript. The root command receives a
+fixed minimal environment and `/` working directory, never GUI actor/session,
+checkout, credential or arbitrary command state. No helper daemon or router DB
+is installed. This source bridge still needs independent qualification; no
+actual privilege dialog or service transition has been run by this work.
+
+Both sides require the protected root-owned, non-writable, no-follow installed
+engine, no ACLs or hardlinks, exact Sirsi signature and the captured engine hash.
+The app also validates its own signed Pantheon identity. A missing, drifted or
+unverified protected engine is unsupported: the app reports the normal signed
+PKG installation/readback prerequisite and never elevates its user-writable
+bundle CLI or a PATH binary. This candidate does not implement a new installer.
+
+Only this entry uses local OS-authorized root authority for the closed root
+profile and seven operations. Its controller authorizer rechecks installed
+engine identity. The existing registered-agent CLI and remote authorization are
+unchanged. Root revalidates closed fields, complete plan/transaction digests and
+restore bytes before invoking the same controller and journal implementation.
+Operation errors retain a bounded frame and original controller bytes. Cancel
+or lost transport after possible launch is outcome unknown, never denial,
+rollback or proof the root child stopped. Consent is consumed once; a frame-owned
+receipt survives view remount. Status and explicit same-transaction recovery are
+available; uncertain no-history observations do not authorize reconfirmation.
 Abort re-verifies the original alive and cannot run after retirement may begin.
 Restore accepts only the originally approved replacement bytes and signed identity,
 binds the current protected target and parent, retains create-only backup/stage

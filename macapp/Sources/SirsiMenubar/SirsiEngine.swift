@@ -603,6 +603,9 @@ func activityMaatReviewArgs(for entry: ActivityEntry) -> [String] {
 // this type only reads the persisted scan and runs the CLI.
 @MainActor
 final class SirsiEngine: ObservableObject {
+    // Frame-owned operation state survives workspace unmounts without keeping
+    // hidden view trees or polling tasks alive.
+    lazy var legacyRelayMaintenance = LegacyRelayMaintenanceModel(directory: URL(fileURLWithPath: NSHomeDirectory()))
     @Published var workspaceVisible = true
     // One bounded, direct Ra read for the native Fleet surface.  Keep this
     // data rather than a prose convention so a later refactor cannot quietly

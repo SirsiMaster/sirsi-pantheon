@@ -38,12 +38,9 @@ struct LegacyRelayTransaction: Decodable, Equatable {
 }
 
 enum LegacyRelayAppHost {
-    // This is the already-privileged signed app host, not privilege acquisition.
-    // No administrator dialog, helper daemon, role override or credential copy.
+    // The GUI stays unprivileged. The typed bridge independently qualifies the
+    // protected engine and lets macOS own its one-shot administrator dialog.
     static func refusal() -> String? {
-        guard getuid() == 0 && geteuid() == 0 else {
-            return "This app process is not an already-authorized root host. No service action was started."
-        }
         guard Bundle.main.bundleIdentifier == "ai.sirsi.pantheon" else { return "The canonical signed Pantheon app host is required." }
         var code: SecCode?
         var requirement: SecRequirement?
@@ -76,6 +73,7 @@ enum LegacyRelayAppHost {
     @Published private(set) var error: String?
     @Published private(set) var canConfirm = false
     @Published private(set) var restoreApproval: RestoreApproval?
+    @Published private(set) var outcomeUnknown = false
     private var approval: Approval?
     private var generation = UUID()
     private var directory: URL
@@ -85,9 +83,8 @@ enum LegacyRelayAppHost {
 
     init(directory: URL, capture: Capture? = nil) {
         self.directory = directory
-        self.capture = capture ?? { args, stdin, directory, authorize in
-            if let reason = LegacyRelayAppHost.refusal() { return CommandExecution(launchError: reason) }
-            return await SirsiEngine.runCaptured(args: args, stdin: stdin, directory: directory, timeout: 70, authorize: authorize)
+        self.capture = capture ?? { args, stdin, _, authorize in
+            await LegacyRelayPrivilegedBridge().capture(args: args, stdin: stdin, authorize: authorize)
         }
     }
 
@@ -96,7 +93,7 @@ enum LegacyRelayAppHost {
     func cancelReview() { generation = UUID(); approval = nil; restoreApproval = nil; canConfirm = false; preview = nil }
 
     func review() async {
-        guard !busy, let file = selectedFile else { return }
+        guard !busy, !outcomeUnknown, let file = selectedFile else { return }
         cancelReview(); let token = generation; let scope = directory
         busy = true; error = nil
         let result = await capture(["launchd", "legacy-maintenance", "preview", "--legacy-payload", file.path], nil, scope, { self.generation == token && self.selectedFile == file && self.directory == scope })
@@ -128,7 +125,7 @@ enum LegacyRelayAppHost {
         let result = await capture(["launchd", "legacy-maintenance", "status"], nil, scope, { self.directory == scope })
         busy = false
         guard !Task.isCancelled, directory == scope, generation == token else { return }
-        accept(result, expected: nil, scope: scope)
+        accept(result, expected: nil, scope: scope, mayMutate: false)
     }
 
     func resume(_ expected: LegacyRelayTransaction) -> Task<Void, Never>? { perform("recover",expected:expected) }
@@ -191,11 +188,12 @@ enum LegacyRelayAppHost {
     }
     private static func digest(_ value: String) -> Bool { value.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } }
     private func current(_ value: Approval) -> Bool { value.generation == generation && value.file == selectedFile && value.directory == directory && value.plan == preview }
-    private func accept(_ result: CommandExecution, expected: String?,scope:URL) {
+    private func accept(_ result: CommandExecution, expected: String?,scope:URL,mayMutate:Bool = true) {
         receipt = result
         var matched=false
         if result.complete, let decoded = try? JSONDecoder().decode(LegacyRelayTransaction.self, from: result.stdoutData),
-           decoded.isBound, expected == nil || decoded.plan.sha256 == expected { transaction = decoded;transactionDirectory=scope;restoreApproval=nil;matched=true }
+           decoded.isBound, expected == nil || decoded.plan.sha256 == expected { transaction = decoded;transactionDirectory=scope;restoreApproval=nil;matched=true;outcomeUnknown=false }
+        if result.captureError != nil && mayMutate { outcomeUnknown=true }
         if result.complete && result.exitCode == 0 && matched { error = nil }
         else { error = detail(result) }
     }

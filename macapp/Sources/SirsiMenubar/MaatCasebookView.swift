@@ -164,7 +164,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                VStack { unavailableState(loadError); screenImportControl; LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: engine.projectRoot ?? NSHomeDirectory())) }
+                VStack { unavailableState(loadError); screenImportControl; LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),model:engine.legacyRelayMaintenance) }
             } else if let casebook {
                 systemOneBody(casebook)
             } else {
@@ -261,7 +261,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                         releasePreflightControl
                             .id("maat-release-preflight")
                         screenImportControl
-                        LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: engine.projectRoot ?? NSHomeDirectory()))
+                        LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),model:engine.legacyRelayMaintenance)
                         if screens.isEmpty {
                             emptyState
                         } else {
