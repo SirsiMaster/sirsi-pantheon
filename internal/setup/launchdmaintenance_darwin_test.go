@@ -15,6 +15,9 @@ func TestLegacyMaintenanceNativeFixedLifecycleArgv(t *testing.T) {
 			t.Fatal("unexpected stdin")
 		}
 		got = append(got, append([]string{program}, args...))
+		if reflect.DeepEqual(args, []string{"print", "system"}) {
+			return []byte("system = {\nservices = {\n}\n}\n"), nil
+		}
 		return nil, nil
 	}}}
 	d := b.maintenanceOperations()
@@ -24,7 +27,7 @@ func TestLegacyMaintenanceNativeFixedLifecycleArgv(t *testing.T) {
 	if err := d.bootstrap(context.Background(), MaintenanceStatus{}); err != nil {
 		t.Fatal(err)
 	}
-	want := [][]string{{"/bin/launchctl", "bootout", "system/ai.sirsi.router.relay"}, {"/bin/launchctl", "bootstrap", "system", "/Library/LaunchDaemons/ai.sirsi.router.relay.plist"}}
+	want := [][]string{{"/bin/launchctl", "bootout", "system/ai.sirsi.router.relay"}, {"/bin/launchctl", "print", "system"}, {"/bin/launchctl", "bootstrap", "system", "/Library/LaunchDaemons/ai.sirsi.router.relay.plist"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected selected lifecycle arguments %v", got)
 	}

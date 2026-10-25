@@ -8,7 +8,8 @@ profiles, or Horus/surface/model ownership.
 ## Closed operation
 
 The canonical app engine exposes `launchd legacy-maintenance` with `preview`,
-`confirm`, `status`, and `recover`. There is no arbitrary label, PID, executable
+`confirm`, `status`, `recover`, `abort`, `restore-preview`, and `restore-confirm`.
+There is no arbitrary label, PID, executable
 command, force, `--drained`, timer release, credential mint, or privilege prompt.
 The backend requires real/effective root **and** the existing registered
 actor/thread/exact lifecycle-service grant. Authorization happens before the
@@ -77,11 +78,9 @@ Existing response/audit files are untouched. Unknown queue objects, names, links
 policy or continuity changes remain retained debt and refuse activation. Newly
 created staging objects may be prepared; existing objects are never chmod/chowned.
 The startup marker is this operation's own exact metadata contract. Existing
-health-summary classification must consume Nash's separately qualified shared
-namespace correction at composition. Until then, non-lane entries are retained
-and refuse activation. No competing health schema or metadata allowlist is
-introduced; arbitrary files and staging debt are not silently empty work. This
-pending source dependency is not an additional Studio installed-adoption gate.
+health-summary classification consumes Nash's qualified d802 shared namespace
+correction in this source composition. No competing health schema or metadata
+allowlist is introduced; unknown files remain retained debt.
 
 The next relay reads the durable marker before observation publication,
 recoverInflight, discovery, retry or housekeeping. It starts in
@@ -91,6 +90,13 @@ bind activation. Cancellation, elapsed time, reboot and client disconnect cannot
 release the gate. A lost activation reply is re-queried; a rebooted held successor
 gets a fresh persisted generation before activation. The marker is removed only
 after verified activation; final durable completion follows marker cleanup.
+A complete prepare intent is atomically published before the private journal.
+Both startup-control records are staged outside the queue namespace. A private
+uncommitted stage has no lifecycle authority; a committed prepare holds startup
+even across a crash before journal append or marker publication. The prepare
+remains until completion is durable. A restart in the marker-cleanup window is
+therefore held with a new generation, which recovery must rebind and verify.
+Preservation and readiness share global envelope, audit, entry and lane bounds.
 
 Completed activation with retained debt still authorizes **zero** replays and
 proves nothing about old canonical effects. Existing authenticated read APIs may
@@ -99,21 +105,33 @@ sessions, nonces or a second router store.
 
 ## Application and remaining limits
 
-The baseline has no privileged native lifecycle action host. This candidate
-implements the canonical root app-engine transaction and its injected Cobra,
-controller, startup and custody fixtures; it does **not** pretend an ordinary
-unprivileged GUI can invoke root operations. Native confirmation, once-only
-invocation and retained Resume activation controls must be wired to an existing
-authorized root host when that integration is supplied. No sudo/authorization
-helper or new permission gate is introduced here. CLI source is not credited as
-that installed native application proof.
+The baseline has no privilege-acquiring native lifecycle action host. This
+candidate wires Casebook preview, immutable confirmation, cancellation, status,
+resume, pre-retirement abort and exact replacement restoration to the canonical
+engine capture API. That capture requires an already-root signed Pantheon app
+process; an ordinary user app is explicitly unsupported. No sudo, administrator
+prompt, helper daemon or fabricated actor is substituted. Root-host deployment
+and native installed execution remain unready, not inferred from source tests.
+Abort re-verifies the original alive and cannot run after retirement may begin.
+Restore accepts only the originally approved replacement bytes and signed identity,
+binds the current protected target and parent, retains create-only backup/stage
+paths, and performs no service action or envelope replay. Application restore
+confirmation forwards the exact captured bounded plan bytes to the engine.
 
-Fresh authorization for status/recovery must have an existing current canonical
-route that remains reachable while spool publication is held. A controller using
-only the held spool may otherwise block its own fresh grant lookup. No marker
-bypass, borrowed role, fabricated session or stored-credential exception is
-implemented. This caller-route integration remains open and must be resolved
-before an executable installed maintenance claim.
+Fresh authorization for all legacy maintenance verbs uses the exact selected
+root0600 relay plist's existing direct canonical route, revalidated before/after
+the lookup. It requires native root and the existing exact service profile. URL
+and host token stay in memory; no environment export, new token, saved session,
+spool bypass or database fallback is introduced. The ordinary registered
+actor/thread, machine/runtime and explicit registry grant checks are unchanged.
+The service still mints/verifies the actual caller's session. A scoped token
+still carries its original scope; possession never supplies a missing grant.
+Missing direct authority, disabled/cancelled intent or drift refuses the action.
+Ordinary modern refresh continues using its existing authority selection.
+
+This resolves the held-spool transport dependency in source for an **already
+privileged and registered controller**. It does not provide a missing privileged
+app host, invent a GUI actor/thread or manufacture a rootless registry.
 
 Journal damage, unknown retirement, publication/permission failure or unmatched
 recovery identity remains explicit recovery debt. Recovery reuses this exact

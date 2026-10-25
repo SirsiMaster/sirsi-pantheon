@@ -8,7 +8,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 )
 
-//go:embed spool.go spooladmission_unix.go spoolmaintenance_darwin.go
+//go:embed spool.go spooladmission_unix.go spoolmaintenance_darwin.go spoolmaintenance_intent_darwin.go
 var rootMaintenanceImplementation embed.FS
 
 type RootMaintenanceContract struct {
@@ -20,7 +20,7 @@ type RootMaintenanceContract struct {
 // Bind the actual startup/publication source, not a capability label alone.
 func RootMaintenanceCapability() RootMaintenanceContract {
 	h := sha256.New()
-	for _, path := range []string{"spool.go", "spooladmission_unix.go", "spoolmaintenance_darwin.go"} {
+	for _, path := range []string{"spool.go", "spooladmission_unix.go", "spoolmaintenance_darwin.go", "spoolmaintenance_intent_darwin.go"} {
 		b, _ := rootMaintenanceImplementation.ReadFile(path)
 		_, _ = h.Write([]byte(path + "\x00"))
 		_, _ = h.Write(b)

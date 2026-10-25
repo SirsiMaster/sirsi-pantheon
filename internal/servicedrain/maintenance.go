@@ -12,6 +12,15 @@ import (
 )
 
 const MaintenanceMarkerName = ".sirsi-root-maintenance.json"
+const MaintenancePrepareName = ".sirsi-root-maintenance.prepare.json"
+
+// Written before the private journal's first prepared phase. Its occupied name
+// (even a torn body) is startup hold, never permission for ordinary recovery.
+// Intent contains the non-secret complete controller status for reconstruction.
+type MaintenancePreparation struct {
+	Marker MaintenanceMarker `json:"marker"`
+	Intent json.RawMessage   `json:"intent"`
+}
 
 type MaintenanceMarker struct {
 	Schema     int    `json:"schema"`
@@ -50,10 +59,11 @@ type StartupMaintenance struct {
 	mu      sync.Mutex
 	status  MaintenanceReady
 	started chan struct{}
-	verify  func() error
+	verify  func(MaintenanceReady) error
+	observe func() (int, error)
 }
 
-func NewStartupMaintenance(pid int, started string, marker MaintenanceMarker, preserved int, verify func() error) (*StartupMaintenance, error) {
+func NewStartupMaintenance(pid int, started string, marker MaintenanceMarker, preserved int, verify func(MaintenanceReady) error, observe func() (int, error)) (*StartupMaintenance, error) {
 	if marker.Validate() != nil || pid <= 1 || started == "" || preserved < 0 || verify == nil {
 		return nil, errors.New("service maintenance: exact startup identity/custody required")
 	}
@@ -61,7 +71,26 @@ func NewStartupMaintenance(pid int, started string, marker MaintenanceMarker, pr
 	if _, err := rand.Read(generation[:]); err != nil {
 		return nil, err
 	}
-	return &StartupMaintenance{status: MaintenanceReady{1, pid, started, hex.EncodeToString(generation[:]), 1, "maintenance_ready_not_drained", marker, preserved}, started: make(chan struct{}), verify: verify}, nil
+	return &StartupMaintenance{status: MaintenanceReady{1, pid, started, hex.EncodeToString(generation[:]), 1, "maintenance_ready_not_drained", marker, preserved}, started: make(chan struct{}), verify: verify, observe: observe}, nil
+}
+
+func (g *StartupMaintenance) Snapshot() (MaintenanceReady, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.observe != nil && g.status.State == "maintenance_ready_not_drained" {
+		n, err := g.observe()
+		if err != nil {
+			return g.status, err
+		}
+		if n < 0 || n > MaxCustodyEnvelopes {
+			return g.status, errors.New("service maintenance: custody observation invalid")
+		}
+		if n != g.status.Preserved {
+			g.status.Preserved = n
+			g.status.Version++
+		}
+	}
+	return g.status, nil
 }
 
 func (g *StartupMaintenance) Status() MaintenanceReady {
@@ -85,7 +114,7 @@ func (g *StartupMaintenance) Activate(expected MaintenanceReady) (MaintenanceRea
 	if g.status != expected || expected.State != "maintenance_ready_not_drained" {
 		return g.status, errors.New("service maintenance: stale/mixed activation refused")
 	}
-	if err := g.verify(); err != nil {
+	if err := g.verify(expected); err != nil {
 		return g.status, err
 	}
 	g.status.State = "active_with_old_outcomes_unknown"

@@ -180,7 +180,8 @@ func StartMaintenance(g *StartupMaintenance) (io.Closer, error) {
 						return
 					}
 					_ = c.SetDeadline(time.Now().Add(5 * time.Second))
-					if json.NewEncoder(c).Encode(g.Status()) != nil {
+					snapshot, err := g.Snapshot()
+					if err != nil || json.NewEncoder(c).Encode(snapshot) != nil {
 						return
 					}
 					raw, err := bufio.NewReaderSize(c, 8192).ReadSlice('\n')
@@ -235,7 +236,7 @@ func ReadMaintenance(ctx context.Context, uid, pid int, started string, expected
 	}
 	result, err = DecodeMaintenance[MaintenanceReady](raw)
 	if err != nil || result.Schema != 1 || result.PID != pid || result.Started != started || !validHex(result.Generation, 16) || result.Marker.Validate() != nil || result.Preserved < 0 ||
-		!((result.Version == 1 && result.State == "maintenance_ready_not_drained") || (result.Version == 2 && result.State == "active_with_old_outcomes_unknown")) {
+		!((result.Version >= 1 && result.State == "maintenance_ready_not_drained") || (result.Version >= 2 && result.State == "active_with_old_outcomes_unknown")) {
 		return result, errors.New("service maintenance: invalid producer readiness")
 	}
 	if expected == nil {

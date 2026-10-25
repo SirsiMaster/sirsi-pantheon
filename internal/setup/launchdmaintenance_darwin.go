@@ -39,7 +39,7 @@ func maintenanceRelayUser() (int, int, error) {
 func maintenancePayload(path string) (string, error) {
 	_, hash, err := serviceArtifactPolicy(path, false, func(fd int) error {
 		var st unix.Stat_t
-		if unix.Fstat(fd, &st) != nil || st.Nlink != 1 {
+		if unix.Fstat(fd, &st) != nil || st.Nlink != 1 || !routerstore.MaintenanceMetadataNoACL(fd) {
 			return errors.New("legacy maintenance: retained singly linked payload required")
 		}
 		return rootRelayArtifactPolicy(false, st)
@@ -146,11 +146,94 @@ func (b nativeServiceBackend) maintenanceOperations() maintenanceOperations {
 	native := b.relayDependencies()
 	var observed servicedrain.MaintenanceReady
 	return maintenanceOperations{
+		restorePreview: b.maintenanceRestorePreview,
+		restorePrepare: b.maintenanceRestorePrepare,
+		abortVerify:    b.maintenanceAbortVerify,
+		abortFinish: func(ctx context.Context, s MaintenanceStatus) error {
+			if err := b.maintenanceAbortVerify(ctx, s); err != nil {
+				return err
+			}
+			if err := maintenanceMarker(s, true); err != nil {
+				return err
+			}
+			return maintenanceClearPreparation(s)
+		},
+		preparedSuccessor: func(ctx context.Context, s MaintenanceStatus) (bool, error) {
+			start, err := servicedrain.MaintenanceStart(s.Plan.Original.PID)
+			if err == nil {
+				if start == s.Plan.KernelStart {
+					return false, nil
+				}
+				return false, errors.New("legacy maintenance: old PID reused during preparation recovery")
+			}
+			if !errors.Is(err, unix.ESRCH) {
+				return false, err
+			}
+			if err := b.maintenanceHeldSuccessor(ctx, s); err != nil {
+				return false, err
+			}
+			return true, nil
+		},
+		prepare: maintenancePrepare,
+		pending: func(s MaintenanceStatus) (bool, error) {
+			p, err := maintenanceReadPreparation()
+			if errors.Is(err, os.ErrNotExist) {
+				return false, nil
+			}
+			if err != nil {
+				return false, err
+			}
+			if p.ID != s.ID || p.Plan != s.Plan {
+				return false, errors.New("legacy maintenance: pending preparation identity differs")
+			}
+			return true, nil
+		},
+		clearPreparation: maintenanceClearPreparation,
+		loadRecovery: func(id, digest string) (MaintenanceStatus, error) {
+			current, err := j.load()
+			if err != nil {
+				return current, err
+			}
+			if current.ID == id && current.Plan.SHA256 == digest {
+				return current, nil
+			}
+			if current.ID != "" && current.Phase != "completed" && current.Phase != "aborted" {
+				return current, errors.New("legacy maintenance: another durable transaction owns recovery")
+			}
+			prepared, err := maintenanceReadPreparation()
+			if err != nil {
+				return current, err
+			}
+			if prepared.ID != id || prepared.Plan.SHA256 != digest || prepared.Revision != current.Revision+1 {
+				return current, errors.New("legacy maintenance: exact durable prepare reconstruction refused")
+			}
+			if err := j.persist(current.Revision, prepared); err != nil {
+				return current, err
+			}
+			return j.load()
+		},
 		preview: b.maintenancePreview, load: func() (MaintenanceStatus, error) {
 			if err := rootRelayOwner(os.Getuid(), os.Geteuid()); err != nil {
 				return MaintenanceStatus{}, err
 			}
-			return j.load()
+			current, err := j.load()
+			if err != nil {
+				return current, err
+			}
+			if current.ID == "" || current.Phase == "completed" || current.Phase == "aborted" {
+				prepared, err := maintenanceReadPreparation()
+				if errors.Is(err, os.ErrNotExist) {
+					return current, nil
+				}
+				if err != nil {
+					return current, err
+				}
+				if current.ID != prepared.ID {
+					prepared.NextAction = "Durable preparation requires exact reconstruction or verified abort; private journal not yet prepared"
+					return prepared, nil
+				}
+			}
+			return current, nil
 		}, persist: j.persist,
 		lock: func(op func() error) error {
 			if err := rootRelayOwner(os.Getuid(), os.Geteuid()); err != nil {
@@ -159,7 +242,7 @@ func (b nativeServiceBackend) maintenanceOperations() maintenanceOperations {
 			return withServiceLock(rootRelayPlist, op)
 		},
 		exclude: func(ctx context.Context, s MaintenanceStatus, op func() error) error {
-			if s.Phase != "activated" {
+			if s.Phase != "activated" && s.Phase != "completed" {
 				if err := maintenanceMarker(s, false); err != nil {
 					return err
 				}
@@ -200,8 +283,15 @@ func (b nativeServiceBackend) maintenanceOperations() maintenanceOperations {
 		},
 		retirement: maintenanceRetirement,
 		preserve:   maintenancePreserve,
-		bootstrap: func(ctx context.Context, _ MaintenanceStatus) error {
-			_, err := native.read(ctx, nil, "/bin/launchctl", "bootstrap", "system", rootRelayPlist)
+		bootstrap: func(ctx context.Context, s MaintenanceStatus) error {
+			loaded, err := maintenanceJobListedWith(ctx, native.read)
+			if err != nil {
+				return err
+			}
+			if loaded {
+				return b.maintenanceHeldSuccessor(ctx, s)
+			}
+			_, err = native.read(ctx, nil, "/bin/launchctl", "bootstrap", "system", rootRelayPlist)
 			return err
 		},
 		resume: func(ctx context.Context, s MaintenanceStatus) error {
@@ -290,18 +380,51 @@ func (b nativeServiceBackend) maintenanceOperations() maintenanceOperations {
 	}
 }
 
+func (b nativeServiceBackend) maintenanceAbortVerify(ctx context.Context, s MaintenanceStatus) error {
+	if s.Phase != "prepared" && s.Phase != "abort_requested" && s.Phase != "aborted" {
+		return errors.New("legacy maintenance: abort is only pre-retirement")
+	}
+	root, _, err := maintenanceSpool(s.Plan.RootDevice, s.Plan.RootInode)
+	if err != nil {
+		return err
+	}
+	if err := root.Close(); err != nil {
+		return err
+	}
+	start, err := servicedrain.MaintenanceStart(s.Plan.Original.PID)
+	if err != nil || start != s.Plan.KernelStart {
+		return errors.New("legacy maintenance: original runtime not alive; no blind abort or revival")
+	}
+	if hash, err := maintenanceImage(ctx, s.Plan.LegacyPayload, s.Plan.Original.PID); err != nil || hash != s.Plan.LoadedCDHash {
+		return errors.New("legacy maintenance: original loaded image changed; abort refused")
+	}
+	raw, err := b.relayDependencies().read(ctx, nil, "/bin/launchctl", "print", rootRelayTarget)
+	if err != nil {
+		return err
+	}
+	ids := regexp.MustCompile(`(?m)^\s*pid = ([0-9]+)\s*$`).FindAllSubmatch(raw, -1)
+	if len(ids) != 1 || string(ids[0][1]) != strconv.Itoa(s.Plan.Original.PID) {
+		return errors.New("legacy maintenance: original no longer owns exact selected job")
+	}
+	return nil
+}
+
 // The Security framework call runs only in a bounded, joined canonical probe
 // child. No goroutine is abandoned around an uninterruptible C call. This is
 // an owned read-only helper process, never a signal to a selected service.
 func maintenanceImage(ctx context.Context, path string, pid int) (string, error) {
-	before, err := maintenancePayload(rootRelayProgram)
+	probe, err := CurrentPackagedMaatEngine()
 	if err != nil {
 		return "", err
 	}
-	if _, err := rootRelayRead(ctx, nil, "/usr/bin/codesign", "--verify", "--strict", "-R", horusSigningRequirement, rootRelayProgram); err != nil {
+	before, err := maintenancePayload(probe)
+	if err != nil {
 		return "", err
 	}
-	raw, err := rootRelayRead(ctx, nil, rootRelayProgram, "router", "relay", "maintenance-image", "--payload", path, "--pid", strconv.Itoa(pid))
+	if _, err := rootRelayRead(ctx, nil, "/usr/bin/codesign", "--verify", "--strict", "-R", horusSigningRequirement, probe); err != nil {
+		return "", err
+	}
+	raw, err := rootRelayRead(ctx, nil, probe, "router", "relay", "maintenance-image", "--payload", path, "--pid", strconv.Itoa(pid))
 	if err != nil {
 		return "", err
 	}
@@ -309,7 +432,7 @@ func maintenanceImage(ctx context.Context, path string, pid int) (string, error)
 	if err != nil || identity.PID != pid || len(identity.CDHash) != 40 {
 		return "", errors.New("legacy maintenance: invalid bounded image probe response")
 	}
-	if after, err := maintenancePayload(rootRelayProgram); err != nil || after != before {
+	if after, err := maintenancePayload(probe); err != nil || after != before {
 		return "", errors.New("legacy maintenance: probe engine changed")
 	}
 	return identity.CDHash, nil
@@ -394,13 +517,43 @@ func maintenanceRetirement(ctx context.Context, p MaintenancePlan) (string, erro
 }
 
 func maintenanceJobListed(ctx context.Context) (bool, error) {
+	return maintenanceJobListedWith(ctx, rootRelayRead)
+}
+
+func maintenanceJobListedWith(ctx context.Context, read func(context.Context, []byte, string, ...string) ([]byte, error)) (bool, error) {
 	// Scope the native query explicitly. `launchctl list` inherits a caller's
 	// bootstrap namespace and cannot establish absence from the system domain.
-	raw, err := rootRelayRead(ctx, nil, "/bin/launchctl", "print", "system")
+	raw, err := read(ctx, nil, "/bin/launchctl", "print", "system")
 	if err != nil {
 		return false, err
 	}
 	return maintenanceSystemJobListed(raw)
+}
+
+func (b nativeServiceBackend) maintenanceHeldSuccessor(ctx context.Context, s MaintenanceStatus) error {
+	p, err := b.inspectRootRelay(ctx)
+	if err != nil {
+		return err
+	}
+	if !sameRootRelayArtifacts(p, s.Plan.Original) || p.PID == s.Plan.Original.PID {
+		return errors.New("legacy maintenance: prepared recovery selected an unexpected process/artifact")
+	}
+	if hash, err := maintenanceImage(ctx, rootRelayProgram, p.PID); err != nil || hash != s.Plan.ReplacementCDHash {
+		return errors.New("legacy maintenance: held successor loaded image is not approved replacement")
+	}
+	uid, _, err := maintenanceRelayUser()
+	if err != nil {
+		return err
+	}
+	start, err := servicedrain.MaintenanceStart(p.PID)
+	if err != nil {
+		return err
+	}
+	ready, err := servicedrain.ReadMaintenance(ctx, uid, p.PID, start, nil)
+	if err != nil || ready.State != "maintenance_ready_not_drained" || ready.Marker != maintenanceMarkerValue(s) {
+		return errors.Join(errors.New("legacy maintenance: prepared successor is not this transaction's held producer"), err)
+	}
+	return nil
 }
 
 func maintenanceSystemJobListed(raw []byte) (bool, error) {

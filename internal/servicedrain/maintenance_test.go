@@ -13,7 +13,7 @@ func fixtureMarker() MaintenanceMarker {
 }
 
 func TestStartupMaintenanceRequiresExactExplicitActivation(t *testing.T) {
-	g, err := NewStartupMaintenance(123, "fixture-start", fixtureMarker(), 7, func() error { return nil })
+	g, err := NewStartupMaintenance(123, "fixture-start", fixtureMarker(), 7, func(MaintenanceReady) error { return nil }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,12 +92,12 @@ func TestMaintenanceCanonicalWireIsClosed(t *testing.T) {
 
 func TestStartupMaintenanceRechecksContinuityBeforeActivation(t *testing.T) {
 	changed := true
-	g, err := NewStartupMaintenance(123, "fixture-start", fixtureMarker(), 2, func() error {
+	g, err := NewStartupMaintenance(123, "fixture-start", fixtureMarker(), 2, func(MaintenanceReady) error {
 		if changed {
 			return errors.New("owned root substituted")
 		}
 		return nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

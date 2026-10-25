@@ -9,10 +9,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 	"golang.org/x/sys/unix"
 )
@@ -78,36 +78,7 @@ func maintenanceMarker(s MaintenanceStatus, remove bool) error {
 		if remove {
 			return nil // Idempotent finish after a previously verified activation.
 		}
-		var nonce [16]byte
-		if _, err := rand.Read(nonce[:]); err != nil {
-			return err
-		}
-		stage := ".maintenance-" + s.ID + "-" + hex.EncodeToString(nonce[:]) + ".stage"
-		created, err := root.OpenFile(stage, os.O_WRONLY|os.O_CREATE|os.O_EXCL|unix.O_NOFOLLOW, 0600)
-		if err != nil {
-			return err
-		}
-		defer created.Close()
-		// Only this new metadata leaf receives declared service-group read.
-		// No existing spool, queue, plist or payload permissions are changed.
-		if err := created.Chown(0, gid); err != nil {
-			return err
-		}
-		if err := created.Chmod(0640); err != nil {
-			return err
-		}
-		if n, err := created.Write(want); err != nil || n != len(want) {
-			return errors.Join(io.ErrShortWrite, err)
-		}
-		if err := created.Sync(); err != nil {
-			return err
-		}
-		// Create-only atomic publication. Failed/incomplete staging leaves stay
-		// private retained debt; never unlink an unknown replacement on error.
-		if err := unix.RenameatxNp(int(dir.Fd()), stage, int(dir.Fd()), servicedrain.MaintenanceMarkerName, unix.RENAME_EXCL); err != nil {
-			return fmt.Errorf("legacy maintenance: startup marker publication refused; retained stage %s: %w", stage, err)
-		}
-		if err := dir.Sync(); err != nil {
+		if err := maintenancePublishIntentAt(root, servicedrain.MaintenanceMarkerName, s.ID, want, 0, gid, nil); err != nil {
 			return err
 		}
 		f, err = root.OpenFile(servicedrain.MaintenanceMarkerName, os.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW, 0)
@@ -129,7 +100,7 @@ func maintenanceMarker(s MaintenanceStatus, remove bool) error {
 		return errors.New("legacy maintenance: startup marker continuity changed")
 	}
 	if remove {
-		if s.Phase != "activated" {
+		if s.Phase != "activated" && s.Phase != "completed" && s.Phase != "aborted" {
 			return errors.New("legacy maintenance: pending transaction cannot release startup hold")
 		}
 		if err := unix.Unlinkat(int(dir.Fd()), servicedrain.MaintenanceMarkerName, 0); err != nil {
@@ -182,6 +153,7 @@ func maintenancePreserve(ctx context.Context, s MaintenanceStatus) (int, error) 
 		return 0, err
 	}
 	count := 0
+	budget := new(servicedrain.CustodyBudget)
 	for lanes := 0; ; lanes++ {
 		if err := ctx.Err(); err != nil {
 			return count, err
@@ -190,11 +162,17 @@ func maintenancePreserve(ctx context.Context, s MaintenanceStatus) (int, error) 
 		if err == io.EOF {
 			return count, nil
 		}
-		if err != nil || lanes >= 1024 {
+		if err != nil || lanes >= servicedrain.MaxCustodyLanes {
 			return count, errors.New("legacy maintenance: bounded lane inventory unavailable")
 		}
 		entry := entries[0]
-		if entry.Name() == servicedrain.MaintenanceMarkerName {
+		if entry.Name() == routerstore.RelayObservationMetadataName {
+			if err := routerstore.ReadMaintenanceRelayMetadata(ctx, int(dir.Fd()), rootRelayPhysicalSpool); err != nil {
+				return count, err
+			}
+			continue
+		}
+		if entry.Name() == servicedrain.MaintenanceMarkerName || entry.Name() == servicedrain.MaintenancePrepareName {
 			if err := maintenanceControlMetadata(int(dir.Fd()), entry.Name(), uid); err != nil {
 				return count, err
 			}
@@ -210,13 +188,13 @@ func maintenancePreserve(ctx context.Context, s MaintenanceStatus) (int, error) 
 		if err != nil {
 			return count, err
 		}
-		n, preserveErr := maintenancePreserveLane(ctx, lane, []byte(entry.Name()), s.ID, uid, gid)
+		n, preserveErr := maintenancePreserveLane(ctx, lane, []byte(entry.Name()), s.ID, uid, gid, budget)
 		if preserveErr == nil {
 			preserveErr = maintenanceVerifyDirectory(int(dir.Fd()), entry.Name(), lane)
 		}
 		closeErr := lane.Close()
 		count += n
-		if preserveErr != nil || closeErr != nil || count > 65536 {
+		if preserveErr != nil || closeErr != nil {
 			return count, errors.Join(errors.New("legacy maintenance: custody incomplete; no replay or startup release"), preserveErr, closeErr)
 		}
 	}
@@ -235,7 +213,7 @@ func maintenanceControlMetadata(parent int, name string, serviceUID int) error {
 	return nil
 }
 
-func maintenancePreserveLane(ctx context.Context, lane *os.File, laneName []byte, id string, serviceUID, gid int) (int, error) {
+func maintenancePreserveLane(ctx context.Context, lane *os.File, laneName []byte, id string, serviceUID, gid int, budget *servicedrain.CustodyBudget) (int, error) {
 	failed, err := maintenancePublishDirectory(lane, "failed", serviceUID, gid, 0700)
 	if err != nil {
 		return 0, err
@@ -270,15 +248,18 @@ func maintenancePreserveLane(ctx context.Context, lane *os.File, laneName []byte
 			return 0, errors.Join(err, closeErr)
 		}
 	}
-	entries, err := custody.ReadDir(65537)
+	entries, err := custody.ReadDir(servicedrain.MaxCustodyEntries + 1)
 	if err != nil && err != io.EOF {
 		return 0, err
 	}
-	if len(entries) > 65536 {
+	if len(entries) > servicedrain.MaxCustodyEntries {
 		return 0, errors.New("legacy maintenance: custody entry bound exceeded")
 	}
 	count := 0
 	for _, e := range entries {
+		if err := budget.Observe(e.Name()); err != nil {
+			return 0, err
+		}
 		if len(e.Name()) == len("envelope-")+64 && e.Name()[:len("envelope-")] == "envelope-" {
 			var st unix.Stat_t
 			if unix.Fstatat(int(custody.Fd()), e.Name(), &st, unix.AT_SYMLINK_NOFOLLOW) != nil || st.Mode&unix.S_IFMT != unix.S_IFREG || st.Nlink != 1 {
@@ -305,8 +286,8 @@ func maintenancePreserveQueue(ctx context.Context, source, custody *os.File, lan
 	// Snapshot bounded names before moving any: mutating while consuming a
 	// directory cursor can skip an envelope. This is not an old-work drain;
 	// confirmed retirement and the physical publication barrier precede it.
-	names, readErr := source.Readdirnames(32769)
-	if (readErr != nil && readErr != io.EOF) || len(names) > 32768 {
+	names, readErr := source.Readdirnames(servicedrain.MaxCustodyEnvelopes + 1)
+	if (readErr != nil && readErr != io.EOF) || len(names) > servicedrain.MaxCustodyEnvelopes {
 		return errors.New("legacy maintenance: queue inventory incomplete")
 	}
 	for _, leaf := range names {

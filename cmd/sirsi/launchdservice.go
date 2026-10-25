@@ -35,6 +35,24 @@ func lifecycleGrant(reg *router.Registry, actor, label string) error {
 }
 
 func authorizeLifecycle(ctx context.Context, label string) error {
+	return authorizeLifecycleWithReader(ctx, label, func(ctx context.Context, repo, actor, tid string) (routerstore.ThreadRecord, error) {
+		f, err := dispatch.Open(repo)
+		if err != nil {
+			return routerstore.ThreadRecord{}, err
+		}
+		defer f.Close()
+		if _, ok := f.Store().(*routerstore.RemoteStore); !ok {
+			return routerstore.ThreadRecord{}, fmt.Errorf("service lifecycle: canonical remote router required")
+		}
+		r, ok := f.Store().(lifecycleThreadReader)
+		if !ok {
+			return routerstore.ThreadRecord{}, fmt.Errorf("service lifecycle: compatible bounded own-thread RPC required; no global-list fallback")
+		}
+		return r.GetThreadRecord(tid)
+	})
+}
+
+func authorizeLifecycleWithReader(ctx context.Context, label string, read func(context.Context, string, string, string) (routerstore.ThreadRecord, error)) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -56,19 +74,7 @@ func authorizeLifecycle(ctx context.Context, label string) error {
 	if err = lifecycleGrant(reg, actor, label); err != nil {
 		return err
 	}
-	f, err := dispatch.Open(repo)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if _, ok := f.Store().(*routerstore.RemoteStore); !ok {
-		return fmt.Errorf("service lifecycle: canonical remote router required")
-	}
-	r, ok := f.Store().(lifecycleThreadReader)
-	if !ok {
-		return fmt.Errorf("service lifecycle: compatible bounded own-thread RPC required; no global-list fallback")
-	}
-	record, err := r.GetThreadRecord(tid)
+	record, err := read(ctx, repo, actor, tid)
 	if err != nil {
 		return err
 	}

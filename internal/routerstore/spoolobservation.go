@@ -12,6 +12,11 @@ const relayObservationName = ".relay-outbox-health-v1.json"
 const relayObservationBytes = 131072
 const relayObservationMaxAge = 15 * time.Second
 
+// Reserved producer metadata, not a lane or queue. Lifecycle readers share
+// this exact namespace and closed schema without treating health as drain proof.
+const RelayObservationMetadataName = relayObservationName
+const RelayObservationMetadataLimit = relayObservationBytes
+
 // RelayOutboxObservation contains names/counts only, never request IDs or
 // contents. Complete describes enumeration AND every lane, not a partial sum.
 // These are cooperative interval observations, not queue transaction proofs.
@@ -36,7 +41,14 @@ type RelayLaneObservation struct {
 	ErrorCode string `json:"error_code,omitempty"`
 }
 
-func relayObservationError(code string) error { return errors.New("relay observation: " + code) }
+var ErrRelayObservationMetadataChanged = errors.New("relay observation: changed")
+
+func relayObservationError(code string) error {
+	if code == "changed" {
+		return ErrRelayObservationMetadataChanged
+	}
+	return errors.New("relay observation: " + code)
+}
 
 func validRelayObservationCode(code string) bool {
 	switch code {
@@ -49,12 +61,21 @@ func validRelayObservationCode(code string) bool {
 // Validate binds a document to an independently opened/validated root policy.
 // Never derive expectedUID from this document or from group membership.
 func (s RelayOutboxObservation) validate(now time.Time, dev, ino uint64, expectedUID uint32) error {
+	if err := s.validateMetadata(dev, ino, expectedUID); err != nil {
+		return err
+	}
+	if s.ObservedAt.After(now.Add(2*time.Second)) || s.StartedAt.After(now.Add(2*time.Second)) || now.Sub(s.StartedAt) > relayObservationMaxAge {
+		return relayObservationError("stale_or_future")
+	}
+	return nil
+}
+
+func (s RelayOutboxObservation) validateMetadata(dev, ino uint64, expectedUID uint32) error {
 	if s.Version != 1 || s.RootDevice != dev || s.RootInode != ino || s.ProducerUID != expectedUID {
 		return relayObservationError("identity")
 	}
-	if s.StartedAt.IsZero() || s.ObservedAt.Before(s.StartedAt) || s.ObservedAt.Sub(s.StartedAt) > time.Second ||
-		s.ObservedAt.After(now.Add(2*time.Second)) || s.StartedAt.After(now.Add(2*time.Second)) || now.Sub(s.StartedAt) > relayObservationMaxAge {
-		return relayObservationError("stale_or_future")
+	if s.StartedAt.IsZero() || s.ObservedAt.Before(s.StartedAt) || s.ObservedAt.Sub(s.StartedAt) > time.Second {
+		return relayObservationError("invalid_interval")
 	}
 	if len(s.Lanes) > 256 || !validRelayObservationCode(s.ErrorCode) || (s.Enumerated && s.ErrorCode != "") || (!s.Enumerated && s.ErrorCode == "") {
 		return relayObservationError("coverage")
@@ -88,6 +109,17 @@ func (s RelayOutboxObservation) validate(now time.Time, dev, ino uint64, expecte
 		return relayObservationError("aggregate")
 	}
 	return nil
+}
+
+// DecodeRelayObservationMetadata validates identity, closed schema and internal
+// counts only. Its result is never evidence that live queues are empty or that
+// a producer's health observation is fresh.
+func DecodeRelayObservationMetadata(raw []byte, dev, ino uint64, expectedUID uint32) (RelayOutboxObservation, error) {
+	s, err := decodeRelayObservation(raw)
+	if err != nil {
+		return s, err
+	}
+	return s, s.validateMetadata(dev, ino, expectedUID)
 }
 
 // Token checking rejects duplicate keys at every depth; exact-key checking

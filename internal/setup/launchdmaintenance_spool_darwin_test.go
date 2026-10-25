@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin && cgo
 
 package setup
 
@@ -6,6 +6,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +32,57 @@ func maintenanceOwnedDirectory(t *testing.T) (string, *os.File) {
 	}
 	t.Cleanup(func() { _ = f.Close() })
 	return path, f
+}
+
+func TestMaintenanceCustodyCrossPathBoundary(t *testing.T) {
+	path, _ := maintenanceOwnedDirectory(t)
+	id := strings.Repeat("a", 32)
+	budget := new(servicedrain.CustodyBudget)
+	controllerCount := 0
+	for laneIndex := 0; laneIndex < 2; laneIndex++ {
+		name := fmt.Sprintf("lane-%d", laneIndex)
+		lanePath := filepath.Join(path, name)
+		custody := filepath.Join(lanePath, "failed", ".maintenance-"+id)
+		if err := os.MkdirAll(custody, 0700); err != nil {
+			t.Fatal(err)
+		}
+		for _, dir := range []string{lanePath, filepath.Dir(custody), custody} {
+			if err := os.Chown(dir, os.Getuid(), os.Getgid()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Chmod(custody, 0750); err != nil {
+			t.Fatal(err)
+		}
+		// Inert names-only custody records. No queued body, inference, sender,
+		// network or durability claim is part of this dimension-bound fixture.
+		for index := 0; index < 16385; index++ {
+			for _, prefix := range []string{"audit-", "envelope-"} {
+				if err := os.WriteFile(filepath.Join(custody, fmt.Sprintf("%s%064x", prefix, index)), nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		lane, err := os.Open(lanePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		count, err := maintenancePreserveLane(context.Background(), lane, []byte(name), id, os.Getuid(), os.Getgid(), budget)
+		closeErr := lane.Close()
+		if err != nil || closeErr != nil {
+			t.Fatal(err, closeErr)
+		}
+		controllerCount += count
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	successorCount, err := routerstore.CountMaintenanceCustody(context.Background(), root, id)
+	if err != nil || controllerCount != 32770 || successorCount != controllerCount || budget.Entries != 65540 {
+		t.Fatalf("controller=%d successor=%d entries=%d err=%v", controllerCount, successorCount, budget.Entries, err)
+	}
 }
 
 func TestLegacyMaintenanceRetainsUnknownEnvelopesWithoutReplay(t *testing.T) {
@@ -55,7 +109,7 @@ func TestLegacyMaintenanceRetainsUnknownEnvelopesWithoutReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := strings.Repeat("1", 32)
-	n, err := maintenancePreserveLane(context.Background(), lane, []byte("codex-pantheon"), id, os.Getuid(), os.Getgid())
+	n, err := maintenancePreserveLane(context.Background(), lane, []byte("codex-pantheon"), id, os.Getuid(), os.Getgid(), new(servicedrain.CustodyBudget))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +150,7 @@ func TestLegacyMaintenanceRetainsUnknownEnvelopesWithoutReplay(t *testing.T) {
 	}
 	// A restarted controller re-counts retained custody; no duplicate moves or
 	// inference about an old remote commit follows from local envelope custody.
-	if got, err := maintenancePreserveLane(context.Background(), lane, []byte("codex-pantheon"), id, os.Getuid(), os.Getgid()); err != nil || got != 3 {
+	if got, err := maintenancePreserveLane(context.Background(), lane, []byte("codex-pantheon"), id, os.Getuid(), os.Getgid(), new(servicedrain.CustodyBudget)); err != nil || got != 3 {
 		t.Fatalf("recovery %d %v", got, err)
 	}
 }
@@ -127,7 +181,7 @@ func TestLegacyMaintenanceUnknownQueueObjectStaysInPlace(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if _, err := maintenancePreserveLane(context.Background(), lane, []byte("owned"), strings.Repeat("2", 32), os.Getuid(), os.Getgid()); err == nil {
+			if _, err := maintenancePreserveLane(context.Background(), lane, []byte("owned"), strings.Repeat("2", 32), os.Getuid(), os.Getgid(), new(servicedrain.CustodyBudget)); err == nil {
 				t.Fatal("unknown queue object accepted")
 			}
 			if _, err := os.Lstat(leaf); err != nil {

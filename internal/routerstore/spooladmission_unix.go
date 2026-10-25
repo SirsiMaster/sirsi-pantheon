@@ -37,9 +37,11 @@ func lockSpoolAdmission(ctx context.Context, root *os.Root, exclusive bool) (*os
 				// A controller crash releases flock, not its durable startup hold.
 				// Do not publish into a pending maintenance transaction. Any occupied
 				// or unreadable marker is closed/unknown, never an absence inference.
-				if _, probe := root.Lstat(servicedrain.MaintenanceMarkerName); !errors.Is(probe, os.ErrNotExist) {
-					_ = f.Close()
-					return nil, errors.New("spool admission: retained root maintenance transaction; request not published")
+				for _, name := range []string{servicedrain.MaintenanceMarkerName, servicedrain.MaintenancePrepareName} {
+					if _, probe := root.Lstat(name); !errors.Is(probe, os.ErrNotExist) {
+						_ = f.Close()
+						return nil, errors.New("spool admission: retained root maintenance transaction; request not published")
+					}
 				}
 			}
 			return f, nil

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -13,6 +14,20 @@ import (
 type maintenanceCommandFixture struct {
 	calls []string
 	fail  bool
+}
+
+func (f *maintenanceCommandFixture) AbortLegacyMaintenance(_ context.Context, id, digest string) (setup.MaintenanceStatus, error) {
+	f.calls = append(f.calls, "abort:"+id+":"+digest)
+	return setup.MaintenanceStatus{ID: id, Phase: "aborted"}, nil
+}
+
+func (f *maintenanceCommandFixture) PreviewLegacyRestore(_ context.Context, id, digest, artifact string) (setup.MaintenanceRestorePlan, error) {
+	f.calls = append(f.calls, "restore-preview:"+id+":"+digest+":"+artifact)
+	return setup.MaintenanceRestorePlan{SHA256: strings.Repeat("2", 64)}, nil
+}
+func (f *maintenanceCommandFixture) ConfirmLegacyRestore(_ context.Context, p setup.MaintenanceRestorePlan) (setup.MaintenanceStatus, error) {
+	f.calls = append(f.calls, "restore-confirm:"+p.SHA256)
+	return setup.MaintenanceStatus{ID: "retained", Phase: "prepared"}, nil
 }
 
 func (f *maintenanceCommandFixture) PreviewLegacyMaintenance(_ context.Context, path string) (setup.MaintenancePlan, error) {
@@ -47,6 +62,7 @@ func TestLegacyMaintenanceCommandEntry(t *testing.T) {
 		{"confirm", []string{"confirm", "--legacy-payload", "/owned/old", "--expected-plan-sha256", digest, "--confirm-maintenance"}, "confirm:" + digest, false},
 		{"status", []string{"status"}, "status", false},
 		{"recover", []string{"recover", "--transaction", "retained", "--expected-plan-sha256", digest, "--confirm-maintenance"}, "recover:retained:" + digest, false},
+		{"abort", []string{"abort", "--transaction", "retained", "--expected-plan-sha256", digest, "--confirm-maintenance"}, "abort:retained:" + digest, false},
 		{"failure_debt", []string{"confirm", "--legacy-payload", "/owned/old", "--expected-plan-sha256", digest, "--confirm-maintenance"}, "confirm:" + digest, true},
 	} {
 		t.Run(entry.name, func(t *testing.T) {
@@ -69,6 +85,50 @@ func TestLegacyMaintenanceCommandEntry(t *testing.T) {
 			}
 			if entry.fail && !strings.Contains(out.String(), "bootstrap_requested") {
 				t.Fatal("lost retained recovery result")
+			}
+		})
+	}
+}
+
+func TestLegacyMaintenanceRestoreUsesCapturedConsentBeforeDispatch(t *testing.T) {
+	digest := strings.Repeat("2", 64)
+	plan := setup.MaintenanceRestorePlan{SHA256: digest}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, '\n')
+	for _, kind := range []string{"exact", "wrong_digest", "missing_confirm", "trailing_json"} {
+		t.Run(kind, func(t *testing.T) {
+			f := new(maintenanceCommandFixture)
+			cmd := newLegacyMaintenanceCmd(f)
+			cmd.SilenceUsage = true
+			args := []string{"restore-confirm", "--expected-restore-sha256", digest}
+			if kind == "wrong_digest" {
+				args[2] = strings.Repeat("3", 64)
+			}
+			if kind != "missing_confirm" {
+				args = append(args, "--confirm-maintenance")
+			}
+			input := string(raw)
+			if kind == "trailing_json" {
+				input += "{}\n"
+			}
+			cmd.SetArgs(args)
+			cmd.SetIn(strings.NewReader(input))
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			err := cmd.Execute()
+			if (err == nil) != (kind == "exact") {
+				t.Fatal(err)
+			}
+			if kind == "exact" {
+				if len(f.calls) != 1 || f.calls[0] != "restore-confirm:"+digest || !strings.Contains(out.String(), "\"id\":\"retained\"") {
+					t.Fatal(f.calls, out.String())
+				}
+			} else if len(f.calls) != 0 {
+				t.Fatal("unreviewed restoration dispatched", f.calls)
 			}
 		})
 	}

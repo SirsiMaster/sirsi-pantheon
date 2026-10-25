@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 	"golang.org/x/sys/unix"
 )
@@ -78,7 +79,7 @@ func (j maintenanceJournal) load() (MaintenanceStatus, error) {
 	f := os.NewFile(uintptr(fd), maintenanceJournalLeaf)
 	defer f.Close()
 	var before unix.Stat_t
-	if unix.Fstat(fd, &before) != nil || before.Uid != j.owner || before.Mode&unix.S_IFMT != unix.S_IFREG || before.Mode&07777 != 0600 || before.Nlink != 1 || before.Size <= 0 || before.Size > 1<<20 {
+	if unix.Fstat(fd, &before) != nil || before.Uid != j.owner || before.Mode&unix.S_IFMT != unix.S_IFREG || before.Mode&07777 != 0600 || before.Nlink != 1 || before.Size <= 0 || before.Size > 1<<20 || !routerstore.MaintenanceMetadataNoACL(fd) {
 		return last, errors.New("legacy maintenance: private bounded transaction journal required; no reset")
 	}
 	raw, err := io.ReadAll(io.LimitReader(f, (1<<20)+1))
@@ -101,12 +102,12 @@ func (j maintenanceJournal) load() (MaintenanceStatus, error) {
 			return last, errors.New("legacy maintenance: malformed transaction history retained")
 		}
 		switch next.Phase {
-		case "prepared", "retirement_requested", "retired", "custody_preserved", "bootstrap_requested", "activation_requested", "activated", "completed":
+		case "prepared", "retirement_requested", "retirement_observed", "retired", "custody_preserved", "bootstrap_requested", "activation_requested", "activated", "completed", "abort_requested", "aborted":
 		default:
 			return last, errors.New("legacy maintenance: unknown transaction phase")
 		}
 		if last.ID != "" && next.ID != last.ID {
-			if seen[next.ID] || next.Phase != "prepared" || last.Phase != "completed" {
+			if seen[next.ID] || next.Phase != "prepared" || (last.Phase != "completed" && last.Phase != "aborted") {
 				return last, errors.New("legacy maintenance: overlapping/reused transaction")
 			}
 		} else if last.ID != "" && next.Plan != last.Plan {
@@ -143,7 +144,7 @@ func (j maintenanceJournal) persist(expected uint64, next MaintenanceStatus) err
 	f := os.NewFile(uintptr(fd), maintenanceJournalLeaf)
 	defer f.Close()
 	var before unix.Stat_t
-	if unix.Fstat(fd, &before) != nil || before.Uid != j.owner || before.Nlink != 1 || before.Mode&unix.S_IFMT != unix.S_IFREG || before.Mode&07777 != 0600 {
+	if unix.Fstat(fd, &before) != nil || before.Uid != j.owner || before.Nlink != 1 || before.Mode&unix.S_IFMT != unix.S_IFREG || before.Mode&07777 != 0600 || !routerstore.MaintenanceMetadataNoACL(fd) {
 		return errors.New("legacy maintenance: unsafe journal append refused")
 	}
 	b, err := jsonMaintenance(next)
