@@ -177,6 +177,20 @@ func (s *Store) BeginLivenessWatchAttempt(manifest LivenessWatchManifest, receip
 		return LivenessWatchAttempt{}, err
 	}
 	defer s.unlock()
+	if err := manifest.ValidateFresh(); err != nil {
+		return LivenessWatchAttempt{}, err
+	}
+	if receipt.RegistrySnapshotVersion != 2 {
+		return LivenessWatchAttempt{}, errors.New("maat memory: historical receipt cannot admit an action")
+	}
+	retained, err := s.readPreflightReceiptLocked(receiptDigest)
+	if err != nil {
+		return LivenessWatchAttempt{}, fmt.Errorf("maat memory: exact retained preflight required: %w", err)
+	}
+	retainedDigest, err := retained.Digest()
+	if err != nil || retainedDigest != receiptDigest || digestEqual(retained, receipt) != nil {
+		return LivenessWatchAttempt{}, errors.New("maat memory: retained preflight identity mismatch")
+	}
 	currentReceipt, err := s.preflightBoundLocked(
 		Scope{Component: "pantheon", Profile: "local-macos", Operation: "install-managed-liveness-watch"}, digest, resolveMemoryGuard,
 	)

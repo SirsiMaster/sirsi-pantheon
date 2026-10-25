@@ -40,6 +40,7 @@ var (
 
 type maatLivenessStore interface {
 	Close() error
+	RetainPreflightReceipt(maat.PreflightReceipt) (maat.StoredPreflightReceipt, error)
 	PreflightLivenessWatch(maat.LivenessWatchManifest) (maat.PreflightReceipt, error)
 	BeginLivenessWatchAttempt(maat.LivenessWatchManifest, maat.PreflightReceipt) (maat.LivenessWatchAttempt, error)
 	PendingLivenessWatchAttempt() (maat.LivenessWatchAttempt, error)
@@ -617,7 +618,11 @@ func installMaatLivenessWatch() error {
 	if err != nil {
 		return fmt.Errorf("Ma'at liveness-watch failure-memory preflight is unverifiable: %w", err)
 	}
-	if err := maat.ProjectFailureMemoryPreflight(journal, receipt); err != nil {
+	stored, err := store.RetainPreflightReceipt(receipt)
+	if err != nil {
+		return fmt.Errorf("retain exact Ma’at preflight before projection: %w", err)
+	}
+	if err := maat.ProjectFailureMemoryPreflight(journal, stored); err != nil {
 		return fmt.Errorf("retain Ma'at liveness-watch preflight before action: %w", err)
 	}
 	if receipt.Decision != maat.PreflightPass {

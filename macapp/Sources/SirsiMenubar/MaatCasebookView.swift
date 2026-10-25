@@ -2527,6 +2527,9 @@ private struct MaatCaseDetailView: View {
                             .sirsiFont(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    if entry.kind == "failure memory preflight" {
+                        MaatRetainedPreflightDetail(model: operations.failureMemoryReceipts, entry: entry)
+                    }
                     if entry.nextAction?.kind == "maat_repair", entry.nextAction?.actionID == "liveness-watch" {
                         failureMemorySetup
                     }
@@ -3744,11 +3747,12 @@ struct MaatCase: Decodable, Identifiable {
 	let nextAction: MaatCaseNextAction?
 	let systemOne: MaatSystemOneVerdict?
 	let systemOneCalibration: MaatSystemOneCalibration?
+    let failureMemoryReceipt: MaatPreflightReceiptReference?
 
     init(id: String, time: String, kind: String, category: String, status: String,
          priority: MaatCasePriority, requester: String, resource: String,
          affected: String, determination: String, assessed: String, why: String,
-         evidence: String, resolution: String = "", verifiedRepairEvidence: String = "", repairOutcomeEvidence: String = "", pendingRepairAttemptEvidence: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil) {
+         evidence: String, resolution: String = "", verifiedRepairEvidence: String = "", repairOutcomeEvidence: String = "", pendingRepairAttemptEvidence: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil, failureMemoryReceipt: MaatPreflightReceiptReference? = nil) {
         self.id = id
         self.time = time
         self.kind = kind
@@ -3769,6 +3773,7 @@ struct MaatCase: Decodable, Identifiable {
 		self.nextAction = nextAction
 		self.systemOne = systemOne
 		self.systemOneCalibration = systemOneCalibration
+        self.failureMemoryReceipt = failureMemoryReceipt
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3780,6 +3785,7 @@ struct MaatCase: Decodable, Identifiable {
         case nextAction = "next_action"
 		case systemOne = "system_one"
 		case systemOneCalibration = "system_one_calibration"
+        case failureMemoryReceipt = "failure_memory_receipt"
     }
 
     init(from decoder: Decoder) throws {
@@ -3804,6 +3810,7 @@ struct MaatCase: Decodable, Identifiable {
 		nextAction = try values.decodeIfPresent(MaatCaseNextAction.self, forKey: .nextAction)
 		systemOne = try values.decodeIfPresent(MaatSystemOneVerdict.self, forKey: .systemOne)
 		systemOneCalibration = try values.decodeIfPresent(MaatSystemOneCalibration.self, forKey: .systemOneCalibration)
+        failureMemoryReceipt = try values.decodeIfPresent(MaatPreflightReceiptReference.self, forKey: .failureMemoryReceipt)
     }
 
     var searchText: String {

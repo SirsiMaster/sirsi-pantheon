@@ -90,6 +90,9 @@ func TestLivenessWatchAttemptIsDurableSingleAndExact(t *testing.T) {
 	if err != nil || receipt.Decision != PreflightPass {
 		t.Fatalf("preflight = %+v, err=%v", receipt, err)
 	}
+	if _, err := store.RetainPreflightReceipt(receipt); err != nil {
+		t.Fatal(err)
+	}
 	attempt, err := store.BeginLivenessWatchAttempt(manifest, receipt)
 	if err != nil {
 		t.Fatal(err)
@@ -123,6 +126,9 @@ func TestLivenessWatchOutcomeRequiresExactPositiveObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.RetainPreflightReceipt(receipt); err != nil {
+		t.Fatal(err)
+	}
 	attempt, err := store.BeginLivenessWatchAttempt(manifest, receipt)
 	if err != nil {
 		t.Fatal(err)
@@ -146,6 +152,9 @@ func TestLivenessWatchProjectionDebtSurvivesRestartAndClosesOnlyAfterReadBack(t 
 	manifest := fixtureLivenessManifest(t, storeUUID)
 	receipt, err := store.PreflightLivenessWatch(manifest)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RetainPreflightReceipt(receipt); err != nil {
 		t.Fatal(err)
 	}
 	attempt, err := store.BeginLivenessWatchAttempt(manifest, receipt)
@@ -227,6 +236,9 @@ func TestLivenessWatchAttemptRefusesManifestDriftAfterPreflight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.RetainPreflightReceipt(receipt); err != nil {
+		t.Fatal(err)
+	}
 	manifest.ManagedLabel = "ai.sirsi.other"
 	if _, err := store.BeginLivenessWatchAttempt(manifest, receipt); err == nil {
 		t.Fatal("attempt accepted a manifest that drifted after preflight")
@@ -253,6 +265,9 @@ func TestLivenessWatchAttemptRechecksSnapshotUnderAdmissionLock(t *testing.T) {
 			reviewed, err := storeA.PreflightLivenessWatch(manifest)
 			if err != nil || reviewed.Decision != PreflightPass {
 				t.Fatalf("initial preflight = %+v, err=%v", reviewed, err)
+			}
+			if _, err := storeA.RetainPreflightReceipt(reviewed); err != nil {
+				t.Fatal(err)
 			}
 			switch mode {
 			case "matching-active", "unsupported-changed", "unrelated-changed":

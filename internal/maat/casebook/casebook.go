@@ -59,27 +59,28 @@ type ResolutionStep struct {
 // Case is a stable, operator-readable projection of exactly one recorded
 // Ma'at decision. It has no independent lifecycle or write authority.
 type Case struct {
-	ID                           string                  `json:"id"`
-	Time                         string                  `json:"time"`
-	Host                         string                  `json:"host"`
-	Kind                         string                  `json:"kind"`
-	Category                     string                  `json:"category"`
-	Status                       Status                  `json:"status"`
-	Priority                     Priority                `json:"priority"`
-	Requester                    string                  `json:"requester"`
-	Resource                     string                  `json:"resource,omitempty"`
-	Affected                     string                  `json:"affected,omitempty"`
-	Determination                string                  `json:"determination"`
-	Assessed                     string                  `json:"assessed"`
-	Why                          string                  `json:"why"`
-	Evidence                     string                  `json:"evidence,omitempty"`
-	Resolution                   string                  `json:"resolution,omitempty"`
-	VerifiedRepairEvidence       string                  `json:"verified_repair_evidence,omitempty"`
-	RepairOutcomeEvidence        string                  `json:"repair_outcome_evidence,omitempty"`
-	PendingRepairAttemptEvidence string                  `json:"pending_repair_attempt_evidence,omitempty"`
-	NextAction                   *ResolutionPath         `json:"next_action,omitempty"`
-	SystemOne                    *maat.MaatVerdict       `json:"system_one,omitempty"`
-	SystemOneCalibration         *maat.CalibrationRecord `json:"system_one_calibration,omitempty"`
+	ID                           string                          `json:"id"`
+	Time                         string                          `json:"time"`
+	Host                         string                          `json:"host"`
+	Kind                         string                          `json:"kind"`
+	Category                     string                          `json:"category"`
+	Status                       Status                          `json:"status"`
+	Priority                     Priority                        `json:"priority"`
+	Requester                    string                          `json:"requester"`
+	Resource                     string                          `json:"resource,omitempty"`
+	Affected                     string                          `json:"affected,omitempty"`
+	Determination                string                          `json:"determination"`
+	Assessed                     string                          `json:"assessed"`
+	Why                          string                          `json:"why"`
+	Evidence                     string                          `json:"evidence,omitempty"`
+	Resolution                   string                          `json:"resolution,omitempty"`
+	VerifiedRepairEvidence       string                          `json:"verified_repair_evidence,omitempty"`
+	RepairOutcomeEvidence        string                          `json:"repair_outcome_evidence,omitempty"`
+	PendingRepairAttemptEvidence string                          `json:"pending_repair_attempt_evidence,omitempty"`
+	NextAction                   *ResolutionPath                 `json:"next_action,omitempty"`
+	SystemOne                    *maat.MaatVerdict               `json:"system_one,omitempty"`
+	SystemOneCalibration         *maat.CalibrationRecord         `json:"system_one_calibration,omitempty"`
+	FailureMemoryReceipt         *maat.PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
 }
 
 // Node and Edge form a deliberately small evidence graph. The dashboard can
@@ -390,7 +391,7 @@ func project(d maat.Decision) Case {
 		Time: d.Time, Host: d.Host, Kind: d.Kind, Category: classify(d),
 		Requester: d.Requester, Resource: d.Resource, Affected: d.Affected,
 		Determination: d.Determination, Assessed: d.Assessed, Why: d.Why, Evidence: d.Evidence,
-		SystemOne: d.SystemOne, SystemOneCalibration: d.SystemOneCalibration,
+		SystemOne: d.SystemOne, SystemOneCalibration: d.SystemOneCalibration, FailureMemoryReceipt: d.FailureMemoryReceipt,
 		Status: statusFor(determination), Priority: priorityFor(determination),
 	}
 	// A calibration is a completed historical comparison between an existing

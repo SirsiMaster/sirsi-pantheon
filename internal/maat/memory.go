@@ -250,17 +250,19 @@ func (i Incident) validate() error {
 }
 
 type PreflightReceipt struct {
-	Schema                 string            `json:"schema"`
-	Action                 Scope             `json:"action"`
-	ActionManifestSHA256   string            `json:"action_manifest_sha256"`
-	RegistrySnapshotSHA256 string            `json:"registry_snapshot_sha256"`
-	EvaluatedGuards        []GuardEvaluation `json:"evaluated_guards"`
-	MeasuredChecks         []CheckOutcome    `json:"measured_checks"`
-	Decision               PreflightDecision `json:"decision"`
-	IncidentKeys           []string          `json:"incident_keys"`
-	RecoveryActions        []RecoveryAction  `json:"recovery_actions"`
-	RecoveryReference      string            `json:"recovery_reference"`
-	EvaluatedAtUTC         time.Time         `json:"evaluated_at_utc"`
+	Schema                  string            `json:"schema"`
+	Action                  Scope             `json:"action"`
+	ActionManifestSHA256    string            `json:"action_manifest_sha256"`
+	RegistrySnapshotSHA256  string            `json:"registry_snapshot_sha256"`
+	EvaluatedGuards         []GuardEvaluation `json:"evaluated_guards"`
+	MeasuredChecks          []CheckOutcome    `json:"measured_checks"`
+	Decision                PreflightDecision `json:"decision"`
+	IncidentKeys            []string          `json:"incident_keys"`
+	RecoveryActions         []RecoveryAction  `json:"recovery_actions"`
+	RecoveryReference       string            `json:"recovery_reference"`
+	EvaluatedAtUTC          time.Time         `json:"evaluated_at_utc"`
+	RegistrySnapshotVersion int               `json:"registry_snapshot_version,omitempty"`
+	localOrigin             *preflightReceiptOrigin
 }
 
 type GuardEvaluation struct{ ID, Version, SHA256 string }
@@ -652,7 +654,19 @@ func (s *Store) preflightBound(action Scope, manifestDigest string, resolve func
 		return PreflightReceipt{}, err
 	}
 	defer s.unlock()
-	return s.preflightBoundLocked(action, manifestDigest, resolve)
+	receipt, evalErr := s.preflightBoundLocked(action, manifestDigest, resolve)
+	if validDigest(receipt.RegistrySnapshotSHA256) {
+		var identity unix.Stat_t
+		if err := unix.Fstat(s.rootFD, &identity); err != nil {
+			return PreflightReceipt{}, err
+		}
+		canonical, err := json.Marshal(receipt)
+		if err != nil {
+			return PreflightReceipt{}, err
+		}
+		receipt.localOrigin = &preflightReceiptOrigin{device: uint64(identity.Dev), inode: uint64(identity.Ino), storeUUID: s.storeUUID, canonical: string(canonical)}
+	}
+	return receipt, evalErr
 }
 
 // preflightBoundLocked evaluates the complete registry snapshot while the
@@ -666,7 +680,7 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 	if err := action.validate(); err != nil {
 		return PreflightReceipt{}, err
 	}
-	journalLines, err := s.verifyWriteJournal()
+	_, err := s.verifyWriteJournal()
 	if err != nil {
 		return PreflightReceipt{Schema: MemorySchema, Action: action, Decision: PreflightUnverifiable, EvaluatedAtUTC: time.Now().UTC()}, err
 	}
@@ -682,12 +696,13 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 	if !validDigest(manifestDigest) {
 		return PreflightReceipt{}, errors.New("maat memory: invalid action manifest digest")
 	}
-	receipt := PreflightReceipt{Schema: MemorySchema, Action: action, ActionManifestSHA256: manifestDigest, Decision: PreflightPass, EvaluatedAtUTC: time.Now().UTC()}
+	receipt := PreflightReceipt{Schema: MemorySchema, RegistrySnapshotVersion: 2, Action: action, ActionManifestSHA256: manifestDigest, Decision: PreflightPass, EvaluatedAtUTC: time.Now().UTC()}
 	snapshot := sha256.New()
-	_, _ = snapshot.Write([]byte(MemorySchema + "\n"))
-	for _, line := range journalLines {
-		_, _ = snapshot.Write([]byte(line + "\n"))
-	}
+	_, _ = snapshot.Write([]byte("sirsi.maat.semantic-registry.v2\n" + MemorySchema + "\n"))
+	closedGuard, _ := resolveMemoryGuard(ActiveIncidentGuardID, ActiveIncidentGuardVersion)
+	guardBytes, _ := json.Marshal(closedGuard.identity)
+	_, _ = snapshot.Write(guardBytes)
+	_, _ = snapshot.Write([]byte("\n"))
 	incidents := make(map[string]Incident, len(names))
 	for _, name := range names {
 		if !strings.HasSuffix(name, ".json") || !validDigest(strings.TrimSuffix(name, ".json")) {
@@ -696,6 +711,10 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 		}
 		data, err := readExact(s.incidentFD, name)
 		if err != nil {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, err
+		}
+		if err := s.verifyCommittedBytes("incidents", name, data); err != nil {
 			receipt.Decision = PreflightUnverifiable
 			return receipt, err
 		}
@@ -708,6 +727,7 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 			receipt.Decision = PreflightUnverifiable
 			return receipt, fmt.Errorf("maat memory: incident evidence unavailable: %w", err)
 		}
+		_, _ = snapshot.Write([]byte("evidence/" + incident.EvidenceSHA256 + "\n"))
 		fileDigest := sha256.Sum256(data)
 		_, _ = snapshot.Write([]byte("incidents/" + name + "\x00" + hex.EncodeToString(fileDigest[:]) + "\n"))
 		incidents[incident.Key] = incident
@@ -725,6 +745,10 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 		}
 		data, err := readExact(s.transitionFD, name)
 		if err != nil {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, err
+		}
+		if err := s.verifyCommittedBytes("transitions", name, data); err != nil {
 			receipt.Decision = PreflightUnverifiable
 			return receipt, err
 		}
@@ -807,7 +831,7 @@ func (s *Store) verifyEvidence(expectedDigest string) error {
 	if hex.EncodeToString(sum[:]) != expectedDigest {
 		return errors.New("maat memory: evidence bytes do not match digest")
 	}
-	return nil
+	return s.verifyCommittedBytes("evidence", expectedDigest, data)
 }
 
 func openOrCreateDirectory(parentFD int, name string) (int, error) {

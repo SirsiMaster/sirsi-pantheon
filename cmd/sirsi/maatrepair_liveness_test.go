@@ -19,6 +19,7 @@ import (
 )
 
 type livenessFixtureStore struct {
+	backing     *maat.Store
 	decision    maat.PreflightDecision
 	manifest    maat.LivenessWatchManifest
 	receipt     maat.PreflightReceipt
@@ -31,23 +32,29 @@ type livenessFixtureStore struct {
 	projection  *maat.LivenessWatchProjectionDebt
 	projected   bool
 	beginErr    error
+	retainErr   error
 }
 
 func (s *livenessFixtureStore) Close() error { return nil }
 
 func (s *livenessFixtureStore) PreflightLivenessWatch(manifest maat.LivenessWatchManifest) (maat.PreflightReceipt, error) {
-	digest, err := manifest.Digest()
-	if err != nil {
+	if _, err := manifest.Digest(); err != nil {
 		return maat.PreflightReceipt{}, err
 	}
 	s.manifest = manifest
-	s.receipt = maat.PreflightReceipt{
-		Schema:               maat.MemorySchema,
-		Action:               maat.Scope{Component: "pantheon", Profile: "local-macos", Operation: "install-managed-liveness-watch"},
-		ActionManifestSHA256: digest, RegistrySnapshotSHA256: strings.Repeat("d", 64),
-		Decision: s.decision, EvaluatedAtUTC: time.Now().UTC(),
+	receipt, err := s.backing.PreflightLivenessWatch(manifest)
+	if err != nil {
+		return maat.PreflightReceipt{}, err
 	}
-	return s.receipt, nil
+	s.receipt = receipt
+	return receipt, nil
+}
+
+func (s *livenessFixtureStore) RetainPreflightReceipt(r maat.PreflightReceipt) (maat.StoredPreflightReceipt, error) {
+	if s.retainErr != nil {
+		return maat.StoredPreflightReceipt{}, s.retainErr
+	}
+	return s.backing.RetainPreflightReceipt(r)
 }
 
 func (s *livenessFixtureStore) BeginLivenessWatchAttempt(manifest maat.LivenessWatchManifest, receipt maat.PreflightReceipt) (maat.LivenessWatchAttempt, error) {
@@ -162,6 +169,33 @@ func (j *livenessFixtureJournal) Recent(int) ([]maat.Decision, error) { return n
 
 func installLivenessCommandFixtures(t *testing.T, store *livenessFixtureStore, journal *livenessFixtureJournal, installErr error) *int {
 	t.Helper()
+	home := t.TempDir()
+	if err := os.Chmod(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	storeUUID, err := maat.InitializeDefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.backing, err = maat.OpenDefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.backing.Close() })
+	if store.decision == maat.PreflightReject {
+		evidence, err := store.backing.PutEvidence([]byte("inert known active incident"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		incident, err := maat.NewIncident(maat.FailureSignature{Namespace: "pantheon", Version: "v1", FailureClass: "fixture", Operation: "install-managed-liveness-watch", Component: "pantheon", Invariant: "fixture", ErrorCode: "fixture"}, evidence, maat.Scope{Component: "pantheon", Profile: "local-macos", Operation: "install-managed-liveness-watch"}, maat.ActiveIncidentGuardID, maat.ActiveIncidentGuardVersion, []maat.RecoveryAction{{ID: "inspect", Label: "Inspect", Instruction: "Inspect this inert fixture"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.backing.Append(incident); err != nil {
+			t.Fatal(err)
+		}
+	}
 	oldConfirm, oldRead := maatRepairConfirm, maatRepairReadLivenessFinding
 	oldInspect, oldInitialize, oldOpen := maatRepairDefaultStoreInspect, maatRepairDefaultStoreInitialize, maatRepairOpenDefaultStore
 	oldBuild, oldObserve, oldInstall, oldRevalidate := maatRepairBuildLivenessManifest, maatRepairObserveLiveness, maatRepairInstallLiveness, maatRepairRevalidateExecutable
@@ -177,7 +211,7 @@ func installLivenessCommandFixtures(t *testing.T, store *livenessFixtureStore, j
 	maatRepairConfirm = true
 	maatJSON, JsonOutput = false, false
 	maatRepairDefaultStoreInspect = func() maat.DefaultStoreStatus {
-		return maat.DefaultStoreStatus{State: maat.DefaultStoreReady, StoreUUID: "b3c515a2-4773-4653-86d1-8a5734c2ee45"}
+		return maat.DefaultStoreStatus{State: maat.DefaultStoreReady, StoreUUID: storeUUID}
 	}
 	maatRepairDefaultStoreInitialize = func() (string, error) { return "", errors.New("unexpected initialize") }
 	maatRepairOpenDefaultStore = func() (maatLivenessStore, error) { return store, nil }
@@ -710,5 +744,19 @@ func TestMaatLivenessAdapterDelegatesObserveAndInstallToLocalModeAPIs(t *testing
 	})
 	if err != nil || !installCalled || message != "local fixture install" {
 		t.Fatalf("local API install = %q called=%v err=%v", message, installCalled, err)
+	}
+}
+
+func TestMaatLivenessReceiptRetentionFailureRunsNoInstallerOrProjection(t *testing.T) {
+	store := &livenessFixtureStore{decision: maat.PreflightPass, retainErr: errors.New("owned fixture receipt write refused")}
+	journal := &livenessFixtureJournal{}
+	installLivenessCommandFixtures(t, store, journal, nil)
+	installs := 0
+	oldInstall := maatRepairInstallLiveness
+	t.Cleanup(func() { maatRepairInstallLiveness = oldInstall })
+	maatRepairInstallLiveness = func(maat.LivenessWatchManifest) (string, error) { installs++; return "", nil }
+	err := maatRepairLivenessWatchCmd.RunE(maatRepairLivenessWatchCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "receipt write refused") || installs != 0 || store.started != 0 || len(journal.decisions) != 0 {
+		t.Fatalf("error=%v installs=%d starts=%d journal=%+v", err, installs, store.started, journal.decisions)
 	}
 }

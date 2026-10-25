@@ -240,3 +240,40 @@ Git publication: pending; managed session denied `.git/FETCH_HEAD` writes.
 These are publication blockers, not a requirement for renewed owner approval.
 A writable publication lane must preserve this path, publish through Git/CI and
 independent review, update existing human indexes, and record stable mirror ids.
+
+## G02 retained preflight source checkpoint (2026-10-25)
+
+The local implementation now retains the complete compact `json.Marshal(PreflightReceipt)`
+bytes in the existing governed evidence namespace before confirmed Casebook projection
+or managed-watch attempt admission. `StoredPreflightReceipt` is an opaque readback
+handle; a loose receipt or a hash-only Casebook row cannot substitute for custody.
+The existing hash reference remains unchanged; new rows additionally carry typed
+receipt/action/registry/scope/store-binding metadata.
+
+New receipts append `registry_snapshot_version:2`. Its semantic stream includes
+the schema, closed guard implementation identity, sorted verified incident and
+transition bodies and referenced proof identities. Receipt, attempt and unrelated
+evidence bookkeeping do not self-invalidate it. Every operation still validates
+the full WAL and committed targets; unresolved prepared writes still refuse.
+Admission revalidates the current manifest, exact retained receipt and semantic
+snapshot under the existing exclusive lock. Legacy receipt bytes stay legacy.
+
+`maat failure-memory receipt --sha256 <digest> --json` opens the existing bound
+default store. Optional `--store` is an existing-only private legacy root, never
+an initialization/adoption or authority route. Unconfirmed preflight also uses
+existing-only opening. Historical reads return the complete receipt, store
+binding, read time, `freshness:historical`, registry relation and
+`action_authorized:false`; neither an unchanged registry nor a historical pass
+is current host health or new consent. Missing historical bytes remain missing.
+
+Native Casebook's selected-memory detail uses fixed canonical-engine arguments,
+checks the captured reference and binding, renders the original guards, checks,
+incidents and recovery text, and retains its previous detail on failed or
+cancelled reads. Recovery prose is never an executable command. The read model
+is owned by the existing engine operation lifetime across navigation.
+
+This is source only, pending independent review and Main's native qualification.
+G01 direct failure intake and explicit accepted-not-repaired local disposition
+continue separately under the revised owner-disposition contract. This checkpoint
+does not introduce their trust/lifecycle semantics, waive unknown action debt,
+claim other operation rows or surfaces, or establish installed/release proof.
