@@ -51,9 +51,14 @@ scan() {
   # grep -E -n: file:line:text; exclude tests and the package itself.
   local hits
   # cmd/sirsi/routerservecmd.go is the service itself — the one process that
-  # may open a backend directly (ADR-062 §2). Nothing else is allowlisted.
+  # may open a backend directly (ADR-062 §2). cmd/sirsi/maatauthorityservecmd.go
+  # opens a DIFFERENT, pod-local SQLite ledger that ADR-120 deliberately keeps
+  # outside the canonical router store (§2: "its own LOCAL ledger") — the exact
+  # ADR-062 exception ADR-120 names, not a split-brain path onto the canonical
+  # one. Nothing else is allowlisted.
   hits=$(grep -En "$FORBIDDEN" "${files[@]}" 2>/dev/null \
-         | grep -v '^\./internal/routerstore/' | grep -v '^\./cmd/sirsi/routerservecmd\.go:' || true)
+         | grep -v '^\./internal/routerstore/' | grep -v '^\./cmd/sirsi/routerservecmd\.go:' \
+         | grep -v '^\./cmd/sirsi/maatauthorityservecmd\.go:' || true)
   if [ -n "$hits" ]; then
     echo "ERROR: router store opened outside routerstore.Resolve() (ADR-062 §1):"
     echo "$hits" | sed 's/^/  /'
