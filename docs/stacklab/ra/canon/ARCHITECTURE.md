@@ -55,11 +55,22 @@ The owner set the split between the two services:
 **Status, stated honestly.** The roles above are the decided architecture. The
 shipped state is partial:
 
-- Horus runs as `horus supervise` with observation duties.
-- Its mail routes to Ra once a build with #1194 is installed.
+- Horus is not yet on every node. Mercury observed it read-only on
+  2026-10-25 ~03:25Z:
+  - The **M1** runs `horus supervise`. It is an SSA-signed 2026-10-12 build
+    under the legacy launchd label `ai.sirsi.horus.agent-router`.
+  - The **M5-Studio** runs no Horus, only the host relay.
+  - The M5 was not observed.
+- Mail to Horus routes to Ra (#1194) only from a Horus built from v0.24.135
+  or later. Neither the M1 nor the Studio runs such a Horus today; the only
+  running Horus predates #1194.
+- The host relay matches the roles above on both observed Macs: owned by
+  `_sirsipantheon`, it forwards local traffic through the spool to Ra.
 - Per-module versioning is not yet separate from the single `sirsi` release.
 - The standalone/integrated board parity has not been audited against the Swift
   standard.
+- The M1's launchd label still names Horus `agent-router`, the old inbox-lane
+  name, which contradicts "not an inbox lane". It is a rename item.
 - These gaps are post-freeze work items. They are not claimed done.
 
 ## Durable contracts

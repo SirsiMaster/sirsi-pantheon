@@ -11,6 +11,9 @@
   integrated views to the Swift Mac standard.
 - State the shipped gaps (per-module versioning, board parity audit) as
   post-freeze work, not as done.
+- Status narrowed to observation (Mercury review): Horus runs on the M1 only
+  (pre-#1194 build, legacy `agent-router` label); the Studio has no Horus;
+  the M5 was not observed.
 
 ## 2026-10-19 — Loaded-image and observer continuity successor
 
