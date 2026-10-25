@@ -625,6 +625,9 @@ type Relay struct {
 	// A relay instance owns one serving lifetime. Reusing its old lane channels
 	// after cancellation would strand wakes on workers that already exited.
 	started atomic.Bool
+	// A failed response/custody operation is sticky for this serving lifetime.
+	// A completed goroutine must not turn a lost settlement into a drain proof.
+	settlementFailed atomic.Bool
 }
 
 // Serve polls the spool until ctx is done. Each request file is forwarded once;
@@ -638,6 +641,10 @@ func (rl *Relay) Serve(ctx context.Context) error {
 // ErrRelayDrainIncomplete means the serving loop stopped but an admitted duty
 // has not acknowledged completion. It never authorizes retirement or replay.
 var ErrRelayDrainIncomplete = errors.New("relay: admitted duties have not drained")
+
+// ErrRelaySettlementIncomplete refuses retirement when completed duties could
+// not record their response or release already-settled in-flight custody.
+var ErrRelaySettlementIncomplete = errors.New("relay: response or outcome custody remains unsettled")
 
 // ServeDrained retains the existing fast-cancel Serve contract as a separate
 // API. After stopping discovery it joins every lane worker and admitted fresh
@@ -662,6 +669,9 @@ func (rl *Relay) ServeDrained(ctx context.Context, drainTimeout time.Duration) e
 	defer timer.Stop()
 	select {
 	case <-done:
+		if rl.settlementFailed.Load() {
+			return errors.Join(err, ErrRelaySettlementIncomplete)
+		}
 		return err
 	case <-timer.C:
 		return errors.Join(err, ErrRelayDrainIncomplete)
@@ -904,12 +914,23 @@ func (rl *Relay) handleOne(agent, f string) bool {
 		}
 		// Could not stage the outbox — do not lose it silently; report unknown.
 		b, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: "relay: could not stage " + id + " for retry: OUTCOME UNKNOWN — re-query before retrying a mutation"}})
-		rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: b})
-		_ = os.Remove(inflight)
+		if rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: b}) {
+			rl.removeSettledInflight(inflight)
+		}
 		return false
 	}
-	rl.publish(agent, id, sr)
-	_ = os.Remove(inflight)
+	if !rl.publish(agent, id, sr) {
+		return false // retain consumed request; never re-forward an unknown outcome
+	}
+	return rl.removeSettledInflight(inflight)
+}
+
+func (rl *Relay) removeSettledInflight(path string) bool {
+	if err := os.Remove(path); err != nil {
+		rl.settlementFailed.Store(true)
+		rl.Log.Error("relay: retain unsettled in-flight custody", "path", path, "err", err)
+		return false
+	}
 	return true
 }
 
@@ -948,7 +969,9 @@ func (rl *Relay) retryOutboxOne(agent, f string) outboxOutcome {
 	sr := rl.forward(agent, id, inflight)
 	switch {
 	case sr.Status == statusHoldForRetry:
-		_ = os.Rename(inflight, f) // provably never reached — keep held in order
+		if err := os.Rename(inflight, f); err != nil { // provably never reached
+			rl.settlementFailed.Store(true) // keep the still-owned inflight record
+		}
 		return outboxHeld
 	case sr.Status == http.StatusBadGateway:
 		// forward's OUTCOME-UNKNOWN sentinel (post-send failure). The request may
@@ -959,11 +982,15 @@ func (rl *Relay) retryOutboxOne(agent, f string) outboxOutcome {
 		if os.MkdirAll(filepath.Dir(failed), 0o700) == nil && os.Rename(inflight, failed) == nil {
 			rl.Log.Error("relay: held request OUTCOME UNKNOWN on retry — parked for audit, not re-forwarded", "agent", agent, "id", id)
 		} else {
-			_ = os.Rename(inflight, f) // could not park — leave held rather than lose it
+			// Never move an unknown outcome back into a retryable outbox.
+			// Retain inflight for explicit readback/recovery instead.
+			rl.settlementFailed.Store(true)
 		}
 		return outboxUnknown
 	default:
-		_ = os.Remove(inflight) // positively delivered (service answered)
+		if !rl.removeSettledInflight(inflight) {
+			return outboxUnknown
+		}
 		rl.Log.Info("relay: held request delivered on retry", "agent", agent, "id", id, "status", sr.Status)
 		return outboxDelivered
 	}
@@ -1047,8 +1074,9 @@ func (rl *Relay) serveOnce() int {
 	return n
 }
 
-// publish writes the response file atomically.
-func (rl *Relay) publish(agent, id string, sr spoolResponse) {
+// publish writes the response file atomically. A failure retains consumed
+// request custody at its caller and permanently refuses this instance's drain.
+func (rl *Relay) publish(agent, id string, sr spoolResponse) bool {
 	resPath := filepath.Join(rl.Spool, agent, "res", id+".json")
 	fileMode := os.FileMode(0o600)
 	if rl.TrustGroup != "" {
@@ -1073,8 +1101,9 @@ func (rl *Relay) publish(agent, id string, sr spoolResponse) {
 		dirMode = 0o770
 		g, gerr := user.LookupGroup(rl.TrustGroup)
 		if gerr != nil {
+			rl.settlementFailed.Store(true)
 			rl.Log.Error("relay: resolve trust group", "agent", agent, "id", id, "group", rl.TrustGroup, "err", gerr)
-			return
+			return false
 		}
 		if gid, aerr := strconv.Atoi(g.Gid); aerr == nil {
 			trustGID = gid
@@ -1085,12 +1114,16 @@ func (rl *Relay) publish(agent, id string, sr spoolResponse) {
 		mkErr = mkdirTrusted(resDir, dirMode, trustGID)
 	}
 	if mkErr != nil {
+		rl.settlementFailed.Store(true)
 		rl.Log.Error("relay: create response dir", "agent", agent, "id", id, "err", mkErr)
-		return
+		return false
 	}
 	if err := writeAtomic(resPath, sr, fileMode); err != nil {
+		rl.settlementFailed.Store(true)
 		rl.Log.Error("relay: write response", "agent", agent, "id", id, "err", err)
+		return false
 	}
+	return true
 }
 
 // recoverInflight runs once at startup: anything under <agent>/inflight/ was
@@ -1111,8 +1144,9 @@ func (rl *Relay) recoverInflight() int {
 			}
 		}
 		body, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: "relay restarted after consuming " + method + " " + id + ": OUTCOME UNKNOWN — re-query before retrying a mutation"}})
-		rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: body})
-		_ = os.Remove(f)
+		if !rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: body}) || !rl.removeSettledInflight(f) {
+			continue
+		}
 		rl.Log.Warn("relay: in-flight request from a previous relay reported as outcome-unknown", "agent", agent, "method", method, "id", id)
 	}
 	return len(files)

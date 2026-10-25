@@ -124,6 +124,98 @@ func TestRelayDrainTimeoutIsNotSuccessOrCancellationOfForward(t *testing.T) {
 	}
 }
 
+func TestRelayDrainRefusesLostResponseAndRetainsOutcomeCustody(t *testing.T) {
+	rl, spool, entered, release := newHeldDrainRelay(t, false)
+	// A regular file at res prevents publication without depending on uid/mode
+	// permissions. The server still positively answers the admitted request.
+	if err := os.WriteFile(filepath.Join(spool, "lane", "res"), []byte("fixture obstruction"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	done := make(chan error, 1)
+	go func() { done <- rl.ServeDrained(ctx, time.Second) }()
+	awaitDrainEntry(t, entered)
+	cancel()
+	release()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrRelaySettlementIncomplete) {
+			t.Errorf("failed publication must return settlement refusal, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("failed settlement did not return a bounded refusal")
+	}
+	if _, err := os.Stat(filepath.Join(spool, "lane", "inflight", "held.json")); err != nil {
+		t.Errorf("failed response lost outcome custody: %v", err)
+	}
+}
+
+func TestRelayDrainRecoveryPreservesUnpublishedUnknownOutcome(t *testing.T) {
+	spool := t.TempDir()
+	publishDrainRequest(t, spool, "inflight", "prior", "prior")
+	if err := os.WriteFile(filepath.Join(spool, "lane", "res"), []byte("fixture obstruction"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rl := &Relay{Spool: spool, Base: "http://127.0.0.1", Token: "fixture", Client: &http.Client{}, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := rl.ServeDrained(ctx, time.Second); !errors.Is(err, ErrRelaySettlementIncomplete) {
+		t.Fatalf("startup recovery lost its publication refusal: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(spool, "lane", "inflight", "prior.json")); err != nil {
+		t.Fatalf("failed outcome-unknown publication lost original custody: %v", err)
+	}
+}
+
+func TestRelayDrainRefusesInflightCleanupFailure(t *testing.T) {
+	spool := t.TempDir()
+	retained := filepath.Join(spool, "retained")
+	if err := os.Mkdir(retained, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(retained, "owned"), []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rl := &Relay{Spool: spool, Base: "http://127.0.0.1", Token: "fixture", Client: &http.Client{}, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if rl.removeSettledInflight(retained) {
+		t.Fatal("nonempty-directory cleanup unexpectedly reported success")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := rl.ServeDrained(ctx, time.Second); !errors.Is(err, ErrRelaySettlementIncomplete) {
+		t.Fatalf("cleanup failure was not sticky in drain: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(retained, "owned")); err != nil {
+		t.Fatalf("failed cleanup changed retained data: %v", err)
+	}
+}
+
+func TestRelayUnknownOutboxParkingFailureNeverRequeues(t *testing.T) {
+	spool := t.TempDir()
+	publishDrainRequest(t, spool, "outbox", "unknown", "unknown")
+	if err := os.WriteFile(filepath.Join(spool, "lane", "failed"), []byte("fixture obstruction"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(svc.Close)
+	rl := &Relay{Spool: spool, Base: svc.URL, Token: "fixture", Client: svc.Client(), Log: slog.New(slog.NewTextHandler(io.Discard, nil)), now: time.Now}
+	if got := rl.retryOutboxOne("lane", filepath.Join(spool, "lane", "outbox", "unknown.json")); got != outboxUnknown {
+		t.Fatalf("expected unknown outcome, got %v", got)
+	}
+	if !rl.settlementFailed.Load() {
+		t.Fatal("failed outcome parking did not retain settlement debt")
+	}
+	if _, err := os.Stat(filepath.Join(spool, "lane", "inflight", "unknown.json")); err != nil {
+		t.Fatalf("unknown outcome is not held in inflight: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(spool, "lane", "outbox", "unknown.json")); !os.IsNotExist(err) {
+		t.Fatalf("unknown mutation returned to retryable outbox: %v", err)
+	}
+}
+
 func TestRelayFastCancellationDoesNotProveDrain(t *testing.T) {
 	rl, spool, entered, release := newHeldDrainRelay(t, false)
 	ctx, cancel := context.WithCancel(context.Background())

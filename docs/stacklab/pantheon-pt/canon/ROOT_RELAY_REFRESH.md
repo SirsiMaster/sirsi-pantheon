@@ -69,6 +69,12 @@ item, and cancellation leaves the next held-outbox item untouched. A positive
 bounded shutdown deadline is required. A missed deadline returns
 `ErrRelayDrainIncomplete`, never success or authority to retire the process.
 The already-admitted HTTP request is not canceled or replayed by that deadline.
+Response publication and consumed-record cleanup failures are sticky settlement
+debt (`ErrRelaySettlementIncomplete`), even after the goroutines finish. A failed
+response leaves its original inflight record intact; startup unknown-outcome
+publication obeys the same rule. If an unknown held-request outcome cannot be
+parked, it stays inflight and never returns to the retryable outbox. Existing
+atomic file publication is not a new crash-durability certification.
 The original `Serve` retains its prompt cancellation contract and is explicitly
 not a drain acknowledgment. Each Relay instance has one serving lifetime;
 reusing retired lane channels refuses instead of silently losing wakes.

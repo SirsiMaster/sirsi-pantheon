@@ -5,6 +5,9 @@
   reports incomplete custody rather than success and never cancels or replays
   an admitted mutation. Preserve the existing fast-cancel API as a distinct
   non-drain contract; reject reuse of retired per-instance lane channels.
+- Retain consumed requests when their response cannot be published, report
+  settlement/cleanup debt through the explicit drain, and keep unparkable
+  unknown outcomes outside the automatic retry queue.
 
 This is the first source checkpoint in the existing native lifecycle plan, not
 an installed service refresh, producer-ingress fence or legacy migration proof.
