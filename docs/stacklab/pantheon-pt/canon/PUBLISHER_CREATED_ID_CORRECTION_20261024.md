@@ -64,3 +64,33 @@ the precise malformed/duplicate live listing record remains unknown.
 Existing release/version and Stack Lab authority contracts continue to apply.
 API contract: https://docs.github.com/en/rest/releases/releases#create-a-release
 (`draft`, `target_commitish`, `generate_release_notes`, and returned release ID).
+
+## Cumulative source-contract followup, 2026-10-25
+
+Main's actual combined candidate73face source verifier failed under native
+8ce53d9108204332a4d35474c6c95971: the commercial source contract still required
+retired `gh release create` option strings although accepted4010 executes an
+explicit POST and rechecks the remote tag itself. This is a verifier integration
+defect, not permission to bypass validation or add dead marker strings.
+
+SSA owns a minimal followup on preserved4010: replace only the retired option
+requirements with the real explicit POST/private-draft/exact tag and commit/
+projected response/validated retained identity source invariants. Keep the
+unchanged publish-last, paired readback, tag, local identity, Apple trust and
+no-clobber checks. Add inert controls that execute the actual source verifier
+against isolated source fixtures: canonical success and mutations of each new
+requirement must respectively pass and fail. Supplied publisher source is never
+executed by those controls; no GitHub/Apple/build/service or credential mutation.
+Retain the old-verifier red and final green logs, rerun the35 publisher fixtures,
+then submit this exact additive donor for review and Main's full136 composition.
+
+Actual qualification: native60ff568edc7e4c13b30d4d5d2db3182a retained the
+old-verifier red in `/private/tmp/ssa-publisher136-contract.PC5CgbAr/`: canonical
+publisher rejected because the guard required retired `--draft`. The exact same
+two-method/eight-mutation fixture then passed with the corrected guard under
+native375db3bd107142ee89af92b5bb81a8c7, alongside all35 unchanged publisher
+fixtures, actual cumulative source verifier, Bash syntax and diff check. Raw
+green `/private/tmp/ssa-publisher136-contract.QfKnBgx7/`. Source fixtures create
+and automatically remove private temporary link trees; publisher execution and
+network/Apple commands are absent. This does not add live API or integrated136
+runtime credit. Publisher and existing publisher-test bytes remain identical4010.
