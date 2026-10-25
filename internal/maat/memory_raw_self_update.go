@@ -424,9 +424,19 @@ func (s *Store) pendingRawSelfUpdateAttemptLocked() (RawSelfUpdateAttempt, error
 		if !strings.HasSuffix(name, ".json") {
 			return RawSelfUpdateAttempt{}, errors.New("maat memory: malformed raw self-update evidence name")
 		}
-		parts := strings.Split(strings.TrimSuffix(name, ".json"), "-")
-		if len(parts) != 5 || parts[0] != "raw" || parts[1] != "self" || parts[2] != "update" || !validUUID(parts[4]) ||
-			(name != rawSelfUpdateEvidenceName("started", parts[4]) && name != rawSelfUpdateEvidenceName("invocation", parts[4]) && name != rawSelfUpdateEvidenceName("outcome", parts[4])) {
+		validName := false
+		for _, kind := range []string{"started", "invocation", "outcome"} {
+			prefix := "raw-self-update-" + kind + "-"
+			if !strings.HasPrefix(name, prefix) {
+				continue
+			}
+			id := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".json")
+			if validUUID(id) && name == rawSelfUpdateEvidenceName(kind, id) {
+				validName = true
+				break
+			}
+		}
+		if !validName {
 			return RawSelfUpdateAttempt{}, errors.New("maat memory: unrecognized raw self-update evidence name")
 		}
 	}

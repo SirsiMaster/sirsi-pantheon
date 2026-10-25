@@ -115,6 +115,51 @@ func TestRawSelfUpdateAttemptRetainsExactReceiptAndProjectionDebtUntilReadback(t
 	}
 }
 
+func TestRawSelfUpdateFilenameScannerAcceptsCanonicalUUIDAndRejectsUnknownNames(t *testing.T) {
+	t.Run("canonical UUID evidence names remain pending", func(t *testing.T) {
+		store, manifest, stored := rawSelfUpdateFixture(t)
+		attempt, err := store.BeginRawSelfUpdateAttempt(manifest, stored)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(attempt.ID, "-") || rawSelfUpdateEvidenceName("started", attempt.ID) != "raw-self-update-started-"+attempt.ID+".json" {
+			t.Fatalf("fixture UUID did not exercise canonical hyphenated evidence name: %q", attempt.ID)
+		}
+		if pending, err := store.PendingRawSelfUpdateAttempt(); err != nil || pending.ID != attempt.ID {
+			t.Fatalf("canonical started name was not found by the closed scanner: pending=%q err=%v", pending.ID, err)
+		}
+		if err := store.RecordRawSelfUpdateInvocation(attempt); err != nil {
+			t.Fatalf("canonical UUID attempt was not recognized as unique for invocation: %v", err)
+		}
+	})
+
+	for _, tc := range []struct {
+		name string
+		leaf func(*Store, RawSelfUpdateAttempt) error
+	}{
+		{name: "malformed UUID", leaf: func(store *Store, attempt RawSelfUpdateAttempt) error {
+			return store.createOrVerify("evidence", store.evidenceFD, "raw-self-update-started-not-a-uuid.json", []byte("fixture"))
+		}},
+		{name: "unknown kind", leaf: func(store *Store, attempt RawSelfUpdateAttempt) error {
+			return store.writeRawSelfUpdateRecord("unknown", attempt.ID, struct{}{})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, manifest, stored := rawSelfUpdateFixture(t)
+			attempt, err := store.BeginRawSelfUpdateAttempt(manifest, stored)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.leaf(store, attempt); err != nil {
+				t.Fatalf("write inert malformed namespace fixture: %v", err)
+			}
+			if _, err := store.PendingRawSelfUpdateAttempt(); err == nil {
+				t.Fatal("malformed or unknown raw-update filename passed the closed scanner")
+			}
+		})
+	}
+}
+
 func TestRawSelfUpdateHistoricalManifestReadableButNotFreshForAdmission(t *testing.T) {
 	_, manifest, _ := rawSelfUpdateFixture(t)
 	oldNow := binaryUpdateNow
