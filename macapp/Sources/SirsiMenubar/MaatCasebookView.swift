@@ -3155,6 +3155,17 @@ private struct MaatCaseDetailView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .textSelection(.enabled)
                         }
+                        if let verdict = entry.systemOne,
+                           maatHasLocalDiagnosticCustody(verdict, finding: finding, localHost: maatLocalDiagnosticHost() ?? ""),
+                           !maatUsesDedicatedDiagnosticCustody(finding) {
+                            NavLink {
+                                MaatDiagnosticResolutionView(engine: engine, origin: entry, finding: finding)
+                            } label: {
+                                Label("Review current resolution in Pantheon", systemImage: "wrench.and.screwdriver")
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityHint("Reads the current local diagnostic before opening Pantheon's existing controlled resolver. The retained suggestion is never executed.")
+                        }
                     }
                     .padding(11)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -3936,7 +3947,8 @@ struct MaatSystemOneSubject: Decodable {
     let kind: String
     let ref: String
     let headSHA: String
-    enum CodingKeys: String, CodingKey { case kind, ref; case headSHA = "head_sha" }
+    let repo: String?
+    enum CodingKeys: String, CodingKey { case kind, ref, repo; case headSHA = "head_sha" }
 }
 
 struct MaatSystemOneFloor: Decodable {

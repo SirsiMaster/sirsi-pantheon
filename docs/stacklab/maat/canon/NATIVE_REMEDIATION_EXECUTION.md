@@ -143,3 +143,51 @@ bounded atomic record/dependency allowance, snapshot rechecks, and cancellation
 rules remain. Every selected dependency reread is charged. Tolerant history is
 read-only and never releases an updater claim or bypasses strict journal
 mutation, replay refusal, fresh preview, confirmation, or verification.
+
+## Casebook to the existing native resolver
+
+The remaining generic host-finding gap is navigation custody: Casebook showed
+the retained prescribed step but offered only copying or owner review even
+when the current native diagnostic already had a controlled resolution. A
+per-finding control now opens `MaatDiagnosticResolutionView`, retaining the
+original case evidence on the return screen. This bridge reads the canonical
+installed CLI; it never dispatches `claim`, `fix_hint`, producer titles, shell
+text, imported source screens, or a command from the retained screen.
+
+The retained v1 host/diagnostic screen must name this exact local hostname and
+its canonical SHA-256 finding identity/evidence. A fresh complete successful
+diagnostic with a recognized status must contain exactly one active warning
+for that typed identity. Only fresh operands are shown. Opening the existing
+`FindingView` rechecks the semantic snapshot and local freshness; its existing
+confirmation, exact argv/directory launch guard, once-only ResultView capture,
+and specific-read verification remain the action authority. No repair runs
+when merely opening either review screen. The updater, liveness-watch and
+managed-disabled-service checks retain their dedicated Ma'at preview/journal/
+replay fences and cannot enter this generic bridge, including legacy screens.
+
+Back returns to the original evidence. A separate confirmation can run exactly
+`maat triage --confirm --json` once to record a new local observation. Complete
+exit, exact local host/diagnostic schema, snapshot/head and decision evidence
+are required before presenting that write as confirmed. Failure/unknown output
+is retained and points to Casebook inspection, never automatic write replay.
+A fresh screen does not accept or discharge the historical case and does not
+attribute recovery to a repair. Existing Casebook owner review/acceptance stays
+explicit; unchanged, unavailable and foreign observations never invent a fix.
+
+The review read has an explicit cancel control that cancels its owned task and
+invalidates delayed results. Re-screen cancellation retains the bounded capture
+receipt, labels any unconfirmed write honestly, and offers Casebook inspection;
+it never renews the once-only journal-write latch. Leaving the view cancels its
+owned waiting tasks and never launches a follow-up action.
+
+`MaatDiagnosticResolutionTests` authors eleven inert test methods for canonical
+wire identity, hostile hint nonexecution, foreign/imported/malformed/duplicate
+custody, missing/clear/ambiguous current checks, failed/partial observations,
+dedicated repair isolation, stale semantic snapshots, late reads, exact once-only
+re-screen argv, unknown write custody and contradictory fresh-screen receipts.
+The existing `RemediationExecutionTests` remain the confirmation/launch/result/
+verification regressions. Recipe component `maat-native-resolution-surface`
+names both new files; the component count remains29. This source has not been
+built or executed by the author. Main qualification and installed native UX
+acceptance remain required; other original Ma'at ledger gaps, including guided
+archive corruption restoration and unresolved operational rows, remain open.

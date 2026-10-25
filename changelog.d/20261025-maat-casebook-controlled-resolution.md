@@ -1,0 +1,1 @@
+- Open canonical local System One findings in Pantheon's existing controlled resolver after a fresh identity-bound diagnostic read. Preserve the original case, dedicated repair custody, separate repair consent, and a once-only confirmed fresh-screen return path; never execute retained recovery hints or infer resolution from re-observation.
