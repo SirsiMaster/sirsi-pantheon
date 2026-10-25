@@ -30,10 +30,10 @@ then reads the selected PID's loaded CodeDirectory hash from the kernel with
 `SYS_csops`; the operation value follows Apple's XNU `bsd/sys/codesign.h`
 definition (`CS_OPS_CDHASH == 5`). A failed/denied query or any mismatch refuses
 the plan. The public PID is range-checked against Darwin's signed 32-bit
-`pid_t` before any C conversion or reader call. Static signature identity, PID-only Security lookup, installed
-metadata and pathname are not substitutes for loaded-image identity. Artifact
-inspection with PID zero reports only the retained static hash and makes no
-loaded-image claim.
+`pid_t` before any C conversion or reader call. Static signature identity,
+PID-only Security lookup, installed metadata and pathname are not substitutes
+for loaded-image identity. Artifact inspection with PID zero reports only the
+retained static hash and makes no loaded-image claim.
 
 The root child keeps stderr private and bounded. The parent may surface only
 the allowlisted kernel-query errno, strict-signature status, or fixed identity

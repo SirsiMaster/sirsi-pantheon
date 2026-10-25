@@ -57,7 +57,7 @@ func TestMaintenanceImageCDHashRejectsMalformedKernelReadback(t *testing.T) {
 	got, err := maintenanceImageCDHash("/retained/sirsi", 4321,
 		func(string) ([]byte, error) { return candidate, nil },
 		func(int) ([]byte, error) { return candidate[:19], nil })
-	if got != "" || err == nil || !strings.Contains(err.Error(), "does not match kernel-loaded CDHash") {
+	if got != "" || err == nil || !strings.Contains(err.Error(), "malformed 20-byte CDHash") {
 		t.Fatalf("malformed kernel hash accepted: %q, err=%v", got, err)
 	}
 }
