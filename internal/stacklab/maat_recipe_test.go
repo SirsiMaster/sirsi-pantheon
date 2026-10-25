@@ -40,6 +40,7 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		t.Fatalf("recipe identity = %+v", recipe)
 	}
 	want := []string{
+		"maat-bounded-history-read-surfaces", "maat-history-linked-qualification-batches",
 		"maat-canon", "maat-casebook", "maat-cli", "maat-confirmed-diagnostic-repair", "maat-core", "maat-coverage",
 		"maat-decision-journal", "maat-failure-memory", "maat-guided-managed-repair", "maat-horus-surface", "maat-knowledge-surface", "maat-known-failure-proposals", "maat-mcp-surface", "maat-native-release-bootstrap", "maat-native-resolution-surface", "maat-pipeline", "maat-pulse-proof-platform",
 		"maat-binary-drift-updater", "maat-host-health-screen", "maat-knowledge-archive", "maat-local-metadata-liveness-watch", "maat-release-contract-preflight", "maat-release-credential-preflight", "maat-scheduler", "maat-scoped-service-lifecycle", "maat-system-one-screen", "maat-terminal-console-surface", "maat-wing-contract", "stacklab-apollo-run-planner",
@@ -71,6 +72,54 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 		componentsByID[component.ID] = component
 	}
 	for _, required := range []component{
+		{
+			ID: "maat-bounded-history-read-surfaces",
+			Source: []string{
+				"internal/mcp/maat_reads.go", "internal/mcp/tools.go", "internal/dashboard/maat.go",
+				"internal/dashboard/maat_reads.go", "internal/dashboard/server.go", "cmd/sirsi/dashboard.go",
+				"internal/dashboard/pages.go", "internal/dashboard/ui.go", "internal/dashboard/ui/maat-history.js",
+				"internal/tui/maat_history.go", "internal/tui/screen_activity.go", "internal/tui/contracts.go",
+				"internal/tui/command.go", "internal/tui/console.go", "internal/tui/runner.go",
+			},
+			Tests: []string{
+				"internal/mcp/maat_history_test.go", "internal/mcp/maat_knowledge_reads_test.go",
+				"internal/mcp/maat_literal_search_test.go", "internal/dashboard/maat_literal_search_test.go",
+				"internal/mcp/maat_search_guidance_test.go", "internal/dashboard/maat_search_guidance_test.go",
+				"internal/mcp/maat_membership_test.go", "internal/maat/memory_test.go", "internal/maat/memoryguard_test.go",
+				"internal/dashboard/maat_history_test.go", "internal/dashboard/maat_membership_test.go",
+				"internal/dashboard/maat_history_ui_test.cjs", "internal/dashboard/spa_contract_test.go",
+				"cmd/sirsi/dashboard_maat_history_test.go", "internal/tui/maat_history_test.go",
+				"internal/tui/console_test.go", "internal/dashboard/testdata/maat-g04-negative-controls.json",
+			},
+			Outputs: []string{
+				"partial with no provisional cases, explicit unavailable vs complete empty",
+				"generation-owned commits; no PATH fallback or second database",
+			},
+			UpgradeRecipe: []string{
+				"never infer whole-query totals from page summaries or after-cursor counts",
+				"keep sensitivity before projection and forbid ingestion/repair authority in read adapters",
+			},
+		},
+		{
+			ID: "maat-history-linked-qualification-batches",
+			Source: []string{
+				"internal/maat/history_query.go", "internal/maat/history_query_batch.go",
+				"internal/mcp/maat_reads.go", "internal/dashboard/maat_reads.go",
+				"internal/tui/command.go", "internal/tui/screen_activity.go",
+			},
+			Tests: []string{
+				"internal/maat/history_query_batch_test.go", "internal/mcp/maat_history_test.go",
+				"internal/dashboard/maat_history_test.go", "internal/tui/maat_history_test.go", "internal/tui/console_test.go",
+			},
+			Outputs: []string{
+				"bounded reference batches sharing one canonical relationship pass per batch",
+				"unchanged per-call work budgets and no provisional cases; cursorv4 rejects stale schema",
+			},
+			UpgradeRecipe: []string{
+				"keep at most48 candidate refs and the strict64KiB cursor encoder; reduce capacity for retained page metadata",
+				"charge link scans and candidate re-reads; qualify before top-K and materialize selected links from same snapshot",
+			},
+		},
 		{
 			ID: "maat-knowledge-archive",
 			Source: []string{
@@ -148,6 +197,11 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 					t.Fatalf("component %q omits %s contract %q", required.ID, field.name, want)
 				}
 			}
+		}
+	}
+	for _, id := range []string{"maat-bounded-history-read-surfaces", "maat-history-linked-qualification-batches"} {
+		if len(componentsByID[id].Writes) != 0 {
+			t.Fatalf("read-only history component %q declares mutation authority", id)
 		}
 	}
 	binaryDrift, ok := componentsByID["maat-binary-drift-updater"]
