@@ -214,7 +214,7 @@ loaded-label observation. An incomplete or unknown result requires inspection
 and a fresh review; it is never automatically replayed.
 
 This is source-only, not qualification or installed-operation evidence. The
-remaining seven operational rows, other frontend projections, native installed
+remaining six operational rows, other frontend projections, native installed
 behavior, and the original historical qualification gap remain open. No SNE
 source authority or shared interchange schema changes.
 
@@ -223,8 +223,32 @@ the canonical running engine, ordinary HOME, `LocalPlistContent`,
 `InstallLocal`, and `InspectLocalWatch`. It does not resolve a checkout or
 reuse the legacy router-backed `run` path. The CLI status route reports success
 only for an exact local schedule verified as loaded. This source integration
-remains unqualified; it does not close the other seven operational rows or
+remains unqualified; whole-app update has a separate unqualified source
+candidate, and the liveness-watch candidate does not close the other six
+operational rows or
 claim installed behavior.
+
+### Whole-app update source candidate (2026-10-25)
+
+The existing macOS `sirsi update --app` and `--cli` route now stages the
+published normal PKG through the existing maintenance-installer owner and binds
+its release tuple, bytes/file identity, installer signer/notarization, app and
+helper targets, dependency set, current installed identity, Store UUID, user
+identity, and complete passing Ma'at preflight receipt. The existing Store
+rechecks the registry snapshot and exact action manifest under its lock before
+writing a create-only whole-app attempt. The canonical `failure memory
+preflight` receipt is projected through the existing DecisionJournal validator
+before any Installer handoff.
+
+Opening the exact PKG in macOS Installer is a handoff, not proof that
+installation completed. The adapter reads back the app version/bundle,
+app/helper signatures, helper bytes and required paths; only an exact fresh
+match closes the retained attempt. Missing, failed, or ambiguous readback stays
+unresolved and later update invocations perform readback only without replaying
+Installer. The source does not cover raw self-update or alternate installer
+routes, does not establish installed/runtime qualification, and does not meet
+the contract's original rollback criterion. O2/O3 and O4 therefore remain open
+for full operational acceptance.
 
 ## Privacy, publication and recovery ownership
 

@@ -11,6 +11,10 @@
 - Corrected the Darwin archive VFS source findings: nullable `xOpen` output flags, rooted/refused SQLite file controls, retained journal identity through unlink, retry-safe per-descriptor retirement, database-inode alias authority, checked CLOEXEC, and absent-only WAL/SHM access probes. Added focused Darwin regression fixtures and updated the source/recipe map. Source-only and unqualified; Main's native normal/race/recovery packet remains required.
 - Clarified the existing credential-preflight boundary: additional same-Team identity types are neutral metadata, only missing kinds from a completed observation receive recovery hints, incomplete output does not diagnose absence, and the native surfaces label notarization as not inspected while preserving the blocked aggregate gate.
 
+## 2026-10-25
+
+- Added a source candidate to the existing macOS whole-app `sirsi update --app`/`--cli` route: exact signed/notarized PKG staging and revalidation, full scoped Ma'at preflight projection, create-only durable Installer-handoff intent, and exact installed app/helper readback. Installer opening is not treated as installation success; ambiguous handoff is retained for data-only readback and never automatically replayed. Authored inert fixtures are pending Main qualification. Raw self-update, alternate installer routes, installed proof, and the original O4 rollback acceptance remain open; this is not whole Ma'at-operation completion.
+
 ## 2026-10-05
 
 - Cataloged native Activity resolution: retained outcomes are classified as completed, review-required, or evidence-required, and every non-completed state has a Ma'at guided-review route while preserving the exact command as technical evidence.

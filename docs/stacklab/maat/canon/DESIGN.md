@@ -12,10 +12,14 @@ Nonblocking retained-FD reads refuse FIFOs before waiting and retain the existin
 regular-file, link-count and size checks. No dynamic command or mutation authority
 is added; the eight operational integrations and installed proof remain open.
 
-The current source candidate wires Ma'at's managed liveness-watch Casebook
-action through explicit default-store initialization, exact-scope preflight,
-durable attempt, and exact post-observation. That action shares the rootless
-local engine/HOME install and inspection boundary; it does not require a
-developer checkout or call the legacy router-backed runner. Native Casebook
-owns the confirmed first-use and inspect/re-observe controls. Qualification and
-the other seven operational rows remain open.
+One source candidate wires Ma'at's managed liveness-watch Casebook action
+through explicit default-store initialization, exact-scope preflight, durable
+attempt, and exact post-observation. That action shares the rootless local
+engine/HOME install and inspection boundary; it does not require a developer
+checkout or call the legacy router-backed runner. Native Casebook owns the
+confirmed first-use and inspect/re-observe controls. A separate unqualified
+candidate wires the existing macOS whole-app `--app`/`--cli` route through an
+exact signed/notarized PKG, retained preflight and attempt, native Installer
+handoff, and installed readback. Installer handoff is not success and unresolved
+outcomes are never replayed. Both candidates remain unqualified; the other six
+operational rows, remaining projections, and installed proof remain open.
