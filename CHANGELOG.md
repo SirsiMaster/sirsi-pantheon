@@ -6,12 +6,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
-- Commit authenticated inbox claims and their session ownership in the same
-  store transaction (DC01). A failed owner-binding write rolls back the item
-  lease and claim counter instead of acknowledging a usable unbound claim.
-  Existing local/unclaimed and delegated close compatibility is unchanged.
-  Source qualification and installed backend adoption are separate evidence.
-
 ## [0.24.137] — 2026-10-25
 
 This corrective candidate starts from published v0.24.136. The entries below
