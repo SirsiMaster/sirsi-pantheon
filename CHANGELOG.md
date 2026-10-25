@@ -1,3 +1,7 @@
+## Fabric full-detail destination correction
+
+- Keep the existing BackBar and a real ScrollView around same-store full Fabric detail; add the direct compact-action/navigation wrapper regression. Source-only, unrun.
+
 <!-- Source-only corrective candidate; no release/publication claim. -->
 ## Fabric a330 review correction
 

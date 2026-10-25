@@ -80,11 +80,18 @@ struct FabricContentProjection {
 
 @MainActor struct CanonicalFabricView: View {
     @ObservedObject var store: FabricProjectionStore
+    @EnvironmentObject private var nav: Nav
     var compact = false
     @Environment(\.snapshotMode) private var snapshotMode
     var body: some View {
         TimelineView(.periodic(from:.now,by:5)) {context in content(at:context.date)}
             .task {if !snapshotMode {await store.load()}}
+    }
+    // The compact action and regression use the same destination/store path.
+    @discardableResult func openDetail(in navigation: Nav) -> CanonicalFabricDetailView {
+        let detail = CanonicalFabricDetailView(store:store)
+        navigation.push(detail)
+        return detail
     }
     private func content(at now: Date) -> some View {
         let projection = store.presentation(compact:compact,at:now)
@@ -99,7 +106,8 @@ struct FabricContentProjection {
                     Text(line).sirsiFont(.caption).foregroundStyle(.secondary)
                 }
                 if projection.offersDetail {
-                    NavLink {CanonicalFabricView(store:store)} label: {Text("Open full Fabric detail").sirsiFont(.caption)}
+                    Button {openDetail(in:nav)} label: {Text("Open full Fabric detail").sirsiFont(.caption)}
+                        .buttonStyle(.plain)
                 }
                 if projection.showsDetails {
                     ForEach(board.lanes) {lane in Text("\(lane.agent) · \(lane.state_label) · \(lane.open) open tasks").sirsiFont(.caption)}
@@ -123,5 +131,18 @@ struct FabricContentProjection {
                 .disabled(store.loading).buttonStyle(.bordered)
         }
         .frame(maxWidth:.infinity,alignment:.leading)
+    }
+}
+
+// Custom Nav has no automatic toolbar/back or scrolling. Keep Back outside the
+// scroll region; long canonical content, bottom refresh and provenance stay in it.
+@MainActor struct CanonicalFabricDetailView: View {
+    @ObservedObject var store: FabricProjectionStore
+    var content: CanonicalFabricView {CanonicalFabricView(store:store)}
+    var body: some View {
+        VStack(alignment:.leading,spacing:0) {
+            BackBar(title:"Fabric")
+            ScrollView {content.padding(14)}
+        }
     }
 }

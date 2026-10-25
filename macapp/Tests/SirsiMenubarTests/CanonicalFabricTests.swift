@@ -100,4 +100,37 @@ import XCTest
         XCTAssertFalse(empty.presentation(compact:true,at:now).showsDetails)
     }
 
+    func testCompactDetailActionUsesScrollableBackDestinationAndRetainsOrigin() async throws {
+        var object = fixture()
+        object["lanes"] = (0..<300).map {i in
+            ["agent":"fixture-\(i)","state":"UNKNOWN","state_label":"Runtime unavailable",
+             "open":0,"active":0,"stalled":0,"blocked":0] as [String:Any]
+        }
+        let result = try reply(object)
+        var reads = 0
+        let store = FabricProjectionStore {_ in reads += 1;return result}
+        await store.load()
+        let compact = CanonicalFabricView(store:store,compact:true)
+        let navigation = Nav()
+        navigation.push(compact)
+        let origin = try XCTUnwrap(navigation.stack.last?.id)
+        // Execute the exact handler installed on the compact Button, not a
+        // parallel destination. Merely constructing/pushing must not read again.
+        let detail = compact.openDetail(in:navigation)
+        XCTAssertEqual(navigation.stack.count,2)
+        XCTAssertTrue(detail.store === store);XCTAssertTrue(detail.content.store === store)
+        XCTAssertFalse(detail.content.compact)
+        XCTAssertEqual(detail.content.store.board?.lanes.count,300)
+        let structure = String(reflecting:type(of:detail.body))
+        XCTAssertTrue(structure.contains("BackBar"),"pushed detail must contain the existing Back control")
+        XCTAssertTrue(structure.contains("ScrollView<"),"full content/refresh/provenance must be in the scroll container")
+        XCTAssertTrue(structure.contains("CanonicalFabricView"))
+        XCTAssertEqual(reads,1)
+        // This is the existing BackBar's action on the actual custom Nav stack.
+        navigation.pop()
+        XCTAssertEqual(navigation.stack.count,1);XCTAssertEqual(navigation.stack.last?.id,origin)
+        XCTAssertEqual(store.board?.generated_at,at);XCTAssertEqual(store.board?.lanes.count,300)
+        XCTAssertEqual(reads,1)
+    }
+
 }

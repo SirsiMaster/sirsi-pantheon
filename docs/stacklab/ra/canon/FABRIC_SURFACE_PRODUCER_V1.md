@@ -120,3 +120,13 @@ Direct fixtures add the actual app IIFE with controlled fetch/clock/DOM boundari
 Original full open-task-list/detail, visual vocabulary, live browser/native
 accessibility and foreign endpoint adoption remain acceptance obligations; these
 four corrections do not retire the original design or assert full delivery.
+
+### Full native destination correction (ea89 N1)
+
+The compact button pushes `CanonicalFabricDetailView` with the exact same store.
+The existing BackBar stays outside a real ScrollView containing the full canonical
+view, bottom refresh and provenance. No global Nav or engine behavior changes.
+The direct regression executes the actual compact action with 300 supplied lanes,
+checks the concrete BackBar/ScrollView/content wrapper, and uses the existing Nav
+Back action to recover the same origin frame and observation without another read.
+This is authored structural/action coverage; actual scrolling/AX remains Main-owned.
