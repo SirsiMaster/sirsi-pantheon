@@ -63,35 +63,9 @@ struct MercuryHardwareScene: View {
         GeometryReader { geometry in
             let scale = geometry.size.width / scene.width
             ZStack(alignment: .topLeading) {
-                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion || snapshotMode || !hasCurrentMotion)) { timeline in
-                    Canvas { context, _ in
-                        context.scaleBy(x: scale, y: scale)
-                        for cable in scene.cables {
-                            let path = track(cable), down = cable.state != "up"
-                            context.stroke(path, with: .color(emerald.opacity(down ? 0.12 : 0.2)), style: StrokeStyle(lineWidth: 10, lineCap: .round, dash: down ? [5, 6] : []))
-                            context.stroke(path, with: .color(down ? Color.secondary : emerald.opacity(0.6)), style: StrokeStyle(lineWidth: 1.5, dash: down ? [5, 6] : []))
-                            if !reduceMotion && !snapshotMode {
-                                for flow in cable.directions where flow.speed > 0 && flowIsCurrent(cable, flow) {
-                                    let phase = (timeline.date.timeIntervalSinceReferenceDate * flow.speed / 1000).truncatingRemainder(dividingBy: 1)
-                                    for i in 0..<12 {
-                                        let t = (Double(i) / 12 + phase).truncatingRemainder(dividingBy: 1)
-                                        let from = flow.forward ? t : 1 - t
-                                        context.stroke(path.trimmedPath(from: from, to: min(1, from + 0.013)), with: .color(flow.color == "out" ? emerald : flow.color == "in" ? gold : .secondary), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }.frame(width: scene.width * scale, height: scene.height * scale)
+                cableTracks(scale: scale)
                 ForEach(scene.cables) { cable in
-                    Text(cable.letter).sirsiFont(14, weight: .semibold).foregroundStyle(gold)
-                        .padding(5).background(.black).clipShape(RoundedRectangle(cornerRadius: 7))
-                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(gold.opacity(0.8)))
-                        .overlay(alignment: .bottom) {
-                            if cable.state == "missing" { Text(cable.iface).sirsiFont(10).foregroundStyle(.secondary).offset(y: 16) }
-                        }
-                        .position(x: (cable.x1 + cable.x2) / 2 * scale, y: cable.lane * scale)
-                        .accessibilityLabel("Cable " + cable.letter + ", " + cable.state + (cable.state == "missing" ? ", " + cable.iface : ""))
+                    cableLabel(cable, scale: scale)
                 }
                 ForEach(scene.cards) { card in
                     if let node = nodes.first(where: { $0.id == card.id }) {
@@ -103,6 +77,40 @@ struct MercuryHardwareScene: View {
                 }
             }
         }.accessibilityElement(children: .contain)
+    }
+    // Keep independent view expressions small enough for the supported CI
+    // compiler without erasing types or changing scene order or identity.
+    private func cableTracks(scale: Double) -> some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion || snapshotMode || !hasCurrentMotion)) { timeline in
+            Canvas { context, _ in
+                context.scaleBy(x: scale, y: scale)
+                for cable in scene.cables {
+                    let path = track(cable), down = cable.state != "up"
+                    context.stroke(path, with: .color(emerald.opacity(down ? 0.12 : 0.2)), style: StrokeStyle(lineWidth: 10, lineCap: .round, dash: down ? [5, 6] : []))
+                    context.stroke(path, with: .color(down ? Color.secondary : emerald.opacity(0.6)), style: StrokeStyle(lineWidth: 1.5, dash: down ? [5, 6] : []))
+                    if !reduceMotion && !snapshotMode {
+                        for flow in cable.directions where flow.speed > 0 && flowIsCurrent(cable, flow) {
+                            let phase = (timeline.date.timeIntervalSinceReferenceDate * flow.speed / 1000).truncatingRemainder(dividingBy: 1)
+                            for i in 0..<12 {
+                                let t = (Double(i) / 12 + phase).truncatingRemainder(dividingBy: 1)
+                                let from = flow.forward ? t : 1 - t
+                                context.stroke(path.trimmedPath(from: from, to: min(1, from + 0.013)), with: .color(flow.color == "out" ? emerald : flow.color == "in" ? gold : .secondary), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                            }
+                        }
+                    }
+                }
+            }
+        }.frame(width: scene.width * scale, height: scene.height * scale)
+    }
+    private func cableLabel(_ cable: MercurySceneGeometry.Cable, scale: Double) -> some View {
+        Text(cable.letter).sirsiFont(14, weight: .semibold).foregroundStyle(gold)
+            .padding(5).background(.black).clipShape(RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).stroke(gold.opacity(0.8)))
+            .overlay(alignment: .bottom) {
+                if cable.state == "missing" { Text(cable.iface).sirsiFont(10).foregroundStyle(.secondary).offset(y: 16) }
+            }
+            .position(x: (cable.x1 + cable.x2) / 2 * scale, y: cable.lane * scale)
+            .accessibilityLabel("Cable " + cable.letter + ", " + cable.state + (cable.state == "missing" ? ", " + cable.iface : ""))
     }
     private func hardware(_ node: MercuryMonitorNode, card: MercurySceneGeometry.Card) -> some View {
         let ghost = node.state == "unreachable" || node.state == "expired"

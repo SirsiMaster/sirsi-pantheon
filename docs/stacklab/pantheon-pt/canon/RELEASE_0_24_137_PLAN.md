@@ -105,6 +105,11 @@ fixture. Preserve all2012 rows, large bodies, production request budgets and
 snapshot/query/older-match/drift assertions. Bound actual scanned work and
 require positive work plus a distinct cursor on every partial continuation;
 do not enlarge production budgets or shrink the journal to obtain a pass.
+After Go and PostgreSQL passed, the hosted native CLI guard exposed a Swift
+type-checking complexity failure in MercuryHardwareScene.body. Extract only
+the cable Canvas/timeline and cable-label expressions into private typed view
+helpers. Preserve all modifiers, order, identities, labels, animation and
+freshness predicates; no AnyView, guard exemption or UI redesign is involved.
 
 - Main integrated receipt SHA256
   `3e5da51f47b1bfa4569737705261dc76e4d121243d4473ff53f199793b22c70e`:
