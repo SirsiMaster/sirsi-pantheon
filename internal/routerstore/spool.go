@@ -752,10 +752,6 @@ func (rl *Relay) serve(ctx context.Context, duties *sync.WaitGroup) error {
 // on first sight) and returns immediately — it never waits for any lane. The
 // return value counts wakes actually DELIVERED (a worker that already holds a
 // pending signal is not counted), so a backlog never turns the loop into a spin.
-func (rl *Relay) discover(ctx context.Context) int {
-	return rl.discoverTracked(ctx, nil)
-}
-
 func (rl *Relay) discoverTracked(ctx context.Context, duties *sync.WaitGroup) int {
 	rl.scans.Add(1)
 	files, _ := filepath.Glob(filepath.Join(rl.Spool, "*", "req", "*.json"))
