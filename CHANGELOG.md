@@ -19,6 +19,10 @@ They are not claims that every historical operational obligation is closed.
   adding a separator at every historical heading. A causal regression exposed
   the missing paragraph before correction; existing release-note controls remain.
 
+- Document one verified historical secret-scan false positive with an exact
+  commit/rule/path/line fingerprint: a local preference-name string, not a
+  credential. No whole file, scanner rule or future change is excluded.
+
 - Each in-process Stack Lab accessibility fixture now first reads independent
   public SwiftUI Text/Button controls and presses the actual control once. If that
   independent oracle is unavailable, the fixture reports an explicit diagnostic

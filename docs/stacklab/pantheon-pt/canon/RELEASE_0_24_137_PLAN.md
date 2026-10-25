@@ -40,6 +40,15 @@ Complete normalized-entry comparison preserves duplicate controls without
 discarding distinct tails after a shared prefix. Versioned136-and-earlier
 history is compared byte-for-byte, not merely checked for one surviving phrase.
 
+The first normal protected push stopped at a secret-scan finding. Redacted
+diagnosis found exactly one historical false positive: the UserDefaults
+preference name `legacy-root-maintenance-operation-v1` at commit6f40fe3a,
+`LegacyRelayOperationState.swift:38`. Its code reads/writes operation state,
+not authentication. `.gitleaksignore` exempts only that exact commit, rule,
+path and line fingerprint. No file/rule wildcard, credential change or scan
+bypass is permitted; future changes remain scanned. Failed push17846785 and
+redacted scan99e83edf are retained, not relabeled successful.
+
 ## Existing qualification and exact limits
 
 - Main integrated receipt SHA256
