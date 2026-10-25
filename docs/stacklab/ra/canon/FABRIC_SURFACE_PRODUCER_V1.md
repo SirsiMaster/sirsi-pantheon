@@ -1,5 +1,12 @@
 # Fabric surface producer — existing-contract correction
 
+R1/R2 continuation source is documented in `FABRIC_TASKS_AND_ROLES_V1.md`:
+bounded real task rows/detail/continuation and producer-owned brand roles.
+Its fixtures are authored/unrun; earlier ce8 local proof is not new-path proof.
+Normal installed adoption and Nexus/Horus same-wire mapping remain open. In
+particular independent Nexus ledger counts and conditional8734 retirement are
+not evidence of unification or actual retirement.
+
 Original authority remains `docs/design/FABRIC_SURFACE_UNIFICATION.md`. This
 source candidate fills its existing missing runtime/host/event joins and wires
 Pantheon's current native/web projections. It creates no store, service,

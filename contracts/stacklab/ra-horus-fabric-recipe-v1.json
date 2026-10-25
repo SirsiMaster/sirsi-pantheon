@@ -79,6 +79,9 @@
         "internal/routerstore",
         "internal/ledger",
         "internal/ledger/fabric.go",
+        "internal/ledger/fabric_tasks.go",
+        "internal/ledger/fabric_presentation.go",
+        "internal/brand/brand.go",
         "internal/router/readiness_projection.go",
         "internal/dashboard/fabric.go",
         "internal/dashboard/fleet.go",
@@ -97,7 +100,9 @@
         "internal/routerstore",
         "internal/ledger",
         "internal/ledger/fabric_join_test.go",
+        "internal/ledger/fabric_tasks_test.go",
         "internal/dashboard/fabric_join_test.go",
+        "internal/dashboard/fabric_tasks_test.go",
         "internal/dashboard/router_test.go",
         "cmd/sirsi/fabric_host_test.go",
         "internal/dashboard/testdata/fabric.test.cjs",
@@ -111,13 +116,16 @@
         "existing canonical ClassifyLane + registry/PingLane readiness readbacks",
         "existing NodeCapacity, Known-bearing swap/free sample, bounded repository status and engine session telemetry",
         "same-snapshot FleetTracker status observations",
-        "Fabric-owned source timestamp/read error/clock and this-mac telemetry binding"
+        "Fabric-owned source timestamp/read error/clock and this-mac telemetry binding",
+        "already-read canonical Snapshot Agent.Tasks, safe field projection and existing brand tokens"
       ],
       "outputs": [
         "FabricBoard",
         "distinct task/message/runtime/host planes",
         "real observed transitions with explicit unseeded coverage",
-        "null unavailable host facts; known zero preserved; engine session observation is not readiness"
+        "null unavailable host facts; known zero preserved; engine session observation is not readiness",
+        "64-row open-task pages, exact task detail/provenance and public-projection digest-bound continuation",
+        "producer-assigned semantic roles with the same brand palette in native and web"
       ],
       "writes": [],
       "upgrade_recipe": [
@@ -129,6 +137,10 @@
         "first observation seeds quietly; no synthetic timeline events or persistent second history",
         "qualify actual Go endpoint JSON in Node and native consumers, normal/race and compiled semantic negatives",
         "retain foreign Nexus/Horus mapping/readback obligations with their owners via Main",
+        "do not serialize raw tasks, lease columns, charter/outline/phase/timeline bodies or local reference paths",
+        "changed task continuation refuses409; explicit first-page refresh is available; no hard count-only truncation",
+        "qualify task detail/paging/privacy and semantic token mapping through actual Go JSON consumers",
+        "Nexus independent routerboard ledger counts and conditional8734 retirement do not establish R4 same-wire convergence",
         "see docs/stacklab/ra/canon/FABRIC_SURFACE_PRODUCER_V1.md; source-only unqualified candidate"
       ]
     },

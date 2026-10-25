@@ -31,7 +31,7 @@ function load(){
  var fleet=loadFleet();
  state.loading=Promise.allSettled([router,host,fleet]).finally(function(){state.loading=null});return state.loading;
 }
-function loadFleet(){return get('/api/fabric').then(function(f){if(!PantheonFabric.valid(f))throw new Error('Invalid fabric projection');state.fleet=f;state.fleetErr=null}).catch(function(e){state.fleetErr=e.message}).then(function(){if(state.view==='fleet'||state.view==='overview'||state.view==='host')render()})}
+function loadFleet(taskPage){var selected=taskPage===undefined?state.fabricTaskPage:taskPage,url='/api/fabric',generation=(state.fabricReadGeneration||0)+1;state.fabricReadGeneration=generation;state.fabricTaskPage=selected||null;if(selected)url+='?tasks_offset='+encodeURIComponent(selected.offset)+'&tasks_snapshot='+encodeURIComponent(selected.snapshot);return get(url).then(function(f){if(generation!==state.fabricReadGeneration)return;if(!PantheonFabric.valid(f))throw new Error('Invalid fabric projection');state.fleet=f;state.fleetErr=null}).catch(function(e){if(generation===state.fabricReadGeneration)state.fleetErr=e.message}).then(function(){if(generation===state.fabricReadGeneration&&(state.view==='fleet'||state.view==='overview'||state.view==='host'))render()})}
 function setLive(t,cls){$('#live-t').textContent=t;$('#live .dot').className='dot'+(cls?' '+cls:'')}
 
 function nav(){
@@ -99,7 +99,7 @@ function vFailures(d){
 }
 function fabricReceipt(){return PantheonFabric.receipt(state.fleet,state.fleetErr,Date.now(),esc)}
 function fabricHeadlines(){return fabricReceipt()+PantheonFabric.headlines(state.fleet,esc)}
-function bindFabricLanes(el){PantheonFabric.bindLaneInspectors(el,state.fleet,fabricInspector)}
+function bindFabricLanes(el){PantheonFabric.bindLaneInspectors(el,state.fleet,fabricInspector);PantheonFabric.bindTaskInspectors(el,state.fleet,fabricTaskInspector,function(page){loadFleet(page)})}
 function ageFabric(){document.querySelectorAll('.fabric-receipt').forEach(function(node){var f=PantheonFabric.freshness(state.fleet,state.fleetErr,Date.now());node.textContent=f.text;node.dataset.fabricState=f.state})}
 function vFleet(){
  if(state.fleetErr&&!state.fleet)return '<div class="card err-card"><h2>Fabric unavailable</h2>'+esc(state.fleetErr)+'</div>';
@@ -166,10 +166,11 @@ function showInspector(title,body,persistent){
 
  var dlg=document.createElement('dialog');dlg.className='inspector';dlg.setAttribute('aria-label',title);
  dlg.innerHTML='<div class="inspector-head"><h2>'+esc(title)+'</h2><button class="btn" data-close>Close</button></div>'+body;
- var previous=document.activeElement;var previousAgent=previous&&previous.dataset&&previous.dataset.inspect;var previousFabricAgent=previous&&previous.dataset&&previous.dataset.fabricInspect;document.body.appendChild(dlg);if(persistent&&window.matchMedia('(min-width:1200px)').matches){dlg.classList.add('persistent');document.body.classList.add('has-inspector')}
-dlg.addEventListener('keydown',function(e){if(e.key==='Escape'){e.preventDefault();dlg.close()}});dlg.querySelector('[data-close]').onclick=function(){dlg.close()};dlg.addEventListener('close',function(){dlg.remove();document.body.classList.remove('has-inspector');if(previous&&previous.isConnected)previous.focus();else if(previousAgent||previousFabricAgent){var target=Array.from(document.querySelectorAll('[data-inspect],[data-fabric-inspect]')).find(function(x){return previousFabricAgent?x.dataset.fabricInspect===previousFabricAgent:x.dataset.inspect===previousAgent});if(target)target.focus();else $('#main').focus()}});if(dlg.classList.contains('persistent'))dlg.show();else dlg.showModal();dlg.querySelector('[data-close]').focus();
+ var previous=document.activeElement;var previousAgent=previous&&previous.dataset&&previous.dataset.inspect;var previousFabricAgent=previous&&previous.dataset&&previous.dataset.fabricInspect;var previousTask=previous&&previous.dataset&&previous.dataset.fabricTaskId;var previousTaskAgent=previous&&previous.dataset&&previous.dataset.fabricTaskAgent;document.body.appendChild(dlg);if(persistent&&window.matchMedia('(min-width:1200px)').matches){dlg.classList.add('persistent');document.body.classList.add('has-inspector')}
+dlg.addEventListener('keydown',function(e){if(e.key==='Escape'){e.preventDefault();dlg.close()}});dlg.querySelector('[data-close]').onclick=function(){dlg.close()};dlg.addEventListener('close',function(){dlg.remove();document.body.classList.remove('has-inspector');if(previous&&previous.isConnected)previous.focus();else if(previousAgent||previousFabricAgent||previousTask){var target=Array.from(document.querySelectorAll('[data-inspect],[data-fabric-inspect],[data-fabric-task-id]')).find(function(x){return previousTask?x.dataset.fabricTaskId===previousTask&&x.dataset.fabricTaskAgent===previousTaskAgent:previousFabricAgent?x.dataset.fabricInspect===previousFabricAgent:x.dataset.inspect===previousAgent});if(target)target.focus();else $('#main').focus()}});if(dlg.classList.contains('persistent'))dlg.show();else dlg.showModal();dlg.querySelector('[data-close]').focus();
 }
 function fabricInspector(board,agent){showInspector('Fabric lane inspector',PantheonFabric.laneDetail(board,agent,esc),true)}
+function fabricTaskInspector(board,agent,id){showInspector('Canonical task inspector',PantheonFabric.taskDetail(board,agent,id,esc),true)}
 function failureInspector(id){
  var failure=((state.data||{}).known_failures||[]).find(function(x){return x.id===id});if(!failure)return;
  showInspector('Failure details','<h3>'+esc(failure.id)+'</h3><p>'+esc(failure.title)+'</p><dl>'+[['Status',failure.status],['Fixed in',failure.fixed_in],['Regression guard',failure.guard],['Signature',failure.signature],['Cause',failure.cause],['Resolution',failure.resolution]].map(function(x){return '<dt>'+esc(x[0])+'</dt><dd>'+esc(x[1]??'Not supplied by this snapshot')+'</dd>'}).join('')+'</dl>');

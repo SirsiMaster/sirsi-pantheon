@@ -14,15 +14,17 @@ import (
 // separate streams so no renderer can put two different meanings behind one
 // headline number.
 type FabricBoard struct {
-	Work             FabricWork       `json:"work"`
-	Messages         FabricMessages   `json:"messages"`
-	Lanes            []FabricLane     `json:"lanes"`
-	Health           FabricHealth     `json:"health"`
-	Activity         []FabricActivity `json:"activity"`
-	ActivitySeeded   bool             `json:"activity_seeded"`
-	RuntimeAvailable bool             `json:"runtime_available"`
-	Build            string           `json:"build"`
-	GeneratedAt      string           `json:"generated_at"`
+	Work             FabricWork         `json:"work"`
+	Messages         FabricMessages     `json:"messages"`
+	Lanes            []FabricLane       `json:"lanes"`
+	Health           FabricHealth       `json:"health"`
+	Activity         []FabricActivity   `json:"activity"`
+	ActivitySeeded   bool               `json:"activity_seeded"`
+	RuntimeAvailable bool               `json:"runtime_available"`
+	Build            string             `json:"build"`
+	GeneratedAt      string             `json:"generated_at"`
+	Tasks            FabricTaskPage     `json:"tasks"`
+	Presentation     FabricPresentation `json:"presentation"`
 }
 
 type FabricWork struct {
@@ -58,6 +60,7 @@ type FabricLane struct {
 	Blocked    int                               `json:"blocked"`
 	LastTouch  string                            `json:"last_touch,omitempty"`
 	Registered FabricRegistration                `json:"registered"`
+	Role       string                            `json:"role"`
 }
 
 type FabricHealth struct {
@@ -110,7 +113,13 @@ func FabricFrom(s Snapshot, ns *router.NodeStatus, build string, inputs ...Fabri
 		ActivitySeeded:   evidence.ActivitySeeded,
 		Activity:         []FabricActivity{},
 		Lanes:            []FabricLane{},
+		Presentation:     fabricPresentation(),
 	}
+	page, err := FabricTasksFrom(s, 0, "")
+	if err != nil {
+		page = FabricTaskPage{State: "unavailable", Rows: []FabricTask{}, Limit: FabricTaskPageSize}
+	}
+	b.Tasks = page
 	if evidence.Health != nil {
 		b.Health = *evidence.Health
 		b.Health.Issues = append([]string{}, evidence.Health.Issues...)
@@ -193,6 +202,7 @@ func FabricFrom(s Snapshot, ns *router.NodeStatus, build string, inputs ...Fabri
 		if lane.State == routerstore.LaneIdleWithWork {
 			lane.StateLabel = "IDLE with work"
 		}
+		lane.Role = fabricLaneRole(lane.State)
 		b.Lanes = append(b.Lanes, lane)
 	}
 	sort.Slice(b.Lanes, func(i, j int) bool { return b.Lanes[i].Agent < b.Lanes[j].Agent })

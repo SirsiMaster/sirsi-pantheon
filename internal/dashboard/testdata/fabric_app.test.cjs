@@ -8,12 +8,12 @@ function router(){return {version:'router-build',generated_at:'router-other-time
 // Run the actual app IIFE with an inert DOM boundary and controlled fetch/clock.
 // No replacement renderer, loader, click handler or inspector implementation.
 function host(view='fleet',initial={}){
- let clock=at,dialog=null,tick,reply={fabric:board(),router:router(),...initial},elements={},listeners={};
+ let clock=at,dialog=null,tick,reply={fabric:board(),router:router(),...initial},elements={},listeners={},requests=[];
  class Element {
   constructor(){this.dataset={};this.handlers={};this.classList={add(){},remove(){},contains(){return false}};this.isConnected=true;this.hidden=false;this._html=''}
-  set innerHTML(s){this._html=s;this.buttons=[];for(const m of s.matchAll(/data-fabric-inspect="([^"]+)"/g)){const b=new Element();b.dataset.fabricInspect=m[1];this.buttons.push(b)}this.receipt= s.includes('fabric-receipt') ? new Element():null}
+  set innerHTML(s){this._html=s;this.buttons=[];this.taskButtons=[];this.pageButtons=[];for(const m of s.matchAll(/data-fabric-inspect="([^"]+)"/g)){const b=new Element();b.dataset.fabricInspect=m[1];this.buttons.push(b)}for(const m of s.matchAll(/data-fabric-task-agent="([^"]+)" data-fabric-task-id="([^"]+)"/g)){const b=new Element();b.dataset.fabricTaskAgent=m[1];b.dataset.fabricTaskId=m[2];this.taskButtons.push(b)}for(const m of s.matchAll(/data-fabric-task-page="([^"]+)"/g)){const b=new Element();b.dataset.fabricTaskPage=m[1];this.pageButtons.push(b)}this.receipt= s.includes('fabric-receipt') ? new Element():null}
   get innerHTML(){return this._html}
-  querySelectorAll(s){return s==='[data-fabric-inspect]'?this.buttons||[]:[]}
+  querySelectorAll(s){return s==='[data-fabric-inspect]'?this.buttons||[]:s==='[data-fabric-task-id]'?this.taskButtons||[]:s==='[data-fabric-task-page]'?this.pageButtons||[]:[]}
   querySelector(){return new Element()}
   addEventListener(k,f){this.handlers[k]=f}
   setAttribute(k,v){this[k]=v}
@@ -29,14 +29,16 @@ function host(view='fleet',initial={}){
  const context={document:doc,location:{hash:'#'+view},navigator:{},PantheonFabric:fabric,
   Date:class extends Date {constructor(...args){super(...(args.length?args:[clock]))}static now(){return clock}},
   AbortSignal:{timeout(){}},setInterval(f){tick=f;return 1},
-  fetch:async url=>{const value=url==='/api/fabric'?reply.fabric:url==='/api/router/v1/snapshot'?reply.router:{};return {ok:!(value instanceof Error),status:503,json:async()=>value instanceof Error?{error:value.message}:value}},
+  fetch:async url=>{requests.push(url);let value=url.startsWith('/api/fabric')?reply.fabric:url==='/api/router/v1/snapshot'?reply.router:{};if(typeof value==='function')value=await value(url);return {ok:!(value instanceof Error),status:value instanceof Error?value.status||503:200,json:async()=>value instanceof Error?{error:value.message}:value}},
   addEventListener(){},scrollTo(){},scrollY:0,matchMedia(){return {matches:false}}
  };
  context.window=context;vm.createContext(context);vm.runInContext(source,context);
  async function settle(){for(let i=0;i<20;i++)await Promise.resolve()}
- return {elements,doc,reply,settle,get dialog(){return dialog},advance(ms){clock+=ms;tick()},refresh(){elements['#refresh'].handlers.click()},navigate(v){const handler=listeners.click;handler({target:{closest(){return {dataset:{view:v}}}}})},
+ return {elements,doc,reply,requests,settle,get dialog(){return dialog},advance(ms){clock+=ms;tick()},refresh(){elements['#refresh'].handlers.click()},navigate(v){const handler=listeners.click;handler({target:{closest(){return {dataset:{view:v}}}}})},
   clickFabric(){const button=elements['#view'].buttons[0];assert.ok(button,'actual Fabric lane button');button.handlers.click()},
   clickRouter(){listeners.click({target:{closest(){return {dataset:{inspect:'own-lane'}}}}})},
+  clickTask(){const b=elements['#view'].taskButtons[0];assert.ok(b,'actual full-board task button');b.handlers.click()},
+  taskPage(value){const b=elements['#view'].pageButtons.find(x=>x.dataset.fabricTaskPage===value);assert.ok(b,'actual task page control');b.handlers.click()},
   age(){clock+=31000;listeners.visibilitychange()}
  };
 }
@@ -47,6 +49,27 @@ test('actual app keeps Fabric receipt independent of router read success and fai
  h.reply.fabric=board();h.reply.router=new Error('router-read-refused');h.refresh();await h.settle();
  assert.match(h.elements['#view'].innerHTML,/Current Fabric observation/);assert.match(h.elements['#live-t'].textContent,/Router stale/);
  h.navigate('host');assert.match(h.elements['#view'].innerHTML,/Current Fabric observation/);
+});
+function taskBoard(offset=0){
+ const b=board();b.work.open=65;b.work.total=65;b.work.assigned_not_started=65;
+ b.tasks={state:'observed',offset,limit:64,total:65,snapshot:'a'.repeat(64),next_offset:offset===0?64:null,
+  rows:Array.from({length:offset===0?64:1},(_,i)=>({agent:'own-lane',id:'task-'+(offset+i),subject:'Actual task '+(offset+i),status:'pending',liveness:'unknown',role:'gold',responsible:'owner',stage:'build',test_state:'untested',updated:'',blocker_recorded:false,text_limited:false,provenance:{source:'canonical-task-registry',created:'',commissioned_at:'',commissioned_by:'lead',charter_recorded:true,outline_recorded:false,result_recorded:false,public_links:[],withheld_links:1}}))};return b;
+}
+test('actual full-board task click page conflict and explicit refresh remain bound to canonical rows',async()=>{
+ const h=host('fleet',{fabric:taskBoard()});await h.settle();h.clickTask();
+ assert.match(h.dialog.innerHTML,/Actual task 0/);assert.match(h.dialog.innerHTML,/canonical-task-registry/);assert.match(h.dialog.innerHTML,/<dt>Thread registration<\/dt><dd>Not registered/);
+ const captured=h.dialog.innerHTML;h.reply.fabric=taskBoard(64);h.taskPage('next');await h.settle();
+ assert.ok(h.requests.includes('/api/fabric?tasks_offset=64&tasks_snapshot='+'a'.repeat(64)));assert.match(h.elements['#view'].innerHTML,/Actual task 64/);assert.equal(h.dialog.innerHTML,captured);
+ h.clickTask();assert.match(h.dialog.innerHTML,/Actual task 64/);
+ h.reply.fabric=Object.assign(new Error('tasks changed; refresh list'),{status:409});h.refresh();await h.settle();assert.match(h.elements['#view'].innerHTML,/Retained Fabric observation/);assert.match(h.elements['#view'].innerHTML,/Actual task 64/);
+ h.reply.fabric=taskBoard();h.taskPage('first');await h.settle();assert.match(h.elements['#view'].innerHTML,/Actual task 0/);assert.equal(h.requests.at(-1),'/api/fabric');
+});
+test('older task-page response cannot overwrite explicit first-page refresh',async()=>{
+ const h=host('fleet',{fabric:taskBoard()});await h.settle();let finish;
+ h.reply.fabric=url=>url.includes('?')?new Promise(resolve=>{finish=resolve}):taskBoard();
+ h.taskPage('next');await h.settle();assert.equal(typeof finish,'function');
+ h.taskPage('first');await h.settle();assert.match(h.elements['#view'].innerHTML,/Actual task 0/);
+ finish(taskBoard(64));await h.settle();assert.match(h.elements['#view'].innerHTML,/Actual task 0/);assert.doesNotMatch(h.elements['#view'].innerHTML,/Actual task 64/);
 });
 test('actual app ages retained Fabric without response and discloses future time and known empty',async()=>{
  const b=board();b.work={done:0,open:0,in_progress:0,assigned_not_started:0,stalled:0,blocked:0,total:0};b.lanes=[];const h=host('fleet',{fabric:b});await h.settle();

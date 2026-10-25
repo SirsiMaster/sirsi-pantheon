@@ -71,6 +71,13 @@ import XCTest
         XCTAssertEqual(board.health.swap,0);XCTAssertEqual(board.health.engine,"inert-engine")
         XCTAssertEqual(board.activity.count,1);XCTAssertEqual(board.activity[0].from,"pending");XCTAssertEqual(board.activity[0].to,"in-progress")
         XCTAssertEqual(board.lanes.first?.state,"IDLE_WITH_WORK");XCTAssertEqual(board.lanes.first?.state_label,"IDLE with work")
+        XCTAssertEqual(board.lanes.first?.role,"warn")
+        XCTAssertEqual(board.headlineRoleTokens.compactMap{$0},["ok","gold","warn","ink2"])
+        let raw = try XCTUnwrap(JSONSerialization.jsonObject(with:data) as? [String:Any])
+        let presentation = try XCTUnwrap(raw["presentation"] as? [String:Any])
+        let palette = try XCTUnwrap(presentation["palette"] as? [String:[String:String]])
+        XCTAssertEqual(board.roleHex("ok",dark:true),palette["ok"]?["dark"])
+        XCTAssertEqual(board.roleHex("warn",dark:false),palette["warn"]?["light"])
         XCTAssertTrue(board.activity_seeded);XCTAssertTrue(board.runtime_available)
     }
     func testCompactUsesVisibleBoundedAttentionAndSameStoreDetail() async throws {
@@ -131,6 +138,32 @@ import XCTest
         XCTAssertEqual(navigation.stack.count,1);XCTAssertEqual(navigation.stack.last?.id,origin)
         XCTAssertEqual(store.board?.generated_at,at);XCTAssertEqual(store.board?.lanes.count,300)
         XCTAssertEqual(reads,1)
+    }
+
+    func testFabricSemanticRolesUseSuppliedBrandPaletteAndRejectUnknownColor() throws {
+        var object=fixture()
+        let supplied: [String:Any] = ["headlines":["completed":"ok","progress":"gold","stalled":"warn","messages":"ink2"],
+                                     "palette":["ok":["dark":"#2bd29b","light":"#0f7a54"],"warn":["dark":"#e0913a","light":"#9a5f14"]]]
+        object["presentation"]=supplied
+        let data=try JSONSerialization.data(withJSONObject:object)
+        let board=try JSONDecoder().decode(CanonicalFabricBoard.self,from:data)
+        XCTAssertEqual(board.headlineRoleTokens.compactMap{$0},["ok","gold","warn","ink2"])
+        XCTAssertEqual(board.roleHex("ok",dark:true),"#2bd29b")
+        XCTAssertEqual(board.roleHex("ok",dark:false),"#0f7a54")
+        XCTAssertNil(board.roleHex("unrecognized",dark:true))
+        let bad: [String:Any] = ["headlines":[String:String](),"palette":["ok":["dark":"garbage","light":"#0f7a54"]]]
+        object["presentation"]=bad
+        let invalid=try JSONDecoder().decode(CanonicalFabricBoard.self,from:JSONSerialization.data(withJSONObject:object))
+        XCTAssertNil(invalid.roleHex("ok",dark:true))
+    }
+
+    func testOlderFabricWireDoesNotInventRuntimeSemanticColor() throws {
+        let board=try JSONDecoder().decode(CanonicalFabricBoard.self,from:JSONSerialization.data(withJSONObject:fixture()))
+        XCTAssertTrue(board.valid)
+        XCTAssertEqual(board.headlineRoleTokens.count,4)
+        XCTAssertTrue(board.headlineRoleTokens.allSatisfy{$0 == nil})
+        XCTAssertNil(board.roleHex(nil,dark:true))
+        XCTAssertNil(board.roleHex("ok",dark:true))
     }
 
 }

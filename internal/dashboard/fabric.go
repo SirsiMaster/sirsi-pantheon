@@ -1,7 +1,11 @@
 package dashboard
 
 import (
+	"errors"
 	"net/http"
+	"net/url"
+	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
@@ -15,6 +19,12 @@ type FabricProducer func() (ledger.FabricBoard, error)
 // payload instead of rendering fabricated zeroes.
 func (s *Server) apiFabric(w http.ResponseWriter, r *http.Request) {
 	allowNexusOrigin(w, r)
+	w.Header().Set("Cache-Control", "no-store")
+	offset, snapshot, selected, err := fabricTaskSelection(r.URL.RawQuery)
+	if err != nil {
+		writeError(w, "invalid fabric task page selection", http.StatusBadRequest)
+		return
+	}
 	if s.cfg.FabricReadFn != nil {
 		// Serialize read + transition observation: concurrent endpoint reads must
 		// never feed an older snapshot after a newer one and invent a reversal.
@@ -30,17 +40,37 @@ func (s *Server) apiFabric(w http.ResponseWriter, r *http.Request) {
 			writeError(w, "fabric timestamp unavailable", http.StatusBadGateway)
 			return
 		}
+		var page ledger.FabricTaskPage
+		if selected {
+			page, err = ledger.FabricTasksFrom(read.Snapshot, offset, snapshot)
+			if err != nil {
+				status := http.StatusBadRequest
+				if errors.Is(err, ledger.ErrFabricTasksChanged) {
+					status = http.StatusConflict
+				}
+				writeError(w, "fabric task page changed or unavailable; refresh the task list", status)
+				return
+			}
+		}
 		transitions := s.fabricFleet.Observe(read.Snapshot, at)
 		read.Evidence.Activity = []ledger.FabricActivity{}
 		read.Evidence.ActivitySeeded = transitions.Seeded
 		for _, event := range transitions.Activity {
 			read.Evidence.Activity = append(read.Evidence.Activity, ledger.FabricActivity{At: event.At, Agent: event.Agent, TaskID: event.TaskID, From: event.From, To: event.To})
 		}
-		writeJSON(w, ledger.FabricFrom(read.Snapshot, read.Node, s.cfg.FabricBuild, read.Evidence))
+		board := ledger.FabricFrom(read.Snapshot, read.Node, s.cfg.FabricBuild, read.Evidence)
+		if selected {
+			board.Tasks = page
+		}
+		writeJSON(w, board)
 		return
 	}
 	if s.cfg.FabricFn == nil {
 		writeError(w, "fabric not available (producer not wired)", http.StatusServiceUnavailable)
+		return
+	}
+	if selected {
+		writeError(w, "fabric task continuation unavailable from this producer", http.StatusServiceUnavailable)
 		return
 	}
 	board, err := s.cfg.FabricFn()
@@ -49,4 +79,25 @@ func (s *Server) apiFabric(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, board)
+}
+
+func fabricTaskSelection(raw string) (int, string, bool, error) {
+	if len(raw) > 256 {
+		return 0, "", false, errors.New("invalid query")
+	}
+	q, err := url.ParseQuery(raw)
+	if err != nil {
+		return 0, "", false, errors.New("invalid query")
+	}
+	if len(q) == 0 {
+		return 0, "", false, nil
+	}
+	if len(q) != 2 || len(q["tasks_offset"]) != 1 || len(q["tasks_snapshot"]) != 1 || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(q.Get("tasks_snapshot")) {
+		return 0, "", false, errors.New("invalid task continuation")
+	}
+	offset, err := strconv.Atoi(q.Get("tasks_offset"))
+	if err != nil || offset <= 0 || strconv.Itoa(offset) != q.Get("tasks_offset") || offset%ledger.FabricTaskPageSize != 0 {
+		return 0, "", false, errors.New("invalid task offset")
+	}
+	return offset, q.Get("tasks_snapshot"), true, nil
 }

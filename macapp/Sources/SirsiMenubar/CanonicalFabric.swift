@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 // Decodes the ONE Go FabricBoard, not node-status or per-view arithmetic.
 struct CanonicalFabricBoard: Decodable {
@@ -7,6 +8,7 @@ struct CanonicalFabricBoard: Decodable {
     struct Lane: Decodable, Identifiable {
         let agent, state, state_label: String
         let open, active, stalled, blocked: Int
+        let role: String?
         var id: String { agent }
     }
     struct Health: Decodable {
@@ -14,9 +16,33 @@ struct CanonicalFabricBoard: Decodable {
         let engine, engine_state: String; let issues: [String]
     }
     struct Activity: Decodable { let at, agent, task_id, from, to: String }
+    struct Presentation: Decodable {
+        struct Swatch: Decodable { let dark, light: String }
+        let headlines: [String:String]
+        let palette: [String:Swatch]
+    }
     let work: Work; let messages: Messages; let lanes: [Lane]; let health: Health
     let activity: [Activity]; let activity_seeded, runtime_available: Bool
     let build, generated_at: String
+    let presentation: Presentation?
+    var headlineRoleTokens: [String?] {
+        ["completed","progress","stalled","messages"].map { presentation?.headlines[$0] }
+    }
+    // The Go brand owner supplies the palette; this surface invents neither a
+    // runtime classification nor independent hexadecimal state colors.
+    func roleHex(_ role: String?, dark: Bool) -> String? {
+        guard let role, ["ok","gold","warn","ink2","dim"].contains(role),
+              let swatch = presentation?.palette[role] else { return nil }
+        let hex = dark ? swatch.dark : swatch.light
+        guard hex.count == 7, hex.first == "#", hex.dropFirst().allSatisfy({$0.isHexDigit}) else { return nil }
+        return hex
+    }
+    func roleColor(_ role: String?, dark: Bool) -> Color {
+        guard let hex = roleHex(role,dark:dark) else { return .secondary }
+        var value: UInt64 = 0
+        guard Scanner(string:String(hex.dropFirst())).scanHexInt64(&value) else { return .secondary }
+        return Color(.sRGB,red:Double((value >> 16) & 255)/255,green:Double((value >> 8) & 255)/255,blue:Double(value & 255)/255,opacity:1)
+    }
     var valid: Bool {
         [work.done,work.open,work.in_progress,work.assigned_not_started,work.stalled,work.blocked,work.total,messages.open,messages.stranded].allSatisfy{$0 >= 0} &&
         pantheonObservationDate(generated_at) != nil && messages.oldest_age_seconds.isFinite && messages.oldest_age_seconds >= 0 &&
@@ -83,6 +109,7 @@ struct FabricContentProjection {
     @EnvironmentObject private var nav: Nav
     var compact = false
     @Environment(\.snapshotMode) private var snapshotMode
+    @Environment(\.colorScheme) private var colorScheme
     var body: some View {
         TimelineView(.periodic(from:.now,by:5)) {context in content(at:context.date)}
             .task {if !snapshotMode {await store.load()}}
@@ -100,7 +127,9 @@ struct FabricContentProjection {
             if let board = store.board {
                 Text(store.current(at:now) ? "Current fabric observation" : "Retained fabric observation · current state unavailable")
                     .sirsiFont(.caption).foregroundStyle(.secondary)
-                ForEach(board.headlineLines,id:\.self) {Text($0).sirsiFont(.caption)}
+                ForEach(Array(board.headlineLines.enumerated()),id:\.offset) {index,line in
+                    Text(line).sirsiFont(.caption).foregroundStyle(board.roleColor(board.headlineRoleTokens[index],dark:colorScheme == .dark))
+                }
                 Text("Needs attention").sirsiFont(.caption,weight:.semibold)
                 ForEach(Array(projection.attention.enumerated()),id:\.offset) {_,line in
                     Text(line).sirsiFont(.caption).foregroundStyle(.secondary)
@@ -110,7 +139,7 @@ struct FabricContentProjection {
                         .buttonStyle(.plain)
                 }
                 if projection.showsDetails {
-                    ForEach(board.lanes) {lane in Text("\(lane.agent) · \(lane.state_label) · \(lane.open) open tasks").sirsiFont(.caption)}
+                    ForEach(board.lanes) {lane in Text("\(lane.agent) · \(lane.state_label) · \(lane.open) open tasks").sirsiFont(.caption).foregroundStyle(board.roleColor(lane.role,dark:colorScheme == .dark))}
                     Text("Host health — separate from tasks/messages").sirsiFont(.caption,weight:.semibold)
                     ForEach(board.health.issues,id:\.self) {Text($0).sirsiFont(.caption)}
                     Text("RAM availability complement: \(board.health.ram_pct.map{String($0)+"%"} ?? "Unavailable") · Swap: \(board.health.swap.map{String($0)+" bytes"} ?? "Unavailable")").sirsiFont(.caption)
