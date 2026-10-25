@@ -149,7 +149,7 @@ func TestRemoteRejectsBadTokenAndUnknownMethod(t *testing.T) {
 // Every sentinel the package exports must be in the wire table, or a client
 // loses errors.Is on it silently. Pins the closed set in remote.go.
 func TestSentinelsRoundTrip(t *testing.T) {
-	all := []error{ErrNotComplete, ErrBreakerOpen, ErrOverQuota, ErrIdentifierTaken, ErrNoWork,
+	all := []error{ErrTaskResumeInput, ErrNotComplete, ErrBreakerOpen, ErrOverQuota, ErrIdentifierTaken, ErrNoWork,
 		ErrNoClaimableTask, ErrLeaseInvalid, ErrTerminal, ErrBudgetExceeded, ErrReasonRequired,
 		ErrIncompleteEvidence, ErrNotFound, ErrAlreadyClosed, ErrConcurrentTaskUpdate, ErrTaskExists,
 		ErrSessionUnknown, ErrSessionRevoked, ErrNotOwner, ErrTokenUnknown, ErrTokenRevoked, ErrHostMismatch, ErrServiceUnavailable, ErrUnregistered, ErrThreadUnknown, ErrThreadAuthority, ErrWorkerAnswers}

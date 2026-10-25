@@ -121,6 +121,45 @@ func TestRemoteStreamingRequiresExplicitDeclaration(t *testing.T) {
 	}
 }
 
+func TestStreamingDeclarationPreservesKnownUnsupportedAndUnknown(t *testing.T) {
+	home := t.TempDir()
+	sirsiDir := filepath.Join(home, ".sirsi")
+	if err := os.MkdirAll(sirsiDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sirsiDir, "gemma-server.port"), []byte("8765"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unknownLocal := withStreamingDeclaration(Local(home, Conf{}), false)
+	if unknownLocal.Caps().StreamingKnown || unknownLocal.Caps().Streaming {
+		t.Fatalf("unprofiled local capability must remain unknown: %+v", unknownLocal.Caps())
+	}
+
+	profilePath := filepath.Join(home, "profile.json")
+	profile := `{"endpoint":"http://127.0.0.1:8765/v1","model":"fixture-model","context_tokens":1024,"output_tokens":256,"streaming":false}`
+	if err := os.WriteFile(profilePath, []byte(profile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	conf := Conf{LocalProfile: profilePath}
+	profiled := withStreamingDeclaration(Local(home, conf), selectedLocalStreamingKnown(home, conf))
+	if !profiled.Caps().StreamingKnown || profiled.Caps().Streaming {
+		t.Fatalf("explicit local unsupported declaration was lost: %+v", profiled.Caps())
+	}
+
+	t.Setenv("SIRSI_REMOTE_API_KEY", "fixture-key")
+	t.Setenv("SIRSI_REMOTE_ENDPOINT", "https://example.test/v1")
+	t.Setenv("SIRSI_REMOTE_STREAMING", "false")
+	remote := withStreamingDeclaration(remoteFromEnv(Conf{}), remoteStreamingDeclared(os.Getenv("SIRSI_REMOTE_STREAMING")))
+	if !remote.Caps().StreamingKnown || remote.Caps().Streaming {
+		t.Fatalf("explicit remote unsupported declaration was lost: %+v", remote.Caps())
+	}
+	t.Setenv("SIRSI_REMOTE_STREAMING", "true")
+	remote = withStreamingDeclaration(remoteFromEnv(Conf{}), remoteStreamingDeclared(os.Getenv("SIRSI_REMOTE_STREAMING")))
+	if !remote.Caps().StreamingKnown || !remote.Caps().Streaming {
+		t.Fatalf("explicit remote support declaration was lost: %+v", remote.Caps())
+	}
+}
+
 func TestRemoteConfigIsNeverClassifiedAsLocal(t *testing.T) {
 	remote := Conf{Provider: "openai", Endpoint: "https://api.example.test/v1", Model: "remote-model"}
 	if got := Local(t.TempDir(), remote); got != nil {

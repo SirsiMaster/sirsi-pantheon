@@ -1,7 +1,8 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/help"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/mcp"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/seshat"
@@ -28,12 +30,14 @@ Ma'at is Pantheon's operator-facing knowledge and decision authority. Use
 sirsi maat knowledge to inspect the retained, filtered library and
 sirsi maat knowledge refresh to update it from configured local sources.
 
-The legacy adapter below retains historical ingestion, export, profile, and
-MCP verbs for scripts that already depend on them. It does not create a second
-user-facing knowledge authority.
+The legacy adapter retains compatible read/export verbs, but ingestion delegates
+to Ma'at's canonical archive. Only the configured local Claude reader is
+enabled here; unsupported adapters and profile flags refuse instead of reading
+online sources or writing the retired raw snapshot store. Existing snapshots
+remain migration inputs and are not modified.
 
-  sirsi seshat ingest                 Ingest knowledge from all sources
-  sirsi seshat ingest --source        Ingest from a specific source
+  sirsi seshat ingest                 Refresh the configured local Claude source
+  sirsi seshat ingest --source claude Refresh a specific enabled local source
   sirsi seshat ingest --profile       Ingest Chrome from a specific profile
   sirsi seshat ingest --all-profiles  Ingest Chrome from all profiles
   sirsi seshat export                 Export knowledge to a target
@@ -55,147 +59,39 @@ user-facing knowledge authority.
 
 var seshatIngestCmd = &cobra.Command{
 	Use:   "ingest",
-	Short: "𓁆 Ingest knowledge from external sources",
+	Short: "Refresh Ma'at's canonical archive through the compatibility alias",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		start := time.Now()
-		output.Banner()
-		output.Header("Knowledge Ingestion")
-
 		sourceName, _ := cmd.Flags().GetString("source")
 		sinceStr, _ := cmd.Flags().GetString("since")
 		exportTarget, _ := cmd.Flags().GetString("export")
 		profileName, _ := cmd.Flags().GetString("profile")
 		allProfiles, _ := cmd.Flags().GetBool("all-profiles")
-
-		var since time.Time
-		if sinceStr != "" {
-			d, err := time.ParseDuration(sinceStr)
-			if err != nil {
-				// Try as date
-				since, err = time.Parse("2006-01-02", sinceStr)
-				if err != nil {
-					return fmt.Errorf("invalid --since value: use duration (e.g., '7d', '24h') or date (2006-01-02)")
-				}
-			} else {
-				since = time.Now().Add(-d)
-			}
-		} else {
-			// Default: last 7 days
-			since = time.Now().Add(-7 * 24 * time.Hour)
+		if exportTarget != "" {
+			return errors.New("compatibility ingestion does not export; use the separate explicit Seshat export command")
 		}
-
-		var items []seshat.KnowledgeItem
-
-		// Handle --all-profiles: ingest Chrome history from every profile
-		if allProfiles && (sourceName == "" || sourceName == "chrome-history") {
-			profiles, err := seshat.ListChromeProfiles()
-			if err != nil {
-				return fmt.Errorf("list Chrome profiles: %w", err)
-			}
-			fmt.Printf("  📥 Ingesting Chrome history from %d profiles...\n", len(profiles))
-			for _, prof := range profiles {
-				profileDir, resolveErr := seshat.ResolveProfileDir(prof.DirName)
-				if resolveErr != nil {
-					fmt.Printf("  ⚠️  Skipping profile %s: %v\n", prof.DirName, resolveErr)
-					continue
-				}
-				adapter := &seshat.ChromeHistoryAdapter{ProfileDir: profileDir}
-				fmt.Printf("  📥 [%s] %s (%s)...\n", prof.DirName, prof.DisplayName, prof.Email)
-				result, ingestErr := adapter.Ingest(since)
-				if ingestErr != nil {
-					fmt.Printf("  ⚠️  %s: %v\n", prof.DirName, ingestErr)
-					continue
-				}
-				// Tag each item with which profile it came from
-				for i := range result {
-					result[i].References = append(result[i].References, seshat.KIReference{
-						Type:  "chrome_profile",
-						Value: prof.DirName,
-					})
-				}
-				items = append(items, result...)
-			}
-			// If sourceName was empty, also ingest from non-Chrome sources
-			if sourceName == "" {
-				reg := seshat.DefaultRegistry()
-				for name, adapter := range reg.Sources {
-					if name == "chrome-history" {
-						continue // already handled above
-					}
-					result, err := adapter.Ingest(since)
-					if err != nil {
-						fmt.Printf("  ⚠️  %s: %v\n", name, err)
-						continue
-					}
-					items = append(items, result...)
-				}
-			}
-		} else {
-			reg := seshat.DefaultRegistry()
-
-			// Apply --profile flag to the Chrome adapter
-			if profileName != "" {
-				profileDir, err := seshat.ResolveProfileDir(profileName)
-				if err != nil {
-					return fmt.Errorf("resolve profile: %w", err)
-				}
-				reg.Sources["chrome-history"] = &seshat.ChromeHistoryAdapter{ProfileDir: profileDir}
-				fmt.Printf("  🔑 Using Chrome profile: %s (%s)\n", profileName, output.ShortenPath(profileDir))
-			}
-
-			if sourceName != "" {
-				adapter, ok := reg.Sources[sourceName]
-				if !ok {
-					return fmt.Errorf("unknown source '%s' — run 'sirsi seshat adapters' for list", sourceName)
-				}
-				fmt.Printf("  📥 Ingesting from %s...\n", adapter.Name())
-				result, err := adapter.Ingest(since)
-				if err != nil {
-					return fmt.Errorf("%s: %w", adapter.Name(), err)
-				}
-				items = result
-			} else {
-				fmt.Printf("  📥 Ingesting from all sources (since %s)...\n", since.Format("2006-01-02 15:04"))
-				result, err := reg.IngestAll(since)
-				if err != nil {
-					return err
-				}
-				items = result
-			}
+		if profileName != "" || allProfiles {
+			return errors.New("Seshat profile ingestion is not enabled for Ma'at's canonical local reader")
 		}
-
-		fmt.Printf("  ✅ Ingested %d knowledge items\n", len(items))
-
-		// Save to local store
-		if len(items) > 0 {
-			storePath, err := saveKnowledgeItems(items)
-			if err != nil {
-				fmt.Printf("  ⚠️  Save: %v\n", err)
-			} else {
-				fmt.Printf("  💾 Saved to %s\n", storePath)
-			}
+		since, err := parseMaatKnowledgeSince(sinceStr)
+		if err != nil {
+			return err
 		}
-
-		// Auto-export if --export specified
-		if exportTarget != "" && len(items) > 0 {
-			reg := seshat.DefaultRegistry()
-			target, ok := reg.Targets[exportTarget]
-			if !ok {
-				return fmt.Errorf("unknown target '%s' — run 'sirsi seshat adapters' for list", exportTarget)
-			}
-			fmt.Printf("  📤 Exporting to %s...\n", target.Name())
-			if err := target.Export(items); err != nil {
-				return fmt.Errorf("export to %s: %w", target.Name(), err)
-			}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return errors.New("Ma'at knowledge home unavailable")
 		}
-
-		output.Footer(time.Since(start))
-		actions := suggest.After(suggest.Context{Deity: "seshat", Subcommand: "ingest"})
-		var steps [][]string
-		for _, a := range actions {
-			steps = append(steps, []string{a.Command, a.Description})
+		if sourceName == "" {
+			sourceName = "claude"
 		}
-		output.NextSteps(steps)
+		result, refreshErr := knowledge.RefreshLocal(cmd.Context(), home, sourceName, since, "")
+		maatKnowledgeRefreshReceipt(time.Since(start), result).Render()
+		if refreshErr != nil {
+			return errors.New("Ma'at canonical knowledge refresh failed")
+		}
+		if result.State != knowledge.ImportComplete && result.State != knowledge.ImportNoNewItems {
+			return errors.New("Ma'at canonical knowledge refresh was incomplete")
+		}
 		return nil
 	},
 }
@@ -242,28 +138,7 @@ var seshatListCmd = &cobra.Command{
 
 		items, err := loadLatestKnowledgeItems()
 		if err != nil {
-			if JsonOutput {
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]interface{}{
-					"items": []interface{}{},
-					"total": 0,
-				})
-			}
-			output.Banner()
-			output.Header("Knowledge Library")
-			// Fall back to legacy Antigravity KIs
-			paths := seshat.DefaultPaths()
-			legacyItems, _ := seshat.ListKnowledgeItems(paths)
-			for i, item := range legacyItems {
-				ki, _ := seshat.ReadKnowledgeItem(paths, item)
-				if ki != nil {
-					fmt.Printf("  %d. %s\n", i+1, ki.Title)
-					fmt.Printf("     %s\n", output.Truncate(ki.Summary, 80))
-				}
-			}
-			output.Footer(time.Since(start))
-			return nil
+			return errors.New("Ma'at canonical knowledge archive is unavailable; legacy reads are migration-only")
 		}
 
 		// CommandResult contract (owner surface law 2026-07-09): structured
@@ -273,8 +148,7 @@ var seshatListCmd = &cobra.Command{
 			res.Summary = "No knowledge items ingested yet — the library is empty."
 			res.Status = "ok"
 			res.NextActions = append(res.NextActions,
-				output.NextAction{Label: "Sync knowledge sources", Command: "sirsi seshat sync", Description: "Pull the latest knowledge items from configured sources."},
-				output.NextAction{Label: "Ingest a source", Command: "sirsi seshat ingest", Description: "Add a new source into the library."},
+				output.NextAction{Label: "Refresh local knowledge", Command: "sirsi maat knowledge refresh", Description: "Refresh the configured local source into Ma'at's canonical archive."},
 			)
 			res.Duration = time.Since(start)
 			res.Render()
@@ -296,22 +170,10 @@ var seshatListCmd = &cobra.Command{
 			}
 			res.AddEvidence(fmt.Sprintf("[%s] %s", source, ki.Title), output.Truncate(ki.Summary, 160))
 		}
-		// Levers that RESOLVE what the list shows (owner surface law): a
-		// polluted or stale library needs a way OUT, not just a way to add
-		// more. "Refresh" re-ingests (the no-arg legacy `sync` is a no-op, so
-		// point at `ingest`, which actually pulls); "Clear" prunes the store.
+		// Source versions are immutable, so this alias does not offer destructive
+		// prune or legacy dual-store synchronization.
 		res.NextActions = append(res.NextActions,
-			output.NextAction{Label: "Refresh from sources", Command: "sirsi seshat ingest", Description: "Re-ingest from all configured sources (fixes stale/mis-dated items)."},
-		)
-		// If a single source dominates the library, offer to prune just that
-		// noise (e.g. hundreds of raw Chrome-history rows) before nuking all.
-		if src, n := dominantSource(items); src != "" && n >= 10 && src != "unknown" {
-			res.NextActions = append(res.NextActions,
-				output.NextAction{Label: fmt.Sprintf("Remove %d %s item(s)", n, src), Command: "sirsi seshat prune --source " + src, Description: fmt.Sprintf("Prune the %s items from the library, keeping everything else.", src)},
-			)
-		}
-		res.NextActions = append(res.NextActions,
-			output.NextAction{Label: "Clear the library", Command: "sirsi seshat prune --all", Description: "Remove every ingested item. Re-ingest rebuilds it from source."},
+			output.NextAction{Label: "Refresh local knowledge", Command: "sirsi maat knowledge refresh", Description: "Refresh the configured local source into Ma'at's canonical archive."},
 		)
 		res.Duration = time.Since(start)
 		res.Render()
@@ -319,122 +181,15 @@ var seshatListCmd = &cobra.Command{
 	},
 }
 
-// dominantSource returns the source that accounts for the most items and its
-// count, so `list` can offer a targeted prune of the biggest noise contributor.
-func dominantSource(items []seshat.KnowledgeItem) (string, int) {
-	counts := map[string]int{}
-	for _, ki := range items {
-		for _, ref := range ki.References {
-			if ref.Type == "source" {
-				counts[ref.Value]++
-				break
-			}
-		}
-	}
-	var topSrc string
-	var topN int
-	for src, n := range counts {
-		if n > topN {
-			topSrc, topN = src, n
-		}
-	}
-	return topSrc, topN
-}
-
 var seshatPruneCmd = &cobra.Command{
 	Use:   "prune",
-	Short: "𓁆 Remove ingested knowledge items (all, or one source)",
+	Short: "Refuse destructive edits to Ma'at's immutable knowledge archive",
 	Long: `𓁆 Prune the knowledge library.
 
-The library is a rebuildable local cache under ~/.config/seshat/store — pruning
-it is reversible by re-ingesting. Use this to clear stale or mis-dated items
-(e.g. Chrome history ingested by an older build) or to drop a noisy source.
-
-  sirsi seshat prune --all                 Remove every item
-  sirsi seshat prune --source chrome-history  Remove only that source's items`,
+	The canonical Ma'at archive retains immutable source history. Use filters to
+	change a view; source history is never pruned through this compatibility alias.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		start := time.Now()
-		source, _ := cmd.Flags().GetString("source")
-		all, _ := cmd.Flags().GetBool("all")
-
-		res := &output.CommandResult{Command: "sirsi seshat prune", BriefTitle: "Prune Knowledge Library"}
-
-		if !all && source == "" {
-			res.Status = "error"
-			res.Summary = "Nothing pruned — choose --all or --source <name>."
-			res.Errors = append(res.Errors, "specify --all to clear everything, or --source <name> to remove one source")
-			res.NextActions = append(res.NextActions,
-				output.NextAction{Label: "Clear the library", Command: "sirsi seshat prune --all", Description: "Remove every ingested item."},
-			)
-			res.Duration = time.Since(start)
-			res.Render()
-			return nil
-		}
-
-		items, err := loadLatestKnowledgeItems()
-		if err != nil || len(items) == 0 {
-			res.Status = "ok"
-			res.Summary = "The library is already empty — nothing to prune."
-			res.NextActions = append(res.NextActions,
-				output.NextAction{Label: "Ingest a source", Command: "sirsi seshat ingest", Description: "Populate the library from configured sources."},
-			)
-			res.Duration = time.Since(start)
-			res.Render()
-			return nil
-		}
-
-		before := len(items)
-		var kept []seshat.KnowledgeItem
-		if all {
-			kept = nil
-		} else {
-			for _, ki := range items {
-				src := "unknown"
-				for _, ref := range ki.References {
-					if ref.Type == "source" {
-						src = ref.Value
-						break
-					}
-				}
-				if src != source {
-					kept = append(kept, ki)
-				}
-			}
-		}
-		removed := before - len(kept)
-
-		if removed == 0 {
-			res.Status = "ok"
-			res.Summary = fmt.Sprintf("No %s items found — nothing pruned (%d item(s) untouched).", source, before)
-			res.Duration = time.Since(start)
-			res.Render()
-			return nil
-		}
-
-		if err := writeLatestKnowledgeItems(kept); err != nil {
-			res.Status = "error"
-			res.Summary = "Prune failed — the library was not changed."
-			res.Errors = append(res.Errors, err.Error())
-			res.Duration = time.Since(start)
-			res.Render()
-			return err
-		}
-
-		res.Status = "ok"
-		if all {
-			res.Summary = fmt.Sprintf("Cleared the library — removed all %d item(s).", removed)
-		} else {
-			res.Summary = fmt.Sprintf("Removed %d %s item(s); %d item(s) remain.", removed, source, len(kept))
-		}
-		res.AddEvidence("Removed", fmt.Sprintf("%d item(s)", removed))
-		res.AddEvidence("Remaining", fmt.Sprintf("%d item(s)", len(kept)))
-		res.NextActions = append(res.NextActions,
-			output.NextAction{Label: "View the library", Command: "sirsi seshat list", Description: "See what remains after the prune."},
-			output.NextAction{Label: "Re-ingest fresh", Command: "sirsi seshat ingest", Description: "Rebuild the library with the current (corrected) parser."},
-		)
-		res.Duration = time.Since(start)
-		res.Render()
-		return nil
+		return errors.New("Ma'at knowledge versions are immutable; use search filters instead of pruning source history")
 	},
 }
 
@@ -468,23 +223,7 @@ var seshatSyncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "𓁆 Legacy: Bidirectional knowledge sync",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		start := time.Now()
-		output.Banner()
-		output.Header("Knowledge Sync")
-
-		paths := seshat.DefaultPaths()
-		kiName, _ := cmd.Flags().GetString("ki")
-		target, _ := cmd.Flags().GetString("target")
-
-		if kiName != "" && target != "" {
-			if err := seshat.SyncKIToGeminiMD(paths, kiName, target); err != nil {
-				return err
-			}
-			output.Success("Synced KI '%s' → %s", kiName, target)
-		}
-
-		output.Footer(time.Since(start))
-		return nil
+		return errors.New("legacy Seshat sync is disabled; Ma'at knowledge remains in its canonical archive")
 	},
 }
 
@@ -797,67 +536,39 @@ func init() {
 	seshatCmd.AddCommand(seshatAuthCmd)
 }
 
-// Storage helpers for ingested knowledge items
-
-func seshatStoreDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "seshat", "store")
-}
-
-func saveKnowledgeItems(items []seshat.KnowledgeItem) (string, error) {
-	dir := seshatStoreDir()
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", err
-	}
-
-	data, err := json.MarshalIndent(items, "", "  ")
-	if err != nil {
-		return "", err
-	}
-
-	path := filepath.Join(dir, fmt.Sprintf("ingestion_%s.json", time.Now().Format("20060102_150405")))
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return "", err
-	}
-
-	// Also write a "latest" symlink
-	latestPath := filepath.Join(dir, "latest.json")
-	os.Remove(latestPath) // remove old symlink
-	if err := os.WriteFile(latestPath, data, 0644); err != nil {
-		return "", err
-	}
-
-	return path, nil
-}
-
+// loadLatestKnowledgeItems is a bounded compatibility projection from the
+// canonical archive. Historical Seshat snapshots are migration-only and are
+// never a fallback authority for current reads.
 func loadLatestKnowledgeItems() ([]seshat.KnowledgeItem, error) {
-	path := filepath.Join(seshatStoreDir(), "latest.json")
-	data, err := os.ReadFile(path)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, errors.New("Ma'at knowledge home unavailable")
+	}
+	archive, err := knowledge.Open(home)
 	if err != nil {
 		return nil, err
 	}
-
-	var items []seshat.KnowledgeItem
-	if err := json.Unmarshal(data, &items); err != nil {
+	defer archive.Close()
+	page, err := archive.Search(context.Background(), knowledge.SearchQuery{Limit: 100})
+	if err != nil {
 		return nil, err
+	}
+	if page.NextCursor != "" {
+		return nil, errors.New("canonical knowledge exceeds the bounded compatibility export; use paginated Ma'at history")
+	}
+	items := make([]seshat.KnowledgeItem, 0, len(page.Items))
+	for _, projected := range page.Items {
+		if projected.WithheldReason != "" {
+			continue
+		}
+		detail, err := archive.Detail(context.Background(), projected.ID, projected.Revision)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, seshat.KnowledgeItem{
+			ID: detail.ID, Title: detail.Title, Summary: detail.Summary, Content: detail.Content,
+			References: detail.References,
+		})
 	}
 	return items, nil
-}
-
-// writeLatestKnowledgeItems overwrites the store's latest.json with exactly the
-// given items (used by prune). A nil/empty slice writes `[]` so `list` reads a
-// clean empty library rather than erroring on a missing file.
-func writeLatestKnowledgeItems(items []seshat.KnowledgeItem) error {
-	dir := seshatStoreDir()
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-	if items == nil {
-		items = []seshat.KnowledgeItem{}
-	}
-	data, err := json.MarshalIndent(items, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, "latest.json"), data, 0644)
 }

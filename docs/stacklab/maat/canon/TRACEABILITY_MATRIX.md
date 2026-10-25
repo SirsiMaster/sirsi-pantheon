@@ -1,14 +1,35 @@
 # Traceability matrix — Ma'at
 
+HW10 shares `MaatHistoryRefreshStore` and its atomic state commit between both
+native history loaders. Authored controlled-response fixtures cover delayed
+success/failure after a newer commit, cancellation before/after a new snapshot,
+current failure retaining the latest projection, and query/cursor/snapshot
+continuation pairing. Only the current generation may publish projection,
+query, cursor, error and loading state. Source review and execution remain
+required for this child; no prior compiler or MainD5 receipt is relabelled.
+
+History HW01–09 corrective scope additionally binds
+`TestSearchHistoryExactEvidenceCountsHiddenDuplicateIdentity`,
+`TestQueryHistoryRetainsBoundedCandidatesAndChargesMaterialization`,
+`TestHistoryMaterializationChargesOneAtomicBundleAndDefersRest`,
+`TestMaatAcceptResolutionHistoricalCommandConfirmsOnce` and the native
+generation/cancellation/retained-continuation fixtures. Qualification and the
+production-only truncate-before-filter negative remain Main-owned and unrun;
+no release, installed-state or broader Ma'at completion follows from this source.
+
 | Requirement | Source | Verification/evidence | State |
 |---|---|---|---|
 | Assessments preserve facts and explanation | `internal/maat/`, `docs/qa/MAAT_SYSTEM_ONE_CATALOG.md` | focused Ma'at tests and receipts | source-bound; current evidence required |
 | Decisions are append-only | Ma'at journal recorder | journal write/readback tests | source-bound |
 | Failure memory binds evidence to exact scope | `internal/maat/memory.go` | deterministic signature, retained no-follow evidence, create-only prepared/committed leaves, predecessor-bound terminal events, scope-isolation, tamper and race tests | source-bound; surface projection required |
+| Failure memory executes only closed matching guards and cannot block on FIFO open | `internal/maat/memoryguard.go`, `memory.go`; `memoryguard_test.go` | typed-call observation, implementation-byte digest, unsupported/mixed/scope/terminal controls; FIFO/size refusal; reopen and failed-write debt; independent concurrent writers; one-way journal failure | corrective SOURCE ONLY, tests not executed here; eight operation integrations and installed proof OPEN |
+| Ma'at liveness-watch remains rootless and does not strand first-use/interrupted operators in CLI output | `internal/maat/memory_root.go`, `memory_liveness.go`, `cmd/sirsi/maatrepair_liveness.go`, `internal/liveness/localinstall_unix.go`, native `MaatCasebookView.swift` | canonical engine/HOME local APIs; explicit confirmed first-use genesis; read-only inspect; confirmed no-replay re-observation; native review/recheck and fixed engine arguments | source candidate only; unqualified until focused Go/native qualification and installed evidence; other seven rows OPEN |
 | Casebook is read-only | `internal/maat/casebook/` | projection and API tests | source-bound |
+| Retained Ma'at history is bounded, scoped, and recoverable in the native surface | `internal/maat/history_query.go`, `internal/maat/casebook/casebook.go`, `internal/maat/diagnostic_resolution.go`, `cmd/sirsi/maatcasebook.go`, native `MaatCasebookView.swift` and `MaatOperationState.swift`; `contracts/stacklab/maat-system-one-recipe-v1.json` | explicit-empty JSON arrays, physically late match after a budget chunk, canonical owner-review/acceptance without resolving the original multi-finding screen, pre-limit kind/text/status, >50 screen/calibration pagination with query-versus-tail count provenance, final-materialization cancellation, strict old-review lookup beyond `Recent(1000)` with malformed-history refusal, and native zero-exit/partial/failed-refresh/same-snapshot continuation fixtures | corrective source candidate only; Go/native qualification not run; no journal contents ingested; `Recent` behavior is unchanged and browse cursors do not authorize mutation |
+| Ma'at owns one private canonical archive with retained, privacy-filtered local knowledge | `internal/maat/knowledge/{archive,archive_search,legacy,refresh}.go`, Darwin-only `archive_vfs_darwin.go`, `archive_vfs_darwin_abi.go`, `archive_vfs_darwin_copy_cgo.go`, and fail-closed `archive_vfs_darwin_nocgo.go`, `internal/seshat/adapter_claude.go`, `cmd/sirsi/maatknowledge.go`, knowledge-only sections in `MaatCasebookView.swift` | authored archive, Darwin VFS identity/file-control/sidecar/retirement and bounded ABI-copy fixtures including generated-global GC/stack-growth coverage, cross-process lock-close fixture, and native coverage/cursor/digest/consent/projection fixtures; focused package/CLI/native qualification remains pending; see [source map](KNOWLEDGE_ARCHIVE_V1.md) | corrective source authored; tests not executed; online readers, richer downstream workflows and deeper conflict review remain OPEN |
 | Native diagnostics always resolve or complete | `macapp/Sources/SirsiMenubar/Views.swift`, `SirsiEngine.swift` | `CoreContractsTests.testEveryDiagnosticHasAClosedNativeResolutionRoute`; SwiftUI surface review | source-bound |
 | Retained activity never strands a person in raw terminal output | `macapp/Sources/SirsiMenubar/{Views,SirsiEngine}.swift` | `CoreContractsTests.testActivityResolutionAlwaysClosesAnAmbiguousOrFailedOutcome`; native Activity detail review | source-bound |
-| Credential findings have a protected recovery route | `internal/maat/credentialpreflight.go`, `cmd/sirsi/maatpreflight.go`, `macapp/Sources/SirsiMenubar/MaatCasebookView.swift` | Go recovery-plan tests; `CoreContractsTests.testCredentialPreflightAlwaysProvidesAProtectedRecoveryPlan`; native recheck/Stack Lab route | source-bound; commercial proof remains separate |
+| Credential findings have a protected recovery route | `internal/maat/credentialpreflight.go`, `cmd/sirsi/maatpreflight.go`, `macapp/Sources/SirsiMenubar/{MaatCasebookView,ReleaseWorkspaceView}.swift` | Go required-kind/observation-failure tests; `CoreContractsTests.testMaatCredentialProjectionKeepsAdditionalIdentityNeutralAndNotarizationUnknown`; native recheck/Stack Lab route | source-bound; commercial proof remains separate |
 | Missing evidence fails honestly | catalog contract | negative tests and release receipt | source-bound |
 | Scoped lifecycle cannot become fabric-wide restart or ambient elevation | `internal/setup/launchdservice*`, `cmd/sirsi/launchdservice*`, `contracts/stacklab/maat-system-one-recipe-v1.json` | closed-label/native actor/retained artifact/instance/per-service lock tests; recipe boundary assertions; [runbook](../../../runbooks/SCOPED-SERVICE-LIFECYCLE.md) | source candidate; installed application drain/health/rollback and signed deployment OPEN |
 | Installed/release behavior | release workflow and host evidence | exact release/host receipts | OPEN |

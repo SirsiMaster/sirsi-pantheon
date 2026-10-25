@@ -126,6 +126,17 @@ func TestSystemOneRejectsUnknownClosedRepairID(t *testing.T) {
 	}
 }
 
+func TestSystemOneAcceptsOnlyTheClosedBinaryDriftRepairID(t *testing.T) {
+	input := validSystemOneInput()
+	input.Findings = []ScreenFinding{{
+		ID: "binary-drift", Severity: "major", Category: "host-health", Claim: "binary drift",
+		Evidence: "diagnostic:sha256=fixture", Confidence: 1, RepairID: SystemOneRepairBinaryDrift,
+	}}
+	if _, err := Screen(input); err != nil {
+		t.Fatalf("closed binary-drift repair id rejected: %v", err)
+	}
+}
+
 func TestSystemOneCanonicalizesInputOrderAndRejectsDuplicateFindingIDs(t *testing.T) {
 	input := validSystemOneInput()
 	input.Floor.Checks = []FloorCheck{{Name: "go vet", Passed: true}, {Name: "gofmt", Passed: true}}

@@ -121,9 +121,10 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
     @ObservedObject var engine: SirsiEngine
     @Binding var section: MaatWorkspaceSection
     @Environment(\.snapshotMode) private var snapshotMode
-    @State private var casebook: MaatCasebookProjection?
-    @State private var loading: Bool
-    @State private var loadError: String?
+    @StateObject private var historyRefresh: MaatHistoryRefreshStore
+    private var casebook: MaatCasebookProjection? { historyRefresh.state.projection }
+    private var loading: Bool { historyRefresh.state.loading }
+    private var loadError: String? { historyRefresh.state.error }
     @State private var showScreenPicker = false
     @StateObject private var sourceImport = MaatSourceImportModel()
     @State private var confirmScreenImport = false
@@ -148,8 +149,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
          opensReleasePreflight: Bool = false) {
         self.engine = engine
         _section = section
-        _casebook = State(initialValue: preloaded)
-        _loading = State(initialValue: preloaded == nil)
+        _historyRefresh = StateObject(wrappedValue: MaatHistoryRefreshStore(projection: preloaded))
         self.opensReleasePreflight = opensReleasePreflight
     }
 
@@ -163,10 +163,10 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let loadError {
-                VStack { unavailableState(loadError); screenImportControl }
             } else if let casebook {
                 systemOneBody(casebook)
+            } else if let loadError {
+                VStack { unavailableState(loadError); screenImportControl }
             } else {
                 unavailableState("Pantheon did not receive a Ma'at Casebook projection. No System One result was inferred.")
             }
@@ -252,19 +252,25 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
             VStack(spacing: 0) {
                 MaybeScroll {
                     VStack(alignment: .leading, spacing: 16) {
-                        summary(screens: screens, calibrations: calibrations)
+                        summary(screens: screens, calibrations: calibrations, history: casebook.history)
                         if casebook.journalIntegrity.invalidCount > 0 {
                             MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
+                        }
+                        if let loadError {
+                            Label("History refresh failed; the previous page remains visible. \(loadError)", systemImage: "exclamationmark.triangle.fill")
+                                .sirsiFont(.subheadline)
+                                .foregroundStyle(.orange)
                         }
                         resolutionLane(screens)
                         hostTriageControl
                         releasePreflightControl
                             .id("maat-release-preflight")
                         screenImportControl
-                        if screens.isEmpty {
-                            emptyState
+                        if screens.isEmpty && calibrations.isEmpty {
+                            historyEmptyState(casebook)
                         } else {
-                            screenList(screens)
+                            if !screens.isEmpty { screenList(screens) }
+                            if !calibrations.isEmpty { calibrationList(calibrations) }
                         }
                     }
                     .padding(16)
@@ -280,6 +286,13 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                     }
                     .buttonStyle(.borderless)
                     .disabled(loading)
+                    if let history = casebook.history, let cursor = history.nextCursor {
+                        Button { Task { await load(cursor: cursor) } } label: {
+                            Label(history.coverage == "partial" ? "Continue history search" : "Load older", systemImage: "clock.arrow.circlepath")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(loading)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 11)
@@ -296,7 +309,58 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         }
     }
 
-    private func summary(screens: [MaatCase], calibrations: [MaatCase]) -> some View {
+    @ViewBuilder private func historyEmptyState(_ casebook: MaatCasebookProjection) -> some View {
+        let history = casebook.history
+        if casebook.historyEmptyState == .incomplete {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("History search is incomplete", systemImage: "clock")
+                    .sirsiFont(.headline)
+                Text("No empty-history conclusion is available until this snapshot finishes scanning.")
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                if let cursor = history?.nextCursor {
+                    Button("Continue history search") { Task { await load(cursor: cursor) } }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+        } else if casebook.historyEmptyState == .olderPage {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("No System One evidence on this page", systemImage: "clock.arrow.circlepath")
+                    .sirsiFont(.headline)
+                Text("Older retained history is available; no result was inferred from this page alone.")
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                if let cursor = history?.nextCursor {
+                    Button("Load older System One history") { Task { await load(cursor: cursor) } }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+        } else if casebook.historyEmptyState == .invalidHistory {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("No valid System One record was found", systemImage: "exclamationmark.triangle.fill")
+                    .sirsiFont(.headline)
+                Text("The complete scan found invalid journal rows, so it cannot establish that the retained history contains no System One evidence.")
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        } else if casebook.historyEmptyState == .afterCursor {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("No System One evidence remains after this cursor", systemImage: "clock.arrow.circlepath")
+                    .sirsiFont(.headline)
+                Text("This page ends a continued history query; it does not say that the full retained history is empty.")
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                Button("Refresh full history") { Task { await load() } }
+                    .buttonStyle(.borderedProminent)
+            }
+        } else if casebook.historyEmptyState == .empty {
+            emptyState
+        } else {
+            unavailableState("History coverage is unknown, so Ma'at cannot say that no System One evidence exists.")
+        }
+    }
+
+    private func summary(screens: [MaatCase], calibrations: [MaatCase], history: MaatHistoryWindow?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Ma'at System One")
                 .sirsiFont(.title3, weight: .bold)
@@ -304,6 +368,25 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if let history, history.coverage == "partial" {
+                Text(history.countScope == "after-cursor-scanned-so-far"
+                    ? "\(history.candidateMatches) matches scanned after this cursor · remaining history is incomplete."
+                    : "\(history.candidateMatches) matches scanned so far · history is incomplete.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let history, history.countScope == "after-cursor" {
+                Text("This page shows matches after its cursor; whole-query totals are unknown.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let history, history.hasMore, history.candidateMatchesComplete {
+                Text("Showing this page of \(history.candidateMatches) matching System One records.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let history, !history.totalComplete {
+                Text("Loaded page · invalid history prevents complete totals.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
             systemMetrics(screens: screens, calibrations: calibrations)
         }
         .padding(14)
@@ -761,31 +844,33 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
     }
 
     @ViewBuilder private func credentialPreflightSummary(_ preflight: MaatReleaseCredentialPreflight) -> some View {
+        let projection = MaatCredentialPreflightProjection(preflight)
         let recoverySteps = protectedReleaseRecoverySteps(for: preflight)
         VStack(alignment: .leading, spacing: 7) {
-            Label("Complete the protected release handoff", systemImage: "key.horizontal")
+            Label(projection.identityHeading, systemImage: "person.crop.rectangle.stack")
                 .sirsiFont(.subheadline, weight: .semibold)
-                .foregroundStyle(.orange)
-            Text("Team \(preflight.teamID) · \(preflight.developerIdentities.count) required Developer ID identities observed")
+                .foregroundStyle(projection.identityObservationFailed || !projection.allRequiredKindsObserved ? Color.orange : Color.secondary)
+            Text("Team \(preflight.teamID) · \(projection.requiredKindsSummary)")
                 .sirsiFont(.caption)
                 .foregroundStyle(.secondary)
-            if !preflight.observedNonDeveloperIdentityTypes.isEmpty {
-                Label(
-                    "Observed: \(preflight.observedNonDeveloperIdentityTypes.joined(separator: ", ")). This is not a Developer ID signing substitute.",
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .sirsiFont(.caption, weight: .semibold)
-                .foregroundStyle(.orange)
+            ForEach(projection.additionalIdentityLabels, id: \.self) { label in
+                Text(label)
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
-            ForEach(preflight.verdict.floor.checks, id: \.name) { check in
+            ForEach(projection.requiredIdentityChecks, id: \.name) { check in
                 Label(check.detail, systemImage: check.passed ? "checkmark.circle.fill" : "xmark.octagon.fill")
                     .sirsiFont(.caption)
                     .foregroundStyle(check.passed ? Color.secondary : Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Label(projection.notarizationStatus, systemImage: "questionmark.circle")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             ForEach(preflight.verdict.findings) { finding in
-                if !finding.fixHint.isEmpty {
+                if finding.id != "notarization-credential" && !finding.fixHint.isEmpty {
                     Text("Next: \(finding.fixHint)")
                         .sirsiFont(.caption)
                     .fixedSize(horizontal: false, vertical: true)
@@ -804,7 +889,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
             SnapshotActionButton {
                 Task { await inspectCredentialPreflight() }
             } label: {
-                Label("Recheck after the protected update", systemImage: "arrow.clockwise")
+                Label("Recheck local identities", systemImage: "arrow.clockwise")
             }
             .disabled(credentialPreflightInFlight)
             NavLink { StackLabView(engine: engine) } label: {
@@ -817,7 +902,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 .lineLimit(1)
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.09)))
+        .background(RoundedRectangle(cornerRadius: 8).fill((projection.identityObservationFailed || !projection.allRequiredKindsObserved ? Color.orange : Color.secondary).opacity(0.08)))
     }
 
     @ViewBuilder private func screenList(_ screens: [MaatCase]) -> some View {
@@ -849,6 +934,29 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                     }
                     .padding(13)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    @ViewBuilder private func calibrationList(_ calibrations: [MaatCase]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Recorded independent calibrations")
+                .sirsiFont(.headline)
+            ForEach(calibrations) { entry in
+                NavLink { MaatCaseDetailView(engine: engine, operations: engine.maatCaseOperations, entry: entry) } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Screen \(entry.systemOneCalibration?.screenGate ?? "unknown") · independent outcome \(entry.systemOneCalibration?.frontierGate ?? "unknown")")
+                            .sirsiFont(.subheadline, weight: .semibold)
+                        Text("\(entry.systemOneCalibration?.screenEvidence ?? "No screen evidence") · \(entry.systemOneCalibration?.frontierEvidence ?? "No independent evidence")")
+                            .sirsiFont(.caption2, design: .monospaced)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
                 }
                 .buttonStyle(.plain)
@@ -989,16 +1097,10 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         credentialPreflightInFlight = false
     }
 
-    @MainActor private func load() async {
-        loading = true
-        loadError = nil
-        let result = await MaatCasebookView.fetch()
-        if let result {
-            casebook = result
-        } else {
-            loadError = "Pantheon could not read the local Ma'at decision journal. No System One gate was inferred. Retry the exact read, inspect decisions, or inspect Stack Lab authority."
+    @MainActor private func load(cursor: String? = nil) async {
+        await historyRefresh.load(scope: "system-one", cursor: cursor) { args in
+            await SirsiEngine.runJSONRead(args: args)
         }
-        loading = false
     }
 }
 
@@ -1274,13 +1376,16 @@ struct MaatKnownFailureProposalsView: View {
 // MaatCasebookView is the native operator surface for Ma'at's recorded
 // decisions. It reads the same local casebook projection exposed by the CLI
 // and dashboard; it does not rescore, alter, or authorize a decision.
-struct MaatCasebookView: View {
+@MainActor struct MaatCasebookView: View {
     @ObservedObject var engine: SirsiEngine
     let showsBackBar: Bool
-    @State private var casebook: MaatCasebookProjection?
+    @StateObject private var historyRefresh: MaatHistoryRefreshStore
+    private var casebook: MaatCasebookProjection? { historyRefresh.state.projection }
+    private var loading: Bool { historyRefresh.state.loading }
+    private var loadError: String? { historyRefresh.state.error }
+    private var activeQuery: String { historyRefresh.state.query }
     @State private var query = ""
-    @State private var loading = true
-    @State private var loadError: String?
+    @State private var showWithheld = false
     @State private var confirmKnowledgeRefresh = false
     @State private var knowledgeRefreshInFlight = false
     @State private var knowledgeRefreshResult: String?
@@ -1289,8 +1394,7 @@ struct MaatCasebookView: View {
     init(engine: SirsiEngine, preloaded: MaatCasebookProjection? = nil, showsBackBar: Bool = true) {
         self.engine = engine
         self.showsBackBar = showsBackBar
-        _casebook = State(initialValue: preloaded)
-        _loading = State(initialValue: preloaded == nil)
+        _historyRefresh = StateObject(wrappedValue: MaatHistoryRefreshStore(projection: preloaded))
     }
 
     var body: some View {
@@ -1298,10 +1402,10 @@ struct MaatCasebookView: View {
             if showsBackBar { BackBar(title: "Ma'at casebook") }
             if loading {
                 loadingState
-            } else if let loadError {
-                failureState(loadError)
             } else if let casebook {
                 casebookBody(casebook)
+            } else if let loadError {
+                failureState(loadError)
             } else {
                 emptyState
             }
@@ -1376,12 +1480,50 @@ struct MaatCasebookView: View {
         VStack(spacing: 0) {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
-                    summary(casebook.summary)
+                    summary(casebook.summary, history: casebook.history)
                     if casebook.journalIntegrity.invalidCount > 0 {
                         MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
                     }
                     searchField
-                    caseList(for: filtered(casebook.cases))
+                    if let loadError {
+                        Label("Refresh failed; the previous page remains visible. \(loadError)", systemImage: "exclamationmark.triangle.fill")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.orange)
+                    }
+                    let visible = casebook.cases
+                    if visible.isEmpty, casebook.historyEmptyState == .incomplete, let cursor = casebook.history?.nextCursor {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("This bounded history scan is incomplete; no empty result is available yet.")
+                                .sirsiFont(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Button("Continue history search") { Task { await load(cursor: cursor) } }
+                                .buttonStyle(.borderedProminent)
+                        }
+                    } else if visible.isEmpty, casebook.historyEmptyState == .olderPage, let cursor = casebook.history?.nextCursor {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("No matching decisions on this page; older history remains available.")
+                                .sirsiFont(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Button("Load older decisions") { Task { await load(cursor: cursor) } }
+                                .buttonStyle(.borderedProminent)
+                        }
+                    } else if visible.isEmpty, casebook.historyEmptyState == .invalidHistory {
+                        Text("No valid decision matched this page. Invalid journal rows prevent a complete absence conclusion.")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else if visible.isEmpty, casebook.historyEmptyState == .afterCursor {
+                        Text("No matching decisions remain after this cursor. Refresh to search the full history again.")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else if visible.isEmpty, casebook.historyEmptyState == .unavailable {
+                        Text("History coverage is unavailable; no absence conclusion was made.")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else if visible.isEmpty, activeQuery.isEmpty {
+                        emptyState
+                    } else {
+                        caseList(for: visible)
+                    }
                 }
                 .padding(16)
             }
@@ -1398,19 +1540,39 @@ struct MaatCasebookView: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled(loading)
+                if let history = casebook.history, let cursor = history.nextCursor {
+                    Button { Task { await load(cursor: cursor) } } label: {
+                        Label(history.coverage == "partial" ? "Continue history search" : "Load older", systemImage: "clock.arrow.circlepath")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(loading || loadError != nil)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
         }
     }
 
-    private func summary(_ summary: MaatCasebookSummary) -> some View {
+    private func summary(_ summary: MaatCasebookSummary, history: MaatHistoryWindow?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Decision casebook")
                 .sirsiFont(.title3, weight: .bold)
             Text(summaryDetail(summary))
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
+            if let history, history.countScope == "after-cursor" {
+                Text("This page covers matches after its cursor; whole-query totals are unknown.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let history, history.hasMore, history.candidateMatchesComplete {
+                Text("Showing this page of \(history.candidateMatches) matching decisions.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let history, !history.totalComplete {
+                Text("Loaded page · counts are not whole-history totals.")
+                    .sirsiFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
             HStack(spacing: 8) {
                 caseMetric("Open", value: summary.open, tint: .orange)
                 caseMetric("Urgent", value: summary.urgent, tint: .red)
@@ -1422,10 +1584,10 @@ struct MaatCasebookView: View {
     }
 
     private func summaryDetail(_ summary: MaatCasebookSummary) -> String {
-        guard summary.total > 0 else { return "No decisions match this view" }
-        if summary.urgent > 0 { return "Start with the decisions that need a response." }
-        if summary.open > 0 { return "\(summary.open) decision\(summary.open == 1 ? "" : "s") still needs attention." }
-        return "All recorded decisions are resolved."
+        guard summary.total > 0 else { return "No decisions match this page" }
+        if summary.urgent > 0 { return "Start with the decisions on this page that need a response." }
+        if summary.open > 0 { return "\(summary.open) decision\(summary.open == 1 ? "" : "s") on this page still need attention." }
+        return "All decisions on this page are resolved."
     }
 
     private func caseMetric(_ title: String, value: Int, tint: Color) -> some View {
@@ -1446,8 +1608,15 @@ struct MaatCasebookView: View {
             TextField("Filter decisions, evidence, or resource", text: $query)
                 .textFieldStyle(.plain)
                 .accessibilityLabel("Filter Ma'at decisions")
+                .onSubmit { Task { await load(query: query) } }
+            Button("Search") { Task { await load(query: query) } }
+                .buttonStyle(.borderless)
+                .accessibilityHint("Searches retained history before applying the page limit.")
             if !query.isEmpty {
-                Button { query = "" } label: {
+                Button {
+                    query = ""
+                    Task { await load(query: "") }
+                } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.tertiary)
                 }
@@ -1484,26 +1653,25 @@ struct MaatCasebookView: View {
         }
     }
 
-    private func filtered(_ cases: [MaatCase]) -> [MaatCase] {
-        let term = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !term.isEmpty else { return cases }
-        return cases.filter { $0.searchText.localizedCaseInsensitiveContains(term) }
-    }
-
-    @MainActor private func load() async {
-        loading = true
-        loadError = nil
-        let result = await Self.fetch()
-        if let result {
-            casebook = result
-        } else {
-            loadError = "Pantheon could not read the local Ma'at decision journal. Check the project and try again."
+    @MainActor private func load(query requestedQuery: String? = nil, cursor: String? = nil) async {
+        await historyRefresh.load(scope: "all", query: requestedQuery, cursor: cursor) { args in
+            await SirsiEngine.runJSONRead(args: args)
         }
-        loading = false
     }
 
-    nonisolated static func fetch() async -> MaatCasebookProjection? {
-        let raw = await SirsiEngine.run(args: ["maat", "casebook", "--json", "--limit", "50"], stdin: nil)
+    nonisolated static func fetchRead(query: String = "", cursor: String? = nil) async -> SirsiEngine.JSONCommandRead {
+        await SirsiEngine.runJSONRead(args: maatCasebookHistoryArguments(scope: "all", query: query, cursor: cursor))
+    }
+
+    // Snapshot callers keep the existing projection API while sharing the
+    // same successful-process requirement as interactive history browsing.
+    nonisolated static func fetch(cursor: String? = nil) async -> MaatCasebookProjection? {
+        decode(await fetchRead(cursor: cursor))
+    }
+
+    nonisolated static func decode(_ read: SirsiEngine.JSONCommandRead) -> MaatCasebookProjection? {
+        guard read.exitStatus == 0, !read.timedOut, read.launchError == nil,
+              let raw = String(data: read.data, encoding: .utf8) else { return nil }
         return decode(raw)
     }
 
@@ -1518,16 +1686,21 @@ struct MaatCasebookView: View {
 // product surface. It calls the canonical `maat knowledge` read model rather
 // than putting a Seshat command transcript in the menubar.
 struct MaatKnowledgeView: View {
+    private let maximumLoadedKnowledgeItems = 100
     @ObservedObject var engine: SirsiEngine
     let showsBackBar: Bool
     @State private var knowledge: MaatKnowledgeProjection?
     @State private var query = ""
+    @State private var showWithheld = false
     @State private var loading = true
     @State private var loadError: String?
     @State private var confirmKnowledgeRefresh = false
     @State private var knowledgeRefreshInFlight = false
     @State private var knowledgeRefreshResult: String?
     @State private var knowledgeRefreshError: String?
+    @State private var knowledgeProjectionInFlight = false
+    @State private var knowledgeProjectionReceipt: MaatKnowledgeProjectionReceipt?
+    @State private var knowledgeProjectionError: String?
 
     init(engine: SirsiEngine, preloaded: MaatKnowledgeProjection? = nil, showsBackBar: Bool = true) {
         self.engine = engine
@@ -1547,10 +1720,10 @@ struct MaatKnowledgeView: View {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let loadError {
-                failureState(loadError)
             } else if let knowledge {
                 knowledgeBody(knowledge)
+            } else if let loadError {
+                failureState(loadError)
             }
         }
         .task {
@@ -1595,6 +1768,12 @@ struct MaatKnowledgeView: View {
         VStack(spacing: 0) {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
+                    if let loadError {
+                        Label(loadError, systemImage: "exclamationmark.triangle.fill")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Local knowledge")
                             .sirsiFont(.title3, weight: .bold)
@@ -1607,9 +1786,46 @@ struct MaatKnowledgeView: View {
                                 .foregroundStyle(.orange)
                         }
                     }
+                    if let coverage = knowledge.coverage {
+                        if coverage.pendingProjectionDebt > 0 {
+                            Label("\(coverage.pendingProjectionDebt) owner decision(s) still need Casebook projection", systemImage: "arrow.triangle.2.circlepath")
+                                .sirsiFont(.caption, weight: .semibold)
+                                .foregroundStyle(.orange)
+                            Button("Retry Casebook projection") { Task { await reconcileKnowledgeProjection() } }
+                                .buttonStyle(.bordered)
+                                .disabled(knowledgeProjectionInFlight)
+                            if let knowledgeProjectionReceipt {
+                                Label(knowledgeProjectionReceipt.summary,
+                                      systemImage: knowledgeProjectionReceipt.isComplete ? "checkmark.seal" : "arrow.triangle.2.circlepath")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(knowledgeProjectionReceipt.isComplete ? .green : .orange)
+                            }
+                            if let knowledgeProjectionError {
+                                Label(knowledgeProjectionError, systemImage: "exclamationmark.triangle")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        ForEach(coverage.sources) { source in
+                            if source.state != "complete" && source.state != "no_new_items" {
+                                Label("\(source.source): \(source.state) · \(source.errorCode ?? "review required")", systemImage: "exclamationmark.triangle")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
                     knowledgeRefreshControl
                     searchField
-                    knowledgeList(filtered(knowledge.items))
+                    knowledgeList(knowledge.items)
+                    if let cursor = knowledge.nextCursor {
+                        Button("Load next stable page") { Task { await loadNext(cursor) } }
+                            .buttonStyle(.bordered)
+                            .disabled(loading)
+                    } else if knowledge.items.count >= maximumLoadedKnowledgeItems && knowledge.total > knowledge.items.count {
+                        Text("The native view is capped at \(maximumLoadedKnowledgeItems) loaded items. Narrow the search or use the explicit CLI cursor for older pages.")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(16)
             }
@@ -1637,8 +1853,25 @@ struct MaatKnowledgeView: View {
             TextField("Filter knowledge", text: $query)
                 .textFieldStyle(.plain)
                 .accessibilityLabel("Filter Ma'at knowledge")
+                .onSubmit { Task { await load(query: query) } }
+            Button { Task { await load(query: query) } } label: {
+                Image(systemName: "arrow.right.circle.fill").foregroundStyle(gold)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Search local knowledge")
+            Button {
+                showWithheld.toggle()
+                query = ""
+                Task { await load(query: "") }
+            } label: {
+                Label("Withheld", systemImage: showWithheld ? "lock.fill" : "lock")
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(showWithheld ? .orange : .secondary)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(showWithheld ? "Show searchable knowledge" : "Show withheld items and reasons")
             if !query.isEmpty {
-                Button { query = "" } label: {
+                Button { query = ""; Task { await load(query: "") } } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.borderless)
@@ -1654,7 +1887,7 @@ struct MaatKnowledgeView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Keep local knowledge current")
                 .sirsiFont(.headline)
-            Text("Refresh reads the configured local sources into Ma'at's cache. Review the scope before confirming; Ma'at does not export, open a browser, or make a remote decision from this screen.")
+            Text("Refresh reads local Claude transcript files into Ma'at's private archive. Confirm before reading; this does not contact online workspaces, export data, open a browser, or make a remote decision.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1697,7 +1930,7 @@ struct MaatKnowledgeView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(query.isEmpty ? "Nothing in the local library" : "No matching knowledge")
                     .sirsiFont(.headline)
-                Text(query.isEmpty ? "Ingestion remains available through the compatibility tools; Ma'at is the place to inspect what is retained." : "Try a broader term or clear the filter.")
+                Text(query.isEmpty ? "Use the confirmed local refresh to read the enabled transcript source." : "Try a broader term or clear the filter.")
                     .sirsiFont(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1730,6 +1963,11 @@ struct MaatKnowledgeView: View {
                                     .sirsiFont(.caption)
                                     .foregroundStyle(.tertiary)
                             }
+                            if let reason = item.withheldReason {
+                                Label("Withheld: \(reason)", systemImage: "lock.fill")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.orange)
+                            }
                         }
                         .padding(.horizontal, 13)
                         .padding(.vertical, 11)
@@ -1742,20 +1980,33 @@ struct MaatKnowledgeView: View {
         }
     }
 
-    private func filtered(_ items: [MaatKnowledgeItem]) -> [MaatKnowledgeItem] {
-        let term = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !term.isEmpty else { return items }
-        return items.filter { $0.searchText.localizedCaseInsensitiveContains(term) }
-    }
-
-    @MainActor private func load() async {
+    @MainActor private func load(query requestedQuery: String? = nil) async {
         loading = true
         loadError = nil
-        let result = await Self.fetch()
+        let result = await Self.fetch(query: showWithheld ? "" : requestedQuery ?? query, withheld: showWithheld)
         if let result {
             knowledge = result
         } else {
             loadError = "Pantheon could not read Ma'at's local knowledge projection. Check the project and try again."
+        }
+        loading = false
+    }
+
+    @MainActor private func loadNext(_ cursor: String) async {
+        guard let knowledge else { return }
+        loading = true
+        loadError = nil
+        let result = await Self.fetch(query: showWithheld ? "" : query, cursor: cursor, withheld: showWithheld)
+        if let result {
+            let boundedItems = Array((knowledge.items + result.items).prefix(maximumLoadedKnowledgeItems))
+            self.knowledge = MaatKnowledgeProjection(
+                items: boundedItems, total: result.total, withheld: result.withheld,
+                coverage: result.coverage,
+                nextCursor: boundedItems.count < maximumLoadedKnowledgeItems ? result.nextCursor : nil,
+                state: result.state
+            )
+        } else {
+            loadError = "Ma'at could not continue this stable archive page. Restart the search and try again."
         }
         loading = false
     }
@@ -1770,20 +2021,70 @@ struct MaatKnowledgeView: View {
             await load()
         } else {
             let detail = result?.errors.first ?? "No typed completion receipt was returned."
-            knowledgeRefreshError = "Ma'at could not refresh local knowledge. The current cache remains available. Check the reported source issue, then retry this confirmed refresh. \(detail)"
+            knowledgeRefreshError = Self.refreshFailureMessage(
+                retainedViewAvailable: knowledge != nil,
+                detail: detail
+            )
         }
         knowledgeRefreshInFlight = false
     }
 
-    nonisolated static func fetch() async -> MaatKnowledgeProjection? {
-        let raw = await SirsiEngine.run(args: ["maat", "knowledge", "--json"], stdin: nil)
-        guard let start = raw.firstIndex(of: "{") else { return nil }
-        return try? JSONDecoder().decode(MaatKnowledgeProjection.self, from: Data(raw[start...].utf8))
+    @MainActor private func reconcileKnowledgeProjection() async {
+        knowledgeProjectionInFlight = true
+        knowledgeProjectionReceipt = nil
+        knowledgeProjectionError = nil
+        let result = await SirsiEngine.runResult(args: ["maat", "knowledge", "reconcile-projections"])
+        if let result, let receipt = MaatKnowledgeProjectionReceipt(commandResult: result) {
+            knowledgeProjectionReceipt = receipt
+            await load()
+        } else {
+            knowledgeProjectionError = "Ma'at could not confirm the Casebook projection receipt. Check current knowledge status before deciding whether to retry."
+        }
+        knowledgeProjectionInFlight = false
+    }
+
+    nonisolated static func refreshFailureMessage(retainedViewAvailable: Bool, detail: String) -> String {
+        let retainedViewStatus = retainedViewAvailable
+            ? "The displayed retained view remains available and unchanged."
+            : "The archive could not be read; its retained contents are unverified."
+        return "Ma'at could not refresh local knowledge. \(retainedViewStatus) Check the reported source issue, then retry this confirmed refresh. \(detail)"
+    }
+
+    nonisolated static func fetch(query: String = "", cursor: String? = nil, withheld: Bool = false) async -> MaatKnowledgeProjection? {
+        var args = ["maat", "knowledge"]
+        if withheld {
+            args.append("--withheld")
+        } else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            args += ["--query", query]
+        }
+        if let cursor, !cursor.isEmpty { args += ["--cursor", cursor] }
+        args.append("--json")
+        let read = await SirsiEngine.runJSONRead(args: args)
+        return decodeProjection(read)
+    }
+
+    nonisolated static func decodeProjection(_ read: SirsiEngine.JSONCommandRead) -> MaatKnowledgeProjection? {
+        guard read.exitStatus == 0, !read.timedOut, read.launchError == nil else { return nil }
+        return try? JSONDecoder().decode(MaatKnowledgeProjection.self, from: read.data)
     }
 }
 
 private struct MaatKnowledgeDetailView: View {
     let item: MaatKnowledgeItem
+    @State private var detail: MaatKnowledgeItem?
+    @State private var resolutionState = "reviewed"
+    @State private var resolutionNote = ""
+    @State private var confirmResolution = false
+    @State private var resolutionSubmission = MaatKnowledgeResolutionSubmission()
+    @State private var resolutionReceipt: String?
+    @State private var resolutionError: String?
+    @State private var sourceHistory: [MaatKnowledgeItem] = []
+    @State private var sourceHistoryCursor: String?
+    @State private var sourceHistoryTotal = 0
+    @State private var sourceHistoryLoading = false
+    @State private var sourceHistoryError: String?
+    private let historyPageSize = 10
+    private let maximumHistoryItems = 100
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1791,10 +2092,26 @@ private struct MaatKnowledgeDetailView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(item.title).sirsiFont(.title3, weight: .bold)
+                    if let classification = item.classification {
+                        Text("\(classification) · \(item.resolution ?? "open") · revision \(item.revision ?? 1)")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if !item.summary.isEmpty {
                         Text(item.summary)
                             .sirsiFont(.body)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let content = detail?.content, !content.isEmpty {
+                        Text(content)
+                            .sirsiFont(.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                    if let reason = item.withheldReason ?? detail?.withheldReason {
+                        Label("Withheld because this record matched \(reason). The original text is not shown.", systemImage: "lock.fill")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.orange)
                     }
                     if !item.references.isEmpty {
                         VStack(alignment: .leading, spacing: 7) {
@@ -1812,10 +2129,211 @@ private struct MaatKnowledgeDetailView: View {
                             }
                         }
                     }
+                    if let detail, !detail.origins.isEmpty {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("Retained provenance")
+                                .sirsiFont(.caption, weight: .bold)
+                                .foregroundStyle(.secondary)
+                            ForEach(detail.origins) { origin in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(origin.source) · \(origin.instanceID)").sirsiFont(.caption, weight: .semibold)
+                                    if !origin.reference.isEmpty {
+                                        Text(origin.reference).sirsiFont(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if let detail, !detail.annotations.isEmpty {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("Owner review history")
+                                .sirsiFont(.caption, weight: .bold)
+                                .foregroundStyle(.secondary)
+                            ForEach(detail.annotations) { annotation in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(annotation.state.capitalized).sirsiFont(.caption, weight: .semibold)
+                                    Text(annotation.text).sirsiFont(.subheadline).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Retained source history")
+                            .sirsiFont(.caption, weight: .bold)
+                            .foregroundStyle(.secondary)
+                        if sourceHistory.isEmpty {
+                            Button("Load version history") { Task { await loadSourceHistory(cursor: nil) } }
+                                .buttonStyle(.bordered)
+                        }
+                        ForEach(Array(sourceHistory.enumerated()), id: \.offset) { entry in
+                            let version = entry.element
+                            DisclosureGroup("Revision \(version.revision ?? 0) · \(version.title)") {
+                                if !version.summary.isEmpty {
+                                    Text(version.summary)
+                                        .sirsiFont(.subheadline)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                if let content = version.content, !content.isEmpty {
+                                    Text(content)
+                                        .sirsiFont(.caption)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .textSelection(.enabled)
+                                }
+                                ForEach(version.origins) { origin in
+                                    Text("\(origin.source) · \(origin.instanceID) · \(origin.reference)")
+                                        .sirsiFont(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        if let sourceHistoryCursor, sourceHistory.count < maximumHistoryItems {
+                            Button("Load older versions") { Task { await loadSourceHistory(cursor: sourceHistoryCursor) } }
+                                .buttonStyle(.bordered)
+                                .disabled(sourceHistoryLoading)
+                        }
+                        if sourceHistoryTotal > 0 {
+                            Text("Showing \(sourceHistory.count) of \(sourceHistoryTotal) retained versions.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let sourceHistoryError {
+                            Label(sourceHistoryError, systemImage: "exclamationmark.triangle")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("Review this knowledge item")
+                            .sirsiFont(.headline)
+                        Picker("Owner conclusion", selection: $resolutionState) {
+                            Text("Reviewed").tag("reviewed")
+                            Text("Accepted").tag("accepted")
+                            Text("Rejected").tag("rejected")
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(resolutionSubmission.submissionStarted)
+                        TextField("Why this conclusion?", text: $resolutionNote, axis: .vertical)
+                            .lineLimit(2...5)
+                            .textFieldStyle(.roundedBorder)
+                            .disabled(resolutionSubmission.submissionStarted)
+                        if let revision = detail?.revision, let digest = detail?.contentDigest, !digest.isEmpty {
+                            Text("This review is bound to revision \(revision) · \(digest.prefix(12))…")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Exact version details are unavailable; reopen the item before recording a review.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                        Button("Record owner review") { confirmResolution = true }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(resolutionNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || detail?.revision == nil || detail?.contentDigest?.isEmpty != false || resolutionSubmission.submissionStarted)
+                        if let resolutionReceipt {
+                            Label(resolutionReceipt, systemImage: "checkmark.seal")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let resolutionError {
+                            Label(resolutionError, systemImage: "exclamationmark.triangle")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
                 }
                 .padding(16)
             }
         }
+        .task {
+            let raw = await SirsiEngine.run(args: ["maat", "knowledge", "detail", item.id, "--json"], stdin: nil)
+            guard let start = raw.firstIndex(of: "{"),
+                  let loaded = try? JSONDecoder().decode(MaatKnowledgeItem.self, from: Data(raw[start...].utf8)) else {
+                resolutionError = "Ma'at could not load the exact version details. No owner review can be recorded until the item is reopened."
+                return
+            }
+            detail = loaded
+            resolutionError = nil
+        }
+        .confirmationDialog("Record this owner conclusion?", isPresented: $confirmResolution, titleVisibility: .visible) {
+            Button("Record \(resolutionState)") { beginResolutionSubmission() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This saves a sensitivity-filtered owner note in Ma'at's archive. Casebook projection is tracked separately and may remain pending.")
+        }
+    }
+
+    @MainActor private func beginResolutionSubmission() {
+        guard let reviewed = detail,
+              let request = MaatKnowledgeResolutionRequest.capture(
+                recordID: item.id, revision: reviewed.revision, digest: reviewed.contentDigest,
+                state: resolutionState, note: resolutionNote
+              ) else {
+            resolutionSubmission.finish()
+            resolutionError = "The displayed version is unavailable. Reload its exact detail and review it again before recording a decision."
+            return
+        }
+        guard resolutionSubmission.begin() else { return }
+        Task { await recordResolution(request) }
+    }
+
+    @MainActor private func recordResolution(_ request: MaatKnowledgeResolutionRequest) async {
+        defer { resolutionSubmission.finish() }
+        resolutionError = nil
+        let output = await SirsiEngine.run(
+            args: request.arguments,
+            stdin: request.note
+        )
+        guard let start = output.firstIndex(of: "{"),
+              let receipt = try? JSONDecoder().decode(MaatKnowledgeResolutionReceipt.self, from: Data(output[start...].utf8)) else {
+            resolutionError = "Ma'at could not confirm this exact revision-and-digest review. No newer version was substituted; reopen the current item for a deliberate fresh review."
+            return
+        }
+        resolutionReceipt = "Recorded as \(receipt.state); Casebook projection is \(receipt.casebookProjection)."
+        resolutionNote = ""
+        let raw = await SirsiEngine.run(args: ["maat", "knowledge", "detail", request.recordID, "--json"], stdin: nil)
+        if let start = raw.firstIndex(of: "{") {
+            detail = try? JSONDecoder().decode(MaatKnowledgeItem.self, from: Data(raw[start...].utf8))
+        }
+    }
+
+    @MainActor private func loadSourceHistory(cursor: String?) async {
+        sourceHistoryLoading = true
+        sourceHistoryError = nil
+        var args = ["maat", "knowledge", "history", item.id, "--limit", "\(historyPageSize)"]
+        if let cursor, !cursor.isEmpty { args += ["--cursor", cursor] }
+        args.append("--json")
+        let raw = await SirsiEngine.run(args: args, stdin: nil)
+        guard let start = raw.firstIndex(of: "{"),
+              let page = try? JSONDecoder().decode(MaatKnowledgeHistoryPage.self, from: Data(raw[start...].utf8)) else {
+            sourceHistoryError = "Ma'at could not read this stable history page. Existing retained versions are unchanged."
+            sourceHistoryLoading = false
+            return
+        }
+        sourceHistory = Array((sourceHistory + page.items).prefix(maximumHistoryItems))
+        sourceHistoryTotal = page.total
+        sourceHistoryCursor = sourceHistory.count < maximumHistoryItems ? page.nextCursor : nil
+        sourceHistoryLoading = false
+    }
+}
+
+private struct MaatKnowledgeResolutionReceipt: Decodable {
+    let state: String
+    let casebookProjection: String
+    enum CodingKeys: String, CodingKey {
+        case state
+        case casebookProjection = "casebook_projection"
+    }
+}
+
+private struct MaatKnowledgeHistoryPage: Decodable {
+    let items: [MaatKnowledgeItem]
+    let total: Int
+    let nextCursor: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case items, total
+        case nextCursor = "next_cursor"
     }
 }
 
@@ -1861,6 +2379,58 @@ private struct MaatCaseRow: View {
     }
 }
 
+enum MaatFailureMemoryAction: Equatable {
+    case initialize
+    case reobserve
+}
+
+struct MaatFailureMemoryStatus: Decodable {
+    let state: String
+    let storeUUID: String?
+    let detail: String?
+    let incompleteAttempt: Bool
+    let projectionDebt: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case state, detail
+        case storeUUID = "store_uuid"
+        case incompleteAttempt = "incomplete_attempt"
+        case projectionDebt = "projection_debt"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        state = try values.decode(String.self, forKey: .state)
+        storeUUID = try values.decodeIfPresent(String.self, forKey: .storeUUID)
+        detail = try values.decodeIfPresent(String.self, forKey: .detail)
+        incompleteAttempt = try values.decodeIfPresent(Bool.self, forKey: .incompleteAttempt) ?? false
+        projectionDebt = try values.decodeIfPresent(Bool.self, forKey: .projectionDebt) ?? false
+    }
+}
+
+func maatCasebookFailureMemoryArguments(_ action: MaatFailureMemoryAction) -> [String] {
+    switch action {
+    case .initialize:
+        return ["maat", "repair", "liveness-watch", "--initialize-failure-memory", "--confirm", "--json"]
+    case .reobserve:
+        return ["maat", "repair", "liveness-watch", "--reobserve-incomplete", "--confirm", "--json"]
+    }
+}
+
+func maatExactCasebookReadArguments(evidence: String, cursor: String? = nil) -> [String] {
+	var arguments = ["maat", "casebook", "--json", "--scope", "all", "--evidence", evidence, "--limit", "2"]
+	if let cursor, !cursor.isEmpty { arguments += ["--cursor", cursor] }
+	return arguments
+}
+
+func maatCasebookHistoryArguments(scope: String, query: String = "", cursor: String? = nil) -> [String] {
+    var arguments = ["maat", "casebook", "--json", "--scope", scope, "--limit", "50"]
+    if let cursor, !cursor.isEmpty { arguments += ["--cursor", cursor] }
+    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !normalizedQuery.isEmpty { arguments.append(normalizedQuery) }
+    return arguments
+}
+
 private struct MaatCaseDetailView: View {
     @ObservedObject var engine: SirsiEngine
     @ObservedObject var operations: MaatCaseOperationStore
@@ -1869,13 +2439,25 @@ private struct MaatCaseDetailView: View {
     @State private var confirmAction = false
     @State private var evidenceCopied = false
     @State private var copiedFindingID: String?
+    @State private var failureMemoryStatus: MaatFailureMemoryStatus?
+    @State private var failureMemoryLoading = false
+    @State private var failureMemoryBusy = false
+    @State private var failureMemoryMessage: String?
+    @State private var pendingFailureMemoryAction: MaatFailureMemoryAction?
+    @State private var binaryDriftPreview: MaatBinaryDriftPreview?
+    @State private var binaryDriftPreviewLoading = false
+    @State private var binaryDriftPreviewError: String?
+    @State private var failureMemoryHistory: MaatExactHistoryContinuation?
+    @State private var failureMemoryHistoryKey: MaatOperationKey?
+    @State private var failureMemoryHistoryAction: MaatFailureMemoryAction?
+    @State private var retryReviewBusy = false
 
     private var operationKey: MaatOperationKey { MaatOperationKey(case: entry) }
     private var operationRecord: MaatOperationRecord? { operations.record(for: operationKey) }
     private var operationInFlight: Bool { operationRecord?.phase.isInFlight == true }
     private var canBeginOperation: Bool {
         guard let phase = operationRecord?.phase else { return true }
-        return phase == .retryReady
+        return phase == .retryReady || phase == .historyIncomplete
     }
 
     var body: some View {
@@ -1909,7 +2491,7 @@ private struct MaatCaseDetailView: View {
 							detailSection("Declared evidence recipe", systemOne.model.evidenceSetDigest)
 						}
 						systemOneFloor(systemOne.floor)
-						systemOneFindings(systemOne.findings)
+						systemOneFindings(systemOne.findings, closedActionID: entry.nextAction?.actionID)
 						if let escalation = systemOne.escalation {
 							detailSection("Required review", escalation.reason)
 						}
@@ -1945,24 +2527,50 @@ private struct MaatCaseDetailView: View {
                             .sirsiFont(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    if entry.nextAction?.kind == "maat_repair", entry.nextAction?.actionID == "liveness-watch" {
+                        failureMemorySetup
+                    }
+                    if let repairOutcome = maatCasebookRepairOutcomePresentation(entry) {
+                        detailSection(repairOutcome.title, repairOutcome.evidence)
+                        Text(repairOutcome.detail)
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !entry.pendingRepairAttemptEvidence.isEmpty {
+                        detailSection("Retained updater attempt", entry.pendingRepairAttemptEvidence)
+                    }
                     if let action = entry.nextAction, entry.status.lowercased() != "resolved" { resolutionAction(action) }
                 }
                 .padding(16)
             }
         }
+        .task {
+            guard entry.nextAction?.actionID == "liveness-watch" else { return }
+            await refreshFailureMemoryStatus()
+        }
         .confirmationDialog(confirmationTitle, isPresented: $confirmAction, titleVisibility: .visible) {
             Button(confirmationButton) {
                 let confirmedNote = conclusion.trimmingCharacters(in: .whitespacesAndNewlines)
-                Task { await performResolution(confirmedNote: confirmedNote) }
+                if let action = pendingFailureMemoryAction {
+                    Task { await performFailureMemoryAction(action) }
+                } else {
+                    Task { await performResolution(confirmedNote: confirmedNote) }
+                }
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) { pendingFailureMemoryAction = nil }
         } message: {
             Text(confirmationMessage)
         }
     }
 
     private var confirmationTitle: String {
+        if let pendingFailureMemoryAction {
+            return pendingFailureMemoryAction == .initialize ? "Initialize local failure memory?" : "Re-observe and reconcile the retained outcome?"
+        }
         switch entry.nextAction?.kind {
+        case "system_one_review" where entry.nextAction?.actionID == "inspect_binary_drift_attempt": return "Inspect the retained updater attempt?"
+        case "system_one_review" where entry.nextAction?.actionID == "rescreen_system_one": return "Run a fresh System One screen?"
+        case "maat_repair" where entry.nextAction?.actionID == "binary-drift": return "Run this reviewed Homebrew update?"
         case "maat_repair": return "Apply Ma'at's bounded recovery?"
         case "owner_acceptance": return "Record this owner acceptance?"
         case "system_one_floor_recovery": return "Record this recovery review?"
@@ -1971,7 +2579,14 @@ private struct MaatCaseDetailView: View {
     }
 
     private var confirmationButton: String {
+        if let pendingFailureMemoryAction {
+            return pendingFailureMemoryAction == .initialize ? "Initialize local failure memory" : "Inspect and re-observe"
+        }
+        if operationRecord?.phase == .historyIncomplete { return "Continue review and confirm action" }
         switch entry.nextAction?.kind {
+        case "system_one_review" where entry.nextAction?.actionID == "inspect_binary_drift_attempt": return "Inspect attempt"
+        case "system_one_review" where entry.nextAction?.actionID == "rescreen_system_one": return "Run fresh screen"
+        case "maat_repair" where entry.nextAction?.actionID == "binary-drift": return "Run Homebrew updater"
         case "maat_repair": return "Apply bounded recovery"
         case "owner_acceptance": return "Record owner acceptance"
         case "system_one_floor_recovery": return "Record recovery review"
@@ -1980,7 +2595,24 @@ private struct MaatCaseDetailView: View {
     }
 
     private var confirmationMessage: String {
-        entry.nextAction?.kind == "maat_repair"
+        if let pendingFailureMemoryAction {
+            return pendingFailureMemoryAction == .initialize
+                ? "Create Ma'at's private per-user failure-memory store for genuine first use. No prior incidents are imported, and no liveness-watch repair runs until you review and confirm it separately."
+                : "Read back the exact prior liveness-watch target and reconcile its durable outcome into Casebook. Installation will not replay; any later repair requires a fresh review and confirmation."
+        }
+        if entry.nextAction?.kind == "system_one_review", entry.nextAction?.actionID == "inspect_binary_drift_attempt" {
+            return "Ma'at will make a read-only bounded observation for this exact retained attempt. This does not prove attribution or authorize an updater replay."
+        }
+        if entry.nextAction?.kind == "system_one_review", entry.nextAction?.actionID == "rescreen_system_one" {
+            return "Ma'at will perform and retain a fresh local System One observation. It will not replay the prior updater."
+        }
+        if entry.nextAction?.kind == "maat_repair", entry.nextAction?.actionID == "binary-drift" {
+            let targets = binaryDriftPreview?.targets.map(\.path).joined(separator: ", ") ?? "unavailable"
+            let updater = binaryDriftPreview?.updaterPath ?? "unavailable"
+            let binding = binaryDriftPreview?.binding ?? "unavailable"
+            return "Run the reviewed Homebrew executable at \(updater) with `upgrade sirsi-pantheon` for these targets: \(targets), under preview binding \(binding). Ma'at will recheck binary drift and retain the result. A changed preview is refused; Pantheon will not replace or re-sign a CLI directly."
+        }
+        return entry.nextAction?.kind == "maat_repair"
             ? "Ma'at will re-check the exact managed disabled labels, change only the bounded verified set, re-check the same diagnostic, and retain the outcome. It will not touch unrelated services."
             : entry.nextAction?.kind == "owner_acceptance"
             ? "This records an owner conclusion for the exact retained evidence. It does not change or claim to repair the system."
@@ -1989,7 +2621,163 @@ private struct MaatCaseDetailView: View {
                 : "This records an evidence-bound owner review for this exact case. It does not change the system. A conclusion must be accepted explicitly later."
     }
 
+    @ViewBuilder private var failureMemorySetup: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label("Local failure memory", systemImage: "externaldrive.badge.shield.checkmark")
+                .sirsiFont(.headline)
+            if failureMemoryLoading {
+                ProgressView("Inspecting this Mac's local store…")
+                    .sirsiFont(.caption)
+            } else if let status = failureMemoryStatus {
+                switch status.state {
+                case "uninitialized":
+                    Text("First use is explicit. Initialization creates a private local store and imports no prior incidents.")
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                    Button {
+                        pendingFailureMemoryAction = .initialize
+                        confirmAction = true
+                    } label: {
+                        Label("Initialize local failure memory", systemImage: "lock.shield")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(failureMemoryBusy)
+                case "ready" where status.projectionDebt:
+                    Text("A durable liveness-watch outcome is not yet projected into Casebook. Ma'at will re-observe it and reconcile the exact attempt without replaying installation.")
+                        .sirsiFont(.caption).foregroundStyle(.orange)
+                    Button {
+                        pendingFailureMemoryAction = .reobserve
+                        confirmAction = true
+                    } label: {
+                        Label("Re-observe and reconcile outcome", systemImage: "arrow.clockwise.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(failureMemoryBusy)
+                case "ready" where status.incompleteAttempt:
+                    Text("A prior repair attempt is incomplete. Ma'at will re-observe it without replaying installation.")
+                        .sirsiFont(.caption).foregroundStyle(.orange)
+                    Button {
+                        pendingFailureMemoryAction = .reobserve
+                        confirmAction = true
+                    } label: {
+                        Label("Inspect and re-observe incomplete attempt", systemImage: "arrow.clockwise.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(failureMemoryBusy)
+                case "ready":
+                    Text("Private local store is initialized. No incidents were imported during genesis.")
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                default:
+                    Text(status.detail ?? "Initialization is incomplete or unverifiable. Ma'at will not reset or adopt this store.")
+                        .sirsiFont(.caption).foregroundStyle(.orange)
+                    Button {
+                        Task { await refreshFailureMemoryStatus() }
+                    } label: {
+                        Label("Inspect local state again", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(failureMemoryBusy)
+                }
+            } else {
+                Text("Ma'at could not read the local initialization state. No repair was attempted.")
+                    .sirsiFont(.caption).foregroundStyle(.orange)
+                Button {
+                    Task { await refreshFailureMemoryStatus() }
+                } label: {
+                    Label("Inspect local state again", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(failureMemoryBusy)
+            }
+            if failureMemoryBusy { ProgressView("Recording local Ma'at action…").sirsiFont(.caption) }
+            if let failureMemoryMessage {
+                Text(failureMemoryMessage)
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if failureMemoryHistory != nil {
+                Button("Start fresh case review") {
+                    failureMemoryHistory = nil
+                    failureMemoryHistoryKey = nil
+                    failureMemoryHistoryAction = nil
+                    failureMemoryMessage = "History progress was discarded. Confirm the local action to start a fresh review."
+                }
+                .buttonStyle(.bordered)
+                .disabled(failureMemoryBusy)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @MainActor private func refreshFailureMemoryStatus() async {
+        failureMemoryLoading = true
+        defer { failureMemoryLoading = false }
+        let read = await SirsiEngine.runJSONRead(args: ["maat", "repair", "liveness-watch", "--inspect-failure-memory", "--json"])
+        guard read.exitStatus == 0, !read.timedOut, read.launchError == nil,
+              let status = try? JSONDecoder().decode(MaatFailureMemoryStatus.self, from: read.data) else {
+            failureMemoryStatus = nil
+            failureMemoryMessage = read.launchError ?? "Ma'at's local state could not be decoded; no change was made."
+            return
+        }
+        failureMemoryStatus = status
+    }
+
+    @MainActor private func performFailureMemoryAction(_ action: MaatFailureMemoryAction) async {
+        pendingFailureMemoryAction = nil
+        guard !failureMemoryBusy else { return }
+        let reconcilingProjectionDebt = action == .reobserve && failureMemoryStatus?.projectionDebt == true
+        failureMemoryBusy = true
+        defer { failureMemoryBusy = false }
+
+        let key = operationKey
+        let prior = failureMemoryHistoryKey == key && failureMemoryHistoryAction == action ? failureMemoryHistory : nil
+        let read = await MaatOperationPreflight.readCompleteExactHistory(evidence: entry.evidence, continuing: prior) { args, timeout in
+            await SirsiEngine.runJSONRead(args: args, timeoutSeconds: timeout)
+        }
+        failureMemoryHistory = read.continuation
+        failureMemoryHistoryKey = read.continuation == nil ? nil : key
+        failureMemoryHistoryAction = read.continuation == nil ? nil : action
+        guard !Task.isCancelled else {
+            failureMemoryMessage = "The exact history read was cancelled; no Ma'at action ran. Review the case again before retrying."
+            return
+        }
+        if read.continuation != nil {
+            failureMemoryMessage = "The exact history read is incomplete. Confirm the same local action to continue its review, or start fresh. No action has run."
+            return
+        }
+        let projection = MaatOperationPreflight.decodeProjection(from: read.data)
+        guard case .ready = MaatOperationPreflight.evaluate(
+            original: entry,
+            exitStatus: read.exitStatus,
+            timedOut: read.timedOut,
+            launchError: read.launchError,
+            projection: projection
+        ) else {
+            failureMemoryMessage = "The reviewed Ma'at case changed or could not be re-read. Refresh this case before continuing."
+            return
+        }
+        let args = maatCasebookFailureMemoryArguments(action)
+        guard !Task.isCancelled else {
+            failureMemoryMessage = "The exact history read was cancelled; no Ma'at action ran. Review the case again before retrying."
+            return
+        }
+        let command = await SirsiEngine.runJSONRead(args: args, timeoutSeconds: 30)
+        guard command.exitStatus == 0, !command.timedOut, command.launchError == nil else {
+            failureMemoryMessage = command.launchError ?? "Ma'at did not complete the requested local action. Inspect the state before continuing."
+            await refreshFailureMemoryStatus()
+            return
+        }
+        failureMemoryMessage = action == .initialize
+            ? "Failure memory was initialized without importing incidents. Review this finding again before applying the separate liveness-watch repair."
+            : reconcilingProjectionDebt
+                ? "The retained outcome was projected into Casebook without installation replay. Review the recorded outcome before any new repair consent."
+                : "The incomplete attempt was re-observed without installation replay. Review this finding again before any new repair consent."
+        await refreshFailureMemoryStatus()
+    }
+
     @ViewBuilder private func resolutionAction(_ action: MaatCaseNextAction) -> some View {
+        let failureMemoryNeedsReview = action.actionID == "liveness-watch" &&
+            (failureMemoryStatus?.state != "ready" || failureMemoryStatus?.incompleteAttempt == true || failureMemoryStatus?.projectionDebt == true)
         VStack(alignment: .leading, spacing: 9) {
             if !action.evidence.isEmpty {
                 Button {
@@ -2005,20 +2793,32 @@ private struct MaatCaseDetailView: View {
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(2...4)
             }
-            Button {
-                confirmAction = true
-            } label: {
-                Label(operationRecord?.phase == .retryReady ? "Confirm reviewed retry" : confirmationButton, systemImage: action.kind == "maat_repair" ? "wrench.and.screwdriver.fill" : action.kind == "owner_acceptance" ? "checkmark.circle.fill" : "arrow.triangle.branch")
-                    .frame(maxWidth: .infinity)
+            if action.kind == "maat_repair", action.actionID == "binary-drift" {
+                binaryDriftRecoveryControls(action)
+            } else {
+                Button {
+                    confirmAction = true
+                } label: {
+                    Label(operationRecord?.phase == .retryReady ? "Confirm reviewed retry" : confirmationButton, systemImage: action.kind == "maat_repair" ? "wrench.and.screwdriver.fill" : action.kind == "owner_acceptance" ? "checkmark.circle.fill" : "arrow.triangle.branch")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+                .disabled(operationInFlight || !canBeginOperation || failureMemoryNeedsReview || (action.kind == "owner_acceptance" && conclusion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                .accessibilityHint(action.kind == "maat_repair" ? "Runs only Ma'at's named bounded recovery after confirmation, then retains its post-repair evidence." : "Records an evidence-bound owner decision; it does not repair the system.")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(gold)
-            .disabled(operationInFlight || !canBeginOperation || (action.kind == "owner_acceptance" && conclusion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
-            .accessibilityHint(action.kind == "maat_repair" ? "Runs only Ma'at's named bounded recovery after confirmation, then retains its post-repair evidence." : "Records an evidence-bound owner decision; it does not repair the system.")
             if let receipt = operationRecord?.receipt {
                 Label(receipt.summary, systemImage: receipt.succeeded ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .sirsiFont(.caption)
                     .foregroundStyle(receipt.succeeded ? .green : .orange)
+            }
+            if action.kind == "maat_repair", action.actionID == "binary-drift", operationInFlight {
+                ProgressView("Applying the reviewed updater…")
+                    .sirsiFont(.caption)
+                Text("This operation stays locked until the owned updater exits and Ma’at records a fresh verification or an explicit failure. The updater is bounded to two minutes before verification.")
+                    .sirsiFont(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let guidance = operationRecord?.guidance {
                 Label(guidance, systemImage: "exclamationmark.triangle.fill")
@@ -2029,14 +2829,99 @@ private struct MaatCaseDetailView: View {
                 Button {
                     Task { await reviewRetry() }
                 } label: {
-                    Label(operationRecord?.phase == .retryReady ? "Review again" : "Refresh and review retry", systemImage: "arrow.clockwise")
+                    Label(operations.hasHistoryContinuation(for: operationKey) ? "Continue exact history review" : operationRecord?.phase == .retryReady ? "Review again" : "Refresh and review retry", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
-                .disabled(operationInFlight)
+                .disabled(operationInFlight || retryReviewBusy)
+                if operations.hasHistoryContinuation(for: operationKey) {
+                    Button("Start fresh history review") { operations.restartHistory(operationKey) }
+                        .buttonStyle(.bordered)
+                        .disabled(operationInFlight || retryReviewBusy)
+                }
             }
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    @ViewBuilder private func binaryDriftRecoveryControls(_ action: MaatCaseNextAction) -> some View {
+        Button {
+            Task { await loadBinaryDriftPreview(action) }
+        } label: {
+            Label(binaryDriftPreviewLoading ? "Refreshing updater preview…" : "Preview supported updater", systemImage: "magnifyingglass")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .disabled(operationInFlight || binaryDriftPreviewLoading)
+        .accessibilityHint("Reads the current installation method and exact drifted targets. It does not update anything.")
+
+        if let preview = binaryDriftPreview, preview.caseEvidence == action.evidence {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Supported updater: \(preview.updater)")
+                    .sirsiFont(.subheadline, weight: .semibold)
+                Text("Executable: \(preview.updaterPath) · sha256 \(preview.updaterSHA256)")
+                    .sirsiFont(.caption, design: .monospaced)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                ForEach(preview.targets) { target in
+                    Text("\(target.path) · \(target.method) · \(target.version) · sha256 \(target.sha256)")
+                        .sirsiFont(.caption, design: .monospaced)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                Text("Preview binding \(preview.binding)")
+                    .sirsiFont(.caption2, design: .monospaced)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Button {
+                    confirmAction = true
+                } label: {
+                    Label("Confirm this exact update", systemImage: "wrench.and.screwdriver.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(gold)
+                .disabled(operationInFlight || !canBeginOperation)
+                .accessibilityHint("Rechecks this exact preview binding before calling the existing Homebrew updater.")
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+        }
+        if let binaryDriftPreviewError {
+            Label(binaryDriftPreviewError, systemImage: "exclamationmark.triangle.fill")
+                .sirsiFont(.caption)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @MainActor private func loadBinaryDriftPreview(_ action: MaatCaseNextAction) async {
+        binaryDriftPreviewLoading = true
+        binaryDriftPreviewError = nil
+        defer { binaryDriftPreviewLoading = false }
+        let capture = await SirsiEngine.runCaptured(
+            args: maatCasebookBinaryDriftPreviewArguments(caseEvidence: action.evidence),
+            timeout: 30
+        )
+        guard capture.complete, capture.exitCode == 0,
+              let preview = MaatBinaryDriftPreview.decode(capture.stdout),
+              preview.caseEvidence == action.evidence,
+              preview.updater == "brew upgrade sirsi-pantheon",
+              preview.updaterPath.hasPrefix("/"), preview.updaterSHA256.count == 64,
+              !preview.targets.isEmpty,
+              preview.targets.allSatisfy({ !$0.path.isEmpty && $0.method == "homebrew" && $0.sha256.count == 64 }),
+              preview.binding.count == 64 else {
+            binaryDriftPreview = nil
+            if capture.complete {
+                binaryDriftPreviewError = capture.result?.summary ?? (capture.stderr.isEmpty
+                    ? "Ma'at could not produce a valid Homebrew-only preview. No updater was run."
+                    : capture.stderr)
+            } else {
+                binaryDriftPreviewError = capture.issue ?? "Ma'at's updater preview was incomplete. No updater was run."
+            }
+            return
+        }
+        binaryDriftPreview = preview
     }
 
     @ViewBuilder private func resolutionSteps(_ steps: [MaatResolutionStep]) -> some View {
@@ -2079,11 +2964,21 @@ private struct MaatCaseDetailView: View {
         guard action.kind != "owner_acceptance" || !confirmedNote.isEmpty else { return }
         let key = operationKey
         guard operations.begin(key) else { return }
+        guard let generation = operations.record(for: key)?.generation else { return }
 
-        let read = await SirsiEngine.runJSONRead(
-            args: ["maat", "casebook", "--json", "--limit", "50"],
-            timeoutSeconds: 12
-        )
+        let read = await MaatOperationPreflight.readCompleteExactHistory(evidence: entry.evidence,
+            continuing: operations.historyContinuation(for: key, generation: generation)) { args, timeout in
+            await SirsiEngine.runJSONRead(args: args, timeoutSeconds: timeout)
+        }
+        guard operations.record(for: key)?.generation == generation else { return }
+        guard !Task.isCancelled else {
+            operations.rejectPreflight(key, guidance: "The exact history read was cancelled. No Ma'at action ran; review again before retrying.")
+            return
+        }
+        if let continuation = read.continuation {
+            operations.pauseHistory(key, generation: generation, continuation: continuation)
+            return
+        }
         let projection = MaatOperationPreflight.decodeProjection(from: read.data)
         switch MaatOperationPreflight.evaluate(
             original: entry,
@@ -2101,16 +2996,55 @@ private struct MaatCaseDetailView: View {
 
         operations.markRunning(key)
         let result: CommandResult?
+        if let args = maatCasebookSystemOneReviewArguments(kind: action.kind, actionID: action.actionID, evidence: action.evidence) {
+            result = await SirsiEngine.runResult(args: args)
+            let succeeded = result?.ok == true
+            let missing = action.actionID == "inspect_binary_drift_attempt"
+                ? "Ma'at could not read the retained attempt. Refresh and review the case."
+                : "Ma'at could not complete the fresh screen. Refresh and review the case."
+            operations.complete(key, receipt: MaatOperationReceipt(summary: result?.summary ?? missing, succeeded: succeeded))
+            return
+        }
         if action.kind == "maat_repair" {
+            if action.actionID == "binary-drift" {
+                guard let preview = binaryDriftPreview, preview.caseEvidence == action.evidence else {
+                    operations.rejectPreflight(key, guidance: "The updater preview is missing or belongs to another case. Refresh and review a new preview before confirming.")
+                    return
+                }
+                let capture = await SirsiEngine.runCaptured(
+                    args: maatCasebookBinaryDriftRepairArguments(caseEvidence: action.evidence, previewBinding: preview.binding),
+                    timeout: 180
+                )
+                let command = capture.result
+                let succeeded = capture.complete && capture.exitCode == 0 && command?.status == "resolved"
+                operations.complete(key, receipt: MaatOperationReceipt(
+                    summary: command?.summary ?? capture.displayText,
+                    succeeded: succeeded
+                ))
+                binaryDriftPreview = nil
+                return
+            }
             guard let args = maatCasebookRepairArguments(actionID: action.actionID) else {
                 operations.rejectPreflight(key, guidance: "Ma'at refused an unknown repair reference. Refresh and review the case before trying again.")
                 return
             }
+            guard !Task.isCancelled else {
+                operations.rejectPreflight(key, guidance: "The exact history read was cancelled. No Ma'at action ran; review again before retrying.")
+                return
+            }
             result = await SirsiEngine.runResult(args: args)
         } else if action.kind == "owner_acceptance" {
+            guard !Task.isCancelled else {
+                operations.rejectPreflight(key, guidance: "The exact history read was cancelled. No Ma'at action ran; review again before retrying.")
+                return
+            }
             result = await SirsiEngine.runResult(args: ["maat", "accept-resolution", "--evidence", action.evidence, "--note", confirmedNote, "--confirm"])
         } else {
             let check = entry.resource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? entry.kind : entry.resource
+            guard !Task.isCancelled else {
+                operations.rejectPreflight(key, guidance: "The exact history read was cancelled. No Ma'at action ran; review again before retrying.")
+                return
+            }
             result = await SirsiEngine.runResult(args: ["maat", "record-resolution", "--check", check, "--message", entry.why.isEmpty ? entry.determination : entry.why, "--origin-evidence", entry.evidence, "--confirm"])
         }
         let succeeded = result?.ok == true
@@ -2121,11 +3055,22 @@ private struct MaatCaseDetailView: View {
 
     @MainActor private func reviewRetry() async {
         let key = operationKey
-        guard let prior = operations.record(for: key), !prior.phase.isInFlight else { return }
-        let read = await SirsiEngine.runJSONRead(
-            args: ["maat", "casebook", "--json", "--limit", "50"],
-            timeoutSeconds: 12
-        )
+        guard !retryReviewBusy, let prior = operations.record(for: key), !prior.phase.isInFlight else { return }
+        retryReviewBusy = true
+        defer { retryReviewBusy = false }
+        let read = await MaatOperationPreflight.readCompleteExactHistory(evidence: entry.evidence,
+            continuing: operations.historyContinuation(for: key, generation: prior.generation)) { args, timeout in
+            await SirsiEngine.runJSONRead(args: args, timeoutSeconds: timeout)
+        }
+        guard operations.record(for: key)?.generation == prior.generation else { return }
+        guard !Task.isCancelled else {
+            operations.rejectRetryReview(key, reviewedGeneration: prior.generation, guidance: "The exact history read was cancelled. Review the case again before retrying.")
+            return
+        }
+        if let continuation = read.continuation {
+            operations.pauseHistory(key, generation: prior.generation, continuation: continuation, retryReview: true)
+            return
+        }
         let projection = MaatOperationPreflight.decodeProjection(from: read.data)
         switch MaatOperationPreflight.evaluate(
             original: entry,
@@ -2156,7 +3101,7 @@ private struct MaatCaseDetailView: View {
     // finding. Treat it as evidence and an operator aid, never as executable
     // input: the app shows and copies it, while the exact owner-review path
     // remains responsible for acknowledgement or a separately safe repair.
-    @ViewBuilder private func systemOneFindings(_ findings: [MaatSystemOneFinding]) -> some View {
+    @ViewBuilder private func systemOneFindings(_ findings: [MaatSystemOneFinding], closedActionID: String?) -> some View {
         if !findings.isEmpty {
             VStack(alignment: .leading, spacing: 9) {
                 Text(findings.count == 1 ? "Screen finding" : "Screen findings")
@@ -2182,7 +3127,7 @@ private struct MaatCaseDetailView: View {
                         Text(finding.claim)
                             .sirsiFont(.body)
                             .fixedSize(horizontal: false, vertical: true)
-                        if !finding.fixHint.isEmpty {
+                        if !finding.fixHint.isEmpty, closedActionID != "binary-drift" {
                             Text("PRESCRIBED NEXT STEP")
                                 .sirsiFont(.caption2, weight: .semibold)
                                 .foregroundStyle(.secondary)
@@ -2198,6 +3143,10 @@ private struct MaatCaseDetailView: View {
                             }
                             .buttonStyle(.bordered)
                             .accessibilityHint("Copies the producer-supplied recovery step for review; it does not run it.")
+                        } else if closedActionID == "binary-drift" {
+                            Text("The retained suggestion is not executed; Ma'at's typed updater preview below governs this repair.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
                         }
                         if !finding.evidence.isEmpty {
                             Text("Evidence: \(finding.evidence)")
@@ -2205,6 +3154,17 @@ private struct MaatCaseDetailView: View {
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .textSelection(.enabled)
+                        }
+                        if let verdict = entry.systemOne,
+                           maatHasLocalDiagnosticCustody(verdict, finding: finding, localHost: maatLocalDiagnosticHost() ?? ""),
+                           !maatUsesDedicatedDiagnosticCustody(finding) {
+                            NavLink {
+                                MaatDiagnosticResolutionView(engine: engine, origin: entry, finding: finding)
+                            } label: {
+                                Label("Review current resolution in Pantheon", systemImage: "wrench.and.screwdriver")
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityHint("Reads the current local diagnostic before opening Pantheon's existing controlled resolver. The retained suggestion is never executed.")
                         }
                     }
                     .padding(11)
@@ -2264,6 +3224,94 @@ func maatCasebookRepairArguments(actionID: String) -> [String]? {
     default:
         return nil
     }
+}
+
+func maatCasebookBinaryDriftPreviewArguments(caseEvidence: String) -> [String] {
+    ["maat", "repair", "binary-drift", "--case-evidence", caseEvidence, "--json"]
+}
+
+func maatCasebookBinaryDriftRepairArguments(caseEvidence: String, previewBinding: String) -> [String] {
+    ["maat", "repair", "binary-drift", "--case-evidence", caseEvidence,
+     "--preview-binding", previewBinding, "--confirm", "--json"]
+}
+
+func maatCasebookInspectBinaryDriftAttemptArguments(caseEvidence: String) -> [String] {
+    ["maat", "repair", "binary-drift", "--inspect-attempt", "--case-evidence", caseEvidence, "--json"]
+}
+
+func maatCasebookSystemOneReviewArguments(kind: String, actionID: String, evidence: String) -> [String]? {
+    guard kind == "system_one_review" else { return nil }
+    switch actionID {
+    case "inspect_binary_drift_attempt":
+        return maatCasebookInspectBinaryDriftAttemptArguments(caseEvidence: evidence)
+    case "rescreen_system_one":
+        return maatCasebookFreshSystemOneArguments()
+    default:
+        return nil
+    }
+}
+
+func maatCasebookFreshSystemOneArguments() -> [String] {
+    ["maat", "triage", "--confirm", "--json"]
+}
+
+struct MaatRepairOutcomePresentation: Equatable {
+    let title: String
+    let evidence: String
+    let detail: String
+}
+
+func maatCasebookRepairOutcomePresentation(_ entry: MaatCase) -> MaatRepairOutcomePresentation? {
+    if !entry.verifiedRepairEvidence.isEmpty {
+        return MaatRepairOutcomePresentation(
+            title: "Verified binary repair receipt",
+            evidence: entry.verifiedRepairEvidence,
+            detail: "The reviewed binary-drift updater and fresh binary observation were verified. This does not itself resolve other findings or failed floor checks."
+        )
+    }
+    if !entry.repairOutcomeEvidence.isEmpty {
+        return MaatRepairOutcomePresentation(
+            title: "Unverified repair outcome evidence",
+            evidence: entry.repairOutcomeEvidence,
+            detail: "This retained receipt records an unsuccessful or unverified updater attempt; it does not prove the binary was repaired or the system is clear."
+        )
+    }
+    return nil
+}
+
+struct MaatBinaryDriftPreview: Decodable, Equatable {
+    let caseEvidence: String
+    let updater: String
+    let updaterPath: String
+    let updaterSHA256: String
+    let selfPath: String
+    let selfVersion: String
+    let selfSHA256: String
+    let targets: [MaatBinaryDriftTarget]
+    let binding: String
+
+    enum CodingKeys: String, CodingKey {
+        case updater, targets, binding
+        case caseEvidence = "case_evidence"
+        case updaterPath = "updater_path"
+        case updaterSHA256 = "updater_sha256"
+        case selfPath = "self_path"
+        case selfVersion = "self_version"
+        case selfSHA256 = "self_sha256"
+    }
+
+    static func decode(_ raw: String) -> MaatBinaryDriftPreview? {
+        guard let start = raw.firstIndex(of: "{") else { return nil }
+        return try? JSONDecoder().decode(MaatBinaryDriftPreview.self, from: Data(raw[start...].utf8))
+    }
+}
+
+struct MaatBinaryDriftTarget: Decodable, Equatable, Identifiable {
+    let path: String
+    let method: String
+    let version: String
+    let sha256: String
+    var id: String { path }
 }
 
 // MaatJournalRepairView owns the one confirmation-gated data recovery action
@@ -2435,21 +3483,46 @@ struct MaatJournalIntegrityCard: View {
     }
 }
 
+enum MaatHistoryEmptyState: Equatable {
+    case records, incomplete, olderPage, invalidHistory, afterCursor, empty, unavailable
+}
+
 struct MaatCasebookProjection: Decodable {
     let cases: [MaatCase]
     let summary: MaatCasebookSummary
     let journalIntegrity: MaatJournalIntegrity
+    let history: MaatHistoryWindow?
+
+    var historyEmptyState: MaatHistoryEmptyState {
+        guard cases.isEmpty else { return .records }
+        guard let history else { return .unavailable }
+        if history.coverage == "partial" {
+            return history.nextCursor?.isEmpty == false ? .incomplete : .unavailable
+        }
+        guard history.coverage == "complete" else { return .unavailable }
+        if history.hasMore { return history.nextCursor?.isEmpty == false ? .olderPage : .unavailable }
+        if journalIntegrity.invalidCount > 0 { return .invalidHistory }
+        if history.countScope == "after-cursor" { return .afterCursor }
+        if history.countScope == "query", history.hasMoreKnown, history.totalComplete,
+           history.candidateMatchesComplete, history.candidateMatches == 0,
+           history.returned == 0, history.total == 0 {
+            return .empty
+        }
+        return .unavailable
+    }
 
     enum CodingKeys: String, CodingKey {
         case cases
         case summary
         case journalIntegrity = "journal_integrity"
+        case history
     }
 
-    init(cases: [MaatCase], summary: MaatCasebookSummary, journalIntegrity: MaatJournalIntegrity = .clean) {
+    init(cases: [MaatCase], summary: MaatCasebookSummary, journalIntegrity: MaatJournalIntegrity = .clean, history: MaatHistoryWindow? = nil) {
         self.cases = cases
         self.summary = summary
         self.journalIntegrity = journalIntegrity
+        self.history = history
     }
 
     init(from decoder: Decoder) throws {
@@ -2457,6 +3530,7 @@ struct MaatCasebookProjection: Decodable {
         cases = try values.decode([MaatCase].self, forKey: .cases)
         summary = try values.decode(MaatCasebookSummary.self, forKey: .summary)
         journalIntegrity = try values.decodeIfPresent(MaatJournalIntegrity.self, forKey: .journalIntegrity) ?? .clean
+        history = try values.decodeIfPresent(MaatHistoryWindow.self, forKey: .history)
     }
 
     // Snapshot mode must render a complete, deterministic operator state even
@@ -2471,6 +3545,121 @@ struct MaatCasebookProjection: Decodable {
         ],
         summary: MaatCasebookSummary(total: 3, open: 2, urgent: 1, high: 1, resolved: 1)
     )
+}
+
+struct MaatHistoryWindow: Decodable {
+    let scope: String
+    let queryID: String
+    let snapshot: String
+    let returned: Int
+    let candidateMatches: Int
+    let countScope: String
+    let evidenceMatches: Int?
+    let evidenceMatchesComplete: Bool?
+    let candidateMatchesComplete: Bool
+    let pageSize: Int
+    let coverage: String
+    let hasMore: Bool
+    let hasMoreKnown: Bool
+    let nextCursor: String?
+    let totalComplete: Bool
+    let total: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case scope, snapshot, returned, coverage, total
+        case queryID = "query_id"
+        case candidateMatches = "candidate_matches"
+        case countScope = "count_scope"
+        case evidenceMatches = "evidence_matches"
+        case evidenceMatchesComplete = "evidence_matches_complete"
+        case candidateMatchesComplete = "candidate_matches_complete"
+        case pageSize = "page_size"
+        case hasMore = "has_more"
+        case hasMoreKnown = "has_more_known"
+        case nextCursor = "next_cursor"
+        case totalComplete = "total_complete"
+    }
+}
+
+struct MaatHistoryRefreshState {
+    private(set) var projection: MaatCasebookProjection?
+    private(set) var error: String?
+    private(set) var query: String
+    private(set) var loading: Bool
+    private var pending: MaatHistoryRefreshRequest?
+
+    init(projection: MaatCasebookProjection?, error: String? = nil, query: String = "") {
+        self.projection = projection
+        self.error = error
+        self.query = query
+        loading = projection == nil
+    }
+
+    mutating func begin(scope: String, query requestedQuery: String? = nil, cursor: String? = nil) -> MaatHistoryRefreshRequest? {
+        let nextQuery = (requestedQuery ?? query).trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextCursor = cursor.flatMap { $0.isEmpty ? nil : $0 }
+        let history = projection?.history
+        if let nextCursor {
+            guard history?.scope == scope, history?.nextCursor == nextCursor, nextQuery == query,
+                  history?.queryID.isEmpty == false, history?.snapshot.isEmpty == false else {
+                pending = nil
+                loading = false
+                error = "This continuation does not belong to the displayed query. Refresh to start a new snapshot."
+                return nil
+            }
+        }
+        let request = MaatHistoryRefreshRequest(scope: scope, query: nextQuery, cursor: nextCursor,
+            queryID: nextCursor == nil ? nil : history?.queryID, snapshot: nextCursor == nil ? nil : history?.snapshot)
+        pending = request
+        loading = true
+        return request
+    }
+
+    @discardableResult
+    mutating func complete(_ read: SirsiEngine.JSONCommandRead, for request: MaatHistoryRefreshRequest, cancelled: Bool) -> Bool {
+        guard isCurrent(request) else { return false }
+        pending = nil
+        loading = false
+        if cancelled {
+            error = "History refresh was cancelled; the previous page remains visible. Refresh to start a new snapshot."
+            return true
+        }
+        guard let next = MaatCasebookView.decode(read), let history = next.history, history.scope == request.scope else {
+            error = "History refresh failed; the previous page remains visible. Refresh to start a new snapshot."
+            return true
+        }
+        if request.cursor != nil {
+            guard history.queryID == request.queryID, history.snapshot == request.snapshot else {
+                error = "The history continuation changed query or snapshot. The previous page remains visible; refresh to start fresh."
+                return true
+            }
+        }
+        projection = next
+        query = request.query
+        error = nil
+        return true
+    }
+
+    func isCurrent(_ request: MaatHistoryRefreshRequest) -> Bool { pending == request }
+}
+
+struct MaatHistoryRefreshRequest: Equatable, Sendable {
+    private let generation = UUID()
+    let scope: String
+    let query: String
+    let cursor: String?
+    let queryID: String?
+    let snapshot: String?
+
+    fileprivate init(scope: String, query: String, cursor: String?, queryID: String?, snapshot: String?) {
+        self.scope = scope
+        self.query = query
+        self.cursor = cursor
+        self.queryID = queryID
+        self.snapshot = snapshot
+    }
+
+    var arguments: [String] { maatCasebookHistoryArguments(scope: scope, query: query, cursor: cursor) }
 }
 
 struct MaatKnownFailureProposal: Decodable, Identifiable {
@@ -2548,6 +3737,9 @@ struct MaatCase: Decodable, Identifiable {
     let assessed: String
     let why: String
     let evidence: String
+	let verifiedRepairEvidence: String
+	let repairOutcomeEvidence: String
+	let pendingRepairAttemptEvidence: String
 	let resolution: String
 	let nextAction: MaatCaseNextAction?
 	let systemOne: MaatSystemOneVerdict?
@@ -2556,7 +3748,7 @@ struct MaatCase: Decodable, Identifiable {
     init(id: String, time: String, kind: String, category: String, status: String,
          priority: MaatCasePriority, requester: String, resource: String,
          affected: String, determination: String, assessed: String, why: String,
-         evidence: String, resolution: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil) {
+         evidence: String, resolution: String = "", verifiedRepairEvidence: String = "", repairOutcomeEvidence: String = "", pendingRepairAttemptEvidence: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil) {
         self.id = id
         self.time = time
         self.kind = kind
@@ -2570,6 +3762,9 @@ struct MaatCase: Decodable, Identifiable {
         self.assessed = assessed
         self.why = why
         self.evidence = evidence
+		self.verifiedRepairEvidence = verifiedRepairEvidence
+		self.repairOutcomeEvidence = repairOutcomeEvidence
+		self.pendingRepairAttemptEvidence = pendingRepairAttemptEvidence
 		self.resolution = resolution
 		self.nextAction = nextAction
 		self.systemOne = systemOne
@@ -2579,6 +3774,9 @@ struct MaatCase: Decodable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, time, kind, category, status, priority, requester, resource
         case affected, determination, assessed, why, evidence, resolution
+		case verifiedRepairEvidence = "verified_repair_evidence"
+		case repairOutcomeEvidence = "repair_outcome_evidence"
+		case pendingRepairAttemptEvidence = "pending_repair_attempt_evidence"
         case nextAction = "next_action"
 		case systemOne = "system_one"
 		case systemOneCalibration = "system_one_calibration"
@@ -2599,6 +3797,9 @@ struct MaatCase: Decodable, Identifiable {
         assessed = try values.decodeIfPresent(String.self, forKey: .assessed) ?? ""
         why = try values.decodeIfPresent(String.self, forKey: .why) ?? ""
         evidence = try values.decodeIfPresent(String.self, forKey: .evidence) ?? ""
+		verifiedRepairEvidence = try values.decodeIfPresent(String.self, forKey: .verifiedRepairEvidence) ?? ""
+		repairOutcomeEvidence = try values.decodeIfPresent(String.self, forKey: .repairOutcomeEvidence) ?? ""
+		pendingRepairAttemptEvidence = try values.decodeIfPresent(String.self, forKey: .pendingRepairAttemptEvidence) ?? ""
 		resolution = try values.decodeIfPresent(String.self, forKey: .resolution) ?? ""
 		nextAction = try values.decodeIfPresent(MaatCaseNextAction.self, forKey: .nextAction)
 		systemOne = try values.decodeIfPresent(MaatSystemOneVerdict.self, forKey: .systemOne)
@@ -2608,7 +3809,7 @@ struct MaatCase: Decodable, Identifiable {
     var searchText: String {
         let caseFields = [
             time, kind, category, status, requester, resource, affected,
-            determination, assessed, why, evidence, resolution,
+            determination, assessed, why, evidence, resolution, verifiedRepairEvidence, repairOutcomeEvidence, pendingRepairAttemptEvidence,
         ]
         let nextActionFields = [
             nextAction?.title ?? "",
@@ -2746,7 +3947,8 @@ struct MaatSystemOneSubject: Decodable {
     let kind: String
     let ref: String
     let headSHA: String
-    enum CodingKeys: String, CodingKey { case kind, ref; case headSHA = "head_sha" }
+    let repo: String?
+    enum CodingKeys: String, CodingKey { case kind, ref, repo; case headSHA = "head_sha" }
 }
 
 struct MaatSystemOneFloor: Decodable {
@@ -2896,13 +4098,14 @@ struct MaatReleaseCredentialPreflight: Decodable {
 // secret/key access: only the protected release workflow may perform that work.
 func protectedReleaseRecoverySteps(for preflight: MaatReleaseCredentialPreflight) -> [String] {
 	if !preflight.recoveryPlan.isEmpty { return preflight.recoveryPlan }
+	let identityObservationFailed = MaatCredentialPreflightProjection(preflight).identityObservationFailed
 	let observedKinds = Set(preflight.developerIdentities.map(\.kind))
     var steps: [String] = []
 
-    if !observedKinds.contains("application") {
+    if !identityObservationFailed && !observedKinds.contains("application") {
         steps.append("Make one usable Team \(preflight.teamID) Developer ID Application identity available through the protected release workflow.")
     }
-    if !observedKinds.contains("installer") {
+    if !identityObservationFailed && !observedKinds.contains("installer") {
         steps.append("Make one usable Team \(preflight.teamID) Developer ID Installer identity available through the protected release workflow.")
     }
     if !preflight.notarizationObserved {
@@ -2917,6 +4120,29 @@ struct MaatReleaseSigningIdentity: Decodable, Identifiable {
     let name: String
     let fingerprint: String
     var id: String { "\(kind):\(fingerprint)" }
+}
+
+struct MaatCredentialPreflightProjection {
+    let identityObservationFailed: Bool
+    let requiredIdentityChecks: [MaatSystemOneFloorCheck]
+    let observedRequiredKindCount: Int
+    let additionalIdentityLabels: [String]
+    let notarizationStatus: String
+
+    init(_ preflight: MaatReleaseCredentialPreflight) {
+        let requiredKinds: Set<String> = ["developer-id-application", "developer-id-installer"]
+        identityObservationFailed = preflight.verdict.findings.contains { $0.id == "security-identity-observation" }
+        requiredIdentityChecks = preflight.verdict.floor.checks.filter { requiredKinds.contains($0.name) }
+        observedRequiredKindCount = Set(requiredIdentityChecks.filter(\.passed).map(\.name)).count
+        additionalIdentityLabels = preflight.observedNonDeveloperIdentityTypes.map { "Additional local identity: \($0)" }
+        notarizationStatus = preflight.notarizationObserved ? "Notarization was observed by the protected workflow." : "Notarization not inspected here."
+    }
+
+    var allRequiredKindsObserved: Bool { observedRequiredKindCount == 2 }
+    var identityHeading: String { identityObservationFailed ? "Local identities unconfirmed" : "Local identities observed" }
+    var requiredKindsSummary: String {
+        identityObservationFailed ? "Required identity types could not be confirmed." : "Required identity types observed: \(observedRequiredKindCount) of 2."
+    }
 }
 
 struct MaatCaseNextAction: Decodable {
@@ -3004,6 +4230,39 @@ struct MaatKnowledgeProjection: Decodable {
     let items: [MaatKnowledgeItem]
     let total: Int
     let withheld: Int
+    let coverage: MaatKnowledgeCoverage?
+    let nextCursor: String?
+    let state: String?
+
+    init(items: [MaatKnowledgeItem], total: Int, withheld: Int, coverage: MaatKnowledgeCoverage? = nil, nextCursor: String? = nil, state: String? = nil) {
+        self.items = items
+        self.total = total
+        self.withheld = withheld
+        self.coverage = coverage
+        self.nextCursor = nextCursor
+        self.state = state
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case items, total, withheld, coverage, state
+        case nextCursor = "next_cursor"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        items = try values.decode([MaatKnowledgeItem].self, forKey: .items)
+        total = try values.decode(Int.self, forKey: .total)
+        withheld = try values.decode(Int.self, forKey: .withheld)
+        guard total >= 0 else {
+            throw DecodingError.dataCorruptedError(forKey: .total, in: values, debugDescription: "total must be nonnegative")
+        }
+        guard withheld >= 0 else {
+            throw DecodingError.dataCorruptedError(forKey: .withheld, in: values, debugDescription: "withheld must be nonnegative")
+        }
+        coverage = try values.decodeIfPresent(MaatKnowledgeCoverage.self, forKey: .coverage)
+        nextCursor = try values.decodeIfPresent(String.self, forKey: .nextCursor)
+        state = try values.decodeIfPresent(String.self, forKey: .state)
+    }
 
     static let snapshotPreview = MaatKnowledgeProjection(
         items: [
@@ -3015,28 +4274,164 @@ struct MaatKnowledgeProjection: Decodable {
     )
 }
 
+struct MaatKnowledgeProjectionReceipt: Equatable {
+    let projected: Int
+    let remaining: Int
+    let isComplete: Bool
+    var summary: String {
+        if isComplete {
+            return "Projected \(projected); no projection debt remains."
+        }
+        return "Projected \(projected); \(remaining) remain. Partial progress; reconciliation is not complete."
+    }
+
+    init(projected: Int, remaining: Int, isComplete: Bool) {
+        self.projected = projected
+        self.remaining = remaining
+        self.isComplete = isComplete
+    }
+
+    init?(commandResult: CommandResult) {
+        guard commandResult.command == "sirsi maat knowledge reconcile-projections",
+              commandResult.evidence.count == 2,
+              let projected = Self.count(label: "Projected", in: commandResult.evidence),
+              let remaining = Self.count(label: "Remaining", in: commandResult.evidence) else { return nil }
+
+        let complete: Bool
+        switch commandResult.status {
+        case .some("ok"):
+            guard commandResult.errors.isEmpty, remaining == 0 else { return nil }
+            complete = true
+        case .some("partial"):
+            guard commandResult.errors == ["projection_debt_remains"], remaining > 0 else { return nil }
+            complete = false
+        default:
+            return nil
+        }
+
+        self.projected = projected
+        self.remaining = remaining
+        self.isComplete = complete
+    }
+
+    private static func count(label: String, in evidence: [CRFact]) -> Int? {
+        let matches = evidence.filter { $0.label == label }
+        guard matches.count == 1,
+              let value = Int(matches[0].value), value >= 0,
+              String(value) == matches[0].value else { return nil }
+        return value
+    }
+}
+
+struct MaatKnowledgeResolutionRequest: Equatable {
+    let recordID: String
+    let revision: Int
+    let digest: String
+    let state: String
+    let note: String
+
+    static func capture(recordID: String, revision: Int?, digest: String?, state: String, note: String) -> Self? {
+        let approvedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !recordID.isEmpty, let revision, revision > 0,
+              let digest, !digest.isEmpty,
+              ["reviewed", "accepted", "rejected"].contains(state),
+              !approvedNote.isEmpty else { return nil }
+        return Self(recordID: recordID, revision: revision, digest: digest, state: state, note: approvedNote)
+    }
+
+    var arguments: [String] {
+        ["maat", "knowledge", "resolve", recordID, "--state", state,
+         "--revision", String(revision), "--digest", digest, "--note-stdin"]
+    }
+}
+
+struct MaatKnowledgeResolutionSubmission: Equatable {
+    private(set) var inFlight = false
+    private(set) var submissionStarted = false
+
+    mutating func begin() -> Bool {
+        guard !submissionStarted else { return false }
+        inFlight = true
+        submissionStarted = true
+        return true
+    }
+
+    mutating func finish() { inFlight = false }
+}
+
+struct MaatKnowledgeCoverage: Decodable {
+    let sources: [MaatKnowledgeSourceRun]
+    let pendingProjectionDebt: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case sources
+        case pendingProjectionDebt = "pending_projection_debt"
+    }
+}
+
+struct MaatKnowledgeSourceRun: Decodable, Identifiable {
+    let id: Int64
+    let source: String
+    let state: String
+    let errorCode: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, source, state
+        case errorCode = "error_code"
+    }
+}
+
 struct MaatKnowledgeItem: Decodable, Identifiable {
     let id: String
     let title: String
     let summary: String
     let references: [MaatKnowledgeReference]
+    let content: String?
+    let classification: String?
+    let resolution: String?
+    let revision: Int?
+    let contentDigest: String?
+    let origins: [MaatKnowledgeOrigin]
+    let withheldReason: String?
+    let annotations: [MaatKnowledgeOwnerAnnotation]
 
     init(id: String, title: String, summary: String, references: [MaatKnowledgeReference]) {
         self.id = id
         self.title = title
         self.summary = summary
         self.references = references
+        self.content = nil
+        self.classification = nil
+        self.resolution = nil
+        self.revision = nil
+        self.contentDigest = nil
+        self.origins = []
+        self.withheldReason = nil
+        self.annotations = []
     }
 
-    private enum CodingKeys: String, CodingKey { case title, summary, references }
+    private enum CodingKeys: String, CodingKey {
+        case id, title, summary, references, content, classification, resolution, revision, origins
+        case contentDigest = "content_digest"
+        case withheldReason = "withheld_reason"
+        case annotations = "owner_annotations"
+    }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         title = try values.decodeIfPresent(String.self, forKey: .title) ?? "Untitled knowledge"
         summary = try values.decodeIfPresent(String.self, forKey: .summary) ?? ""
         references = try values.decodeIfPresent([MaatKnowledgeReference].self, forKey: .references) ?? []
+        content = try values.decodeIfPresent(String.self, forKey: .content)
+        classification = try values.decodeIfPresent(String.self, forKey: .classification)
+        resolution = try values.decodeIfPresent(String.self, forKey: .resolution)
+        revision = try values.decodeIfPresent(Int.self, forKey: .revision)
+        contentDigest = try values.decodeIfPresent(String.self, forKey: .contentDigest)
+        origins = try values.decodeIfPresent([MaatKnowledgeOrigin].self, forKey: .origins) ?? []
+        withheldReason = try values.decodeIfPresent(String.self, forKey: .withheldReason)
+        annotations = try values.decodeIfPresent([MaatKnowledgeOwnerAnnotation].self, forKey: .annotations) ?? []
         let sourceKey = ([title, summary] + references.map { $0.type + ":" + $0.value }).joined(separator: "\u{0}")
-        id = sourceKey.data(using: .utf8)?.base64EncodedString() ?? UUID().uuidString
+        id = try values.decodeIfPresent(String.self, forKey: .id) ?? sourceKey.data(using: .utf8)?.base64EncodedString() ?? UUID().uuidString
     }
 
     var source: String? {
@@ -3045,6 +4440,37 @@ struct MaatKnowledgeItem: Decodable, Identifiable {
 
     var searchText: String {
         ([title, summary] + references.map { $0.type + " " + $0.value }).joined(separator: " ")
+    }
+}
+
+struct MaatKnowledgeOwnerAnnotation: Decodable, Identifiable {
+    let id: Int64
+    let state: String
+    let text: String
+}
+
+struct MaatKnowledgeOrigin: Decodable, Identifiable {
+    let recordID: String
+    let source: String
+    let instanceID: String
+    let nativeItemID: String
+    let reference: String
+    var id: String { "\(recordID):\(source):\(instanceID):\(nativeItemID):\(reference)" }
+
+    private enum CodingKeys: String, CodingKey {
+        case source, reference
+        case recordID = "record_id"
+        case instanceID = "instance_id"
+        case nativeItemID = "native_item_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        recordID = try values.decodeIfPresent(String.self, forKey: .recordID) ?? ""
+        source = try values.decodeIfPresent(String.self, forKey: .source) ?? "unknown source"
+        instanceID = try values.decodeIfPresent(String.self, forKey: .instanceID) ?? ""
+        nativeItemID = try values.decodeIfPresent(String.self, forKey: .nativeItemID) ?? ""
+        reference = try values.decodeIfPresent(String.self, forKey: .reference) ?? ""
     }
 }
 

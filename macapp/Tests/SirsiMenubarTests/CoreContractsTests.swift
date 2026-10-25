@@ -339,7 +339,7 @@ final class CoreContractsTests: XCTestCase {
           "observed_non_developer_identity_types": ["Apple Distribution"],
           "notarization_observed": false,
           "verdict": {
-            "schema_version": "maat-system-one/v1",
+            "schema_version": 1,
             "feather_weight": 0,
             "gate": "block",
             "confidence": 1,
@@ -356,6 +356,37 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(preflight.observedNonDeveloperIdentityTypes, ["Apple Distribution"])
     }
 
+    func testMaatCredentialProjectionKeepsAdditionalIdentityNeutralAndNotarizationUnknown() throws {
+        let preflight = try credentialPreflightFixture(applicationPassed: true, installerPassed: true)
+        let projection = MaatCredentialPreflightProjection(preflight)
+
+        XCTAssertEqual(projection.identityHeading, "Local identities observed")
+        XCTAssertEqual(projection.observedRequiredKindCount, 2)
+        XCTAssertTrue(projection.allRequiredKindsObserved)
+        XCTAssertEqual(projection.additionalIdentityLabels, ["Additional local identity: Apple Distribution"])
+        XCTAssertEqual(projection.notarizationStatus, "Notarization not inspected here.")
+        XCTAssertFalse(preflight.notarizationObserved)
+        XCTAssertEqual(preflight.verdict.gate, "block")
+    }
+
+    func testMaatCredentialProjectionCountsDistinctRequiredKindsAndUnconfirmedObservation() throws {
+        for (application, installer) in [(true, false), (false, true)] {
+            let preflight = try credentialPreflightFixture(applicationPassed: application, installerPassed: installer)
+            let projection = MaatCredentialPreflightProjection(preflight)
+            XCTAssertEqual(projection.observedRequiredKindCount, 1)
+            XCTAssertFalse(projection.allRequiredKindsObserved)
+        }
+
+        let failed = try credentialPreflightFixture(applicationPassed: false, installerPassed: false, observationFailed: true)
+        let projection = MaatCredentialPreflightProjection(failed)
+        XCTAssertTrue(projection.identityObservationFailed)
+        XCTAssertEqual(projection.identityHeading, "Local identities unconfirmed")
+        XCTAssertEqual(projection.requiredKindsSummary, "Required identity types could not be confirmed.")
+        let fallbackPlan = protectedReleaseRecoverySteps(for: failed).joined(separator: "\n")
+        XCTAssertFalse(fallbackPlan.contains("Developer ID Application identity available"))
+        XCTAssertFalse(fallbackPlan.contains("Developer ID Installer identity available"))
+    }
+
     func testCredentialPreflightAlwaysProvidesAProtectedRecoveryPlan() throws {
         let raw = #"""
         {
@@ -364,7 +395,7 @@ final class CoreContractsTests: XCTestCase {
           "developer_identities": [],
           "notarization_observed": false,
           "verdict": {
-            "schema_version": "maat-system-one/v1",
+            "schema_version": 1,
             "feather_weight": 0,
             "gate": "block",
             "confidence": 1,
@@ -394,7 +425,7 @@ final class CoreContractsTests: XCTestCase {
           "notarization_observed": false,
           "recovery_plan": ["Use the protected workflow.", "Recheck readiness."],
           "verdict": {
-            "schema_version": "maat-system-one/v1",
+            "schema_version": 1,
             "feather_weight": 0,
             "gate": "block",
             "confidence": 1,
@@ -442,6 +473,56 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertNil(maatCasebookRepairArguments(actionID: "launchctl bootstrap gui/501/untrusted"))
     }
 
+    func testMaatBinaryDriftUsesEvidenceBoundPreviewAndConfirmedUpdaterArguments() {
+        let evidence = "maat-system-one:sha256:fixture"
+        let binding = String(repeating: "a", count: 64)
+        XCTAssertEqual(
+            maatCasebookBinaryDriftPreviewArguments(caseEvidence: evidence),
+            ["maat", "repair", "binary-drift", "--case-evidence", evidence, "--json"]
+        )
+        XCTAssertEqual(
+            maatCasebookBinaryDriftRepairArguments(caseEvidence: evidence, previewBinding: binding),
+            ["maat", "repair", "binary-drift", "--case-evidence", evidence,
+             "--preview-binding", binding, "--confirm", "--json"]
+        )
+        XCTAssertNil(maatCasebookRepairArguments(actionID: "brew upgrade sirsi-pantheon"))
+    }
+
+    func testMaatBinaryDriftRecoveryReviewsDispatchOnlyToTheirTypedNativeCommands() {
+        let evidence = "maat-system-one:sha256:fixture"
+        XCTAssertEqual(
+            maatCasebookSystemOneReviewArguments(kind: "system_one_review", actionID: "inspect_binary_drift_attempt", evidence: evidence),
+            ["maat", "repair", "binary-drift", "--inspect-attempt", "--case-evidence", evidence, "--json"]
+        )
+        XCTAssertEqual(
+            maatCasebookSystemOneReviewArguments(kind: "system_one_review", actionID: "rescreen_system_one", evidence: evidence),
+            ["maat", "triage", "--confirm", "--json"]
+        )
+        XCTAssertNil(maatCasebookSystemOneReviewArguments(kind: "system_one_review", actionID: "untrusted command", evidence: evidence))
+        XCTAssertNil(maatCasebookSystemOneReviewArguments(kind: "owner_acceptance", actionID: "inspect_binary_drift_attempt", evidence: evidence))
+    }
+
+    func testMaatBinaryDriftPreviewDecodesExactTypedTargets() throws {
+        let raw = #"""
+        {
+          "case_evidence":"maat-system-one:sha256:fixture",
+          "updater":"brew upgrade sirsi-pantheon",
+          "updater_path":"/opt/homebrew/bin/brew",
+          "updater_sha256":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "self_path":"/Applications/Pantheon.app/Contents/MacOS/sirsi",
+          "self_version":"1.2.4",
+          "self_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "targets":[{"path":"/opt/homebrew/bin/sirsi","method":"homebrew","version":"1.2.3","sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],
+          "binding":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        }
+        """#.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(MaatBinaryDriftPreview.self, from: raw)
+        XCTAssertEqual(decoded.caseEvidence, "maat-system-one:sha256:fixture")
+        XCTAssertEqual(decoded.updaterPath, "/opt/homebrew/bin/brew")
+        XCTAssertEqual(decoded.targets.map(\.path), ["/opt/homebrew/bin/sirsi"])
+        XCTAssertEqual(decoded.targets.first?.method, "homebrew")
+    }
+
     func testMaatCasebookIntegrityKeepsValidCasesVisibleAndRoutesRepair() throws {
         let raw = #"""
         {
@@ -464,6 +545,57 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(projection.journalIntegrity.issues.first?.line, 14)
         XCTAssertEqual(projection.journalIntegrity.issues.first?.reason, "requester is required")
         XCTAssertEqual(Set(projection.journalIntegrity.issues.map(\.id)).count, 2)
+    }
+
+    func testMaatCaseDistinguishesVerifiedRepairFromOwnerAcceptance() throws {
+        let raw = #"{"id":"case","status":"resolved","resolution":"","verified_repair_evidence":"diagnostic-repair:sha256=receipt","repair_outcome_evidence":"diagnostic-repair:sha256=receipt"}"#.data(using: .utf8)!
+        let entry = try JSONDecoder().decode(MaatCase.self, from: raw)
+        XCTAssertEqual(entry.verifiedRepairEvidence, "diagnostic-repair:sha256=receipt")
+        XCTAssertEqual(entry.repairOutcomeEvidence, "diagnostic-repair:sha256=receipt")
+        XCTAssertTrue(entry.resolution.isEmpty)
+        XCTAssertTrue(entry.searchText.contains("diagnostic-repair:sha256=receipt"))
+    }
+
+    func testMaatCaseKeepsFailedRepairReceiptNeutralAndRoutesFreshScreen() throws {
+        let raw = #"{"id":"case","status":"open","repair_outcome_evidence":"diagnostic-repair:sha256=failed","next_action":{"kind":"system_one_review","action_id":"rescreen_system_one","title":"Review failed updater","detail":"Fresh local screen","evidence":"maat-system-one:sha256:fixture","requires_confirmation":true}}"#.data(using: .utf8)!
+        let entry = try JSONDecoder().decode(MaatCase.self, from: raw)
+        XCTAssertTrue(entry.verifiedRepairEvidence.isEmpty)
+        XCTAssertEqual(entry.repairOutcomeEvidence, "diagnostic-repair:sha256=failed")
+        XCTAssertEqual(entry.nextAction?.actionID, "rescreen_system_one")
+    }
+
+    func testMaatBinaryRepairOutcomeCopySeparatesBinarySuccessFromScreenDebt() throws {
+        let cases: [(String, String, Bool)] = [
+            (#"{"id":"binary-only","status":"resolved","verified_repair_evidence":"receipt:binary","repair_outcome_evidence":"receipt:binary"}"#, "verified", false),
+            (#"{"id":"multi","status":"open","verified_repair_evidence":"receipt:multi","repair_outcome_evidence":"receipt:multi","next_action":{"kind":"system_one_review","action_id":"rescreen_system_one","title":"Re-screen","detail":"Fresh screen","evidence":"screen:multi","requires_confirmation":true}}"#, "verified", true),
+            (#"{"id":"floor","status":"open","verified_repair_evidence":"receipt:floor","repair_outcome_evidence":"receipt:floor","next_action":{"kind":"system_one_review","action_id":"rescreen_system_one","title":"Re-screen","detail":"Fresh screen","evidence":"screen:floor","requires_confirmation":true}}"#, "verified", true),
+            (#"{"id":"failed","status":"open","repair_outcome_evidence":"receipt:failed","next_action":{"kind":"system_one_review","action_id":"rescreen_system_one","title":"Re-screen","detail":"Fresh screen","evidence":"screen:failed","requires_confirmation":true}}"#, "unverified", true),
+        ]
+
+        for (raw, expectedCopy, expectsRescreen) in cases {
+            let entry = try JSONDecoder().decode(MaatCase.self, from: Data(raw.utf8))
+            let presentation = try XCTUnwrap(maatCasebookRepairOutcomePresentation(entry))
+            if expectedCopy == "verified" {
+                XCTAssertEqual(presentation.title, "Verified binary repair receipt")
+                XCTAssertTrue(presentation.detail.contains("binary-drift updater"))
+                XCTAssertTrue(presentation.detail.contains("does not itself resolve other findings"))
+            } else {
+                XCTAssertEqual(presentation.title, "Unverified repair outcome evidence")
+                XCTAssertTrue(presentation.detail.contains("unsuccessful or unverified"))
+                XCTAssertFalse(presentation.detail.contains("were verified"))
+            }
+            if expectsRescreen {
+                XCTAssertEqual(entry.status, "open")
+                XCTAssertEqual(entry.nextAction?.actionID, "rescreen_system_one")
+                XCTAssertEqual(
+                    maatCasebookSystemOneReviewArguments(kind: entry.nextAction?.kind ?? "", actionID: entry.nextAction?.actionID ?? "", evidence: entry.nextAction?.evidence ?? ""),
+                    ["maat", "triage", "--confirm", "--json"]
+                )
+            } else {
+                XCTAssertEqual(entry.status, "resolved")
+                XCTAssertNil(entry.nextAction)
+            }
+        }
     }
 
     func testDesktopEnginePrefersTheBundledCLIOverAHostInstall() throws {
@@ -528,4 +660,33 @@ final class CoreContractsTests: XCTestCase {
         try "gitdir: /tmp/fixture".write(to: root.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
         XCTAssertEqual(SirsiEngine.projectRootPath(root.path), root.path)
     }
+}
+
+private func credentialPreflightFixture(applicationPassed: Bool, installerPassed: Bool, observationFailed: Bool = false) throws -> MaatReleaseCredentialPreflight {
+    let findings: [[String: Any]] = observationFailed ? [["id": "security-identity-observation"]] : []
+    let checks: [[String: Any]] = [
+        ["name": "developer-id-application", "passed": applicationPassed, "detail": "Application observed"],
+        ["name": "developer-id-installer", "passed": installerPassed, "detail": "Installer observed"],
+        ["name": "notarization-credential", "passed": false, "detail": "Not observed"]
+    ]
+    let verdict: [String: Any] = [
+        "schema_version": 1,
+        "feather_weight": 0,
+        "gate": "block",
+        "confidence": 1,
+        "subject": ["kind": "host", "ref": "release-credentials", "head_sha": "fixture"],
+        "floor": ["passed": false, "checks": checks],
+        "model": ["provider": "local:test", "version": "v1", "local": true, "latency_ms": 0],
+        "findings": findings
+    ]
+    let fixture: [String: Any] = [
+        "team_id": "9D382WV988",
+        "fingerprint": "sha256=fixture",
+        "developer_identities": [],
+        "observed_non_developer_identity_types": ["Apple Distribution"],
+        "notarization_observed": false,
+        "verdict": verdict
+    ]
+    let data = try JSONSerialization.data(withJSONObject: fixture)
+    return try JSONDecoder().decode(MaatReleaseCredentialPreflight.self, from: data)
 }

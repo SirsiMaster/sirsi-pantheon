@@ -29,9 +29,11 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -1080,13 +1082,10 @@ func neverReachedService(err error) bool {
 	// detected: net/http returns its own unexported tlsHandshakeTimeoutError (not a
 	// *net.OpError), so it fell through to OUTCOME UNKNOWN. The handshake finishes
 	// BEFORE any request byte is written, so a timeout there means the request
-	// never left this process. Matched by its exact text, not by Timeout(): the
-	// response-header timeout also reports Timeout()==true but happens AFTER the
-	// request was sent, and must stay OUTCOME UNKNOWN. On a lossy link (a phone
-	// hotspot, 1 connection in 5 stalls) this made every stalled handshake an
-	// unknown-outcome failure instead of the one safe re-dial and, failing that,
-	// the durable outbox.
-	if strings.Contains(err.Error(), "net/http: TLS handshake timeout") {
+	// never left this process. On a lossy link (a phone hotspot, 1 connection in 5
+	// stalls) this made every stalled handshake an unknown-outcome failure instead
+	// of the one safe re-dial and, failing that, the durable outbox.
+	if isTLSHandshakeTimeout(err) {
 		return true
 	}
 	// A bare ECONNREFUSED with no net.OpError carries no phase information of its
@@ -1095,6 +1094,24 @@ func neverReachedService(err error) bool {
 	// may have committed. In practice the stdlib always wraps a connect-time
 	// refusal in the dial-phase *net.OpError handled above.
 	return false
+}
+
+// isTLSHandshakeTimeout reports whether err is exactly what http.Client.Do
+// returns for a stalled TLS handshake: a *url.Error whose Err is net/http's own
+// unexported tlsHandshakeTimeoutError leaf. It is matched by the leaf's type
+// identity, never by text: a post-send error whose wrapper, URL or longer
+// message merely mentions the phrase, or a joined error with several causes,
+// must stay OUTCOME UNKNOWN (codex-pantheon review of #1206). Timeout() is not
+// used either, because the post-send response-header timeout also reports it.
+// This is safe for forward only because its scoped client forbids redirects:
+// a later redirected handshake says nothing about an earlier received POST.
+func isTLSHandshakeTimeout(err error) bool {
+	ue, ok := err.(*url.Error)
+	if !ok {
+		return false
+	}
+	t := reflect.TypeOf(ue.Err)
+	return t != nil && t.PkgPath() == "net/http" && t.Name() == "tlsHandshakeTimeoutError"
 }
 
 // statusHoldForRetry is an internal sentinel (never a real HTTP status): forward
@@ -1178,7 +1195,16 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 		rl.Log.Error("relay: outcome unknown after forward", "agent", agent, "method", req.Method, "id", id, "cause", cause)
 		return fail(http.StatusBadGateway, fmt.Sprintf("relay: %s id %s: OUTCOME UNKNOWN — %s; re-query before retrying a mutation", req.Method, id, cause))
 	}
-	resp, err := rl.Client.Do(httpReq)
+	// A redirect can occur after the canonical service already received a POST.
+	// A later redirected dial/TLS failure must never make that original request
+	// look never-reached and eligible for replay. Refuse redirects for this
+	// forward only; keep the shared timeout, transport/TLS pins and other client
+	// state intact, including its redirect policy for unrelated operations.
+	forwardClient := *rl.Client
+	forwardClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := forwardClient.Do(httpReq)
 	// rs-30 SAFE re-dial (ADR-062 relay trust boundary): if the first attempt
 	// PROVABLY never reached the service (neverReachedService — a dial/DNS-phase
 	// failure, the shape a dropped half-open connection surfaces once it is
@@ -1192,10 +1218,10 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 	// (response lost mid-flight) is NEVER retried here; it falls through to the
 	// OUTCOME-UNKNOWN branch below, the exact discipline the durable outbox uses.
 	if err != nil && neverReachedService(err) {
-		rl.Client.CloseIdleConnections()
+		forwardClient.CloseIdleConnections()
 		if hr2, berr := buildReq(); berr == nil {
 			rl.Log.Warn("relay: forward never reached service, re-dialing once on a fresh connection", "agent", agent, "method", req.Method, "id", id, "err", err.Error())
-			resp, err = rl.Client.Do(hr2)
+			resp, err = forwardClient.Do(hr2)
 		}
 	}
 	if err != nil {

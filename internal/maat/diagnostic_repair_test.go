@@ -9,12 +9,13 @@ import (
 func TestRecordDiagnosticRepairRequiresPostRepairObservation(t *testing.T) {
 	journal := &FileDecisionJournal{Path: filepath.Join(t.TempDir(), "maat", "decisions.jsonl")}
 	decision, err := RecordDiagnosticRepair(journal, "sirsi maat repair launchd-disabled", DiagnosticRepair{
-		Check:         "launchd Disabled Override",
-		Operation:     "enable exact managed labels",
-		Before:        "two managed labels disabled",
-		After:         "no recoverable managed labels disabled",
-		Determination: "resolved",
-		Detail:        "enabled: ai.sirsi.menubar",
+		Check:          "launchd Disabled Override",
+		Operation:      "enable exact managed labels",
+		OriginEvidence: "maat-system-one:sha256=" + strings.Repeat("a", 64),
+		Before:         "two managed labels disabled",
+		After:          "no recoverable managed labels disabled",
+		Determination:  "resolved",
+		Detail:         "enabled: ai.sirsi.menubar",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -23,7 +24,7 @@ func TestRecordDiagnosticRepairRequiresPostRepairObservation(t *testing.T) {
 		t.Fatalf("repair decision = %#v", decision)
 	}
 	rows, err := journal.Recent(1)
-	if err != nil || len(rows) != 1 || rows[0].Evidence != decision.Evidence {
+	if err != nil || len(rows) != 1 || rows[0].Evidence != decision.Evidence || rows[0].OriginEvidence != "maat-system-one:sha256="+strings.Repeat("a", 64) {
 		t.Fatalf("recorded repair = %#v, err=%v", rows, err)
 	}
 }
@@ -41,6 +42,11 @@ func TestRecordDiagnosticRepairRejectsUnverifiedOrUnboundedInput(t *testing.T) {
 		t.Fatal("accepted unverified determination")
 	}
 	base.Determination = "failed"
+	base.OriginEvidence = "untrusted-origin"
+	if _, err := RecordDiagnosticRepair(journal, "requester", base); err == nil {
+		t.Fatal("accepted malformed originating System One evidence")
+	}
+	base.OriginEvidence = ""
 	base.After = strings.Repeat("x", 16*1024+1)
 	if _, err := RecordDiagnosticRepair(journal, "requester", base); err == nil {
 		t.Fatal("accepted oversized post-repair observation")

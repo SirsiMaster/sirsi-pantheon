@@ -7,6 +7,7 @@ package maat
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -32,9 +33,9 @@ type Decision struct {
 	Determination string `json:"determination"`
 	Why           string `json:"why"`
 	Evidence      string `json:"evidence,omitempty"`
-	// OriginEvidence binds an owner review to the existing case that requested
-	// it. ResolutionFor binds an explicit owner acceptance to that review. Both
-	// are factual links, not claims that a subsystem was repaired.
+	// OriginEvidence links an evidence-bound decision to the exact observation
+	// that produced it. ResolutionFor binds an explicit owner acceptance to its
+	// review. These are factual links, not independent authorization.
 	OriginEvidence string `json:"origin_evidence,omitempty"`
 	ResolutionFor  string `json:"resolution_for,omitempty"`
 	// SystemOne is Ma'at's strict local screen. It is advisory evidence only;
@@ -170,6 +171,7 @@ type JournalRepairReceipt struct {
 }
 
 const maxRetainedJournalIssues = 20
+const maxAppendOnceJournalBytes = 128 << 20
 
 func DefaultDecisionPath() (string, error) {
 	home, err := os.UserHomeDir()
@@ -202,6 +204,220 @@ func (j *FileDecisionJournal) Append(decision Decision) error {
 	})
 }
 
+// AppendOnce records one projection with stable evidence under the journal's
+// existing cross-process mutation lock. It refuses malformed or oversized
+// history rather than risking a duplicate after an interrupted projection.
+// The bool is true only when this call appended a new row.
+func (j *FileDecisionJournal) AppendOnce(decision Decision) (bool, error) {
+	if j == nil || strings.TrimSpace(j.Path) == "" {
+		return false, fmt.Errorf("maat decision journal: empty path")
+	}
+	if strings.TrimSpace(decision.Evidence) == "" {
+		return false, fmt.Errorf("maat decision journal: idempotent append requires evidence")
+	}
+	if err := normalizeDecision(&decision); err != nil {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(j.Path), 0o700); err != nil {
+		return false, fmt.Errorf("maat decision journal: create parent: %w", err)
+	}
+	appended := false
+	err := withJournalMutationLock(j.Path, func() error {
+		found, err := j.containsEvidenceLocked(decision.Kind, decision.Evidence)
+		if err != nil {
+			return err
+		}
+		if found {
+			return nil
+		}
+		if err := j.appendLocked(decision); err != nil {
+			return err
+		}
+		appended = true
+		return nil
+	})
+	return appended, err
+}
+
+// AppendBinaryDriftAttemptOnce atomically reserves the single supported
+// Homebrew binary-drift updater operation across all System One screens. A
+// prior attempt blocks admission until an exact terminal repair receipt is
+// retained; distinct evidence cannot create concurrent updater permits.
+func (j *FileDecisionJournal) AppendBinaryDriftAttemptOnce(decision Decision) (bool, error) {
+	if j == nil || strings.TrimSpace(j.Path) == "" {
+		return false, fmt.Errorf("maat decision journal: empty path")
+	}
+	if decision.Kind != "diagnostic repair attempt" || decision.Resource != "binary-drift" || decision.OriginEvidence == "" || strings.TrimSpace(decision.Evidence) == "" {
+		return false, fmt.Errorf("maat decision journal: invalid binary-drift updater claim")
+	}
+	expectedEvidence := fmt.Sprintf("diagnostic-repair-attempt:sha256=%x", sha256.Sum256([]byte(decision.OriginEvidence)))
+	if decision.Evidence != expectedEvidence {
+		return false, fmt.Errorf("maat decision journal: binary-drift claim evidence does not match its source screen")
+	}
+	if err := normalizeDecision(&decision); err != nil {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(j.Path), 0o700); err != nil {
+		return false, fmt.Errorf("maat decision journal: create parent: %w", err)
+	}
+	appended := false
+	err := withJournalMutationLock(j.Path, func() error {
+		var history []Decision
+		_, err := j.scanStrict(func(row Decision) bool {
+			history = append(history, row)
+			return false
+		})
+		if err != nil {
+			return err
+		}
+		for _, row := range history {
+			if row.Kind != decision.Kind || row.Resource != "binary-drift" {
+				continue
+			}
+			if row.Evidence == decision.Evidence {
+				return nil
+			}
+			terminal := false
+			for _, later := range history {
+				if later.Kind == "diagnostic verified repair" && later.Resource == "binary-drift" && later.OriginEvidence == row.OriginEvidence && (later.Determination == "resolved" || later.Determination == "failed") {
+					terminal = true
+					break
+				}
+			}
+			if !terminal {
+				return fmt.Errorf("maat decision journal: another binary-drift updater attempt has no terminal receipt")
+			}
+		}
+		if err := j.appendLocked(decision); err != nil {
+			return err
+		}
+		appended = true
+		return nil
+	})
+	return appended, err
+}
+
+func (j *FileDecisionJournal) containsEvidenceLocked(kind, evidence string) (bool, error) {
+	file, err := os.Open(j.Path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("maat decision journal: open for idempotence: %w", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > maxAppendOnceJournalBytes {
+		return false, fmt.Errorf("maat decision journal: history is not a bounded regular file")
+	}
+	scanner := bufio.NewScanner(io.LimitReader(file, maxAppendOnceJournalBytes+1))
+	scanner.Buffer(make([]byte, 4096), 256*1024)
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var existing Decision
+		if err := json.Unmarshal([]byte(line), &existing); err != nil {
+			return false, fmt.Errorf("maat decision journal: malformed history at line %d", lineNumber)
+		}
+		if err := validateDecision(existing); err != nil {
+			return false, fmt.Errorf("maat decision journal: invalid history at line %d", lineNumber)
+		}
+		if existing.Kind == kind && existing.Evidence == evidence {
+			return true, nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return false, fmt.Errorf("maat decision journal: history exceeds its bound or is unreadable")
+	}
+	return false, nil
+}
+
+// AppendIdempotent appends one exact decision, keyed by its non-empty Evidence
+// reference. It reads back under the same mutation lock so a retry after an
+// uncertain append cannot duplicate the record.
+func (j *FileDecisionJournal) AppendIdempotent(decision Decision) error {
+	if j == nil || strings.TrimSpace(j.Path) == "" {
+		return fmt.Errorf("maat decision journal: empty path")
+	}
+	if strings.TrimSpace(decision.Evidence) == "" {
+		return fmt.Errorf("maat decision journal: idempotent append requires an evidence key")
+	}
+	if err := normalizeDecision(&decision); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(j.Path), 0o700); err != nil {
+		return fmt.Errorf("maat decision journal: create parent: %w", err)
+	}
+	return withJournalMutationLock(j.Path, func() error {
+		found, err := decisionEvidenceReadback(j.Path, decision)
+		if err != nil || found {
+			return err
+		}
+		if err := j.appendLocked(decision); err != nil {
+			return err
+		}
+		found, err = decisionEvidenceReadback(j.Path, decision)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("maat decision journal: idempotent append readback is missing")
+		}
+		return nil
+	})
+}
+
+func decisionEvidenceReadback(path string, expected Decision) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("maat decision journal: readback open: %w", err)
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 4096), 256*1024)
+	expectedBytes, err := json.Marshal(expected)
+	if err != nil {
+		return false, err
+	}
+	found := false
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var actual Decision
+		if err := json.Unmarshal([]byte(line), &actual); err != nil {
+			return false, fmt.Errorf("maat decision journal: readback found malformed record at line %d", lineNumber)
+		}
+		if err := validateDecision(actual); err != nil {
+			return false, fmt.Errorf("maat decision journal: readback found invalid record at line %d: %w", lineNumber, err)
+		}
+		if actual.Evidence != expected.Evidence {
+			continue
+		}
+		if found {
+			return false, fmt.Errorf("maat decision journal: duplicate idempotency evidence")
+		}
+		actualBytes, err := json.Marshal(actual)
+		if err != nil {
+			return false, err
+		}
+		if !bytes.Equal(actualBytes, expectedBytes) {
+			return false, fmt.Errorf("maat decision journal: idempotency evidence already belongs to a different decision")
+		}
+		found = true
+	}
+	if err := scanner.Err(); err != nil {
+		return false, fmt.Errorf("maat decision journal: readback scan: %w", err)
+	}
+	return found, nil
+}
+
 func (j *FileDecisionJournal) appendLocked(decision Decision) error {
 	encoded, err := json.Marshal(decision)
 	if err != nil {
@@ -224,6 +440,77 @@ func (j *FileDecisionJournal) appendLocked(decision Decision) error {
 func (j *FileDecisionJournal) Recent(limit int) ([]Decision, error) {
 	decisions, _, err := j.readRecent(limit, false)
 	return decisions, err
+}
+
+// FindByEvidence performs a bounded strict read over the complete retained
+// journal. It is for recovering an exact durable claim whose row may no longer
+// be in the ordinary recent-window projection; it never mutates the ledger.
+func (j *FileDecisionJournal) FindByEvidence(kind, evidence string) (Decision, bool, error) {
+	var found Decision
+	ok, err := j.scanStrict(func(d Decision) bool {
+		if d.Kind == kind && d.Evidence == evidence {
+			found = d
+			return true
+		}
+		return false
+	})
+	return found, ok, err
+}
+
+// HasOriginDecision reports whether a strict retained row matches the exact
+// origin tuple. It is used alongside FindByEvidence to distinguish an
+// unresolved attempt from one with a later terminal repair receipt.
+func (j *FileDecisionJournal) HasOriginDecision(kind, resource, origin string) (bool, error) {
+	return j.scanStrict(func(d Decision) bool {
+		return d.Kind == kind && d.Resource == resource && d.OriginEvidence == origin
+	})
+}
+
+// HasRelatedEvidence reports whether a strict retained row references the
+// exact evidence as its own, originating, or explicitly resolved evidence.
+func (j *FileDecisionJournal) HasRelatedEvidence(kind, evidence string) (bool, error) {
+	return j.scanStrict(func(d Decision) bool {
+		return d.Kind == kind && (d.Evidence == evidence || d.OriginEvidence == evidence || d.ResolutionFor == evidence)
+	})
+}
+
+func (j *FileDecisionJournal) scanStrict(match func(Decision) bool) (bool, error) {
+	if j == nil || strings.TrimSpace(j.Path) == "" {
+		return false, fmt.Errorf("maat decision journal: empty path")
+	}
+	file, err := os.Open(j.Path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("maat decision journal: open strict lookup: %w", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > maxAppendOnceJournalBytes {
+		return false, fmt.Errorf("maat decision journal: strict lookup source is not a bounded regular file")
+	}
+	scanner := bufio.NewScanner(io.LimitReader(file, maxAppendOnceJournalBytes+1))
+	scanner.Buffer(make([]byte, 4096), 256*1024)
+	found := false
+	for line := 1; scanner.Scan(); line++ {
+		text := strings.TrimSpace(scanner.Text())
+		if text == "" {
+			continue
+		}
+		var decision Decision
+		if err := json.Unmarshal([]byte(text), &decision); err != nil {
+			return false, fmt.Errorf("maat decision journal: malformed strict-lookup history at line %d", line)
+		}
+		if err := validateDecision(decision); err != nil {
+			return false, fmt.Errorf("maat decision journal: invalid strict-lookup history at line %d", line)
+		}
+		found = match(decision) || found
+	}
+	if err := scanner.Err(); err != nil {
+		return false, fmt.Errorf("maat decision journal: strict lookup history exceeds its bound or is unreadable")
+	}
+	return found, nil
 }
 
 // RecentTolerant returns all valid decisions while retaining bounded,

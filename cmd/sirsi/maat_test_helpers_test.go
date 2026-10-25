@@ -11,6 +11,16 @@ func (j *maatTestJournal) Append(decision maat.Decision) error {
 	return nil
 }
 
+func (j *maatTestJournal) AppendOnce(decision maat.Decision) (bool, error) {
+	for _, existing := range j.decisions {
+		if existing.Kind == decision.Kind && existing.Evidence == decision.Evidence {
+			return false, nil
+		}
+	}
+	j.decisions = append(j.decisions, decision)
+	return true, nil
+}
+
 func (j *maatTestJournal) Recent(limit int) ([]maat.Decision, error) {
 	if limit <= 0 || limit > len(j.decisions) {
 		limit = len(j.decisions)

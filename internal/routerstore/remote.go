@@ -43,6 +43,7 @@ import (
 // sentinelErrors is the closed set that crosses the wire by name.
 // TestSentinelsRoundTrip pins the list.
 var sentinelErrors = map[string]error{
+	"ErrTaskResumeInput":      ErrTaskResumeInput,
 	"ErrNotComplete":          ErrNotComplete,
 	"ErrBreakerOpen":          ErrBreakerOpen,
 	"ErrOverQuota":            ErrOverQuota,

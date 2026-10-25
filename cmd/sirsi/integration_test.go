@@ -47,6 +47,25 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 
+	// Give positive archive fixtures physical temporary homes on macOS, whose
+	// default /var temp path is a symlink. Do not canonicalize product inputs
+	// or remove the explicit symlink/substitution negative controls.
+	tempRoot, err := filepath.EvalSymlinks(os.TempDir())
+	if err == nil {
+		var info os.FileInfo
+		info, err = os.Stat(tempRoot)
+		if err == nil && !info.IsDir() {
+			err = fmt.Errorf("temporary root is not a directory")
+		}
+	}
+	if err == nil {
+		err = os.Setenv("TMPDIR", tempRoot)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot prepare canonical CLI test temp root: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Determine the repo root (two levels up from cmd/sirsi/).
 	wd, err := os.Getwd()
 	if err != nil {

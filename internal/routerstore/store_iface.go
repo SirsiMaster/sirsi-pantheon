@@ -46,6 +46,9 @@ type Store interface {
 	ClaimNext(agent string, ttl time.Duration) (*Lease, error)
 	ClaimNextTask(agent, worker, threadID string, ttl time.Duration) (*TaskLease, error)
 	ClaimTask(agent, taskID, worker, threadID string, ttl time.Duration) (*TaskLease, error)
+	// ResumeTaskClaim inspects or grants one evidence/CAS-bound own-lane
+	// recovery lease without resetting history. Completion uses CompleteTaskLease.
+	ResumeTaskClaim(ctx context.Context, req TaskResumeRequest) (TaskResumeResult, error)
 	ClaimWakeEvent(ttl time.Duration) (*WakeEvent, error)
 	ClaimWakeEventFor(agent string, ttl time.Duration) (*WakeEvent, error)
 	ClassifyLane(agent string, wakeRoutable bool, recentWithin time.Duration) (LaneOperationalState, error)

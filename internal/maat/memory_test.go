@@ -35,6 +35,34 @@ func testActions() []RecoveryAction {
 	return []RecoveryAction{{ID: "repair-managed-labels", Label: "Repair managed labels", Instruction: "Use the approved router repair flow and then re-run this preflight."}}
 }
 
+func privateMemoryStoreRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatalf("prepare private owned memory fixture: %v", err)
+	}
+	info, err := os.Stat(root)
+	if err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("memory fixture mode is not0700: %v", err)
+	}
+	return root
+}
+
+func TestStorePrivateFixtureDoesNotRelaxPublicRootRefusal(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if store, err := OpenStore(root); err == nil {
+		_ = store.Close()
+		t.Fatal("public caller root must remain refused")
+	}
+	info, err := os.Stat(root)
+	if err != nil || info.Mode().Perm() != 0o755 {
+		t.Fatalf("refusal changed the caller's public directory mode: %v", err)
+	}
+}
+
 func TestFailureSignatureDigestIsDeterministicAndComplete(t *testing.T) {
 	first, err := testSignature().Digest()
 	if err != nil {
@@ -53,7 +81,7 @@ func TestFailureSignatureDigestIsDeterministicAndComplete(t *testing.T) {
 }
 
 func TestStoreEvidenceAppendAndExactScopePreflight(t *testing.T) {
-	store, err := OpenStore(t.TempDir())
+	store, err := OpenStore(privateMemoryStoreRoot(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +95,7 @@ func TestStoreEvidenceAppendAndExactScopePreflight(t *testing.T) {
 	if again, err := store.PutEvidence(evidence); err != nil || again != digest {
 		t.Fatalf("create-only evidence must be idempotent: %q %v", again, err)
 	}
-	incident, err := NewIncident(testSignature(), digest, testScope(), "managed-label-guard", "v1", testActions())
+	incident, err := NewIncident(testSignature(), digest, testScope(), ActiveIncidentGuardID, ActiveIncidentGuardVersion, testActions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +128,7 @@ func TestStoreEvidenceAppendAndExactScopePreflight(t *testing.T) {
 }
 
 func TestStoreRefusesSymlinkEvidenceAndConflictingIncident(t *testing.T) {
-	root := t.TempDir()
+	root := privateMemoryStoreRoot(t)
 	store, err := OpenStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -127,7 +155,7 @@ func TestStoreRefusesSymlinkEvidenceAndConflictingIncident(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	incident, err := NewIncident(testSignature(), stored, testScope(), "managed-label-guard", "v1", testActions())
+	incident, err := NewIncident(testSignature(), stored, testScope(), ActiveIncidentGuardID, ActiveIncidentGuardVersion, testActions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +170,7 @@ func TestStoreRefusesSymlinkEvidenceAndConflictingIncident(t *testing.T) {
 }
 
 func TestPreflightRejectsMalformedIncidentNamespace(t *testing.T) {
-	root := t.TempDir()
+	root := privateMemoryStoreRoot(t)
 	store, err := OpenStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +186,7 @@ func TestPreflightRejectsMalformedIncidentNamespace(t *testing.T) {
 }
 
 func TestPreflightRefusesTamperedEvidence(t *testing.T) {
-	root := t.TempDir()
+	root := privateMemoryStoreRoot(t)
 	store, err := OpenStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +196,7 @@ func TestPreflightRefusesTamperedEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	incident, err := NewIncident(testSignature(), digest, testScope(), "managed-label-guard", "v1", testActions())
+	incident, err := NewIncident(testSignature(), digest, testScope(), ActiveIncidentGuardID, ActiveIncidentGuardVersion, testActions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +213,7 @@ func TestPreflightRefusesTamperedEvidence(t *testing.T) {
 }
 
 func TestStoreRefusesSymlinkedLock(t *testing.T) {
-	root := t.TempDir()
+	root := privateMemoryStoreRoot(t)
 	target := filepath.Join(root, "outside-lock")
 	if err := os.WriteFile(target, []byte("not a lock"), 0o600); err != nil {
 		t.Fatal(err)
@@ -199,7 +227,7 @@ func TestStoreRefusesSymlinkedLock(t *testing.T) {
 }
 
 func TestStoreRefusesCallerSuppliedClosedIncident(t *testing.T) {
-	store, err := OpenStore(t.TempDir())
+	store, err := OpenStore(privateMemoryStoreRoot(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +248,7 @@ func TestStoreRefusesCallerSuppliedClosedIncident(t *testing.T) {
 }
 
 func TestTerminalTransitionIsPredecessorBoundAndPreventsBranches(t *testing.T) {
-	store, err := OpenStore(t.TempDir())
+	store, err := OpenStore(privateMemoryStoreRoot(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,13 +275,13 @@ func TestTerminalTransitionIsPredecessorBoundAndPreventsBranches(t *testing.T) {
 		t.Fatal("a second terminal transition must be rejected")
 	}
 	receipt, err := store.Preflight(testScope())
-	if err != nil || receipt.Decision != PreflightPass || len(receipt.MeasuredChecks) != 1 || receipt.MeasuredChecks[0].Status != string(IncidentRetired) {
+	if err != nil || receipt.Decision != PreflightPass || len(receipt.MeasuredChecks) != 0 || len(receipt.EvaluatedGuards) != 0 {
 		t.Fatalf("terminal transition must close the exact predecessor: %#v %v", receipt, err)
 	}
 }
 
 func TestPreflightRejectsForgedTransitionContinuity(t *testing.T) {
-	root := t.TempDir()
+	root := privateMemoryStoreRoot(t)
 	store, err := OpenStore(root)
 	if err != nil {
 		t.Fatal(err)
@@ -289,7 +317,7 @@ func TestPreflightRejectsForgedTransitionContinuity(t *testing.T) {
 }
 
 func TestProjectFailureMemoryPreflightUsesExistingDecisionJournal(t *testing.T) {
-	store, err := OpenStore(t.TempDir())
+	store, err := OpenStore(privateMemoryStoreRoot(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +326,7 @@ func TestProjectFailureMemoryPreflightUsesExistingDecisionJournal(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	incident, err := NewIncident(testSignature(), digest, testScope(), "guard", "v1", testActions())
+	incident, err := NewIncident(testSignature(), digest, testScope(), ActiveIncidentGuardID, ActiveIncidentGuardVersion, testActions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,7 +351,7 @@ func TestProjectFailureMemoryPreflightUsesExistingDecisionJournal(t *testing.T) 
 }
 
 func TestPreparedWriteFailsClosedButExactRetryResolvesIt(t *testing.T) {
-	store, err := OpenStore(t.TempDir())
+	store, err := OpenStore(privateMemoryStoreRoot(t))
 	if err != nil {
 		t.Fatal(err)
 	}

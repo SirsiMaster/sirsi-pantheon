@@ -378,6 +378,9 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		// before invoking a nested UnmarshalJSON method's own size check.
 		bodyLimit = TaskEvidenceManifestLimit
 	}
+	if name == "ResumeTaskClaim" {
+		bodyLimit = TaskResumeRequestLimit
+	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, bodyLimit))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "", "read body: "+err.Error())
@@ -496,7 +499,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if name == "RelocateTaskEvidence" {
+	if name == "RelocateTaskEvidence" || name == "ResumeTaskClaim" {
 		// Required even when the general audience gate is log/off. Owner comes
 		// only from this authenticated session, never an operator override.
 		if err := s.ruleOfRa(sess, name); err != nil {
@@ -895,6 +898,10 @@ func (s *server) bindAfterClaim(name string, results []reflect.Value, caller Ses
 }
 
 func (s *server) writeCallErr(w http.ResponseWriter, method string, err error) {
+	if method == "ResumeTaskClaim" && errors.Is(err, ErrTaskResumeInput) {
+		writeErr(w, http.StatusBadRequest, "ErrTaskResumeInput", err.Error())
+		return
+	}
 	if errors.Is(err, ErrLaneScope) {
 		writeErr(w, http.StatusForbidden, "ErrLaneScope", err.Error())
 		return

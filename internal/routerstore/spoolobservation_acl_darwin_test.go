@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestRelayObservationDarwinACLRetainedDescriptor(t *testing.T) {
@@ -44,5 +46,16 @@ func TestRelayObservationDarwinACLRetainedDescriptor(t *testing.T) {
 	}
 	if !relayObservationNoACL(int(f.Fd())) {
 		t.Fatal("probe followed replacement instead of retained descriptor")
+	}
+	var st unix.Stat_t
+	if err := unix.Fstat(int(f.Fd()), &st); err != nil {
+		t.Fatal(err)
+	}
+	policy := RelayObservationFilePolicy{UID: st.Uid, GID: st.Gid, Mode: 0600}
+	if _, err := policy.validFile(int(replacement.Fd())); err == nil {
+		t.Fatal("shared lifecycle file policy accepted an extra ACL")
+	}
+	if _, err := policy.validFile(int(f.Fd())); err != nil {
+		t.Fatal("shared policy abandoned the retained no-ACL descriptor")
 	}
 }

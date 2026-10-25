@@ -140,3 +140,47 @@ Live host rollout and rollback evidence remain open until actually executed.
 
 No pricing or performance claim is made. This repairs the free operational base;
 it adds no paid vendor, model requirement or new feature scope during the freeze.
+
+## Reserved publisher metadata compatibility (released135 correction)
+
+The existing publisher installs `.relay-outbox-health-v1.json` by create-only
+staging and `Renameat`. It is a regular metadata file, not a lane. The supported
+reader classifies only that exact name, using the shared observation closed
+decoder and independently derived producer/root file policy. Canonical physical
+root ownership comes from `_sirsipantheon` lookup and the retained root/parent;
+the root's declared gid/mode determines the exact file gid and private0600 or
+group0640 policy. JSON and controller privilege never select the producer UID.
+The retained file must be regular, nlink1, bounded to131072 bytes, no-follow,
+nonblocking, and without extra ACLs. The reader does not repair permissions.
+
+Structural/identity validation is separate from health freshness. Valid stale,
+partial or nonzero-count metadata is recognized but supplies no drain proof:
+the live `req`, `outbox` and `inflight` checks remain authoritative. Legacy empty
+roots need no summary. The exact `.relay-health-new-<32lowerhex>` publication
+name is explicit in-progress/retained debt; neither it nor lookalikes are ignored
+or deleted. Other files still refuse through the existing lane contract.
+
+Each probe takes three bounded full root namespace observations (1024 entries,
+16 entries per lane) around two executions of the existing queue probe. Lane
+and queue name/identity/owner/mode/size/mtime/ctime continuity is retained.
+Only a validated finished-summary addition or atomic inode replacement receives
+the root mtime/size exception. In-place writes, disappearance, unsafe metadata,
+new/changed lanes or queues, and unknown/staging arrivals refuse. A replacement
+racing one metadata read returns changed; it does not spin or retry lifecycle
+actions. Root/ancestor identity and permissions remain checked. This is still
+cooperative sampling under the existing admission/drain contract, not a kernel
+atomic-drain guarantee or the separate future legacy-maintenance protocol.
+
+`internal/routerstore/spoolobservation{,_unix}.go` supplies the shared schema,
+identity and file-policy boundary; the existing Darwin ACL implementation remains
+fail-closed without CGO. `internal/setup/launchdrelayspool_darwin.go` owns only
+namespace/queue continuity. The immutable `9238be90` regression file is retained
+byte-for-byte for green attribution; added metadata continuity/shared-policy/ACL
+fixtures cover stale/partial/count separation, atomic replacement, in-read races,
+late queue arrivals, staging, schema/type/identity and synthetic ownership policy.
+Only Main executes qualification. Main reports actual `9238be90` red execution
+`a17376ae7d404f71931758079f6c8f9a` at
+`/private/tmp/pantheon-relay-metadata-red-qualification.6Q10GX/receipt.json`:
+both private/group fixtures and actual canonical publisher compiled and refused
+with ENOTDIR before bootout. No corrected-source runtime or host retry follows
+from that red receipt.

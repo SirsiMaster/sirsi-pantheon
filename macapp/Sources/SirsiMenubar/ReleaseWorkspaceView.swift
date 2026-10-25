@@ -188,13 +188,17 @@ struct PantheonReleaseWorkspaceView: View {
     }
 
     private func credentialResult(_ result: MaatReleaseCredentialPreflight) -> some View {
+        let projection = MaatCredentialPreflightProjection(result)
         let identities = result.developerIdentities
         return VStack(alignment: .leading, spacing: 7) {
-            Label("Team \(result.teamID) public identity check", systemImage: "checkmark.shield")
+            Label(projection.identityHeading, systemImage: "person.crop.rectangle.stack")
                 .sirsiFont(.subheadline, weight: .semibold)
-                .foregroundStyle(identities.isEmpty ? .orange : emerald)
-            if identities.isEmpty {
-                Text("No required Developer ID identity was observed in the local public metadata.")
+                .foregroundStyle(projection.identityObservationFailed || !projection.allRequiredKindsObserved ? Color.orange : PantheonTheme.mutedText)
+            Text("Team \(result.teamID) · \(projection.requiredKindsSummary)")
+                .sirsiFont(.caption)
+                .foregroundStyle(PantheonTheme.mutedText)
+            if projection.identityObservationFailed {
+                Text("The public identity observation did not complete; no identity absence was inferred.")
                     .sirsiFont(.caption)
                     .foregroundStyle(.orange)
             } else {
@@ -205,12 +209,16 @@ struct PantheonReleaseWorkspaceView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            if !result.notarizationObserved {
-                Text("Notarization is deliberately checked only by the protected release workflow; no secret is requested or displayed in this app.")
+            ForEach(projection.additionalIdentityLabels, id: \.self) { label in
+                Text(label)
                     .sirsiFont(.caption)
                     .foregroundStyle(PantheonTheme.mutedText)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Label(projection.notarizationStatus, systemImage: "questionmark.circle")
+                .sirsiFont(.caption)
+                .foregroundStyle(PantheonTheme.mutedText)
+                .fixedSize(horizontal: false, vertical: true)
             Button("Read again") { Task { await readCredentials() } }
                 .buttonStyle(.bordered)
         }

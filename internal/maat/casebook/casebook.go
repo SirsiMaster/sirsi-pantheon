@@ -4,8 +4,10 @@
 package casebook
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"strings"
 
@@ -57,24 +59,27 @@ type ResolutionStep struct {
 // Case is a stable, operator-readable projection of exactly one recorded
 // Ma'at decision. It has no independent lifecycle or write authority.
 type Case struct {
-	ID                   string                  `json:"id"`
-	Time                 string                  `json:"time"`
-	Host                 string                  `json:"host"`
-	Kind                 string                  `json:"kind"`
-	Category             string                  `json:"category"`
-	Status               Status                  `json:"status"`
-	Priority             Priority                `json:"priority"`
-	Requester            string                  `json:"requester"`
-	Resource             string                  `json:"resource,omitempty"`
-	Affected             string                  `json:"affected,omitempty"`
-	Determination        string                  `json:"determination"`
-	Assessed             string                  `json:"assessed"`
-	Why                  string                  `json:"why"`
-	Evidence             string                  `json:"evidence,omitempty"`
-	Resolution           string                  `json:"resolution,omitempty"`
-	NextAction           *ResolutionPath         `json:"next_action,omitempty"`
-	SystemOne            *maat.MaatVerdict       `json:"system_one,omitempty"`
-	SystemOneCalibration *maat.CalibrationRecord `json:"system_one_calibration,omitempty"`
+	ID                           string                  `json:"id"`
+	Time                         string                  `json:"time"`
+	Host                         string                  `json:"host"`
+	Kind                         string                  `json:"kind"`
+	Category                     string                  `json:"category"`
+	Status                       Status                  `json:"status"`
+	Priority                     Priority                `json:"priority"`
+	Requester                    string                  `json:"requester"`
+	Resource                     string                  `json:"resource,omitempty"`
+	Affected                     string                  `json:"affected,omitempty"`
+	Determination                string                  `json:"determination"`
+	Assessed                     string                  `json:"assessed"`
+	Why                          string                  `json:"why"`
+	Evidence                     string                  `json:"evidence,omitempty"`
+	Resolution                   string                  `json:"resolution,omitempty"`
+	VerifiedRepairEvidence       string                  `json:"verified_repair_evidence,omitempty"`
+	RepairOutcomeEvidence        string                  `json:"repair_outcome_evidence,omitempty"`
+	PendingRepairAttemptEvidence string                  `json:"pending_repair_attempt_evidence,omitempty"`
+	NextAction                   *ResolutionPath         `json:"next_action,omitempty"`
+	SystemOne                    *maat.MaatVerdict       `json:"system_one,omitempty"`
+	SystemOneCalibration         *maat.CalibrationRecord `json:"system_one_calibration,omitempty"`
 }
 
 // Node and Edge form a deliberately small evidence graph. The dashboard can
@@ -117,17 +122,48 @@ type Query struct {
 	Limit  int
 }
 
+// HistoryQuery adds a journal snapshot and continuation to the ordinary
+// in-memory Search helper. The file journal applies scope, identity, kind,
+// text and same-snapshot linked status before its bounded result window.
+type HistoryQuery struct {
+	Query
+	Scope    string
+	Evidence string
+	Cursor   string
+	Context  context.Context
+}
+
+type HistoryWindow struct {
+	Scope                    string `json:"scope"`
+	QueryID                  string `json:"query_id"`
+	Snapshot                 string `json:"snapshot"`
+	Returned                 int    `json:"returned"`
+	CandidateMatches         int    `json:"candidate_matches"`
+	CountScope               string `json:"count_scope"`
+	EvidenceMatches          *int64 `json:"evidence_matches,omitempty"`
+	EvidenceMatchesComplete  bool   `json:"evidence_matches_complete,omitempty"`
+	CandidateMatchesComplete bool   `json:"candidate_matches_complete"`
+	PageSize                 int    `json:"page_size"`
+	Coverage                 string `json:"coverage"`
+	HasMore                  bool   `json:"has_more"`
+	HasMoreKnown             bool   `json:"has_more_known"`
+	NextCursor               string `json:"next_cursor,omitempty"`
+	TotalComplete            bool   `json:"total_complete"`
+	Total                    *int   `json:"total,omitempty"`
+	ScannedBytes             int64  `json:"scanned_bytes"`
+	ScannedRecords           int    `json:"scanned_records"`
+}
+
+type HistorySearchResult struct {
+	View      View                  `json:"view"`
+	Integrity maat.JournalIntegrity `json:"journal_integrity"`
+	Window    HistoryWindow         `json:"history"`
+}
+
 // Build faithfully projects decisions; classification is descriptive and is
 // never used to change the source decision's determination.
 func Build(decisions []maat.Decision) View {
-	acceptances := make(map[string]maat.Decision)
-	for _, decision := range decisions {
-		if decision.Kind == "diagnostic owner acceptance" && decision.ResolutionFor != "" {
-			if previous, found := acceptances[decision.ResolutionFor]; !found || decision.Time > previous.Time {
-				acceptances[decision.ResolutionFor] = decision
-			}
-		}
-	}
+	states := linkedCaseStates(decisions)
 	cases := make([]Case, 0, len(decisions))
 	for _, decision := range decisions {
 		if decision.Kind == "diagnostic owner acceptance" && decision.ResolutionFor != "" {
@@ -135,16 +171,63 @@ func Build(decisions []maat.Decision) View {
 				continue
 			}
 		}
-		c := project(decision)
-		if acceptance, accepted := acceptances[decision.Evidence]; accepted {
-			c.Status = StatusResolved
-			c.Resolution = acceptance.Why
-		}
-		c.NextAction = resolutionPath(c)
+		c := projectLinkedCase(decision, states[decision.Evidence])
 		cases = append(cases, c)
 	}
 	sort.SliceStable(cases, func(i, j int) bool { return cases[i].Time > cases[j].Time })
 	return viewFor(cases)
+}
+
+// One overlay supplies in-memory, pre-window filtering, and history-page
+// projection. An updater receipt is narrower than an owner acceptance.
+func projectLinkedCase(decision maat.Decision, linked maat.HistoryMatchState) Case {
+	c := project(decision)
+	if linked.Resolution != nil {
+		c.Status = StatusResolved
+		c.Resolution = linked.Resolution.Why
+	} else if repair := linked.RepairOutcome; repair != nil {
+		c.RepairOutcomeEvidence = repair.Evidence
+		if repair.Determination == "resolved" {
+			c.VerifiedRepairEvidence = repair.Evidence
+			if binaryRepairDischargesScreen(decision.SystemOne) {
+				c.Status = StatusResolved
+			}
+		}
+	} else if linked.RepairAttempt != nil {
+		c.PendingRepairAttemptEvidence = linked.RepairAttempt.Evidence
+	}
+	c.NextAction = resolutionPath(c)
+	return c
+}
+
+func linkedCaseStates(decisions []maat.Decision) map[string]maat.HistoryMatchState {
+	states := make(map[string]maat.HistoryMatchState)
+	for _, decision := range decisions {
+		row := decision
+		if row.Kind == "diagnostic owner acceptance" && row.ResolutionFor != "" {
+			state := states[row.ResolutionFor]
+			if state.Resolution == nil || row.Time > state.Resolution.Time {
+				state.Resolved, state.Resolution = true, &row
+			}
+			states[row.ResolutionFor] = state
+		}
+		if row.Resource != "binary-drift" || row.OriginEvidence == "" {
+			continue
+		}
+		state := states[row.OriginEvidence]
+		switch row.Kind {
+		case "diagnostic verified repair":
+			if state.RepairOutcome == nil || row.Time > state.RepairOutcome.Time {
+				state.RepairOutcome = &row
+			}
+		case "diagnostic repair attempt":
+			if state.RepairAttempt == nil || row.Time > state.RepairAttempt.Time {
+				state.RepairAttempt = &row
+			}
+		}
+		states[row.OriginEvidence] = state
+	}
+	return states
 }
 
 func hasOwnerReview(decisions []maat.Decision, evidence string) bool {
@@ -179,6 +262,126 @@ func Search(decisions []maat.Decision, query Query) View {
 		}
 	}
 	return viewFor(matched)
+}
+
+// SearchHistory performs a bounded, snapshot-bound journal query. Scope,
+// kind, text and linked status qualify records before the result window; the
+// journal query resolves one candidate's bounded links before top-K insertion.
+func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (HistorySearchResult, error) {
+	if query.Limit <= 0 {
+		query.Limit = 50
+	}
+	if query.Scope == "" {
+		query.Scope = maat.HistoryScopeAll
+	}
+	kind := strings.ToLower(strings.TrimSpace(query.Kind))
+	text := strings.ToLower(strings.TrimSpace(query.Text))
+	status := Status(strings.ToLower(strings.TrimSpace(string(query.Status))))
+	keyBytes, err := json.Marshal(struct {
+		Scope, Evidence, Kind, Text, Status string
+		Limit                               int
+	}{query.Scope, query.Evidence, kind, text, string(status), query.Limit})
+	if err != nil {
+		return HistorySearchResult{}, err
+	}
+	keySum := sha256.Sum256(keyBytes)
+	queryID := "sha256:" + hex.EncodeToString(keySum[:])
+	page, err := journal.QueryHistory(maat.HistoryQuery{
+		Scope: query.Scope, Evidence: query.Evidence,
+		QueryKey: queryID, Limit: query.Limit,
+		Cursor: query.Cursor, Context: query.Context,
+		Match: func(decision maat.Decision) bool {
+			if kind == "" {
+				return true
+			}
+			projected := project(decision)
+			return strings.EqualFold(projected.Kind, kind) || strings.EqualFold(projected.Category, kind)
+		},
+		NeedsState: func(decision maat.Decision) bool {
+			return status != "" || text != "" || decision.Kind == "diagnostic owner acceptance"
+		},
+		MatchState: func(decision maat.Decision, linked maat.HistoryMatchState) bool {
+			if linked.Hidden {
+				return false
+			}
+			projected := projectLinkedCase(decision, linked)
+			if status != "" && projected.Status != status {
+				return false
+			}
+			return text == "" || matches(projected, text)
+		},
+	})
+	if err != nil {
+		return HistorySearchResult{}, err
+	}
+	window := HistoryWindow{
+		Scope: query.Scope, QueryID: queryID, Snapshot: page.Snapshot, Returned: 0, PageSize: query.Limit,
+		Coverage: page.Coverage, HasMore: page.HasMore,
+		CountScope:   "query",
+		HasMoreKnown: page.Coverage == maat.HistoryCoverageComplete && (page.HasMore || page.Integrity.InvalidCount == 0),
+		ScannedBytes: page.ScannedBytes, ScannedRecords: page.ScannedRecords,
+	}
+	if page.AfterCursor {
+		window.CountScope = "after-cursor"
+	}
+	if query.Evidence != "" {
+		count := page.EvidenceMatches
+		window.EvidenceMatches = &count
+		window.EvidenceMatchesComplete = page.Coverage == maat.HistoryCoverageComplete && page.Integrity.InvalidCount == 0 && !page.AfterCursor
+	}
+	if page.Coverage == maat.HistoryCoveragePartial {
+		window.NextCursor = page.Cursor
+		window.CandidateMatches = int(page.MatchCount)
+		window.CountScope = "scanned-so-far"
+		if page.AfterCursor {
+			window.CountScope = "after-cursor-scanned-so-far"
+		}
+		return HistorySearchResult{
+			View:      View{Cases: []Case{}, Graph: Graph{Nodes: []Node{}, Edges: []Edge{}}},
+			Integrity: page.Integrity, Window: window,
+		}, nil
+	}
+	window.NextCursor = page.NextPageCursor
+	window.CandidateMatches = int(page.MatchCount)
+	window.CandidateMatchesComplete = page.Coverage == maat.HistoryCoverageComplete && page.Integrity.InvalidCount == 0 && !page.AfterCursor
+	related := append(append(append([]maat.Decision{}, page.Links.Acceptances...), page.Links.RepairOutcomes...), page.Links.RepairAttempts...)
+	view := BuildPage(historyDecisions(page.Candidates), related, page.Links.ReviewedResolutionFor)
+	view = viewFor(append([]Case{}, view.Cases...))
+	window.Returned = len(view.Cases)
+	window.TotalComplete = page.Coverage == maat.HistoryCoverageComplete && page.Integrity.InvalidCount == 0 && !page.AfterCursor
+	if window.TotalComplete {
+		total := int(page.MatchCount)
+		window.Total = &total
+	}
+	return HistorySearchResult{View: view, Integrity: page.Integrity, Window: window}, nil
+}
+
+func historyDecisions(candidates []maat.HistoryCandidate) []maat.Decision {
+	decisions := make([]maat.Decision, 0, len(candidates))
+	for _, candidate := range candidates {
+		decisions = append(decisions, candidate.Decision)
+	}
+	return decisions
+}
+
+// BuildPage projects only the selected cases while using related outcomes to
+// compute their status. Related records never become extra rows in the page.
+func BuildPage(decisions, related []maat.Decision, reviewedResolutionFor []string) View {
+	states := linkedCaseStates(append(append([]maat.Decision(nil), decisions...), related...))
+	reviewed := make(map[string]bool, len(reviewedResolutionFor))
+	for _, evidence := range reviewedResolutionFor {
+		reviewed[evidence] = true
+	}
+	cases := make([]Case, 0, len(decisions))
+	for _, decision := range decisions {
+		if decision.Kind == "diagnostic owner acceptance" && reviewed[decision.ResolutionFor] {
+			continue
+		}
+		projected := projectLinkedCase(decision, states[decision.Evidence])
+		cases = append(cases, projected)
+	}
+	sort.SliceStable(cases, func(i, j int) bool { return cases[i].Time > cases[j].Time })
+	return viewFor(cases)
 }
 
 func project(d maat.Decision) Case {
@@ -264,6 +467,27 @@ func resolutionPath(c Case) *ResolutionPath {
 			Evidence: c.Evidence, RequiresConfirmation: true,
 		}
 	}
+	if c.PendingRepairAttemptEvidence != "" {
+		return &ResolutionPath{
+			Kind: "system_one_review", ActionID: "inspect_binary_drift_attempt", Title: "Inspect the unresolved updater attempt",
+			Detail:   "Use `sirsi maat repair binary-drift --inspect-attempt --case-evidence " + c.Evidence + "` for a read-only current binary observation tied to this exact screen. The durable launch claim means Ma'at will not replay this updater; review the retained attempt and take a fresh System One screen before any new consent.",
+			Evidence: c.Evidence,
+		}
+	}
+	if c.VerifiedRepairEvidence != "" {
+		return &ResolutionPath{
+			Kind: "system_one_review", ActionID: "rescreen_system_one", Title: "Re-screen the remaining System One findings",
+			Detail:   "The binary-drift repair outcome is retained, but it does not discharge this screen's other findings or failed floor checks. Run a fresh System One observation and review its exact evidence; no updater will be replayed from this route.",
+			Evidence: c.Evidence,
+		}
+	}
+	if c.RepairOutcomeEvidence != "" {
+		return &ResolutionPath{
+			Kind: "system_one_review", ActionID: "rescreen_system_one", Title: "Review the failed updater result and re-screen",
+			Detail:   "The failed or unverified updater outcome is retained as evidence. Run a fresh System One observation; no updater will be replayed from this route.",
+			Evidence: c.Evidence,
+		}
+	}
 	if c.SystemOne != nil && !c.SystemOne.Floor.Passed {
 		return failedFloorRecovery(c)
 	}
@@ -284,6 +508,17 @@ func resolutionPath(c Case) *ResolutionPath {
 	}
 }
 
+// A binary-only receipt can close only the exact binary-only screen with a
+// passed deterministic floor. Other findings and floor failures remain open
+// for a fresh System One observation even when the updater itself verified.
+func binaryRepairDischargesScreen(verdict *maat.MaatVerdict) bool {
+	if verdict == nil || !verdict.Floor.Passed || len(verdict.Findings) != 1 {
+		return false
+	}
+	finding := verdict.Findings[0]
+	return maat.IsCanonicalHostDiagnosticFinding(*verdict, finding, "binary-drift")
+}
+
 // systemOneRepair projects only a singular, closed Ma'at repair reference. A
 // screen with no repair, a mismatched reference, or multiple independent
 // repairs still receives the evidence-bound review route above; Casebook never
@@ -291,6 +526,18 @@ func resolutionPath(c Case) *ResolutionPath {
 func systemOneRepair(verdict *maat.MaatVerdict, evidence string) (*ResolutionPath, bool) {
 	if verdict == nil {
 		return nil, false
+	}
+	if len(verdict.Findings) > 0 {
+		legacyBinaryDrift, hasClosedRepair := 0, false
+		for _, finding := range verdict.Findings {
+			hasClosedRepair = hasClosedRepair || finding.RepairID != ""
+			if finding.RepairID == "" && maat.IsCanonicalHostDiagnosticFinding(*verdict, finding, "binary-drift") {
+				legacyBinaryDrift++
+			}
+		}
+		if !hasClosedRepair && legacyBinaryDrift == 1 {
+			return binaryDriftRepair(evidence), true
+		}
 	}
 	ids := map[string]bool{}
 	for _, finding := range verdict.Findings {
@@ -318,16 +565,47 @@ func systemOneRepair(verdict *maat.MaatVerdict, evidence string) (*ResolutionPat
 		return &ResolutionPath{
 			Kind: "maat_repair", ActionID: maat.SystemOneRepairLivenessWatch,
 			Title: "Install the local liveness watch", Evidence: evidence,
-			Detail:               "Ma'at will confirm the watch is absent, install the bounded per-user LaunchAgent from Pantheon's canonical executable, re-check the same diagnostic, and retain the outcome.",
+			Detail:               "Review the exact watch finding. If this is genuine first use, explicitly initialize private local failure memory in the Ma'at app; incomplete state is inspected, never reset. Then Ma'at preflights and records this exact repair before installing Pantheon's managed per-user LaunchAgent.",
 			RequiresConfirmation: true,
 			Steps: []ResolutionStep{
 				{Level: 1, Title: "Review the retained finding", Detail: "Confirm this screen describes an absent local liveness watch.", RequiresConfirmation: true},
-				{Level: 2, Title: "Install Ma'at's safety watch", Detail: "Install only Pantheon's managed per-user liveness LaunchAgent; no model, service, or unrelated login item is changed.", RequiresConfirmation: true},
-				{Level: 3, Title: "Re-screen the Mac", Detail: "Inspect the recorded installation receipt, then create a new System One screen so the original observation is not treated as current."},
+				{Level: 2, Title: "Initialize local failure memory if needed", Detail: "The Ma'at app offers a separate, confirmed private genesis action only for genuine first use; no prior incidents are imported and interrupted state is never reset."},
+				{Level: 3, Title: "Apply Ma'at's bounded recovery", Detail: "After a fresh exact finding, passing failure-memory preflight, and durable attempt record, install only the managed per-user watch from the canonical executable.", RequiresConfirmation: true},
+				{Level: 4, Title: "Re-screen the Mac", Detail: "Inspect the durable attempt and exact positive plist/launchd observation, then create a new System One screen."},
 			},
 		}, true
 	}
+	if ids[maat.SystemOneRepairBinaryDrift] {
+		count := 0
+		for _, finding := range verdict.Findings {
+			if finding.RepairID != maat.SystemOneRepairBinaryDrift {
+				continue
+			}
+			count++
+			if !maat.IsCanonicalHostDiagnosticFinding(*verdict, finding, "binary-drift") {
+				return nil, false
+			}
+		}
+		if count != 1 {
+			return nil, false
+		}
+		return binaryDriftRepair(evidence), true
+	}
 	return nil, false
+}
+
+func binaryDriftRepair(evidence string) *ResolutionPath {
+	return &ResolutionPath{
+		Kind: "maat_repair", ActionID: maat.SystemOneRepairBinaryDrift,
+		Title: "Update the Homebrew-managed Sirsi installation", Evidence: evidence,
+		Detail:               "Ma'at will prepare a fresh read-only preview of the exact drifted Homebrew targets. After you review and confirm that preview, it will call Pantheon's existing Homebrew updater, re-check binary drift, and retain the outcome. Raw, unmanaged, changed, or mixed-install targets are refused; Ma'at never re-signs or replaces them.",
+		RequiresConfirmation: true,
+		Steps: []ResolutionStep{
+			{Level: 1, Title: "Review the current installation evidence", Detail: "Inspect the retained System One finding and Ma'at's fresh target/version/hash preview. The finding text and suggested command are evidence only.", Evidence: evidence},
+			{Level: 2, Title: "Confirm the supported updater", Detail: "Run only the existing Homebrew package updater for the exact preview binding. A changed preview or any non-Homebrew target is refused; no ad-hoc signing, app-bundle replacement, trust change, or service/process action is performed.", Evidence: evidence, RequiresConfirmation: true},
+			{Level: 3, Title: "Inspect the fresh post-update result", Detail: "Ma'at re-runs the binary-drift diagnostic and records a separate factual receipt. The original observation stays preserved; it is not owner-accepted or marked repaired unless the fresh check is clear.", Evidence: evidence},
+		},
+	}
 }
 
 func failedFloorRecovery(c Case) *ResolutionPath {
@@ -365,7 +643,8 @@ func failedFloorRecovery(c Case) *ResolutionPath {
 func matches(c Case, needle string) bool {
 	return strings.Contains(strings.ToLower(strings.Join([]string{
 		c.Time, c.Host, c.Kind, c.Category, c.Requester, c.Resource,
-		c.Affected, c.Determination, c.Assessed, c.Why, c.Evidence, c.Resolution, resolutionText(c.NextAction),
+		c.Affected, c.Determination, c.Assessed, c.Why, c.Evidence, c.Resolution,
+		c.VerifiedRepairEvidence, c.RepairOutcomeEvidence, c.PendingRepairAttemptEvidence, resolutionText(c.NextAction),
 		calibrationText(c.SystemOneCalibration),
 	}, "\n")), needle)
 }
@@ -389,6 +668,9 @@ func resolutionText(action *ResolutionPath) string {
 }
 
 func viewFor(cases []Case) View {
+	if cases == nil {
+		cases = []Case{}
+	}
 	v := View{Cases: cases, Graph: graphFor(cases)}
 	for _, c := range cases {
 		v.Summary.Total++
@@ -409,7 +691,7 @@ func viewFor(cases []Case) View {
 
 func graphFor(cases []Case) Graph {
 	nodes := map[string]Node{}
-	var edges []Edge
+	edges := make([]Edge, 0)
 	add := func(id, kind, label string) {
 		if id != "" && label != "" {
 			nodes[id] = Node{ID: id, Kind: kind, Label: label}

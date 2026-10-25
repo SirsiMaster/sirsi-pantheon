@@ -39,6 +39,7 @@ const (
 const (
 	SystemOneRepairLaunchdDisabled = "launchd-disabled"
 	SystemOneRepairLivenessWatch   = "liveness-watch"
+	SystemOneRepairBinaryDrift     = "binary-drift"
 )
 
 // VerdictSubject pins a screen to the immutable change it assessed. A result
@@ -150,6 +151,31 @@ func Screen(input SystemOneScreen) (MaatVerdict, error) {
 	}
 	applyScreenPolicy(&verdict)
 	return verdict, ValidateMaatVerdict(verdict)
+}
+
+// CanonicalHostFindingID and CanonicalHostFindingEvidence bind one historical
+// v1 host-diagnostic finding to its typed check identity. They provide a
+// narrow read-only compatibility path for already-recorded host screens that
+// predate RepairID; producer text is never parsed or promoted into authority.
+func CanonicalHostFindingID(check string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(check)))
+	return "host-health-" + hex.EncodeToString(sum[:6])
+}
+
+func CanonicalHostFindingEvidence(headSHA, check string) string {
+	return "diagnostic:sha256=" + headSHA + ":" + strings.TrimPrefix(CanonicalHostFindingID(check), "host-health-")
+}
+
+func IsCanonicalHostDiagnosticFinding(verdict MaatVerdict, finding ScreenFinding, check string) bool {
+	if verdict.Contract != "" || verdict.SchemaVersion != SystemOneSchemaVersion ||
+		verdict.Subject.Kind != "host" || verdict.Subject.Ref != "diagnostic" || len(verdict.Subject.HeadSHA) != sha256.Size*2 {
+		return false
+	}
+	if _, err := hex.DecodeString(verdict.Subject.HeadSHA); err != nil {
+		return false
+	}
+	return finding.ID == CanonicalHostFindingID(check) &&
+		finding.Evidence == CanonicalHostFindingEvidence(verdict.Subject.HeadSHA, check)
 }
 
 // RecordSystemOne records a screened result in Ma'at's existing append-only
@@ -522,7 +548,7 @@ func validateFinding(finding ScreenFinding) error {
 	if finding.Line < 0 {
 		return fmt.Errorf("maat system one: finding line cannot be negative")
 	}
-	if !oneOf(finding.RepairID, "", SystemOneRepairLaunchdDisabled, SystemOneRepairLivenessWatch) {
+	if !oneOf(finding.RepairID, "", SystemOneRepairLaunchdDisabled, SystemOneRepairLivenessWatch, SystemOneRepairBinaryDrift) {
 		return fmt.Errorf("maat system one: unsupported closed repair id %q", finding.RepairID)
 	}
 	return validateConfidence("finding", finding.Confidence)

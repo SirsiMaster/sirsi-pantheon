@@ -17,10 +17,14 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
@@ -197,14 +201,34 @@ func fixDrift(msg string) bool {
 		output.Dim("     → run `brew upgrade sirsi-pantheon` when ready")
 		return false
 	}
-	cmd := exec.Command("brew", "upgrade", "sirsi-pantheon")
-	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := runSirsiHomebrewUpgrade(); err != nil {
 		output.Error("     brew upgrade failed: %v", err)
 		return false
 	}
 	output.Success("     Sirsi binaries updated.")
 	return true
+}
+
+// runSirsiHomebrewUpgrade is the one existing supported package-updater path
+// shared by `sirsi fix` and Ma'at's evidence-bound native Casebook action.
+func runSirsiHomebrewUpgrade() error {
+	return runSirsiHomebrewUpgradePath("brew")
+}
+
+const sirsiHomebrewUpgradeTimeout = 2 * time.Minute
+
+func runSirsiHomebrewUpgradePath(executable string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runSirsiHomebrewUpgradePathContext(ctx, executable)
+}
+
+func runSirsiHomebrewUpgradePathContext(parent context.Context, executable string) error {
+	ctx, cancel := context.WithTimeout(parent, sirsiHomebrewUpgradeTimeout)
+	defer cancel()
+	cmd := exec.Command(executable, "upgrade", "sirsi-pantheon")
+	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+	return runOwnedUpdaterCommand(ctx, cmd)
 }
 
 // confirmFix prompts on stderr (stdout stays clean for piping). Default No.

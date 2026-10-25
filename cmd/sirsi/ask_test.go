@@ -8,7 +8,9 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/modelrouter"
@@ -33,19 +35,37 @@ func TestAskRejectsJSONFixBeforeDiagnosis(t *testing.T) {
 }
 
 type askProviderStub struct {
-	name          string
-	tier          provider.Tier
-	available     bool
-	completeCalls int
-	complete      func(context.Context, provider.Request) (provider.Response, error)
+	name           string
+	tier           provider.Tier
+	available      bool
+	streaming      bool
+	availableCalls int
+	completeCalls  int
+	streamCalls    int
+	complete       func(context.Context, provider.Request) (provider.Response, error)
+	stream         func(context.Context, provider.Request) (<-chan provider.StreamChunk, error)
 }
 
 func (p *askProviderStub) Name() string        { return p.name }
 func (p *askProviderStub) Tier() provider.Tier { return p.tier }
 func (p *askProviderStub) Caps() provider.Caps {
-	return provider.Caps{ContextTokens: 8192, Offline: p.tier == provider.TierLocal}
+	return provider.Caps{ContextTokens: 8192, Streaming: p.streaming, Offline: p.tier == provider.TierLocal}
 }
-func (p *askProviderStub) Available(context.Context) bool { return p.available }
+func (p *askProviderStub) Stream(ctx context.Context, req provider.Request) (<-chan provider.StreamChunk, error) {
+	p.streamCalls++
+	if p.stream != nil {
+		return p.stream(ctx, req)
+	}
+	chunks := make(chan provider.StreamChunk, 2)
+	chunks <- provider.StreamChunk{Text: "streamed answer", Model: "fixture-model"}
+	chunks <- provider.StreamChunk{Done: true, FinishReason: "stop"}
+	close(chunks)
+	return chunks, nil
+}
+func (p *askProviderStub) Available(context.Context) bool {
+	p.availableCalls++
+	return p.available
+}
 func (p *askProviderStub) Complete(ctx context.Context, req provider.Request) (provider.Response, error) {
 	p.completeCalls++
 	if p.complete != nil {
@@ -55,13 +75,50 @@ func (p *askProviderStub) Complete(ctx context.Context, req provider.Request) (p
 }
 
 type askSink struct {
-	records []modelrouter.DecisionRecord
-	err     error
+	records  []modelrouter.DecisionRecord
+	err      error
+	recorded chan modelrouter.DecisionRecord
 }
 
 func (s *askSink) Record(r modelrouter.DecisionRecord) error {
 	s.records = append(s.records, r)
+	if s.recorded != nil {
+		s.recorded <- r
+	}
 	return s.err
+}
+
+type heldAskWriter struct {
+	entered     chan struct{}
+	release     chan struct{}
+	once        sync.Once
+	releaseOnce sync.Once
+	mu          sync.Mutex
+	text        bytes.Buffer
+}
+
+func newHeldAskWriter() *heldAskWriter {
+	return &heldAskWriter{entered: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (w *heldAskWriter) unblock() { w.releaseOnce.Do(func() { close(w.release) }) }
+
+func (w *heldAskWriter) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), "held-partial-answer") {
+		w.once.Do(func() {
+			close(w.entered)
+			<-w.release
+		})
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.text.Write(p)
+}
+
+func (w *heldAskWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.text.String()
 }
 
 func captureAskOutput(t *testing.T, run func() error) (string, error) {
@@ -85,11 +142,308 @@ func captureAskOutput(t *testing.T, run func() error) (string, error) {
 
 func withAskFlags(t *testing.T, asJSON, route bool, task, privacy, lane string) {
 	t.Helper()
-	oldJSON, oldFix, oldRoute, oldTask, oldPrivacy, oldLane := askJSON, askFix, askRoute, askTask, askPrivacy, askLane
-	askJSON, askFix, askRoute, askTask, askPrivacy, askLane = asJSON, false, route, task, privacy, lane
+	oldJSON, oldFix, oldRoute, oldTask, oldPrivacy, oldLane, oldStream := askJSON, askFix, askRoute, askTask, askPrivacy, askLane, askStream
+	askJSON, askFix, askRoute, askTask, askPrivacy, askLane, askStream = asJSON, false, route, task, privacy, lane, false
 	t.Cleanup(func() {
-		askJSON, askFix, askRoute, askTask, askPrivacy, askLane = oldJSON, oldFix, oldRoute, oldTask, oldPrivacy, oldLane
+		askJSON, askFix, askRoute, askTask, askPrivacy, askLane, askStream = oldJSON, oldFix, oldRoute, oldTask, oldPrivacy, oldLane, oldStream
 	})
+}
+
+func TestAskStreamUsesQualifiedRouterPathOnce(t *testing.T) {
+	withAskFlags(t, false, true, "generation", "local-only", "")
+	askStream = true
+	local := &askProviderStub{name: "local-profile", tier: provider.TierLocal, available: true, streaming: true}
+	sink := &askSink{}
+	runtime := askRuntime{
+		doctor: func() (*guard.DoctorReport, error) {
+			return &guard.DoctorReport{Status: guard.HealthStatus("green")}, nil
+		},
+		ladder: func(context.Context, string) []provider.Provider { return []provider.Provider{local} },
+		newRouter: func(ladder []provider.Provider) *modelrouter.Router {
+			return modelrouter.New(ladder).WithDecisionSink(sink)
+		},
+		applicableRepairs: func() int { return 0 },
+	}
+	cmd := &cobra.Command{}
+	var selected bytes.Buffer
+	cmd.SetOut(&selected)
+	if err := runAskWithCommand(cmd, []string{"why?"}, runtime); err != nil {
+		t.Fatalf("runAskWithCommand() error = %v", err)
+	}
+	if !strings.Contains(selected.String(), "streamed answer") || !strings.Contains(selected.String(), "[router] local/local-profile") {
+		t.Fatalf("actual ask output omitted streamed text or selected route: %s", selected.String())
+	}
+	if local.streamCalls != 1 || local.completeCalls != 0 || len(sink.records) != 1 || sink.records[0].Outcome != "completed" {
+		t.Fatalf("stream/buffer/evidence calls = %d/%d/%+v", local.streamCalls, local.completeCalls, sink.records)
+	}
+}
+
+func TestAskStreamDoesNotBypassHeuristicAlarmsOrJSONGuard(t *testing.T) {
+	withAskFlags(t, false, false, "generation", "local-only", "")
+	askStream = true
+	local := &askProviderStub{name: "local-profile", tier: provider.TierLocal, available: true, streaming: true}
+	runtime := askRuntime{
+		doctor: func() (*guard.DoctorReport, error) {
+			return &guard.DoctorReport{Status: guard.HealthStatus("amber"), Findings: []guard.DiagnosticFinding{{Check: "fixture", Severity: guard.SeverityWarn, Message: "alarm remains visible"}}}, nil
+		},
+		ladder: func(context.Context, string) []provider.Provider { return []provider.Provider{local} },
+		newRouter: func(ladder []provider.Provider) *modelrouter.Router {
+			return modelrouter.New(ladder).WithDecisionSink(&askSink{})
+		},
+		applicableRepairs: func() int { return 0 },
+	}
+	text, err := captureAskOutput(t, func() error { return runAskWith([]string{"why?"}, runtime) })
+	if err != nil || !strings.Contains(text, "alarm remains visible") || local.streamCalls != 0 {
+		t.Fatalf("stream bypassed heuristic alarm: output=%q stream calls=%d err=%v", text, local.streamCalls, err)
+	}
+	askJSON = true
+	if err := runAskWith([]string{"why?"}, runtime); err == nil || !strings.Contains(err.Error(), "--stream and --json") || local.streamCalls != 0 {
+		t.Fatalf("--stream --json was not refused before routing: stream calls=%d err=%v", local.streamCalls, err)
+	}
+}
+
+func TestAskStreamShowsOneQualifiedLocalFallback(t *testing.T) {
+	withAskFlags(t, false, true, "judgment", "shareable", "")
+	askStream = true
+	remote := &askProviderStub{name: "remote", tier: provider.TierRemote, available: true, streaming: true, stream: func(context.Context, provider.Request) (<-chan provider.StreamChunk, error) {
+		return nil, &provider.InferenceError{Status: 429, Code: "rate_limit", Message: "private remote body"}
+	}}
+	local := &askProviderStub{name: "local-profile", tier: provider.TierLocal, available: true, streaming: true}
+	sink := &askSink{}
+	runtime := askRuntime{
+		doctor: func() (*guard.DoctorReport, error) {
+			return &guard.DoctorReport{Status: guard.HealthStatus("green")}, nil
+		},
+		ladder: func(context.Context, string) []provider.Provider { return []provider.Provider{local, remote} },
+		newRouter: func(ladder []provider.Provider) *modelrouter.Router {
+			return modelrouter.New(ladder).WithDecisionSink(sink)
+		},
+		applicableRepairs: func() int { return 0 },
+	}
+	cmd := &cobra.Command{}
+	var selected bytes.Buffer
+	cmd.SetOut(&selected)
+	if err := runAskWithCommand(cmd, []string{"review this"}, runtime); err != nil {
+		t.Fatalf("runAskWithCommand() error = %v", err)
+	}
+	if !strings.Contains(selected.String(), "streamed answer") || !strings.Contains(selected.String(), "local-profile") || strings.Contains(selected.String(), "private remote body") {
+		t.Fatalf("fallback output is incomplete or leaked provider error: %s", selected.String())
+	}
+	if remote.streamCalls != 1 || local.streamCalls != 1 || remote.completeCalls != 0 || local.completeCalls != 0 || len(sink.records) != 1 || sink.records[0].FinalLane != modelrouter.LaneLocal || sink.records[0].Outcome != "fallback_completed" {
+		t.Fatalf("route/calls/evidence = remote:%d/%d local:%d/%d records:%+v", remote.streamCalls, remote.completeCalls, local.streamCalls, local.completeCalls, sink.records)
+	}
+}
+
+func TestAskStreamMakesShareableCapabilityEscalationVisible(t *testing.T) {
+	withAskFlags(t, false, true, "generation", "shareable", "")
+	askStream = true
+	local := &askProviderStub{name: "unprofiled-local", tier: provider.TierLocal, available: true}
+	remote := &askProviderStub{name: "remote", tier: provider.TierRemote, available: true, streaming: true}
+	runtime := askRuntime{
+		doctor: func() (*guard.DoctorReport, error) {
+			return &guard.DoctorReport{Status: guard.HealthStatus("green")}, nil
+		},
+		ladder: func(context.Context, string) []provider.Provider { return []provider.Provider{local, remote} },
+		newRouter: func(ladder []provider.Provider) *modelrouter.Router {
+			return modelrouter.New(ladder).WithDecisionSink(&askSink{})
+		},
+		applicableRepairs: func() int { return 0 },
+	}
+	cmd := &cobra.Command{}
+	var selected bytes.Buffer
+	cmd.SetOut(&selected)
+	if err := runAskWithCommand(cmd, []string{"why?"}, runtime); err != nil {
+		t.Fatalf("runAskWithCommand() error = %v", err)
+	}
+	if !strings.Contains(selected.String(), "[router] remote/remote/fixture-model (fallback: local_capability_insufficient)") || remote.streamCalls != 1 || local.streamCalls != 0 {
+		t.Fatalf("shareable remote route was silent or misrouted: output=%s calls=%d/%d", selected.String(), remote.streamCalls, local.streamCalls)
+	}
+}
+
+func TestAskStreamPartialFailureIsTerminalAndNotReplayed(t *testing.T) {
+	withAskFlags(t, false, true, "judgment", "shareable", "")
+	askStream = true
+	remote := &askProviderStub{name: "remote", tier: provider.TierRemote, available: true, streaming: true, stream: func(context.Context, provider.Request) (<-chan provider.StreamChunk, error) {
+		chunks := make(chan provider.StreamChunk, 2)
+		chunks <- provider.StreamChunk{Text: "partial", Model: "remote-fixture"}
+		chunks <- provider.StreamChunk{Err: errors.Join(errors.New("private transport detail"), &provider.InferenceError{Status: 429, Code: "rate_limit"})}
+		close(chunks)
+		return chunks, nil
+	}}
+	local := &askProviderStub{name: "local-profile", tier: provider.TierLocal, available: true, streaming: true}
+	runtime := askRuntime{
+		doctor: func() (*guard.DoctorReport, error) {
+			return &guard.DoctorReport{Status: guard.HealthStatus("green")}, nil
+		},
+		ladder: func(context.Context, string) []provider.Provider { return []provider.Provider{local, remote} },
+		newRouter: func(ladder []provider.Provider) *modelrouter.Router {
+			return modelrouter.New(ladder).WithDecisionSink(&askSink{})
+		},
+		applicableRepairs: func() int { return 0 },
+	}
+	var selected bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&selected)
+	err := runAskWithCommand(cmd, []string{"review this"}, runtime)
+	if err == nil || !strings.Contains(selected.String(), "partial") || !strings.Contains(selected.String(), "no replay was attempted") || strings.Contains(selected.String(), "private transport detail") {
+		t.Fatalf("partial stream was hidden, replayed, or leaked raw error: output=%q err=%v", selected.String(), err)
+	}
+	if remote.streamCalls != 1 || local.streamCalls != 0 || remote.completeCalls != 0 || local.completeCalls != 0 {
+		t.Fatalf("terminal partial stream retried: remote:%d/%d local:%d/%d", remote.streamCalls, remote.completeCalls, local.streamCalls, local.completeCalls)
+	}
+}
+
+func TestAskStreamUnexpectedEOFAfterPartialOutputFailsWithoutReplay(t *testing.T) {
+	withAskFlags(t, false, true, "judgment", "shareable", "")
+	askStream = true
+	remote := &askProviderStub{name: "remote", tier: provider.TierRemote, available: true, streaming: true, stream: func(context.Context, provider.Request) (<-chan provider.StreamChunk, error) {
+		chunks := make(chan provider.StreamChunk, 1)
+		chunks <- provider.StreamChunk{Text: "partial", Model: "remote-fixture"}
+		close(chunks)
+		return chunks, nil
+	}}
+	local := &askProviderStub{name: "local-profile", tier: provider.TierLocal, available: true, streaming: true}
+	sink := &askSink{}
+	runtime := askRuntime{
+		doctor: func() (*guard.DoctorReport, error) {
+			return &guard.DoctorReport{Status: guard.HealthStatus("green")}, nil
+		},
+		ladder: func(context.Context, string) []provider.Provider { return []provider.Provider{local, remote} },
+		newRouter: func(ladder []provider.Provider) *modelrouter.Router {
+			return modelrouter.New(ladder).WithDecisionSink(sink)
+		},
+		applicableRepairs: func() int { return 0 },
+	}
+	var selected bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&selected)
+	err := runAskWithCommand(cmd, []string{"review this"}, runtime)
+	if err == nil || strings.Count(selected.String(), "partial") != 1 || !strings.Contains(selected.String(), "no replay was attempted") {
+		t.Fatalf("ask did not fail once after exposing the partial answer: output=%q err=%v", selected.String(), err)
+	}
+	if remote.streamCalls != 1 || local.streamCalls != 0 || remote.completeCalls != 0 || local.completeCalls != 0 || len(sink.records) != 1 || sink.records[0].Outcome != "failed" {
+		t.Fatalf("unexpected EOF retried or was not recorded as failed: remote:%d/%d local:%d/%d records=%+v", remote.streamCalls, remote.completeCalls, local.streamCalls, local.completeCalls, sink.records)
+	}
+}
+
+func TestAskStreamRetainsTerminalOutcomeAcrossSlowWriter(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		cancelAsk     bool
+		sinkErr       error
+		wantRecordErr bool
+		wantCanceled  bool
+	}{
+		{name: "unexpected EOF"},
+		{name: "caller cancellation", cancelAsk: true, wantCanceled: true},
+		{name: "decision journal failure", sinkErr: errors.New("fixture journal failure"), wantRecordErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withAskFlags(t, false, true, "judgment", "shareable", "")
+			askStream = true
+			parent, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			providerCanceled := make(chan struct{})
+			remote := &askProviderStub{name: "remote", tier: provider.TierRemote, available: true, streaming: true, stream: func(ctx context.Context, _ provider.Request) (<-chan provider.StreamChunk, error) {
+				chunks := make(chan provider.StreamChunk, 1)
+				chunks <- provider.StreamChunk{Text: "held-partial-answer", Model: "remote-fixture"}
+				if tc.cancelAsk {
+					go func() { <-ctx.Done(); close(providerCanceled) }()
+				} else {
+					close(chunks)
+				}
+				return chunks, nil
+			}}
+			local := &askProviderStub{name: "local-profile", tier: provider.TierLocal, available: true, streaming: true}
+			sink := &askSink{err: tc.sinkErr, recorded: make(chan modelrouter.DecisionRecord, 1)}
+			runtime := askRuntime{
+				doctor: func() (*guard.DoctorReport, error) {
+					return &guard.DoctorReport{Status: guard.HealthStatus("green")}, nil
+				},
+				ladder: func(context.Context, string) []provider.Provider { return []provider.Provider{local, remote} },
+				newRouter: func(ladder []provider.Provider) *modelrouter.Router {
+					return modelrouter.New(ladder).WithDecisionSink(sink)
+				},
+				applicableRepairs: func() int { return 0 },
+			}
+			cmd := &cobra.Command{}
+			cmd.SetContext(parent)
+			writer := newHeldAskWriter()
+			t.Cleanup(writer.unblock)
+			cmd.SetOut(writer)
+			done := make(chan error, 1)
+			go func() { done <- runAskWithCommand(cmd, []string{"review this"}, runtime) }()
+			select {
+			case <-writer.entered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("actual ask path did not hand partial text to the held writer")
+			}
+			if tc.cancelAsk {
+				cancel()
+				select {
+				case <-providerCanceled:
+				case <-time.After(3 * time.Second):
+					t.Fatal("caller cancellation did not reach the provider stream context")
+				}
+			}
+			select {
+			case record := <-sink.recorded:
+				if record.Outcome != "failed" {
+					t.Fatalf("terminal decision outcome = %q, want failed", record.Outcome)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("router did not record terminal failure while writer was held")
+			}
+			// Exceed the former one-second terminal-chunk delivery timeout before
+			// allowing the real ask writer to resume.
+			timer := time.NewTimer(1200 * time.Millisecond)
+			<-timer.C
+			writer.unblock()
+			var err error
+			select {
+			case err = <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatal("actual ask path did not finish after releasing writer")
+			}
+			if err == nil || strings.Count(writer.String(), "held-partial-answer") != 1 ||
+				(!tc.wantRecordErr && !strings.Contains(writer.String(), "no replay was attempted")) {
+				t.Fatalf("terminal outcome was lost, partial output replayed, or failure hidden: output=%q err=%v", writer.String(), err)
+			}
+			if remote.streamCalls != 1 || remote.completeCalls != 0 || local.streamCalls != 0 || local.completeCalls != 0 || len(sink.records) != 1 {
+				t.Fatalf("stream replay/fallback or duplicate decision: remote:%d/%d local:%d/%d records=%+v", remote.streamCalls, remote.completeCalls, local.streamCalls, local.completeCalls, sink.records)
+			}
+			var recordErr *modelrouter.DecisionRecordError
+			if errors.As(err, &recordErr) != tc.wantRecordErr {
+				t.Fatalf("decision journal error classification = %v, want record error %t", err, tc.wantRecordErr)
+			}
+			if errors.Is(err, context.Canceled) != tc.wantCanceled {
+				t.Fatalf("caller cancellation cause = %v, want canceled=%t", err, tc.wantCanceled)
+			}
+		})
+	}
+}
+
+func TestAskCommandCancellationBeforeRoutingSkipsAvailability(t *testing.T) {
+	withAskFlags(t, false, true, "generation", "local-only", "")
+	askStream = true
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	local := &askProviderStub{name: "local-profile", tier: provider.TierLocal, available: true, streaming: true}
+	doctorCalls, ladderCalls := 0, 0
+	runtime := askRuntime{
+		doctor: func() (*guard.DoctorReport, error) {
+			doctorCalls++
+			return &guard.DoctorReport{Status: guard.HealthStatus("green")}, nil
+		},
+		ladder:    func(context.Context, string) []provider.Provider { ladderCalls++; return []provider.Provider{local} },
+		newRouter: func(ladder []provider.Provider) *modelrouter.Router { return modelrouter.New(ladder) },
+	}
+	cmd := &cobra.Command{}
+	cmd.SetContext(ctx)
+	err := runAskWithCommand(cmd, []string{"why?"}, runtime)
+	if !errors.Is(err, context.Canceled) || doctorCalls != 0 || ladderCalls != 0 || local.availableCalls != 0 || local.streamCalls != 0 {
+		t.Fatalf("pre-canceled Cobra context reached diagnosis/availability/stream: doctor=%d ladder=%d available=%d stream=%d err=%v", doctorCalls, ladderCalls, local.availableCalls, local.streamCalls, err)
+	}
 }
 
 func TestAskExplicitRouteKeepsDoctorAlarmsAndUsesSingleFinalDecision(t *testing.T) {

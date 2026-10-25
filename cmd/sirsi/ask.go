@@ -19,13 +19,16 @@ import (
 )
 
 var (
-	askJSON      bool
-	askFix       bool
-	askTask      string
-	askPrivacy   string
-	askShowRoute bool
-	askRoute     bool
-	askLane      string
+	askJSON           bool
+	askFix            bool
+	askTask           string
+	askPrivacy        string
+	askShowRoute      bool
+	askRoute          bool
+	askLane           string
+	askStream         bool
+	askResponseFormat string
+	askDeterminism    string
 )
 
 var askCmd = &cobra.Command{
@@ -61,10 +64,14 @@ func init() {
 	askCmd.Flags().BoolVar(&askShowRoute, "show-route", false, "print the model routing decision before the answer")
 	askCmd.Flags().BoolVar(&askRoute, "route", false, "explicitly request model routing even when Doctor reports alarms")
 	askCmd.Flags().StringVar(&askLane, "lane", "", "explicit model lane override: local|remote")
+	askCmd.Flags().BoolVar(&askStream, "stream", false, "stream a routed model answer as it is generated")
+	askCmd.Flags().StringVar(&askResponseFormat, "response-format", "", "required model output: text|json-object (distinct from --json CLI envelope)")
+	askCmd.Flags().StringVar(&askDeterminism, "require-determinism", "", "required producer contract: batch_invariant (refuses unknown/unqualified support; never changes server launch state)")
 	rootCmd.AddCommand(askCmd)
 }
 
 type askRuntime struct {
+	ctx               context.Context
 	doctor            func() (*guard.DoctorReport, error)
 	ladder            func(context.Context, string) []provider.Provider
 	newRouter         func([]provider.Provider) *modelrouter.Router
@@ -84,16 +91,44 @@ func runAsk(cmd *cobra.Command, args []string) error {
 func runAskWithCommand(cmd *cobra.Command, args []string, runtime askRuntime) error {
 	if cmd != nil {
 		runtime.out = cmd.OutOrStdout()
+		runtime.ctx = cmd.Context()
 	}
 	return runAskWith(args, runtime)
 }
 
 func runAskWith(args []string, runtime askRuntime) error {
+	parentCtx := runtime.ctx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	if err := parentCtx.Err(); err != nil {
+		return fmt.Errorf("ask canceled: %w", err)
+	}
+	format := provider.ResponseFormat(askResponseFormat)
+	if askResponseFormat == "json-object" {
+		format = provider.ResponseFormatJSONObject
+	} else if askResponseFormat != "" && askResponseFormat != "text" {
+		return fmt.Errorf("--response-format must be text or json-object")
+	}
+	generation := provider.Request{ResponseFormat: format, Determinism: provider.DeterminismMode(askDeterminism)}
+	if err := provider.ValidateRequirements(generation, askStream); err != nil {
+		return err
+	}
+	explicitGeneration := askResponseFormat != "" || askDeterminism != ""
+	if explicitGeneration && askFix {
+		return fmt.Errorf("generation requirements and --fix cannot be combined")
+	}
 	if askJSON && askFix {
 		return fmt.Errorf("--json and --fix cannot be combined: --fix performs interactive repairs; run without --json")
 	}
 	if askRoute && askFix {
 		return fmt.Errorf("--route and --fix cannot be combined: run the explicit routed answer or the requested repairs separately")
+	}
+	if askStream && askJSON {
+		return fmt.Errorf("--stream and --json cannot be combined: streaming emits answer text, while --json emits one complete provenance envelope")
+	}
+	if askStream && askFix {
+		return fmt.Errorf("--stream and --fix cannot be combined: run the streamed answer or the requested repairs separately")
 	}
 	question := strings.TrimSpace(strings.Join(args, " "))
 	if question == "" {
@@ -127,7 +162,13 @@ func runAskWith(args []string, runtime askRuntime) error {
 
 	if len(alarms) > 0 && !askRoute {
 		if askJSON {
-			return emitAskJSON(out, question, report, alarms)
+			if err := emitAskJSON(out, question, report, alarms); err != nil {
+				return err
+			}
+			if explicitGeneration {
+				return fmt.Errorf("generation requirement not executed: measured alarms remain the answer; add --route to explicitly request model inference")
+			}
+			return nil
 		}
 		printAskAlarms(out, alarms)
 		output.DimTo(out, "  Answered at the heuristic rung: zero tokens, no model loaded, works offline.")
@@ -136,6 +177,9 @@ func runAskWith(args []string, runtime askRuntime) error {
 		}
 		if n := runtime.applicableRepairs(); n > 0 {
 			output.DimTo(out, "  %d repair(s) apply to this machine — `sirsi ask --fix` runs them and verifies each.", n)
+		}
+		if explicitGeneration {
+			return fmt.Errorf("generation requirement not executed: measured alarms remain the answer; add --route to explicitly request model inference")
 		}
 		return nil
 	}
@@ -157,22 +201,36 @@ func runAskWith(args []string, runtime askRuntime) error {
 	// --route. The router applies task/privacy policy and selects a qualified
 	// lane; every actual route is shown so a remote move is never silent.
 	home, _ := os.UserHomeDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Second)
+	ctx, cancel := context.WithTimeout(parentCtx, 200*time.Second)
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("ask canceled: %w", err)
+	}
 
 	ladder := runtime.ladder(ctx, home)
 	rt := runtime.newRouter(ladder)
 	routeReq := modelrouter.Request{
-		Task:     modelrouter.TaskClass(askTask),
-		Privacy:  modelrouter.PrivacyClass(askPrivacy),
-		Override: modelrouter.Lane(askLane),
+		ResponseFormat: format,
+		Determinism:    generation.Determinism,
+		Task:           modelrouter.TaskClass(askTask),
+		Privacy:        modelrouter.PrivacyClass(askPrivacy),
+		Override:       modelrouter.Lane(askLane),
 	}
-	resp, decision, cerr := rt.Complete(ctx, routeReq, provider.Request{
+	provReq := provider.Request{
+		ResponseFormat: format,
+		Determinism:    generation.Determinism,
 		System: "You are Sirsi, answering about the user's own machine. " +
 			"Be concise and concrete. If you do not have the evidence, say so plainly.",
 		Prompt:    question + "\n\nMeasured state: " + summarize(report),
 		MaxTokens: 400,
-	})
+	}
+	if format == provider.ResponseFormatJSONObject {
+		provReq.System += " Return exactly one complete JSON object, with no surrounding text."
+	}
+	if askStream {
+		return runAskStream(out, rt, ctx, routeReq, provReq)
+	}
+	resp, decision, cerr := rt.Complete(ctx, routeReq, provReq)
 	var recordErr *modelrouter.DecisionRecordError
 	hasRecordErr := errors.As(cerr, &recordErr)
 	var surfacedRecordErr error
@@ -187,6 +245,9 @@ func runAskWith(args []string, runtime askRuntime) error {
 				output.DimTo(out, "  No model answer was produced; the heuristic findings above remain the answer.")
 			} else if err := emitAskJSONWithDecision(out, question, report, alarms, decision, decisionOutcome(decision)); err != nil {
 				return err
+			}
+			if explicitGeneration {
+				return cerr
 			}
 			return nil
 		}
@@ -226,6 +287,72 @@ func runAskWith(args []string, runtime askRuntime) error {
 	output.DimTo(out, "  [%s] %s · %s · %d tokens · finish=%s",
 		resp.Tier, resp.Provider, resp.Model, resp.OutputTokens, resp.FinishReason)
 	return surfacedRecordErr
+}
+
+func runAskStream(out io.Writer, rt *modelrouter.Router, ctx context.Context, routeReq modelrouter.Request, provReq provider.Request) error {
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	chunks, result, decision, err := rt.Stream(streamCtx, routeReq, provReq)
+	if err != nil {
+		var recordErr *modelrouter.DecisionRecordError
+		if !askJSON {
+			fmt.Fprintln(out)
+			output.DimTo(out, "  [router] %s", decisionDisplay(decision))
+			output.DimTo(out, "  No model answer was produced; the heuristic findings above remain the answer.")
+		}
+		if errors.As(err, &recordErr) {
+			return recordErr
+		}
+		if routeReq.ResponseFormat != "" || routeReq.Determinism != "" {
+			return err
+		}
+		return nil
+	}
+	if !askJSON {
+		fmt.Fprintln(out)
+		output.DimTo(out, "  [router] %s", decisionDisplay(decision))
+		output.DimTo(out, "  [stream] answer follows; after the first text, failures are terminal and are not replayed.")
+		fmt.Fprintln(out)
+	}
+
+	var streamErr error
+	for chunk := range chunks {
+		if chunk.Text != "" {
+			if _, writeErr := io.WriteString(out, chunk.Text); writeErr != nil {
+				return fmt.Errorf("write streamed model answer: %w", writeErr)
+			}
+		}
+		if chunk.Err != nil {
+			streamErr = chunk.Err
+		}
+	}
+	terminalErr, ok := <-result
+	if !ok {
+		return errors.New("model-router: streamed answer ended without a terminal result")
+	}
+	if terminalErr != nil {
+		streamErr = terminalErr
+	}
+	if streamErr != nil {
+		var recordErr *modelrouter.DecisionRecordError
+		if errors.As(streamErr, &recordErr) {
+			return recordErr
+		}
+		fmt.Fprintln(out)
+		output.DimTo(out, "  [stream] terminated after output began; no replay was attempted.")
+		if errors.Is(streamErr, context.Canceled) {
+			return fmt.Errorf("model-router: streamed answer canceled: %w", context.Canceled)
+		}
+		if errors.Is(streamErr, context.DeadlineExceeded) {
+			return fmt.Errorf("model-router: streamed answer deadline exceeded: %w", context.DeadlineExceeded)
+		}
+		return errors.New("model-router: streamed answer terminated before completion")
+	}
+	if !decision.Escalated && decision.Provider != nil {
+		fmt.Fprintln(out)
+		output.DimTo(out, "  [%s] %s", decision.Lane, decisionDisplay(decision))
+	}
+	return nil
 }
 
 func decisionOutcome(d modelrouter.Decision) string {

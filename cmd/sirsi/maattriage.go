@@ -127,24 +127,29 @@ func maatHostSystemOneScreen(report *guard.DoctorReport, host string, latencyMS 
 		if finding.Severity >= guard.SeverityCritical {
 			severity = "block"
 		}
+		resolution := guard.ResolutionFor(finding)
 		fixHint := "Level 1: re-run this exact observation after conditions change. Level 2: record a Ma'at owner review. Level 3: accept an evidence-bound owner conclusion in Casebook."
-		if finding.Fix != "" {
+		if finding.Check == maatRepairBinaryDriftCheck && resolution == guard.ResolutionRepair {
+			fixHint = "Level 1: review Ma'at's fresh Homebrew-only updater preview in Casebook. Level 2: confirm the exact supported update; unmanaged or changed targets are refused. Level 3: inspect the fresh diagnostic and retained repair result."
+		} else if finding.Fix != "" {
 			fixHint = "Level 1: " + finding.Fix + ". Level 2: record a Ma'at owner review if the bounded repair cannot resolve it. Level 3: accept an evidence-bound owner conclusion in Casebook."
 		}
 		repairID := ""
 		// This maps exact doctor findings to exact Ma'at-owned recoveries. It
 		// does not make doctor.Fix executable and it does not expose a generic
 		// repair field to imported System One evidence.
-		if guard.ResolutionFor(finding) == guard.ResolutionRepair {
+		if resolution == guard.ResolutionRepair {
 			switch finding.Check {
 			case maatRepairLaunchdDisabledCheck:
 				repairID = maat.SystemOneRepairLaunchdDisabled
 			case maatRepairLivenessWatchCheck:
 				repairID = maat.SystemOneRepairLivenessWatch
+			case "binary-drift":
+				repairID = maat.SystemOneRepairBinaryDrift
 			}
 		}
 		findings = append(findings, maat.ScreenFinding{
-			ID: "host-health-" + stableMaatFindingID(finding.Check), Severity: severity, Category: "host-health",
+			ID: maat.CanonicalHostFindingID(finding.Check), Severity: severity, Category: "host-health",
 			Claim: finding.Message, Evidence: snapshotHash + ":" + stableMaatFindingID(finding.Check), Confidence: 1,
 			FixHint: fixHint, RepairID: repairID,
 		})

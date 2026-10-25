@@ -1250,20 +1250,7 @@ func applyPantheonDoctorPostChecks(report *guard.DoctorReport) {
 	// old internal/router code while source is fixed. Flows into the
 	// SessionStart health line via the standard findings surface.
 	if drift, derr := selfupdate.ScanHost(); derr == nil {
-		f := guard.DiagnosticFinding{
-			Check:    "binary-drift",
-			Severity: guard.SeverityOK,
-			Message:  "Sirsi binaries " + drift.Summary(),
-		}
-		if !drift.Healthy {
-			f.Severity = guard.SeverityWarn
-			f.Message = "Sirsi binary drift detected"
-			f.Detail = drift.Summary() + " → run `brew upgrade sirsi-pantheon` to update the Sirsi binaries"
-			f.Fix = "sirsi self-update"  // appended after the doctor post-pass; set its remediation here
-			f.FixKind = guard.FixInstant // self-update replaces the drifted binary → resolves now
-		}
-		f.Resolution = guard.ResolutionFor(f)
-		report.Findings = append(report.Findings, f)
+		report.Findings = append(report.Findings, pantheonBinaryDriftFinding(drift))
 	}
 
 	// Liveness-watch lever (A32 durability): the launchd safety net must be
@@ -1310,6 +1297,29 @@ func applyPantheonDoctorPostChecks(report *guard.DoctorReport) {
 		report.Findings = append(report.Findings, ls)
 	}
 
+}
+
+// pantheonBinaryDriftFinding is the canonical projection shared by full
+// Doctor output and the bounded Ma'at binary-drift pre/postcheck. Keeping the
+// builder pure prevents the repair path from invoking unrelated platform
+// probes in guard.Doctor.
+func pantheonBinaryDriftFinding(drift *selfupdate.DriftReport) guard.DiagnosticFinding {
+	f := guard.DiagnosticFinding{Check: "binary-drift", Severity: guard.SeverityWarn, Message: "Sirsi binary inventory unavailable"}
+	if drift == nil {
+		f.Resolution = guard.ResolutionFor(f)
+		return f
+	}
+	f.Severity = guard.SeverityOK
+	f.Message = "Sirsi binaries " + drift.Summary()
+	if !drift.Healthy {
+		f.Severity = guard.SeverityWarn
+		f.Message = "Sirsi binary drift detected"
+		f.Detail = drift.Summary() + " → run `brew upgrade sirsi-pantheon` to update the Sirsi binaries"
+		f.Fix = "sirsi self-update"
+		f.FixKind = guard.FixInstant
+	}
+	f.Resolution = guard.ResolutionFor(f)
+	return f
 }
 
 // remediationFor maps a diagnostic check to a concrete, runnable remediation

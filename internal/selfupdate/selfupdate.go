@@ -17,6 +17,7 @@ package selfupdate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -58,6 +59,7 @@ var family = []string{"sirsi", "sirsi-menubar"}
 // probeTimeout bounds each `version --json` subprocess so a hung binary can
 // never stall a health tick.
 const probeTimeout = 200 * time.Millisecond
+const maxProbeJSONBytes = 64 << 10
 
 // Sibling is a discovered sirsi-family binary on the host.
 type Sibling struct {
@@ -130,40 +132,109 @@ func homebrewPrefixes() []string {
 // probeFn queries a binary's version contract. Injectable for tests.
 var probeFn = probeBinary
 
+// probeContextFn preserves the bounded local version probe while allowing a
+// caller to cancel the complete inventory operation.
+var probeContextFn = probeBinaryContext
+
 func probeBinary(path string) (version.Info, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "version", "--json").Output()
-	if err != nil {
+	return probeBinaryContext(ctx, path)
+}
+
+func probeBinaryContext(parent context.Context, path string) (version.Info, error) {
+	if parent == nil {
+		return version.Info{}, fmt.Errorf("binary version probe requires a context")
+	}
+	ctx, cancel := context.WithTimeout(parent, probeTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "version", "--json")
+	cmd.WaitDelay = probeTimeout
+	var out boundedProbeOutput
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
 		return version.Info{}, err
+	}
+	if out.overflow {
+		return version.Info{}, errors.New("binary version probe output exceeds its bounded JSON envelope")
 	}
 	var info version.Info
-	if err := json.Unmarshal(out, &info); err != nil {
+	if err := json.Unmarshal(out.bytes, &info); err != nil {
 		return version.Info{}, err
 	}
+	if strings.TrimSpace(info.Binary) == "" || strings.TrimSpace(info.Version) == "" {
+		return version.Info{}, errors.New("binary version probe returned an incomplete identity envelope")
+	}
 	return info, nil
+}
+
+type boundedProbeOutput struct {
+	bytes    []byte
+	overflow bool
+}
+
+func (out *boundedProbeOutput) Write(p []byte) (int, error) {
+	remaining := maxProbeJSONBytes - len(out.bytes)
+	if remaining > 0 {
+		n := len(p)
+		if n > remaining {
+			n = remaining
+		}
+		out.bytes = append(out.bytes, p[:n]...)
+	}
+	if len(p) > remaining {
+		out.overflow = true
+	}
+	// Continue draining excess bytes so a noisy child cannot block on its
+	// stdout pipe; the caller rejects the incomplete bounded envelope.
+	return len(p), nil
 }
 
 // ScanHost discovers sibling sirsi binaries and queries each one's version.
 // LOCAL, no network. Safe to call on every health tick.
 func ScanHost() (*DriftReport, error) {
+	return ScanHostContext(context.Background())
+}
+
+// ScanHostContext performs the existing local-only inventory with a caller
+// bound. Each executable probe remains individually bounded by probeTimeout.
+func ScanHostContext(ctx context.Context) (*DriftReport, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("binary drift scan requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	self := version.Current("sirsi")
-	siblings := discover(self.Path)
+	siblings, err := discoverContext(ctx, self.Path)
+	if err != nil {
+		return nil, err
+	}
 
 	pathBin := ""
 	if p, err := exec.LookPath("sirsi"); err == nil {
 		pathBin = p
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return BuildReport(self, siblings, pathBin), nil
 }
 
-// discover walks candidate install dirs, probing each sirsi-family binary it
+// discoverContext walks candidate install dirs, probing each sirsi-family binary it
 // finds (skipping the running executable itself).
-func discover(selfPath string) []Sibling {
+func discoverContext(ctx context.Context, selfPath string) ([]Sibling, error) {
+	return discoverWithProbe(ctx, selfPath, probeContextFn)
+}
+
+func discoverWithProbe(ctx context.Context, selfPath string, probe func(context.Context, string) (version.Info, error)) ([]Sibling, error) {
 	var siblings []Sibling
 	seen := map[string]bool{}
 	selfClean := filepath.Clean(selfPath)
 	for _, dir := range candidateDirs(selfPath) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		for _, name := range family {
 			clean := filepath.Clean(filepath.Join(dir, name))
 			if seen[clean] {
@@ -178,7 +249,10 @@ func discover(selfPath string) []Sibling {
 				continue // don't re-probe ourselves
 			}
 			sib := Sibling{Method: DetectMethod(clean)}
-			info, perr := probeFn(clean)
+			info, perr := probe(ctx, clean)
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			info.Path = clean
 			if info.Binary == "" {
 				info.Binary = name
@@ -190,7 +264,7 @@ func discover(selfPath string) []Sibling {
 			siblings = append(siblings, sib)
 		}
 	}
-	return siblings
+	return siblings, nil
 }
 
 func candidateDirs(selfPath string) []string {

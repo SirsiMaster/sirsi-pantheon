@@ -3,6 +3,7 @@
 package routerstore
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -27,6 +28,55 @@ type relayObservationRoot struct {
 	uid        uint32
 	gid        int
 	mode       uint32
+}
+
+// RelayObservationFilePolicy must come from independently validated root and
+// producer identity, never from JSON or the controller's privilege.
+type RelayObservationFilePolicy struct {
+	UID, GID uint32
+	Mode     uint32
+}
+
+func RelayObservationPolicyForRoot(path string, root, parent unix.Stat_t) (RelayObservationFilePolicy, error) {
+	return relayObservationPolicyForRoot(path, root, parent, os.Geteuid(), user.Lookup)
+}
+
+func relayObservationPolicyForRoot(path string, root, parent unix.Stat_t, self int, lookup func(string) (*user.User, error)) (RelayObservationFilePolicy, error) {
+	var policy RelayObservationFilePolicy
+	if root.Mode&unix.S_IFMT != unix.S_IFDIR || parent.Mode&unix.S_IFMT != unix.S_IFDIR || parent.Mode&0022 != 0 {
+		return policy, relayObservationError("root_policy")
+	}
+	uid, err := expectedRelayObservationUID(path, root, parent, self, lookup)
+	if err != nil {
+		return policy, err
+	}
+	policy = RelayObservationFilePolicy{UID: uid, GID: root.Gid}
+	switch {
+	case root.Mode&07777 == 0700:
+		policy.Mode = 0600
+	case root.Mode&0777 == 0770 && root.Mode&05000 == 0:
+		// The independently service-owned root declares its existing exact
+		// trust gid; sharing that gid does not authenticate a producer UID.
+		policy.Mode = 0640
+	default:
+		return RelayObservationFilePolicy{}, relayObservationError("root_policy")
+	}
+	return policy, nil
+}
+
+func (p RelayObservationFilePolicy) validateStat(st unix.Stat_t) error {
+	if (p.Mode != 0600 && p.Mode != 0640) || st.Mode&unix.S_IFMT != unix.S_IFREG || st.Nlink != 1 || st.Uid != p.UID || st.Gid != p.GID || uint32(st.Mode&07777) != p.Mode || st.Size < 0 || st.Size > relayObservationBytes {
+		return relayObservationError("artifact_policy")
+	}
+	return nil
+}
+
+func (p RelayObservationFilePolicy) validFile(fd int) (unix.Stat_t, error) {
+	var st unix.Stat_t
+	if unix.Fstat(fd, &st) != nil || p.validateStat(st) != nil || !relayObservationNoACL(fd) {
+		return st, relayObservationError("artifact_policy")
+	}
+	return st, nil
 }
 
 // The shared-owner case is the existing exact root-relay service policy
@@ -138,11 +188,59 @@ func (r *relayObservationRoot) continuity() error {
 }
 
 func (r *relayObservationRoot) validFile(fd int) (unix.Stat_t, error) {
-	var st unix.Stat_t
-	if unix.Fstat(fd, &st) != nil || st.Mode&unix.S_IFMT != unix.S_IFREG || st.Nlink != 1 || st.Uid != r.uid || int(st.Gid) != r.gid || uint32(st.Mode&0o7777) != r.mode || st.Size > relayObservationBytes || !relayObservationNoACL(fd) {
-		return st, relayObservationError("artifact_policy")
+	return (RelayObservationFilePolicy{UID: r.uid, GID: uint32(r.gid), Mode: r.mode}).validFile(fd)
+}
+
+// ReadRelayObservationMetadataAt recognizes only the finished reserved leaf.
+// Replacement racing this single bounded read refuses; replacement between
+// complete observations is for the caller's namespace continuity check.
+func ReadRelayObservationMetadataAt(ctx context.Context, root int, policy RelayObservationFilePolicy) (unix.Stat_t, error) {
+	return readRelayObservationMetadataAt(ctx, root, policy, nil)
+}
+
+// afterRead is an instance-local deterministic fixture seam, never installed
+// on the exported production path.
+func readRelayObservationMetadataAt(ctx context.Context, root int, policy RelayObservationFilePolicy, afterRead func()) (unix.Stat_t, error) {
+	var rootStat unix.Stat_t
+	if err := ctx.Err(); err != nil {
+		return unix.Stat_t{}, err
 	}
-	return st, nil
+	if err := unix.Fstat(root, &rootStat); err != nil {
+		return unix.Stat_t{}, err
+	}
+	if rootStat.Mode&unix.S_IFMT != unix.S_IFDIR || rootStat.Uid != policy.UID || rootStat.Gid != policy.GID {
+		return unix.Stat_t{}, relayObservationError("root_policy")
+	}
+	fd, err := unix.Openat(root, relayObservationName, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return unix.Stat_t{}, relayObservationError("artifact_unavailable")
+	}
+	f := os.NewFile(uintptr(fd), relayObservationName)
+	defer f.Close()
+	before, err := policy.validFile(fd)
+	if err != nil {
+		return before, err
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, relayObservationBytes+1))
+	if err != nil {
+		return before, relayObservationError("artifact_unavailable")
+	}
+	if afterRead != nil {
+		afterRead()
+	}
+	if err := ctx.Err(); err != nil {
+		return before, err
+	}
+	after, err := policy.validFile(fd)
+	var named unix.Stat_t
+	if err != nil || !sameRelayObject(before, after) || before.Nlink != after.Nlink || before.Size != after.Size || before.Mtim != after.Mtim || before.Ctim != after.Ctim ||
+		unix.Fstatat(root, relayObservationName, &named, unix.AT_SYMLINK_NOFOLLOW) != nil || !sameRelayObject(after, named) || named.Nlink != 1 || after.Size != named.Size || after.Mtim != named.Mtim || after.Ctim != named.Ctim {
+		return before, relayObservationError("changed")
+	}
+	if _, err := DecodeRelayObservationMetadata(raw, uint64(rootStat.Dev), uint64(rootStat.Ino), policy.UID); err != nil {
+		return before, err
+	}
+	return before, nil
 }
 
 func (r *relayObservationRoot) read(clock func() time.Time, afterRead func()) (RelayOutboxObservation, error) {

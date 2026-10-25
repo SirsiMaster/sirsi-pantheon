@@ -39,6 +39,9 @@ var laneAPI = map[string]laneRule{
 	// Nested manifest ownership is additionally enforced by the operation for
 	// every token class, including operator tokens; this grants no foreign rows.
 	"RelocateTaskEvidence": {item: noItem},
+	// Nested own-lane identity and fresh principal enforced inside for EVERY
+	// token class. No foreign operator override or generic lifecycle grant.
+	"ResumeTaskClaim": {item: noItem},
 	// identity and registration
 	"MintSession":          {agents: []int{1}, item: noItem},
 	"MintSessionForThread": {agents: []int{1}, item: noItem},
