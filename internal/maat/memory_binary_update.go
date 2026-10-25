@@ -17,6 +17,17 @@ import (
 
 const BinaryUpdateManifestSchema = "sirsi.maat.binary-update-action.v2"
 const BinaryUpdateProjectionSchema = "sirsi.maat.binary-update-journal-projection.v1"
+const BinaryUpdateInvocationProtocol = "store-recorded-before-updater-v1"
+
+var binaryUpdateNow = time.Now
+
+func binaryUpdateBoundDetail(value string) string {
+	value = strings.ToValidUTF8(value, "�")
+	if len(value) > 4096 {
+		value = value[:4096]
+	}
+	return value
+}
 
 // BinaryUpdateTarget binds one already-reviewed Homebrew-managed target.
 type BinaryUpdateTarget struct {
@@ -69,7 +80,6 @@ func (m BinaryUpdateManifest) Validate() error {
 		m.RunningInfo.Binary != "sirsi" || m.RunningInfo.Path != m.SelfPath || m.RunningInfo.Version != m.SelfVersion || m.RunningInfo.RouterSchemaMax <= 0 ||
 		m.SelfInode == 0 || m.SelfMode&uint32(unix.S_IFMT) != uint32(unix.S_IFREG) || !validOwnerMode(m.AuthorizedUID, m.SelfOwnerUID, m.SelfMode) ||
 		!m.ObservedSchemaCompatible || m.ObservedSchemaVersion < 0 || !validUUID(m.StoreUUID) || m.ObservedAtUTC.IsZero() ||
-		time.Since(m.ObservedAtUTC) > 2*time.Minute || time.Until(m.ObservedAtUTC) > 10*time.Second ||
 		len(m.Targets) == 0 || len(m.Targets) > 32 {
 		return errors.New("maat memory: invalid binary-update action manifest")
 	}
@@ -81,6 +91,19 @@ func (m BinaryUpdateManifest) Validate() error {
 			return errors.New("maat memory: invalid or unordered binary-update target")
 		}
 		last = target.Path
+	}
+	return nil
+}
+
+// ValidateFresh is admission-only. Validate and Digest stay structural so
+// persisted attempts remain valid historical facts after the review window.
+func (m BinaryUpdateManifest) ValidateFresh() error {
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	now := binaryUpdateNow()
+	if now.Sub(m.ObservedAtUTC) > 2*time.Minute || m.ObservedAtUTC.Sub(now) > 10*time.Second {
+		return errors.New("maat memory: binary-update manifest review is outside its admission window")
 	}
 	return nil
 }
@@ -109,6 +132,9 @@ func (s *Store) PreflightBinaryUpdate(m BinaryUpdateManifest) (PreflightReceipt,
 	if s == nil || s.storeUUID == "" || m.StoreUUID != s.storeUUID {
 		return PreflightReceipt{}, errors.New("maat memory: binary-update action is not bound to this initialized store")
 	}
+	if err := m.ValidateFresh(); err != nil {
+		return PreflightReceipt{}, err
+	}
 	digest, err := m.Digest()
 	if err != nil {
 		return PreflightReceipt{}, err
@@ -124,6 +150,7 @@ type BinaryUpdateAttempt struct {
 	PreflightReceiptSHA256 string               `json:"preflight_receipt_sha256"`
 	RegistrySnapshotSHA256 string               `json:"registry_snapshot_sha256"`
 	LaunchClaimEvidence    string               `json:"launch_claim_evidence"`
+	InvocationProtocol     string               `json:"invocation_protocol,omitempty"`
 	StartedAtUTC           time.Time            `json:"started_at_utc"`
 }
 
@@ -135,7 +162,15 @@ type BinaryUpdateOutcome struct {
 	UpdaterReturned   bool      `json:"updater_returned"`
 	PostcheckPassed   bool      `json:"postcheck_passed"`
 	ObservationSHA256 string    `json:"observation_sha256"`
+	FactCode          string    `json:"fact_code,omitempty"`
 	Detail            string    `json:"detail"`
+}
+
+type BinaryUpdateInvocation struct {
+	Schema          string    `json:"schema"`
+	AttemptID       string    `json:"attempt_id"`
+	AttemptSHA256   string    `json:"attempt_sha256"`
+	AuthorizedAtUTC time.Time `json:"authorized_at_utc"`
 }
 
 type BinaryUpdateProjectionDebt struct {
@@ -155,6 +190,14 @@ type BinaryUpdateProjectionReceipt struct {
 	DebtSHA256    string    `json:"debt_sha256"`
 	JournalKey    string    `json:"journal_key"`
 	ReadBackAtUTC time.Time `json:"read_back_at_utc"`
+}
+
+type BinaryUpdateReconciliation struct {
+	Attempt            BinaryUpdateAttempt         `json:"attempt"`
+	Outcome            *BinaryUpdateOutcome        `json:"outcome,omitempty"`
+	Projection         *BinaryUpdateProjectionDebt `json:"projection,omitempty"`
+	InvocationRecorded bool                        `json:"invocation_recorded"`
+	ProjectionReadBack bool                        `json:"projection_read_back"`
 }
 
 func binaryUpdateEvidenceName(kind string, data []byte) string {
@@ -206,7 +249,7 @@ func (s *Store) readBinaryUpdateEvidenceLocked(kind, operationID string) ([]byte
 		switch kind {
 		case "started":
 			_ = json.Unmarshal(record["id"], &id)
-		case "outcome", "projection-receipt":
+		case "outcome", "projection-receipt", "invocation":
 			_ = json.Unmarshal(record["attempt_id"], &id)
 		case "projection":
 			var attempt struct {
@@ -233,14 +276,17 @@ func (s *Store) readBinaryUpdateEvidenceLocked(kind, operationID string) ([]byte
 
 // BeginBinaryUpdateAttempt serializes memory admission and the existing
 // operation-wide journal claim. The claim remains the one launch authority;
-// a failed later write leaves durable debt and never authorizes an effect.
-// Lock order is Store exclusive flock, then journal mutation lock. The callback
-// must not reenter this Store; if the process stops after the journal claim but
-// before the attempt leaf commits, that claim carries the complete receipt
-// reference and remains a discoverable no-replay debt.
+// the create-only Store attempt is committed first, then the callback claims
+// the exact screen while the Store lock is held. Lock order is Store exclusive
+// flock, then journal mutation lock. The callback must not reenter this Store.
+// The updater cannot be reached until a separate typed invocation fact is
+// written and read back after final action revalidation.
 func (s *Store) BeginBinaryUpdateAttempt(m BinaryUpdateManifest, receipt PreflightReceipt, claim func() (string, error)) (BinaryUpdateAttempt, error) {
 	if s == nil || s.attemptsFD < 0 || s.evidenceFD < 0 || claim == nil || receipt.Decision != PreflightPass {
 		return BinaryUpdateAttempt{}, errors.New("maat memory: binary-update attempt requires a passing preflight and atomic launch claim")
+	}
+	if err := m.ValidateFresh(); err != nil {
+		return BinaryUpdateAttempt{}, err
 	}
 	digest, err := m.Digest()
 	if err != nil || m.StoreUUID != s.storeUUID || receipt.Action != binaryUpdateScope() || receipt.ActionManifestSHA256 != digest {
@@ -254,6 +300,9 @@ func (s *Store) BeginBinaryUpdateAttempt(m BinaryUpdateManifest, receipt Preflig
 		return BinaryUpdateAttempt{}, err
 	}
 	defer s.unlock()
+	if err := m.ValidateFresh(); err != nil {
+		return BinaryUpdateAttempt{}, err
+	}
 	if receipt.RegistrySnapshotVersion != 2 {
 		return BinaryUpdateAttempt{}, errors.New("maat memory: historical receipt cannot admit binary update")
 	}
@@ -276,25 +325,40 @@ func (s *Store) BeginBinaryUpdateAttempt(m BinaryUpdateManifest, receipt Preflig
 	if debts, err := s.pendingBinaryUpdateProjectionDebtsLocked(); err != nil || len(debts) != 0 {
 		return BinaryUpdateAttempt{}, errors.New("maat memory: binary-update projection debt requires reconciliation before consent")
 	}
-	claimEvidence, err := claim()
+	reconciliations, err := s.binaryUpdateReconciliationsLocked("")
 	if err != nil {
-		return BinaryUpdateAttempt{}, fmt.Errorf("maat memory: existing launch claim refused; updater not run: %w", err)
+		return BinaryUpdateAttempt{}, err
 	}
 	claimDigest := sha256.Sum256([]byte(m.CaseEvidence))
-	if claimEvidence != "diagnostic-repair-attempt:sha256="+hex.EncodeToString(claimDigest[:]) {
-		return BinaryUpdateAttempt{}, errors.New("maat memory: launch claim is not bound to this exact System One case")
+	for _, history := range reconciliations {
+		if history.Outcome != nil && !history.ProjectionReadBack {
+			return BinaryUpdateAttempt{}, errors.New("maat memory: known binary-update terminal fact requires data-only projection reconciliation")
+		}
 	}
 	id, err := newStoreUUID()
 	if err != nil {
 		return BinaryUpdateAttempt{}, err
 	}
-	a := BinaryUpdateAttempt{Schema: MemorySchema, ID: id, Manifest: m, ActionManifestSHA256: digest, PreflightReceiptSHA256: receiptDigest, RegistrySnapshotSHA256: receipt.RegistrySnapshotSHA256, LaunchClaimEvidence: claimEvidence, StartedAtUTC: time.Now().UTC()}
+	a := BinaryUpdateAttempt{Schema: MemorySchema, ID: id, Manifest: m, ActionManifestSHA256: digest, PreflightReceiptSHA256: receiptDigest, RegistrySnapshotSHA256: receipt.RegistrySnapshotSHA256, LaunchClaimEvidence: "diagnostic-repair-attempt:sha256=" + hex.EncodeToString(claimDigest[:]), InvocationProtocol: BinaryUpdateInvocationProtocol, StartedAtUTC: binaryUpdateNow().UTC()}
 	b, err := json.Marshal(a)
 	if err != nil {
 		return BinaryUpdateAttempt{}, err
 	}
 	if err := s.createOrVerify("evidence", s.evidenceFD, binaryUpdateEvidenceName("started", b), b); err != nil {
-		return BinaryUpdateAttempt{}, fmt.Errorf("maat memory: launch claim retained but binary-update attempt persistence failed; updater not run: %w", err)
+		return BinaryUpdateAttempt{}, fmt.Errorf("maat memory: binary-update attempt persistence failed before journal claim; updater not run: %w", err)
+	}
+	claimEvidence, claimErr := claim()
+	if claimErr != nil {
+		if _, recordErr := s.recordBinaryUpdateNotInvokedLocked(a, "launch_claim_refused", binaryUpdateBoundDetail(claimErr.Error())); recordErr != nil {
+			return a, fmt.Errorf("maat memory: launch claim failed and known no-invocation fact could not be retained; leave unresolved: claim=%v fact=%w", claimErr, recordErr)
+		}
+		return a, fmt.Errorf("maat memory: existing launch claim refused; updater was not invoked: %w", claimErr)
+	}
+	if claimEvidence != a.LaunchClaimEvidence {
+		if _, recordErr := s.recordBinaryUpdateNotInvokedLocked(a, "launch_claim_linkage_refused", "journal claim returned a key different from the exact source-case claim"); recordErr != nil {
+			return a, fmt.Errorf("maat memory: mismatched launch claim and known no-invocation fact could not be retained; leave unresolved: %w", recordErr)
+		}
+		return a, errors.New("maat memory: launch claim is not bound to this exact System One case; updater was not invoked")
 	}
 	return a, nil
 }
@@ -309,7 +373,7 @@ func (s *Store) pendingBinaryUpdateAttemptLocked() (BinaryUpdateAttempt, error) 
 	if err != nil {
 		return BinaryUpdateAttempt{}, err
 	}
-	starts, ends := map[string]BinaryUpdateAttempt{}, map[string]BinaryUpdateOutcome{}
+	starts, ends, invocations := map[string]BinaryUpdateAttempt{}, map[string]BinaryUpdateOutcome{}, map[string]BinaryUpdateInvocation{}
 	for _, name := range names {
 		switch {
 		case strings.HasPrefix(name, "binary-update-started-") && strings.HasSuffix(name, ".json"):
@@ -328,6 +392,9 @@ func (s *Store) pendingBinaryUpdateAttemptLocked() (BinaryUpdateAttempt, error) 
 			var a BinaryUpdateAttempt
 			if json.Unmarshal(b, &a) != nil || validateBinaryUpdateAttempt(a, s.storeUUID) != nil {
 				return BinaryUpdateAttempt{}, errors.New("maat memory: invalid binary-update attempt")
+			}
+			if _, duplicate := starts[a.ID]; duplicate {
+				return BinaryUpdateAttempt{}, errors.New("maat memory: multiple launch records exist for one binary-update attempt")
 			}
 			starts[a.ID] = a
 		case strings.HasPrefix(name, "binary-update-outcome-") && strings.HasSuffix(name, ".json"):
@@ -351,6 +418,27 @@ func (s *Store) pendingBinaryUpdateAttemptLocked() (BinaryUpdateAttempt, error) 
 				return BinaryUpdateAttempt{}, errors.New("maat memory: multiple terminal outcomes exist for one binary-update attempt")
 			}
 			ends[o.AttemptID] = o
+		case strings.HasPrefix(name, "binary-update-invocation-") && strings.HasSuffix(name, ".json"):
+			digest := strings.TrimSuffix(strings.TrimPrefix(name, "binary-update-invocation-"), ".json")
+			if !validDigest(digest) {
+				return BinaryUpdateAttempt{}, errors.New("maat memory: malformed binary-update invocation name")
+			}
+			b, err := readExact(s.evidenceFD, name)
+			if err != nil {
+				return BinaryUpdateAttempt{}, err
+			}
+			sum := sha256.Sum256(b)
+			if hex.EncodeToString(sum[:]) != digest {
+				return BinaryUpdateAttempt{}, errors.New("maat memory: binary-update invocation digest mismatch")
+			}
+			var invocation BinaryUpdateInvocation
+			if json.Unmarshal(b, &invocation) != nil || invocation.Schema != MemorySchema || !validUUID(invocation.AttemptID) || !validDigest(invocation.AttemptSHA256) || invocation.AuthorizedAtUTC.IsZero() {
+				return BinaryUpdateAttempt{}, errors.New("maat memory: invalid binary-update invocation fact")
+			}
+			if _, duplicate := invocations[invocation.AttemptID]; duplicate {
+				return BinaryUpdateAttempt{}, errors.New("maat memory: multiple invocation facts exist for one binary-update attempt")
+			}
+			invocations[invocation.AttemptID] = invocation
 		case strings.HasPrefix(name, "binary-update-projection-") || strings.HasPrefix(name, "binary-update-projection-receipt-"):
 		case strings.HasPrefix(name, "binary-update-"):
 			return BinaryUpdateAttempt{}, errors.New("maat memory: malformed binary-update evidence name")
@@ -374,6 +462,22 @@ func (s *Store) pendingBinaryUpdateAttemptLocked() (BinaryUpdateAttempt, error) 
 			return BinaryUpdateAttempt{}, errors.New("maat memory: binary-update outcome has no attempt")
 		}
 	}
+	for id, invocation := range invocations {
+		attempt, ok := starts[id]
+		if !ok {
+			return BinaryUpdateAttempt{}, errors.New("maat memory: binary-update invocation has no attempt")
+		}
+		attemptDigest, err := digestJSON(attempt)
+		if err != nil || invocation.AttemptSHA256 != attemptDigest {
+			return BinaryUpdateAttempt{}, errors.New("maat memory: binary-update invocation does not bind its attempt")
+		}
+		if attempt.InvocationProtocol != BinaryUpdateInvocationProtocol {
+			return BinaryUpdateAttempt{}, errors.New("maat memory: legacy attempt contains an unrecognized invocation marker")
+		}
+		if outcome, ok := ends[id]; ok && outcome.Determination == "not_invoked" {
+			return BinaryUpdateAttempt{}, errors.New("maat memory: not-invoked outcome contradicts a persisted invocation fact")
+		}
+	}
 	if pending == nil {
 		return BinaryUpdateAttempt{}, ErrNoIncompleteBinaryUpdateAttempt
 	}
@@ -389,7 +493,7 @@ func (s *Store) PendingBinaryUpdateAttempt() (BinaryUpdateAttempt, error) {
 }
 
 func validateBinaryUpdateAttempt(a BinaryUpdateAttempt, storeUUID string) error {
-	if a.Schema != MemorySchema || !validUUID(a.ID) || a.Manifest.StoreUUID != storeUUID || a.Manifest.Validate() != nil || a.StartedAtUTC.IsZero() || !validDigest(a.ActionManifestSHA256) || !validDigest(a.PreflightReceiptSHA256) || !validDigest(a.RegistrySnapshotSHA256) || a.LaunchClaimEvidence == "" {
+	if a.Schema != MemorySchema || !validUUID(a.ID) || a.Manifest.StoreUUID != storeUUID || a.Manifest.Validate() != nil || a.StartedAtUTC.IsZero() || !validDigest(a.ActionManifestSHA256) || !validDigest(a.PreflightReceiptSHA256) || !validDigest(a.RegistrySnapshotSHA256) || a.LaunchClaimEvidence == "" || (a.InvocationProtocol != "" && a.InvocationProtocol != BinaryUpdateInvocationProtocol) {
 		return errors.New("maat memory: invalid binary-update attempt identity")
 	}
 	d, e := a.Manifest.Digest()
@@ -404,17 +508,125 @@ func validateBinaryUpdateAttempt(a BinaryUpdateAttempt, storeUUID string) error 
 }
 
 func validBinaryUpdateDetermination(v string) bool {
-	return v == "resolved" || v == "failed"
+	return v == "resolved" || v == "failed" || v == "not_invoked"
+}
+
+func binaryUpdateProjectionDetermination(o BinaryUpdateOutcome) string {
+	if o.Determination == "not_invoked" {
+		return "failed"
+	}
+	return o.Determination
 }
 
 func validateBinaryUpdateOutcome(o BinaryUpdateOutcome, attemptID string) error {
-	if o.Schema != MemorySchema || o.AttemptID != attemptID || o.RecordedAtUTC.IsZero() || !validBinaryUpdateDetermination(o.Determination) || !o.UpdaterReturned || !validDigest(o.ObservationSHA256) || len(o.Detail) > 4096 {
+	if o.Schema != MemorySchema || o.AttemptID != attemptID || o.RecordedAtUTC.IsZero() || !validBinaryUpdateDetermination(o.Determination) || !validDigest(o.ObservationSHA256) || len(o.Detail) > 4096 {
 		return errors.New("maat memory: invalid binary-update outcome")
 	}
-	if (o.Determination == "resolved") != o.PostcheckPassed {
+	if o.Determination == "not_invoked" {
+		if o.UpdaterReturned || o.PostcheckPassed || (o.FactCode != "launch_claim_refused" && o.FactCode != "launch_claim_linkage_refused" && o.FactCode != "prelaunch_revalidation_failed" && o.FactCode != "invocation_record_failed" && o.FactCode != "claim_not_invoked_before_barrier") {
+			return errors.New("maat memory: invalid known-not-invoked fact")
+		}
+	} else if !o.UpdaterReturned || o.FactCode != "" {
+		return errors.New("maat memory: terminal updater outcome contradicts its invocation fact")
+	}
+	if o.Determination != "not_invoked" && (o.Determination == "resolved") != o.PostcheckPassed {
 		return errors.New("maat memory: binary-update outcome contradicts the exact postcheck")
 	}
 	return nil
+}
+
+func (s *Store) RecordBinaryUpdateInvocation(a BinaryUpdateAttempt) error {
+	if s == nil || s.evidenceFD < 0 || validateBinaryUpdateAttempt(a, s.storeUUID) != nil {
+		return errors.New("maat memory: invalid binary-update invocation identity")
+	}
+	if err := a.Manifest.ValidateFresh(); err != nil {
+		return err
+	}
+	if err := s.lock(unix.LOCK_EX); err != nil {
+		return err
+	}
+	defer s.unlock()
+	if err := a.Manifest.ValidateFresh(); err != nil {
+		return err
+	}
+	pending, err := s.pendingBinaryUpdateAttemptLocked()
+	if err != nil || pending.ID != a.ID || digestEqual(pending, a) != nil {
+		return errors.New("maat memory: updater invocation requires the unique incomplete attempt")
+	}
+	retained, err := s.readPreflightReceiptLocked(a.PreflightReceiptSHA256)
+	if err != nil || retained.Action != binaryUpdateScope() || retained.ActionManifestSHA256 != a.ActionManifestSHA256 || retained.RegistrySnapshotSHA256 != a.RegistrySnapshotSHA256 {
+		return errors.New("maat memory: invocation barrier requires the exact retained full-manifest receipt")
+	}
+	current, evalErr := s.preflightBoundLocked(binaryUpdateScope(), a.ActionManifestSHA256, resolveMemoryGuard)
+	if evalErr != nil || current.Decision != PreflightPass || current.RegistrySnapshotSHA256 != a.RegistrySnapshotSHA256 {
+		return errors.New("maat memory: binary-update guard registry or action changed before updater invocation")
+	}
+	if _, err := s.readBinaryUpdateEvidenceLocked("outcome", a.ID); err == nil {
+		return errors.New("maat memory: terminal binary-update fact already exists")
+	} else if !errors.Is(err, unix.ENOENT) {
+		return err
+	}
+	if _, err := s.readBinaryUpdateEvidenceLocked("invocation", a.ID); err == nil {
+		return errors.New("maat memory: updater invocation was already authorized; do not invoke it again")
+	} else if !errors.Is(err, unix.ENOENT) {
+		return err
+	}
+	attemptDigest, err := digestJSON(a)
+	if err != nil {
+		return err
+	}
+	invocation := BinaryUpdateInvocation{Schema: MemorySchema, AttemptID: a.ID, AttemptSHA256: attemptDigest, AuthorizedAtUTC: binaryUpdateNow().UTC()}
+	if err := s.writeBinaryUpdateEvidence("invocation", invocation); err != nil {
+		return err
+	}
+	readback, err := s.readBinaryUpdateEvidenceLocked("invocation", a.ID)
+	if err != nil {
+		return err
+	}
+	var got BinaryUpdateInvocation
+	if json.Unmarshal(readback, &got) != nil || digestEqual(got, invocation) != nil {
+		return errors.New("maat memory: updater invocation fact readback differs; execution must remain unresolved")
+	}
+	return nil
+}
+
+func (s *Store) RecordBinaryUpdateNotInvoked(a BinaryUpdateAttempt, factCode, detail string) (BinaryUpdateOutcome, error) {
+	if s == nil || s.evidenceFD < 0 || validateBinaryUpdateAttempt(a, s.storeUUID) != nil || len(detail) > 4096 {
+		return BinaryUpdateOutcome{}, errors.New("maat memory: invalid known-not-invoked input")
+	}
+	if err := s.lock(unix.LOCK_EX); err != nil {
+		return BinaryUpdateOutcome{}, err
+	}
+	defer s.unlock()
+	return s.recordBinaryUpdateNotInvokedLocked(a, factCode, detail)
+}
+
+// recordBinaryUpdateNotInvokedLocked is called only while the current process
+// still knows it has not crossed the invocation boundary. A missing invocation
+// leaf alone is never converted into this fact during history reconciliation.
+func (s *Store) recordBinaryUpdateNotInvokedLocked(a BinaryUpdateAttempt, factCode, detail string) (BinaryUpdateOutcome, error) {
+	pending, err := s.pendingBinaryUpdateAttemptLocked()
+	if err != nil || pending.ID != a.ID || digestEqual(pending, a) != nil {
+		return BinaryUpdateOutcome{}, errors.New("maat memory: known-not-invoked fact requires the unique incomplete attempt")
+	}
+	if _, err := s.readBinaryUpdateEvidenceLocked("invocation", a.ID); err == nil {
+		return BinaryUpdateOutcome{}, errors.New("maat memory: invocation fact exists; leave updater completion unresolved")
+	} else if !errors.Is(err, unix.ENOENT) {
+		return BinaryUpdateOutcome{}, err
+	}
+	observation := sha256.Sum256([]byte("binary-update-not-invoked\x00" + factCode + "\x00" + detail))
+	o := BinaryUpdateOutcome{Schema: MemorySchema, AttemptID: a.ID, RecordedAtUTC: binaryUpdateNow().UTC(), Determination: "not_invoked", ObservationSHA256: hex.EncodeToString(observation[:]), FactCode: factCode, Detail: detail}
+	if err := validateBinaryUpdateOutcome(o, a.ID); err != nil {
+		return BinaryUpdateOutcome{}, err
+	}
+	b, err := json.Marshal(o)
+	if err != nil {
+		return BinaryUpdateOutcome{}, err
+	}
+	if err := s.createOrVerify("evidence", s.evidenceFD, binaryUpdateEvidenceName("outcome", b), b); err != nil {
+		return BinaryUpdateOutcome{}, err
+	}
+	return o, nil
 }
 
 func (s *Store) RecordBinaryUpdateOutcome(a BinaryUpdateAttempt, updaterReturned, postcheckPassed bool, observationDigest, detail string) (BinaryUpdateOutcome, error) {
@@ -432,11 +644,20 @@ func (s *Store) RecordBinaryUpdateOutcome(a BinaryUpdateAttempt, updaterReturned
 	if err != nil || pending.ID != a.ID || digestEqual(pending, a) != nil {
 		return BinaryUpdateOutcome{}, errors.New("maat memory: binary-update is not the unique incomplete attempt")
 	}
+	invocationBytes, err := s.readBinaryUpdateEvidenceLocked("invocation", a.ID)
+	if err != nil {
+		return BinaryUpdateOutcome{}, errors.New("maat memory: updater invocation fact is required before a returned outcome")
+	}
+	var invocation BinaryUpdateInvocation
+	attemptDigest, digestErr := digestJSON(a)
+	if digestErr != nil || json.Unmarshal(invocationBytes, &invocation) != nil || invocation.Schema != MemorySchema || invocation.AttemptID != a.ID || invocation.AttemptSHA256 != attemptDigest || invocation.AuthorizedAtUTC.IsZero() {
+		return BinaryUpdateOutcome{}, errors.New("maat memory: updater invocation fact differs from the retained attempt")
+	}
 	determination := "failed"
 	if postcheckPassed {
 		determination = "resolved"
 	}
-	o := BinaryUpdateOutcome{Schema: MemorySchema, AttemptID: a.ID, RecordedAtUTC: time.Now().UTC(), Determination: determination, UpdaterReturned: updaterReturned, PostcheckPassed: postcheckPassed, ObservationSHA256: observationDigest, Detail: detail}
+	o := BinaryUpdateOutcome{Schema: MemorySchema, AttemptID: a.ID, RecordedAtUTC: binaryUpdateNow().UTC(), Determination: determination, UpdaterReturned: updaterReturned, PostcheckPassed: postcheckPassed, ObservationSHA256: observationDigest, Detail: detail}
 	b, err := json.Marshal(o)
 	if err != nil {
 		return BinaryUpdateOutcome{}, err
@@ -448,7 +669,7 @@ func (s *Store) RecordBinaryUpdateOutcome(a BinaryUpdateAttempt, updaterReturned
 }
 
 func (s *Store) BeginBinaryUpdateProjection(a BinaryUpdateAttempt, o BinaryUpdateOutcome, d Decision) (BinaryUpdateProjectionDebt, error) {
-	if s == nil || s.evidenceFD < 0 || validateBinaryUpdateAttempt(a, s.storeUUID) != nil || validateBinaryUpdateOutcome(o, a.ID) != nil || d.Kind != "diagnostic verified repair" || d.Resource != "binary-drift" || d.OriginEvidence != a.Manifest.CaseEvidence || d.Determination != o.Determination {
+	if s == nil || s.evidenceFD < 0 || validateBinaryUpdateAttempt(a, s.storeUUID) != nil || validateBinaryUpdateOutcome(o, a.ID) != nil || d.Kind != "diagnostic verified repair" || d.Resource != "binary-drift" || d.OriginEvidence != a.Manifest.CaseEvidence || d.Determination != binaryUpdateProjectionDetermination(o) {
 		return BinaryUpdateProjectionDebt{}, errors.New("maat memory: invalid binary-update projection identity")
 	}
 	if err := s.lock(unix.LOCK_EX); err != nil {
@@ -514,6 +735,100 @@ func (s *Store) PendingBinaryUpdateProjectionDebts() ([]BinaryUpdateProjectionDe
 	defer s.unlock()
 	return s.pendingBinaryUpdateProjectionDebtsLocked()
 }
+
+// BinaryUpdateReconciliations returns exact immutable records for read-only
+// recovery. It never derives a no-invocation fact from a missing leaf.
+func (s *Store) BinaryUpdateReconciliations(caseEvidence string) ([]BinaryUpdateReconciliation, error) {
+	if caseEvidence != "" && (!strings.HasPrefix(caseEvidence, "maat-system-one:sha256=") || !validDigest(strings.TrimPrefix(caseEvidence, "maat-system-one:sha256="))) {
+		return nil, errors.New("maat memory: invalid source case for binary-update reconciliation")
+	}
+	if err := s.lock(unix.LOCK_SH); err != nil {
+		return nil, err
+	}
+	defer s.unlock()
+	if _, err := s.verifyWriteJournal(); err != nil {
+		return nil, err
+	}
+	if _, err := s.pendingBinaryUpdateAttemptLocked(); err != nil && !errors.Is(err, ErrNoIncompleteBinaryUpdateAttempt) {
+		return nil, err
+	}
+	names, err := readDirectoryNames(s.evidenceFD)
+	if err != nil {
+		return nil, err
+	}
+	history := []BinaryUpdateReconciliation{}
+	for _, name := range names {
+		if !strings.HasPrefix(name, "binary-update-started-") || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		digest := strings.TrimSuffix(strings.TrimPrefix(name, "binary-update-started-"), ".json")
+		if !validDigest(digest) {
+			return nil, errors.New("maat memory: malformed binary-update attempt name")
+		}
+		data, err := readExact(s.evidenceFD, name)
+		if err != nil {
+			return nil, err
+		}
+		bodyDigest := sha256.Sum256(data)
+		if hex.EncodeToString(bodyDigest[:]) != digest {
+			return nil, errors.New("maat memory: binary-update attempt digest mismatch")
+		}
+		var attempt BinaryUpdateAttempt
+		if json.Unmarshal(data, &attempt) != nil || validateBinaryUpdateAttempt(attempt, s.storeUUID) != nil {
+			return nil, errors.New("maat memory: invalid binary-update attempt")
+		}
+		if caseEvidence != "" && attempt.Manifest.CaseEvidence != caseEvidence {
+			continue
+		}
+		entry := BinaryUpdateReconciliation{Attempt: attempt}
+		if _, err := s.readBinaryUpdateEvidenceLocked("invocation", attempt.ID); err == nil {
+			entry.InvocationRecorded = true
+		} else if !errors.Is(err, unix.ENOENT) {
+			return nil, err
+		}
+		if raw, err := s.readBinaryUpdateEvidenceLocked("outcome", attempt.ID); err == nil {
+			var outcome BinaryUpdateOutcome
+			if json.Unmarshal(raw, &outcome) != nil || validateBinaryUpdateOutcome(outcome, attempt.ID) != nil {
+				return nil, errors.New("maat memory: invalid binary-update outcome")
+			}
+			copy := outcome
+			entry.Outcome = &copy
+		} else if !errors.Is(err, unix.ENOENT) {
+			return nil, err
+		}
+		if debt, err := s.readBinaryUpdateProjectionLocked(attempt.ID); err == nil {
+			copy := debt
+			entry.Projection = &copy
+		} else if !errors.Is(err, unix.ENOENT) {
+			return nil, err
+		}
+		if raw, err := s.readBinaryUpdateEvidenceLocked("projection-receipt", attempt.ID); err == nil {
+			if entry.Projection == nil {
+				return nil, errors.New("maat memory: projection readback receipt has no retained projection intent")
+			}
+			var receipt BinaryUpdateProjectionReceipt
+			debtDigest, digestErr := digestJSON(*entry.Projection)
+			if json.Unmarshal(raw, &receipt) != nil || digestErr != nil || receipt.Schema != BinaryUpdateProjectionSchema || receipt.AttemptID != attempt.ID || receipt.DebtSHA256 != debtDigest || receipt.JournalKey != entry.Projection.Decision.Evidence || receipt.ReadBackAtUTC.IsZero() {
+				return nil, errors.New("maat memory: binary-update projection readback receipt differs")
+			}
+			entry.ProjectionReadBack = true
+		} else if !errors.Is(err, unix.ENOENT) {
+			return nil, err
+		}
+		if entry.Outcome != nil && entry.Projection != nil && digestEqual(entry.Outcome, entry.Projection.Outcome) != nil {
+			return nil, errors.New("maat memory: terminal outcome and projection disagree")
+		}
+		history = append(history, entry)
+	}
+	sort.Slice(history, func(i, j int) bool {
+		if history[i].Attempt.StartedAtUTC.Equal(history[j].Attempt.StartedAtUTC) {
+			return history[i].Attempt.ID < history[j].Attempt.ID
+		}
+		return history[i].Attempt.StartedAtUTC.Before(history[j].Attempt.StartedAtUTC)
+	})
+	return history, nil
+}
+
 func (s *Store) pendingBinaryUpdateProjectionDebtsLocked() ([]BinaryUpdateProjectionDebt, error) {
 	if _, err := s.verifyWriteJournal(); err != nil {
 		return nil, err
@@ -569,7 +884,7 @@ func (s *Store) readBinaryUpdateProjectionLocked(id string) (BinaryUpdateProject
 		return BinaryUpdateProjectionDebt{}, err
 	}
 	var d BinaryUpdateProjectionDebt
-	if json.Unmarshal(b, &d) != nil || d.Schema != BinaryUpdateProjectionSchema || d.Attempt.ID != id || validateBinaryUpdateAttempt(d.Attempt, s.storeUUID) != nil || validateBinaryUpdateOutcome(d.Outcome, id) != nil || validateDecision(d.Decision) != nil || d.Decision.Kind != "diagnostic verified repair" || d.Decision.Resource != "binary-drift" || d.Decision.OriginEvidence != d.Attempt.Manifest.CaseEvidence || d.Decision.Determination != d.Outcome.Determination || d.CreatedAtUTC.IsZero() {
+	if json.Unmarshal(b, &d) != nil || d.Schema != BinaryUpdateProjectionSchema || d.Attempt.ID != id || validateBinaryUpdateAttempt(d.Attempt, s.storeUUID) != nil || validateBinaryUpdateOutcome(d.Outcome, id) != nil || validateDecision(d.Decision) != nil || d.Decision.Kind != "diagnostic verified repair" || d.Decision.Resource != "binary-drift" || d.Decision.OriginEvidence != d.Attempt.Manifest.CaseEvidence || d.Decision.Determination != binaryUpdateProjectionDetermination(d.Outcome) || d.CreatedAtUTC.IsZero() {
 		return BinaryUpdateProjectionDebt{}, errors.New("maat memory: invalid binary-update projection debt")
 	}
 	if da, ea := digestJSON(d.Attempt); ea != nil || da != d.AttemptSHA256 {
@@ -617,7 +932,7 @@ func (s *Store) MarkBinaryUpdateProjectionReadBack(d BinaryUpdateProjectionDebt)
 	} else if !errors.Is(readErr, unix.ENOENT) {
 		return readErr
 	}
-	r := BinaryUpdateProjectionReceipt{Schema: BinaryUpdateProjectionSchema, AttemptID: d.Attempt.ID, DebtSHA256: debtDigest, JournalKey: d.Decision.Evidence, ReadBackAtUTC: time.Now().UTC()}
+	r := BinaryUpdateProjectionReceipt{Schema: BinaryUpdateProjectionSchema, AttemptID: d.Attempt.ID, DebtSHA256: debtDigest, JournalKey: d.Decision.Evidence, ReadBackAtUTC: binaryUpdateNow().UTC()}
 	if err := s.writeBinaryUpdateEvidence("projection-receipt", r); err != nil {
 		return err
 	}

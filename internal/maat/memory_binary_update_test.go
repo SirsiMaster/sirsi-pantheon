@@ -100,6 +100,24 @@ func TestBinaryUpdateManifestDigestBindsRunningSchemaCeiling(t *testing.T) {
 	}
 }
 
+func TestBinaryUpdateHistoricalManifestRemainsReadableButCannotBeAdmitted(t *testing.T) {
+	store, _, m := binaryUpdateFixture(t)
+	oldNow := binaryUpdateNow
+	now := time.Now().UTC()
+	binaryUpdateNow = func() time.Time { return now }
+	t.Cleanup(func() { binaryUpdateNow = oldNow })
+	m.ObservedAtUTC = now.Add(-3 * time.Minute)
+	if err := m.Validate(); err != nil {
+		t.Fatalf("historical manifest failed structural validation: %v", err)
+	}
+	if _, err := m.Digest(); err != nil {
+		t.Fatalf("historical manifest digest failed: %v", err)
+	}
+	if _, err := store.PreflightBinaryUpdate(m); err == nil {
+		t.Fatal("stale historical manifest admitted a new updater action")
+	}
+}
+
 func TestBinaryUpdateReceiptAndAttemptFenceRegistryDrift(t *testing.T) {
 	store, _, m := binaryUpdateFixture(t)
 	receipt, err := store.PreflightBinaryUpdate(m)
@@ -126,6 +144,42 @@ func TestBinaryUpdateReceiptAndAttemptFenceRegistryDrift(t *testing.T) {
 	claims := 0
 	if _, err := store.BeginBinaryUpdateAttempt(m, receipt, func() (string, error) { claims++; return "claim", nil }); err == nil || claims != 0 {
 		t.Fatalf("registry drift admission err=%v claim calls=%d", err, claims)
+	}
+}
+
+func TestBinaryUpdateInvocationBarrierRechecksRegistryUnderStoreLock(t *testing.T) {
+	store, _, m := binaryUpdateFixture(t)
+	r, err := store.PreflightBinaryUpdate(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RetainPreflightReceipt(r); err != nil {
+		t.Fatal(err)
+	}
+	a, err := store.BeginBinaryUpdateAttempt(m, r, func() (string, error) { return binaryUpdateClaimEvidence(m), nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := store.PutEvidence([]byte("recurrence between attempt and invocation barrier"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig := FailureSignature{Namespace: "pantheon", Version: "v1", FailureClass: "binary-drift", Operation: "update", Component: "sirsi", Invariant: "binary-targets-converge", ErrorCode: "drift-detected"}
+	key, err := sig.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	incident := Incident{Schema: MemorySchema, Key: key, Signature: sig, EvidenceSHA256: evidence, Scope: binaryUpdateScope(), GuardID: ActiveIncidentGuardID, GuardVersion: ActiveIncidentGuardVersion, Status: IncidentActive,
+		RecoveryActions: []RecoveryAction{{ID: "review-binary-update", Label: "Review binary update", Instruction: "Refresh the exact System One screen and review a new bounded plan."}}}
+	if err := store.Append(incident); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordBinaryUpdateInvocation(a); err == nil {
+		t.Fatal("invocation barrier admitted a registry that changed after the initial preflight")
+	}
+	history, err := store.BinaryUpdateReconciliations(m.CaseEvidence)
+	if err != nil || len(history) != 1 || history[0].InvocationRecorded || history[0].Outcome != nil {
+		t.Fatalf("changed-registry attempt history=%+v err=%v", history, err)
 	}
 }
 
@@ -194,6 +248,9 @@ func TestBinaryUpdateUnknownLaunchRemainsUnresolvedAndCannotRetry(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := store.RecordBinaryUpdateInvocation(a); err != nil {
+		t.Fatal(err)
+	}
 	pending, err := store.PendingBinaryUpdateAttempt()
 	if err != nil || pending.ID != a.ID || pending.Manifest.RunningInfo.RouterSchemaMax != m.RunningInfo.RouterSchemaMax || pending.Manifest.RunningInfo.Commit != m.RunningInfo.Commit {
 		t.Fatalf("unknown launch pending=%+v err=%v", pending, err)
@@ -216,11 +273,111 @@ func TestBinaryUpdatePostcheckFailureIsTerminalFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := store.RecordBinaryUpdateInvocation(a); err != nil {
+		t.Fatal(err)
+	}
 	o, err := store.RecordBinaryUpdateOutcome(a, true, false, strings.Repeat("c", 64), "fresh target observation remained drifted")
 	if err != nil || o.Determination != "failed" {
 		t.Fatalf("postcheck outcome=%+v err=%v", o, err)
 	}
 	if _, err := store.PendingBinaryUpdateAttempt(); !errors.Is(err, ErrNoIncompleteBinaryUpdateAttempt) {
 		t.Fatalf("terminal attempt remains falsely unresolved: %v", err)
+	}
+}
+
+func TestBinaryUpdateClaimRefusalRetainsNoInvocationAndTerminalProjection(t *testing.T) {
+	store, root, m := binaryUpdateFixture(t)
+	r, err := store.PreflightBinaryUpdate(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RetainPreflightReceipt(r); err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := store.BeginBinaryUpdateAttempt(m, r, func() (string, error) { return "", errors.New("duplicate exact case claim") })
+	if err == nil || attempt.ID == "" {
+		t.Fatalf("claim refusal did not retain a typed attempt: attempt=%+v err=%v", attempt, err)
+	}
+	history, err := store.BinaryUpdateReconciliations(m.CaseEvidence)
+	if err != nil || len(history) != 1 || history[0].Outcome == nil || history[0].InvocationRecorded {
+		t.Fatalf("claim refusal history=%+v err=%v", history, err)
+	}
+	if history[0].Outcome.FactCode != "launch_claim_refused" {
+		t.Fatalf("claim refusal fact=%+v", history[0].Outcome)
+	}
+	decision, err := BuildDiagnosticRepairDecision("fixture", DiagnosticRepair{Check: "binary-drift", Operation: "brew upgrade sirsi-pantheon", OriginEvidence: m.CaseEvidence, Before: m.PreviewBinding, After: "updater was not invoked", Determination: "failed", Detail: "known claim refusal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision.Time = history[0].Outcome.RecordedAtUTC.UTC().Format(time.RFC3339Nano)
+	debt, err := store.BeginBinaryUpdateProjection(attempt, *history[0].Outcome, decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := &FileDecisionJournal{Path: filepath.Join(root, "casebook.jsonl")}
+	if err := store.PersistBinaryUpdateProjectionOutcome(debt); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.AppendIdempotent(debt.Decision); err != nil {
+		t.Fatal(err)
+	}
+	readback, found, err := journal.FindByEvidence(debt.Decision.Kind, debt.Decision.Evidence)
+	if err != nil || !found || digestEqual(readback, debt.Decision) != nil {
+		t.Fatalf("strict journal rejected projected outcome: found=%v err=%v", found, err)
+	}
+	if err := store.MarkBinaryUpdateProjectionReadBack(debt); err != nil {
+		t.Fatal(err)
+	}
+	debts, err := store.PendingBinaryUpdateProjectionDebts()
+	if err != nil || len(debts) != 0 {
+		t.Fatalf("completed projection still appears pending: debts=%+v err=%v", debts, err)
+	}
+	if pending, err := store.PendingBinaryUpdateAttempt(); !errors.Is(err, ErrNoIncompleteBinaryUpdateAttempt) {
+		t.Fatalf("known no-invocation outcome remained pending: attempt=%+v err=%v", pending, err)
+	}
+}
+
+func TestBinaryUpdateProjectionReceiptLeafIsNotParsedAsProjectionDebt(t *testing.T) {
+	store, _, m := binaryUpdateFixture(t)
+	r, err := store.PreflightBinaryUpdate(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RetainPreflightReceipt(r); err != nil {
+		t.Fatal(err)
+	}
+	a, err := store.BeginBinaryUpdateAttempt(m, r, func() (string, error) { return binaryUpdateClaimEvidence(m), nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordBinaryUpdateInvocation(a); err != nil {
+		t.Fatal(err)
+	}
+	o, err := store.RecordBinaryUpdateOutcome(a, true, false, strings.Repeat("d", 64), "postcheck remains active")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := BuildDiagnosticRepairDecision("fixture", DiagnosticRepair{Check: "binary-drift", Operation: "brew upgrade", OriginEvidence: m.CaseEvidence, Before: m.PreviewBinding, After: "still active", Determination: "failed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Time = o.RecordedAtUTC.UTC().Format(time.RFC3339Nano)
+	debt, err := store.BeginBinaryUpdateProjection(a, o, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PersistBinaryUpdateProjectionOutcome(debt); err != nil {
+		t.Fatal(err)
+	}
+	journal := &FileDecisionJournal{Path: filepath.Join(t.TempDir(), "casebook.jsonl")}
+	if err := journal.AppendIdempotent(debt.Decision); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkBinaryUpdateProjectionReadBack(debt); err != nil {
+		t.Fatal(err)
+	}
+	debts, err := store.PendingBinaryUpdateProjectionDebts()
+	if err != nil || len(debts) != 0 {
+		t.Fatalf("completed projection receipt was misread as debt: debts=%+v err=%v", debts, err)
 	}
 }

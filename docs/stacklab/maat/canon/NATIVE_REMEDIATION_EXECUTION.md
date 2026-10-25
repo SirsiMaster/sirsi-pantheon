@@ -99,6 +99,24 @@ inventory marks that observation resolved. Failure or unavailable postcheck
 leaves the original observation open. This source addition has not itself been
 qualified or used to update an installed binary.
 
+The confirmed command now retains the attempt before appending the existing
+operation-wide claim, then records and reads back a typed invocation barrier
+after final manifest/schema/target revalidation and immediately before the one
+updater call. Store flock precedes the journal mutation lock; the claim callback
+does not reenter Store. A new typed attempt with no invocation barrier can be
+reconciled as a retained `not_invoked` fact; attempts with the barrier and no
+terminal result remain unknown and cannot be replayed. Legacy attempts without
+the protocol marker also remain unresolved.
+
+`sirsi maat repair binary-drift --reconcile` is data-only. It can recover a
+retained terminal outcome when projection intent was not yet written, or finish
+the existing projection debt by writing the outcome projection, idempotently
+appending it to Casebook, verifying the exact journal readback, and retaining
+the readback receipt. It never invokes the updater or derives a terminal result
+from current host state. History validation remains structural; the short
+manifest freshness window applies only to new admission, so expired historical
+attempts and outcomes remain inspectable.
+
 Composition provenance: the complete 27-file updater feature delta was
 reconciled from `ec6253d14980a6d7d4a8c3adea6679be11cd0dcf` through
 `a5734b9b58f4f24895858bd53e388a1f4a4d1095` onto release-135 composition

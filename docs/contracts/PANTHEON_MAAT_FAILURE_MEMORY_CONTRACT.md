@@ -300,3 +300,45 @@ Readback rechecks private ownership and its stability. Matching bytes cannot
 adopt0644/0660 or foreign-owned receipt/WAL targets, and no read repairs modes.
 This corrective source remains unqualified until Main's bounded execution and
 independent review; previous parent fixture passes do not waive either finding.
+
+## G03 binary-drift O3/O8 source checkpoint (2026-10-25)
+
+The existing confirmed Homebrew-only `maat repair binary-drift --confirm`
+command binds the reviewed preview, exact System One evidence, updater and
+ordered targets, self file identity and full running/stamped `version.Info`
+including the router migration-derived schema ceiling, authorized UID, and
+observed live-schema compatibility in the retained v2 manifest. The default
+schema observer uses that complete runtime identity. Structural validation and
+digesting remain usable for historical records; the two-minute admission
+freshness rule applies only before a new preflight/attempt/invocation.
+
+Admission reads back the complete retained preflight receipt and rechecks the
+closed guard registry plus exact action under the existing Store lock. Store
+lock precedes the existing per-screen atomic journal claim callback; the
+callback does not reenter Store. The typed receipt remains only on the canonical
+failure-memory preflight row and its exact reference remains on the Store
+attempt. Claim receipt/action/registry hashes are bounded correlation context,
+not authority. New attempt records identify the invocation protocol. After the
+final full manifest/schema/target recheck, a typed invocation marker is durably
+written and read back immediately before the single existing updater call. A
+known pre-invocation gap can be reconciled to a `not_invoked` fact; a retained
+invocation marker without terminal completion, and all legacy unmarked attempts,
+remain unresolved and prohibit replay.
+
+Terminal outcomes are exact updater-return plus fresh postcheck facts. The
+existing digest-named projection intent, idempotent journal append, exact
+readback and retained readback receipt can be completed by
+`maat repair binary-drift --reconcile`, which has no updater path. It also
+reconstructs the projection deterministically when the outcome is durable but
+projection intent is absent. A projection receipt filename is excluded before
+projection-debt parsing. No current host observation can synthesize a historical
+terminal outcome, and projection debt never re-executes the updater.
+
+Authored source fixtures cover real FileDecisionJournal admission, freshness
+separation, claim refusal and pre-invocation reconciliation, invocation-unknown
+no-replay, projection/readback debt and no-updater reconciliation. No tests,
+builds, vet, lint, CLI, model, service or installer were run by this source
+author. This closes only the bounded G03 O3/O8 binary-drift memory slice as a
+source candidate; raw self-update and commercial installer/update routes remain
+open, and Main owns qualification and release decisions. No SNE authority,
+shared schema or new Store/DB was introduced.

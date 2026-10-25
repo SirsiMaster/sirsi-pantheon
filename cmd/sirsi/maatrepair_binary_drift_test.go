@@ -143,6 +143,7 @@ func installMaatBinaryDriftSeams(t *testing.T, journal *maatTestJournal, self, t
 		maatRepairBinaryDriftCmd.SetContext(context.Background())
 	}
 	oldConfirm := maatRepairConfirm
+	oldReconcile := maatRepairBinaryDriftReconcile
 	oldEvidence, oldBinding := maatRepairBinaryDriftCaseEvidence, maatRepairBinaryDriftBinding
 	oldDiagnosis, oldScan, oldScanContext, oldFinding := maatRepairReadDiagnosis, maatRepairScanDrift, maatRepairScanDriftContext, maatRepairReadBinaryFinding
 	oldHash, oldMethod := maatRepairHashFile, maatRepairDetectMethod
@@ -163,6 +164,7 @@ func installMaatBinaryDriftSeams(t *testing.T, journal *maatTestJournal, self, t
 	maatRepairRunningBinaryInfo = func() modversion.Info { return runningInfo }
 	updateCalls := 0
 	maatRepairConfirm = false
+	maatRepairBinaryDriftReconcile = false
 	maatRepairBinaryDriftCaseEvidence, maatRepairBinaryDriftBinding = "", ""
 	maatRepairReadDiagnosis = diagnosis
 	maatRepairScanDrift = drift
@@ -196,6 +198,7 @@ func installMaatBinaryDriftSeams(t *testing.T, journal *maatTestJournal, self, t
 	t.Cleanup(func() {
 		maatRepairBinaryDriftCmd.SetContext(oldCommandContext)
 		maatRepairConfirm = oldConfirm
+		maatRepairBinaryDriftReconcile = oldReconcile
 		maatRepairBinaryDriftCaseEvidence, maatRepairBinaryDriftBinding = oldEvidence, oldBinding
 		maatRepairReadDiagnosis, maatRepairScanDrift, maatRepairScanDriftContext, maatRepairReadBinaryFinding = oldDiagnosis, oldScan, oldScanContext, oldFinding
 		maatRepairHashFile, maatRepairDetectMethod = oldHash, oldMethod
@@ -475,6 +478,13 @@ func TestMaatBinaryDriftUnknownUpdaterRetainsPendingClaimWithoutTerminalReceipt(
 	if pending, pendingErr := store.PendingBinaryUpdateAttempt(); pendingErr != nil || pending.Manifest.CaseEvidence != evidence {
 		t.Fatalf("unknown memory attempt=%+v err=%v", pending, pendingErr)
 	}
+	maatRepairBinaryDriftReconcile = true
+	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err == nil || !strings.Contains(err.Error(), "completion is unknown") {
+		t.Fatalf("unknown invocation was incorrectly reconciled: %v", err)
+	}
+	if *updates != 1 {
+		t.Fatalf("unknown reconciliation replayed updater: calls=%d", *updates)
+	}
 }
 
 func TestMaatBinaryDriftConfirmRefusesChangedPreviewBeforeUpdater(t *testing.T) {
@@ -625,6 +635,12 @@ func (j *projectionFailMaatJournal) AppendIdempotent(maat.Decision) error {
 	return errors.New("injected projection outage")
 }
 
+type projectionReadbackFailMaatJournal struct{ *maatTestJournal }
+
+func (j *projectionReadbackFailMaatJournal) FindByEvidence(string, string) (maat.Decision, bool, error) {
+	return maat.Decision{}, false, errors.New("injected exact readback outage")
+}
+
 func TestMaatBinaryDriftProjectionDebtDoesNotRetryUpdater(t *testing.T) {
 	base, evidence, self, target := installMaatBinaryDriftFixture(t)
 	updates := installMaatBinaryDriftSeams(t, base, self, target, func() (*guard.DoctorReport, error) { return maatBinaryDriftFixtureReport(false), nil }, func() (*selfupdate.DriftReport, error) {
@@ -659,6 +675,178 @@ func TestMaatBinaryDriftProjectionDebtDoesNotRetryUpdater(t *testing.T) {
 	}
 	if *updates != 1 {
 		t.Fatalf("projection debt caused automatic updater replay: calls=%d", *updates)
+	}
+	newMaatDecisionJournal = func() (maat.DecisionJournal, error) {
+		return &projectionReadbackFailMaatJournal{maatTestJournal: base}, nil
+	}
+	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err == nil || !strings.Contains(err.Error(), "read back terminal outcome projection") {
+		t.Fatalf("injected projection readback outage was not retained as debt: %v", err)
+	}
+	store, err = maat.OpenDefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	debts, err = store.PendingBinaryUpdateProjectionDebts()
+	_ = store.Close()
+	if err != nil || len(debts) != 1 {
+		t.Fatalf("readback outage lost projection debt: debts=%d err=%v", len(debts), err)
+	}
+	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return base, nil }
+	maatRepairBinaryDriftReconcile = true
+	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err != nil {
+		t.Fatalf("data-only terminal projection reconciliation failed: %v", err)
+	}
+	if *updates != 1 {
+		t.Fatalf("projection reconciliation replayed updater: calls=%d", *updates)
+	}
+	store, err = maat.OpenDefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	debts, err = store.PendingBinaryUpdateProjectionDebts()
+	_ = store.Close()
+	if err != nil || len(debts) != 0 {
+		t.Fatalf("reconciled projection debts=%d err=%v", len(debts), err)
+	}
+}
+
+func TestMaatBinaryDriftReconcileClosesTypedPreInvocationGapWithoutUpdater(t *testing.T) {
+	journal, evidence, self, target := installMaatBinaryDriftFixture(t)
+	updates := installMaatBinaryDriftSeams(t, journal, self, target, func() (*guard.DoctorReport, error) { return maatBinaryDriftFixtureReport(true), nil }, func() (*selfupdate.DriftReport, error) {
+		return maatBinaryDriftFixtureInventory(self, target, true), nil
+	})
+	preview, err := currentMaatBinaryDriftPreview(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := maatRepairDefaultStoreInspect()
+	store, err := maatRepairOpenBinaryDriftStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := buildMaatBinaryUpdateManifest(preview, status.StoreUUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := store.PreflightBinaryUpdate(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.RetainPreflightReceipt(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := maat.ProjectFailureMemoryPreflight(journal, stored); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := manifest.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BeginBinaryUpdateAttempt(manifest, receipt, func() (string, error) {
+		if err := recordMaatBinaryDriftAttemptBound(journal, preview, stored.Reference(), digest); err != nil {
+			return "", err
+		}
+		return maatBinaryDriftAttemptEvidence(evidence), nil
+	}); err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	maatRepairBinaryDriftReconcile = true
+	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err != nil {
+		t.Fatalf("typed pre-invocation reconciliation failed: %v", err)
+	}
+	if *updates != 0 {
+		t.Fatalf("data-only reconciliation invoked updater %d times", *updates)
+	}
+	store, err = maat.OpenDefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	history, err := store.BinaryUpdateReconciliations(evidence)
+	if err != nil || len(history) != 1 || history[0].Outcome == nil || history[0].Outcome.Determination != "not_invoked" || history[0].InvocationRecorded || !history[0].ProjectionReadBack {
+		t.Fatalf("reconciled typed gap=%+v err=%v", history, err)
+	}
+}
+
+func TestMaatBinaryDriftReconcileRebuildsMissingProjectionIntentWithoutUpdater(t *testing.T) {
+	journal, evidence, self, target := installMaatBinaryDriftFixture(t)
+	updates := installMaatBinaryDriftSeams(t, journal, self, target, func() (*guard.DoctorReport, error) { return maatBinaryDriftFixtureReport(false), nil }, func() (*selfupdate.DriftReport, error) {
+		return maatBinaryDriftFixtureInventory(self, target, false), nil
+	})
+	preview, err := currentMaatBinaryDriftPreview(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := maatRepairDefaultStoreInspect()
+	store, err := maatRepairOpenBinaryDriftStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := buildMaatBinaryUpdateManifest(preview, status.StoreUUID)
+	if err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	receipt, err := store.PreflightBinaryUpdate(manifest)
+	if err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	stored, err := store.RetainPreflightReceipt(receipt)
+	if err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	if err := maat.ProjectFailureMemoryPreflight(journal, stored); err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	digest, err := manifest.Digest()
+	if err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	attempt, err := store.BeginBinaryUpdateAttempt(manifest, receipt, func() (string, error) {
+		if err := recordMaatBinaryDriftAttemptBound(journal, preview, stored.Reference(), digest); err != nil {
+			return "", err
+		}
+		return maatBinaryDriftAttemptEvidence(evidence), nil
+	})
+	if err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	if err := store.RecordBinaryUpdateInvocation(attempt); err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	if _, err := store.RecordBinaryUpdateOutcome(attempt, true, false, strings.Repeat("e", 64), "postcheck remains active"); err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	maatRepairBinaryDriftReconcile = true
+	if err := maatRepairBinaryDriftCmd.RunE(maatRepairBinaryDriftCmd, nil); err != nil {
+		t.Fatalf("reconstructing missing projection intent failed: %v", err)
+	}
+	if *updates != 0 {
+		t.Fatalf("missing-intent reconciliation invoked updater %d times", *updates)
+	}
+	store, err = maat.OpenDefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	history, err := store.BinaryUpdateReconciliations(evidence)
+	if err != nil || len(history) != 1 || history[0].Outcome == nil || history[0].Projection == nil || !history[0].ProjectionReadBack {
+		t.Fatalf("reconstructed terminal projection=%+v err=%v", history, err)
 	}
 }
 
@@ -763,6 +951,10 @@ func TestMaatBinaryDriftRealFileJournalAcceptsTypedPreflightAndClaim(t *testing.
 		attempt, err := store.PendingBinaryUpdateAttempt()
 		if err != nil {
 			return err
+		}
+		history, err := store.BinaryUpdateReconciliations(evidence)
+		if err != nil || len(history) != 1 || !history[0].InvocationRecorded {
+			return fmt.Errorf("real store did not retain exact invocation barrier before updater: history=%+v err=%v", history, err)
 		}
 		rows, err := journal.Recent(20)
 		if err != nil {
