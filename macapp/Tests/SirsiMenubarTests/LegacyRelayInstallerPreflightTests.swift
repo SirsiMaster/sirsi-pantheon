@@ -94,6 +94,27 @@ import XCTest
         }
     }
 
+    func testRollbackBridgeAcceptsOnlyTypedExactVersionCommand()async{
+        var submitted=[[String]]()
+        let reader=LegacyRelayInstallerCapture(qualify:{"/owned/inert/sirsi"},invoke:{_,args,_,authorize in
+            XCTAssertTrue(authorize());submitted.append(args)
+            return CommandExecution(stdout:Data("retained attempt".utf8),exitCode:0,childState:.exitConfirmed)
+        })
+        let exact=await reader.capture(args:["update","--rollback-version","0.24.137","--confirm-rollback"],authorize:{true})
+        XCTAssertTrue(exact.complete)
+        let malformed=await reader.capture(args:["update","--rollback-version","0.24.137","--confirm-rollback","--app"],authorize:{true})
+        XCTAssertEqual(malformed.childState,.notStarted)
+        let olderExact=await reader.capture(args:["update","--rollback-version","0.24.136","--confirm-rollback"],authorize:{true})
+        XCTAssertTrue(olderExact.complete)
+        let recheck=await reader.capture(args:["update","--reconcile-app-attempt"],authorize:{true})
+        XCTAssertTrue(recheck.complete)
+        let malformedRecheck=await reader.capture(args:["update","--reconcile-app-attempt","--rollback-version","0.24.137"],authorize:{true})
+        XCTAssertEqual(malformedRecheck.childState,.notStarted)
+        XCTAssertEqual(submitted,[["update","--rollback-version","0.24.137","--confirm-rollback"],
+                                  ["update","--rollback-version","0.24.136","--confirm-rollback"],
+                                  ["update","--reconcile-app-attempt"]])
+    }
+
     func testModelRechecksDeadlineImmediatelyBeforeOpeningInstaller()async throws{
         let f=LegacyRelayFixture(),raw=try selection(f)
         var calls=0,opens=0

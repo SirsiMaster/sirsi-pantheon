@@ -23,6 +23,53 @@ struct LegacyRelayPlan: Codable, Equatable {
     }
 }
 
+// Exact native-to-CLI rollback request. The CLI still rechecks the installed
+// version, official release metadata, package custody and Ma'at admission.
+struct AppRollbackSelection: Equatable {
+    let release: String
+    init?(release: String) {
+        guard release.range(of: #"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$"#, options: .regularExpression) != nil else { return nil }
+        let parts = release.split(separator: ".").compactMap { UInt64($0) }
+        guard parts.count == 3, parts[0] > 0 || parts[1] > 24 || (parts[1] == 24 && parts[2] >= 115) else { return nil }
+        self.release = release
+    }
+    var commandArguments: [String] { ["update", "--rollback-version", release, "--confirm-rollback"] }
+}
+
+struct AppUpdateReconciliationReport: Decodable, Equatable {
+    struct Observation: Decodable, Equatable { let release: String }
+    let schema: String
+    let state: String
+    let attemptID: String?
+    let targetRelease: String?
+    let currentRelease: String?
+    let observation: Observation?
+    let reason: String?
+    enum CodingKeys: String, CodingKey {
+        case schema, state, observation, reason
+        case attemptID = "attempt_id"
+        case targetRelease = "target_release"
+        case currentRelease = "current_release"
+    }
+    var isBound: Bool {
+        guard schema == "sirsi.maat.app-update-reconciliation.v1" else { return false }
+        switch state {
+        case "no_pending_attempt": return attemptID == nil && targetRelease == nil && currentRelease == nil && observation == nil
+        case "resolved": return validIdentity && observation?.release == targetRelease
+        case "unresolved": return validIdentity
+        case "unverifiable", "unsupported": return !(reason ?? "").isEmpty
+        default: return false
+        }
+    }
+    private var validIdentity: Bool {
+        guard let attemptID, UUID(uuidString: attemptID) != nil,
+              let targetRelease, let currentRelease else { return false }
+        let releasePattern = #"^0\.[0-9]+\.[0-9]+$"#
+        return targetRelease.range(of: releasePattern, options: .regularExpression) != nil &&
+            currentRelease.range(of: releasePattern, options: .regularExpression) != nil
+    }
+}
+
 struct LegacyRelayTransaction: Codable, Equatable {
     let id: String
     let revision: UInt64
@@ -91,6 +138,7 @@ enum LegacyRelayAppHost {
     @Published private(set) var statusNotice: String?
     @Published private(set) var installer: InstallerApproval?
     @Published private(set) var installerReceipt:CommandExecution?
+    @Published private(set) var maatAppAttemptReport:AppUpdateReconciliationReport?
     @Published private(set) var actionApproval:ActionApproval?
     @Published private(set) var outstanding:LegacyRelayOutstandingOperation?
     @Published private(set) var lastResolved:LegacyRelayOutstandingOperation?
@@ -153,6 +201,25 @@ enum LegacyRelayAppHost {
         installer=InstallerApproval(release:plan.release,package:plan.package,digest:plan.sha256,bytes:result.stdoutData,generation:token)
         statusNotice="Compatible signed/notarized PKG verified. Review and open normal Installer, then recheck the installed app/helper pair. No service action was performed."
     }
+
+    func rollback(to selection: AppRollbackSelection) async {
+        guard !busy, installerTimeout.isFinite, installerTimeout > 0, installerTimeout <= 130 else { return }
+        busy = true; error = nil; installerReceipt = nil; statusNotice = nil
+        let token = generation, scope = directory, deadline = ProcessInfo.processInfo.systemUptime + installerTimeout
+        let result = await installerCapture(selection.commandArguments, nil, scope, {
+            self.generation == token && ProcessInfo.processInfo.systemUptime < deadline
+        })
+        installerReceipt = result
+        busy = false
+        guard !Task.isCancelled, generation == token, ProcessInfo.processInfo.systemUptime < deadline else {
+            error = "Rollback result is not verified. Inspect the retained Ma'at attempt before another selection; Installer is never replayed automatically."
+            return
+        }
+        guard result.complete, result.exitCode == 0 else { error = detail(result); return }
+        statusNotice = result.stdout.isEmpty
+            ? "The exact rollback command completed. Read the retained Ma'at attempt and installed app/helper identity."
+            : result.stdout
+    }
     func install(_ approved:InstallerApproval)->Task<Void,Never>? {
         guard !busy,installer==approved,generation==approved.generation,installerTimeout.isFinite,installerTimeout>0,installerTimeout<=130 else{return nil}
         installer=nil;busy=true;error=nil
@@ -178,6 +245,32 @@ enum LegacyRelayAppHost {
         }
         activeTask=task;return task
     }
+    func recheckMaatAppAttempt() async {
+        guard !busy else { statusNotice = "A request is pending; no concurrent app action was started."; return }
+        busy = true; error = nil
+        let scope = directory, token = generation
+        let result = await installerCapture(["update", "--reconcile-app-attempt"], nil, scope, { self.generation == token })
+        installerReceipt = result
+        busy = false
+        guard !Task.isCancelled, generation == token else { return }
+        guard result.complete else {
+            error = "Ma’at app-attempt readback did not return a complete command receipt. The retained attempt remains authoritative; no Installer was run."
+            return
+        }
+        guard let report = try? JSONDecoder().decode(AppUpdateReconciliationReport.self, from: result.stdoutData), report.isBound else {
+            error = "Ma’at app-attempt readback returned no recognized retained result. No rollback was started."
+            return
+        }
+        maatAppAttemptReport = report
+        switch report.state {
+        case "resolved": statusNotice = "Resolved retained attempt \(report.attemptID ?? "unavailable"): installed \(report.observation?.release ?? "unknown"); no Installer was run."
+        case "no_pending_attempt": statusNotice = "No unresolved Ma’at whole-app attempt exists. No package was staged and no Installer was opened."
+        case "unresolved": statusNotice = "Attempt \(report.attemptID ?? "unavailable") remains unresolved for target \(report.targetRelease ?? "unknown"): \(report.reason ?? "installed identity did not match"). No Installer was run."
+        default: statusNotice = report.reason ?? "Ma’at app-attempt history is unverifiable; no action was started."
+        }
+        if result.exitCode != 0 && report.state != "unresolved" && report.state != "unverifiable" { error = detail(result) }
+    }
+
     func recheckInstalledPair()async {
         guard !busy else{statusNotice="A request is pending; no concurrent installation or root action was started.";return}
         busy=true;let scope=directory;let token=generation

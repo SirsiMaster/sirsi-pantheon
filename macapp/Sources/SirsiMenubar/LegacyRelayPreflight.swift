@@ -79,14 +79,17 @@ import Foundation
         let prepare = args == ["launchd", "maintenance-installer"]
         let verify = args.count == 4 && Array(args.prefix(3)) == ["launchd", "maintenance-installer", "--verify-selection"] &&
             !args[3].isEmpty && args[3].count <= 16384 && args[3].utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
-        guard (prepare || verify), overallTimeout.isFinite, overallTimeout > 0, overallTimeout <= 130,
+        let rollback = args.count == 4 && args[0] == "update" && args[1] == "--rollback-version" &&
+            AppRollbackSelection(release: args[2]) != nil && args[3] == "--confirm-rollback"
+        let recheck = args == ["update", "--reconcile-app-attempt"]
+        guard (prepare || verify || rollback || recheck), overallTimeout.isFinite, overallTimeout > 0, overallTimeout <= 130,
               identityTimeout.isFinite, identityTimeout > 0, identityTimeout <= 8,
-              !Task.isCancelled, authorize() else { return CommandExecution(launchError: "Installer request canceled, expired or unrecognized before preflight.", cancelled: Task.isCancelled) }
+              !Task.isCancelled, authorize() else { return CommandExecution(launchError: "Installer or rollback request canceled, expired or unrecognized before preflight.", cancelled: Task.isCancelled) }
         let path: String
         do {
             path = try await LegacyRelayPreflight.run(deadline: min(deadline, ProcessInfo.processInfo.systemUptime + identityTimeout), operation: qualify)
         } catch {
-            return CommandExecution(launchError: "Installer identity preflight canceled, expired or unverified; no command submitted.", cancelled: Task.isCancelled)
+            return CommandExecution(launchError: "Signed app/CLI identity preflight canceled, expired or unverified; no command submitted.", cancelled: Task.isCancelled)
         }
         guard !Task.isCancelled, authorize(), ProcessInfo.processInfo.systemUptime < deadline else {
             return CommandExecution(launchError: "Installer approval changed or expired before submission.", cancelled: Task.isCancelled)

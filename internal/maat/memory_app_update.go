@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,11 +19,33 @@ import (
 
 const AppUpdateManifestSchema = "sirsi.maat.app-update-action.v2"
 
+// AppUpdateRecoveryCapability is the narrow read/resolve contract required of
+// a rollback target. A signed helper reports this before package handoff; its
+// exact package and helper identities bind the report to the selected bytes.
+type AppUpdateRecoveryCapability struct {
+	Schema            string `json:"schema"`
+	ManifestSchema    string `json:"manifest_schema"`
+	StoreMemorySchema string `json:"store_memory_schema"`
+	PendingRead       bool   `json:"pending_read"`
+	InstalledResolve  bool   `json:"installed_resolve"`
+}
+
+const AppUpdateRecoveryCapabilitySchema = "sirsi.maat.app-update-recovery.v1"
+
+func CurrentAppUpdateRecoveryCapability() AppUpdateRecoveryCapability {
+	return AppUpdateRecoveryCapability{Schema: AppUpdateRecoveryCapabilitySchema,
+		ManifestSchema: AppUpdateManifestSchema, StoreMemorySchema: MemorySchema, PendingRead: true, InstalledResolve: true}
+}
+
+const appUpdateMinimumRelease = "0.24.115"
+
 var appUpdateVersionRE = regexp.MustCompile(`^0\.[0-9]+\.[0-9]+$`)
 
-// AppUpdateManifest binds the one supported whole-app update to the exact
-// staged, signed PKG and the canonical app/helper target. Its dependencies are
-// a closed list, not caller supplied installer instructions.
+// AppUpdateManifest binds the one supported whole-app install action to the
+// exact current/candidate release pair, staged signed PKG, and canonical
+// app/helper target. Its dependencies are a closed list, not caller supplied
+// installer instructions. The version pair is the direction-bearing action
+// evidence, preserving the existing persisted schema for down-revision reads.
 type AppUpdateManifest struct {
 	Schema                        string       `json:"schema"`
 	StoreUUID                     string       `json:"store_uuid"`
@@ -71,10 +94,35 @@ func (m AppUpdateManifest) validate(fresh bool) error {
 		m.ObservedAtUTC.IsZero() || m.ObservedAtUTC.Location() != time.UTC {
 		return errors.New("maat memory: invalid whole-app update manifest")
 	}
+	minimumOrder, err := appUpdateVersionOrder(m.Release, appUpdateMinimumRelease)
+	if err != nil || minimumOrder < 0 {
+		return errors.New("maat memory: selected whole-app package is below the supported protocol release floor")
+	}
 	if fresh && (time.Since(m.ObservedAtUTC) > 2*time.Minute || time.Until(m.ObservedAtUTC) > 10*time.Second) {
 		return errors.New("maat memory: whole-app update observation is stale")
 	}
 	return nil
+}
+
+func appUpdateVersionOrder(a, b string) (int, error) {
+	left, right := strings.Split(a, "."), strings.Split(b, ".")
+	for i := range left {
+		lv, err := strconv.Atoi(left[i])
+		if err != nil {
+			return 0, errors.New("invalid release component")
+		}
+		rv, err := strconv.Atoi(right[i])
+		if err != nil {
+			return 0, errors.New("invalid release component")
+		}
+		if lv < rv {
+			return -1, nil
+		}
+		if lv > rv {
+			return 1, nil
+		}
+	}
+	return 0, nil
 }
 
 func (m AppUpdateManifest) Digest() (string, error) {

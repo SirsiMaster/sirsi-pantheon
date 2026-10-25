@@ -10,4 +10,11 @@
   coverage alongside correlated actual-Go request interop.
 - Replace obsolete O7 unrun/lost-ID canon claims with exact bounded Main evidence.
   New integrated-head qualification, installed/export/full-O7 proof remain open;
-  O4 is excluded. No author test/build/runtime or publication was performed.
+  O4 target-capability coverage is included below. No author test/build/runtime
+  or publication was performed.
+- Carry the complete qualified O4 exact-version whole-app rollback candidate,
+  signed-target recovery-capability checks and native data-only retained-attempt
+  recheck. Main qualified the donor's 11 bounded rows (124 Go named nodes per
+  normal/race mode, three native methods and Linux ARM64 compile header only).
+  This establishes tested target capability, not an actual installed rollback.
+  Preserve unknown handoff debt and never replay Installer automatically.

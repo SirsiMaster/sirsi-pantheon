@@ -29,28 +29,33 @@ type maatAppUpdateStore interface {
 }
 
 type maatAppUpdateOps struct {
-	storeStatus func() maat.DefaultStoreStatus
-	openStore   func() (maatAppUpdateStore, error)
-	journal     func() (maat.DecisionJournal, error)
-	stage       func(context.Context, string, *updater.Release) (maintenanceInstallerPlan, error)
-	revalidate  func(context.Context, *updater.Release, maintenanceInstallerPlan) error
-	observe     func(context.Context) (maat.AppUpdateObservation, error)
-	liveSchema  func() (int, error)
-	handoff     func(context.Context, string) error
+	storeStatus        func() maat.DefaultStoreStatus
+	openStore          func() (maatAppUpdateStore, error)
+	journal            func() (maat.DecisionJournal, error)
+	stage              func(context.Context, string, *updater.Release) (maintenanceInstallerPlan, error)
+	stageRollback      func(context.Context, string, *updater.Release) (maintenanceInstallerPlan, error)
+	revalidate         func(context.Context, *updater.Release, maintenanceInstallerPlan) error
+	revalidateRollback func(context.Context, *updater.Release, maintenanceInstallerPlan) error
+	observe            func(context.Context) (maat.AppUpdateObservation, error)
+	liveSchema         func() (int, error)
+	handoff            func(context.Context, string) error
 }
 
 var maatAppUpdateDependencies = maatAppUpdateOps{
-	storeStatus: maat.InspectDefaultStore,
-	openStore:   func() (maatAppUpdateStore, error) { return maat.OpenDefaultStore() },
-	journal:     func() (maat.DecisionJournal, error) { return maat.NewDefaultDecisionJournal() },
-	stage:       stageMaatAppUpdatePackage,
-	revalidate:  revalidateMaatAppUpdatePackage,
-	observe:     observeMaatAppUpdate,
-	liveSchema:  observeAppUpdateLiveSchema,
-	handoff:     openMaatAppInstaller,
+	storeStatus:        maat.InspectDefaultStore,
+	openStore:          func() (maatAppUpdateStore, error) { return maat.OpenDefaultStore() },
+	journal:            func() (maat.DecisionJournal, error) { return maat.NewDefaultDecisionJournal() },
+	stage:              stageMaatAppUpdatePackage,
+	stageRollback:      stageMaatAppRollbackPackage,
+	revalidate:         revalidateMaatAppUpdatePackage,
+	revalidateRollback: revalidateMaatAppRollbackPackage,
+	observe:            observeMaatAppUpdate,
+	liveSchema:         observeAppUpdateLiveSchema,
+	handoff:            openMaatAppInstaller,
 }
 
 var maatAppUpdatePackageInspector = inspectAppUpdatePKG
+var maatAppRollbackPackageInspector = inspectAppRollbackPKG
 
 func reconcilePendingMaatAppUpdate() (bool, error) {
 	status := maatAppUpdateDependencies.storeStatus()
@@ -74,7 +79,63 @@ func reconcilePendingMaatAppUpdate() (bool, error) {
 	return true, reconcileMaatAppUpdate(ctx, store, pending)
 }
 
+func appUpdateRecoveryCapability() (maat.AppUpdateRecoveryCapability, error) {
+	if maatAppUpdateDependencies.storeStatus == nil || maatAppUpdateDependencies.openStore == nil || maatAppUpdateDependencies.observe == nil {
+		return maat.AppUpdateRecoveryCapability{}, errors.New("whole-app attempt reader or installed-pair observer is not wired")
+	}
+	return maat.CurrentAppUpdateRecoveryCapability(), nil
+}
+
+func reconcileMaatAppUpdateReport() (appUpdateReconciliationReport, error) {
+	report := appUpdateReconciliationReport{Schema: appUpdateReconciliationSchema, State: "unverifiable"}
+	status := maatAppUpdateDependencies.storeStatus()
+	if status.State != maat.DefaultStoreReady {
+		err := errors.New("Ma'at app-attempt readback requires the existing initialized failure-memory store")
+		report.Reason = err.Error()
+		return report, err
+	}
+	store, err := maatAppUpdateDependencies.openStore()
+	if err != nil {
+		report.Reason = err.Error()
+		return report, err
+	}
+	defer store.Close()
+	attempt, err := store.PendingAppUpdateAttempt()
+	if errors.Is(err, maat.ErrNoIncompleteAppUpdateAttempt) {
+		report.State = "no_pending_attempt"
+		return report, nil
+	}
+	if err != nil {
+		report.Reason = err.Error()
+		return report, err
+	}
+	report.AttemptID = attempt.ID
+	report.TargetRelease = attempt.Manifest.Release
+	report.CurrentRelease = attempt.Manifest.CurrentRelease
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	observation, reconcileErr := reconcileMaatAppUpdateObserved(ctx, store, attempt)
+	if observation != (maat.AppUpdateObservation{}) {
+		report.Observation = &observation
+	}
+	if reconcileErr != nil {
+		report.State = "unresolved"
+		report.Reason = reconcileErr.Error()
+		return report, reconcileErr
+	}
+	report.State = "resolved"
+	return report, nil
+}
+
 func installAppReleaseWithMaat(rel *updater.Release) error {
+	return installAppReleaseWithMaatDirection(rel, false)
+}
+
+func installAppRollbackWithMaat(rel *updater.Release) error {
+	return installAppReleaseWithMaatDirection(rel, true)
+}
+
+func installAppReleaseWithMaatDirection(rel *updater.Release, rollback bool) error {
 	if os.Getuid() == 0 || os.Geteuid() == 0 {
 		return errors.New("Ma'at app update must use the signed package from the unprivileged user; no installer was opened")
 	}
@@ -108,16 +169,36 @@ func installAppReleaseWithMaat(rel *updater.Release) error {
 	if before.Release == strings.TrimPrefix(rel.TagName, "v") {
 		return errors.New("Ma'at app update: exact release is already installed; no Installer handoff or replay occurred")
 	}
+	validateVersion := updater.ValidateUpdateVersion
+	stage := maatAppUpdateDependencies.stage
+	revalidate := maatAppUpdateDependencies.revalidate
+	if rollback {
+		validateVersion = updater.ValidateRollbackVersion
+		stage = maatAppUpdateDependencies.stageRollback
+		revalidate = maatAppUpdateDependencies.revalidateRollback
+	}
+	if err := validateVersion(before.Release, rel.TagName); err != nil {
+		return fmt.Errorf("Ma'at app rollback selection is not an exact compatible older release: %w", err)
+	}
+	if stage == nil || revalidate == nil {
+		return errors.New("Ma'at app rollback adapter is unavailable; no Installer handoff")
+	}
 	liveSchema, err := maatAppUpdateDependencies.liveSchema()
 	if err != nil {
 		return fmt.Errorf("Ma'at app update: live router schema is unavailable; no Installer handoff: %w", err)
 	}
-	plan, err := maatAppUpdateDependencies.stage(ctx, before.Release, rel)
+	plan, err := stage(ctx, before.Release, rel)
 	if err != nil {
 		return fmt.Errorf("Ma'at app update package was not staged as a verified exact tuple: %w", err)
 	}
+	if plan.Release != strings.TrimPrefix(rel.TagName, "v") || plan.CurrentRelease != before.Release {
+		return errors.New("Ma'at app release selection or observed source identity changed during staging; no Installer handoff")
+	}
 	if plan.AppUpdateIdentity == nil {
 		return errors.New("Ma'at app update package lacks its inspected app/helper/version identity; no Installer handoff")
+	}
+	if rollback && (plan.AppUpdateRecoveryCapability == nil || *plan.AppUpdateRecoveryCapability != maat.CurrentAppUpdateRecoveryCapability()) {
+		return errors.New("Ma'at rollback target does not prove the whole-app attempt recovery reader/schema; no Installer handoff")
 	}
 	if err := selfupdate.CheckSchemaCeiling(plan.AppUpdateIdentity.CandidateVersion, liveSchema); err != nil {
 		return fmt.Errorf("Ma'at app update candidate cannot open the live router schema; no Installer handoff: %w", err)
@@ -150,7 +231,7 @@ func installAppReleaseWithMaat(rel *updater.Release) error {
 	if receipt.Decision != maat.PreflightPass {
 		return fmt.Errorf("Ma'at app update failure-memory preflight %s; Installer refused", receipt.Decision)
 	}
-	if err := maatAppUpdateDependencies.revalidate(ctx, rel, plan); err != nil {
+	if err := revalidate(ctx, rel, plan); err != nil {
 		return fmt.Errorf("Ma'at app update package changed before durable intent; Installer refused: %w", err)
 	}
 	if err := recheckAppUpdateSchema(liveSchema); err != nil {
@@ -184,7 +265,7 @@ func installAppReleaseWithMaat(rel *updater.Release) error {
 	}
 	// This final no-follow package hash follows the trust inspection and the
 	// other observations, immediately before the only native Installer call.
-	if err := maatAppUpdateDependencies.revalidate(ctx, rel, plan); err != nil {
+	if err := revalidate(ctx, rel, plan); err != nil {
 		if _, dispositionErr := store.RecordAppUpdateNotInvoked(attempt, "package-revalidation-refused"); dispositionErr != nil {
 			return fmt.Errorf("Ma'at app update attempt %s remains retained; package revalidation refused before Installer handoff and exact disposition failed: %w (revalidation: %v)", attempt.ID, dispositionErr, err)
 		}
@@ -200,7 +281,11 @@ func installAppReleaseWithMaat(rel *updater.Release) error {
 	if _, err := store.RecordAppUpdateInstalled(attempt, observation); err != nil {
 		return fmt.Errorf("Ma'at app update attempt %s remains unresolved after Installer handoff; use a later data-only readback, do not replay: %w", attempt.ID, err)
 	}
-	fmt.Printf("Ma'at verified installed Pantheon %s; package and installed app/helper identity were read back.\n", plan.Release)
+	if rollback {
+		fmt.Printf("Ma'at verified rollback to Pantheon %s; retained package and installed app/helper identity were read back.\n", plan.Release)
+	} else {
+		fmt.Printf("Ma'at verified installed Pantheon %s; package and installed app/helper identity were read back.\n", plan.Release)
+	}
 	return nil
 }
 
@@ -231,15 +316,22 @@ func recheckAppUpdateSchema(reviewed int) error {
 }
 
 func reconcileMaatAppUpdate(ctx context.Context, store maatAppUpdateStore, attempt maat.AppUpdateAttempt) error {
-	observation, err := maatAppUpdateDependencies.observe(ctx)
-	if err != nil {
-		return fmt.Errorf("Ma'at app update attempt %s remains unresolved; readback unavailable, Installer was not replayed: %w", attempt.ID, err)
-	}
-	if _, err := store.RecordAppUpdateInstalled(attempt, observation); err != nil {
-		return fmt.Errorf("Ma'at app update attempt %s remains unresolved; current installed identity does not match the retained package, Installer was not replayed: %w", attempt.ID, err)
+	if _, err := reconcileMaatAppUpdateObserved(ctx, store, attempt); err != nil {
+		return err
 	}
 	fmt.Printf("Ma'at reconciled installed Pantheon %s from retained attempt %s; no Installer was run.\n", attempt.Manifest.Release, attempt.ID)
 	return nil
+}
+
+func reconcileMaatAppUpdateObserved(ctx context.Context, store maatAppUpdateStore, attempt maat.AppUpdateAttempt) (maat.AppUpdateObservation, error) {
+	observation, err := maatAppUpdateDependencies.observe(ctx)
+	if err != nil {
+		return observation, fmt.Errorf("Ma'at app update attempt %s remains unresolved; readback unavailable, Installer was not replayed: %w", attempt.ID, err)
+	}
+	if _, err := store.RecordAppUpdateInstalled(attempt, observation); err != nil {
+		return observation, fmt.Errorf("Ma'at app update attempt %s remains unresolved; current installed identity does not match the retained package, Installer was not replayed: %w", attempt.ID, err)
+	}
+	return observation, nil
 }
 
 func stageMaatAppUpdatePackage(ctx context.Context, current string, rel *updater.Release) (maintenanceInstallerPlan, error) {
@@ -248,8 +340,25 @@ func stageMaatAppUpdatePackage(ctx context.Context, current string, rel *updater
 	})
 }
 
+func stageMaatAppRollbackPackage(ctx context.Context, current string, rel *updater.Release) (maintenanceInstallerPlan, error) {
+	return stageMaintenanceRollbackInstaller(ctx, current, maintenanceInstallerOps{
+		release: func() (*updater.Release, error) { return rel, nil }, download: maintenanceDownload, inspect: inspectAppRollbackPKG,
+	})
+}
+
 func revalidateMaatAppUpdatePackage(ctx context.Context, rel *updater.Release, plan maintenanceInstallerPlan) error {
-	asset, err := maintenancePackageAsset(plan.Release, rel)
+	return revalidateMaatAppPackageDirection(ctx, rel, plan, false)
+}
+
+func revalidateMaatAppRollbackPackage(ctx context.Context, rel *updater.Release, plan maintenanceInstallerPlan) error {
+	return revalidateMaatAppPackageDirection(ctx, rel, plan, true)
+}
+
+func revalidateMaatAppPackageDirection(ctx context.Context, rel *updater.Release, plan maintenanceInstallerPlan, rollback bool) error {
+	if plan.CurrentRelease == "" {
+		return errors.New("staged PKG is missing the exact observed installed release")
+	}
+	asset, err := maintenancePackageAssetDirection(plan.CurrentRelease, rel, rollback)
 	if err != nil {
 		return err
 	}
@@ -261,12 +370,17 @@ func revalidateMaatAppUpdatePackage(ctx context.Context, rel *updater.Release, p
 	if err != nil || current.SHA256 != plan.SHA256 || current.Device != plan.Device || current.Inode != plan.Inode || current.Bytes != plan.Bytes {
 		return errors.Join(errors.New("staged package bytes or file identity changed"), err)
 	}
-	inspection, err := maatAppUpdatePackageInspector(ctx, plan.Package, plan.Release)
+	inspector := maatAppUpdatePackageInspector
+	if rollback {
+		inspector = maatAppRollbackPackageInspector
+	}
+	inspection, err := inspector(ctx, plan.Package, plan.Release)
 	if err != nil {
 		return err
 	}
 	if plan.AppUpdateIdentity == nil || inspection.Capability.Implementation != plan.Implementation || inspection.EngineSHA256 != plan.EngineSHA256 ||
-		inspection.EmbeddedHelperSHA256 != plan.AppUpdateIdentity.EmbeddedHelperSHA256 || inspection.AppCDHash != plan.AppUpdateIdentity.AppCDHash ||
+		inspection.EmbeddedHelperSHA256 != plan.AppUpdateIdentity.EmbeddedHelperSHA256 ||
+		(rollback && (plan.AppUpdateRecoveryCapability == nil || inspection.AppUpdateRecoveryCapability != *plan.AppUpdateRecoveryCapability)) || inspection.AppCDHash != plan.AppUpdateIdentity.AppCDHash ||
 		inspection.CandidateVersion != plan.AppUpdateIdentity.CandidateVersion ||
 		inspection.InstallerIdentity != plan.InstallerIdentity || inspection.Notarization != plan.Notarization ||
 		inspection.TargetBundleID != plan.TargetBundleID || inspection.TargetAppPath != plan.TargetAppPath ||
