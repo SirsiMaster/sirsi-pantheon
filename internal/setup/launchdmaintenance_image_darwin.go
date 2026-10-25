@@ -73,11 +73,16 @@ func maintenanceSignedImage(path string, pid int) (string, error) {
 			}
 			return hash[:], nil
 		},
-		func(selectedPID int) ([]byte, error) {
-			var hash [20]byte
-			if status := C.sirsi_maintenance_loaded_cdhash(C.int(selectedPID), (*C.uchar)(unsafe.Pointer(&hash[0]))); status != 0 {
-				return nil, fmt.Errorf("csops(CS_OPS_CDHASH) failed (errno %d)", int(status))
-			}
-			return hash[:], nil
-		})
+		maintenanceKernelCDHash)
+}
+
+func maintenanceKernelCDHash(pid int) ([]byte, error) {
+	if pid <= 1 {
+		return nil, fmt.Errorf("invalid selected kernel PID %d", pid)
+	}
+	var hash [20]byte
+	if status := C.sirsi_maintenance_loaded_cdhash(C.int(pid), (*C.uchar)(unsafe.Pointer(&hash[0]))); status != 0 {
+		return nil, fmt.Errorf("csops(CS_OPS_CDHASH) failed (errno %d)", int(status))
+	}
+	return hash[:], nil
 }

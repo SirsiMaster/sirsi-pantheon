@@ -455,14 +455,38 @@ func InspectRootMaintenanceImage(path string, pid int) (MaintenanceImageIdentity
 	if err != nil {
 		return result, err
 	}
+	start := ""
+	if pid > 1 {
+		start, err = servicedrain.MaintenanceStart(pid)
+		if err != nil {
+			return result, err
+		}
+	}
 	hash, err := maintenanceSignedImage(path, pid)
 	if err != nil {
 		return result, err
 	}
+	if pid > 1 {
+		finalStart, err := servicedrain.MaintenanceStart(pid)
+		if err != nil || finalStart != start {
+			return result, errors.New("legacy maintenance: selected PID changed during image verification")
+		}
+	}
 	if after, err := maintenancePayload(path); err != nil || before != after {
 		return result, errors.New("legacy maintenance: inspected payload changed")
 	}
-	return MaintenanceImageIdentity{pid, hash}, nil
+	return MaintenanceImageIdentity{PID: pid, CDHash: hash, KernelStart: start}, nil
+}
+
+// InspectRootLoadedMaintenanceImage returns only the kernel-reported identity
+// for one PID. It performs no candidate-path lookup or lifecycle action. The
+// start identity is sampled on both sides of csops to detect PID replacement.
+func InspectRootLoadedMaintenanceImage(pid int) (MaintenanceImageIdentity, error) {
+	var result MaintenanceImageIdentity
+	if err := rootRelayOwner(os.Getuid(), os.Geteuid()); err != nil {
+		return result, err
+	}
+	return maintenanceLoadedImageIdentity(pid, servicedrain.MaintenanceStart, maintenanceKernelCDHash)
 }
 
 func maintenanceEnabled(ctx context.Context) error {

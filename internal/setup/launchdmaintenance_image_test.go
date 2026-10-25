@@ -84,6 +84,86 @@ func TestMaintenanceImageCDHashArtifactModeDoesNotClaimLoadedIdentity(t *testing
 	}
 }
 
+func TestMaintenanceLoadedImageIdentityReturnsKernelHashAndStableStart(t *testing.T) {
+	loaded := bytes.Repeat([]byte{0x41}, 20)
+	startCalls, loadedCalls := 0, 0
+	got, err := maintenanceLoadedImageIdentity(539,
+		func(pid int) (string, error) {
+			startCalls++
+			if pid != 539 {
+				t.Fatalf("start PID = %d", pid)
+			}
+			return "1792847484.000000", nil
+		},
+		func(pid int) ([]byte, error) {
+			loadedCalls++
+			if pid != 539 {
+				t.Fatalf("loaded PID = %d", pid)
+			}
+			return loaded, nil
+		})
+	if err != nil || got.PID != 539 || got.KernelStart != "1792847484.000000" || got.CDHash != strings.Repeat("41", 20) || startCalls != 2 || loadedCalls != 1 {
+		t.Fatalf("loaded identity = %+v, starts=%d, hashes=%d, err=%v", got, startCalls, loadedCalls, err)
+	}
+}
+
+func TestMaintenanceLoadedImageIdentityRefusesPIDReplacement(t *testing.T) {
+	startCalls := 0
+	got, err := maintenanceLoadedImageIdentity(539,
+		func(int) (string, error) {
+			startCalls++
+			if startCalls == 1 {
+				return "first-start", nil
+			}
+			return "replacement-start", nil
+		},
+		func(int) ([]byte, error) { return bytes.Repeat([]byte{0x41}, 20), nil })
+	if err == nil || got != (MaintenanceImageIdentity{}) || startCalls != 2 {
+		t.Fatalf("replaced PID identity accepted: %+v, starts=%d, err=%v", got, startCalls, err)
+	}
+}
+
+func TestMaintenanceLoadedImageIdentityRefusesStartOrHashFailure(t *testing.T) {
+	startErr := errors.New("injected process observation failure")
+	loadedCalls := 0
+	got, err := maintenanceLoadedImageIdentity(539,
+		func(int) (string, error) { return "", startErr },
+		func(int) ([]byte, error) {
+			loadedCalls++
+			return bytes.Repeat([]byte{0x41}, 20), nil
+		})
+	if err == nil || got != (MaintenanceImageIdentity{}) || loadedCalls != 0 {
+		t.Fatalf("unknown PID observation accepted: %+v, calls=%d, err=%v", got, loadedCalls, err)
+	}
+
+	got, err = maintenanceLoadedImageIdentity(539,
+		func(int) (string, error) { return "stable-start", nil },
+		func(int) ([]byte, error) { return nil, errors.New("injected csops refusal") })
+	if err == nil || got != (MaintenanceImageIdentity{}) {
+		t.Fatalf("unknown CDHash accepted: %+v, err=%v", got, err)
+	}
+}
+
+func TestMaintenanceLoadedImageIdentityRejectsInvalidPIDAndHashLength(t *testing.T) {
+	readerCalls := 0
+	start := func(int) (string, error) {
+		readerCalls++
+		return "stable-start", nil
+	}
+	hash := func(int) ([]byte, error) {
+		readerCalls++
+		return bytes.Repeat([]byte{0x41}, 19), nil
+	}
+	got, err := maintenanceLoadedImageIdentity(1, start, hash)
+	if err == nil || got != (MaintenanceImageIdentity{}) || readerCalls != 0 {
+		t.Fatalf("invalid PID queried: %+v, calls=%d, err=%v", got, readerCalls, err)
+	}
+	got, err = maintenanceLoadedImageIdentity(539, start, hash)
+	if err == nil || got != (MaintenanceImageIdentity{}) || readerCalls != 2 {
+		t.Fatalf("malformed kernel hash accepted: %+v, calls=%d, err=%v", got, readerCalls, err)
+	}
+}
+
 func TestMaintenanceImageCDHashRejectsMalformedInputs(t *testing.T) {
 	valid := bytes.Repeat([]byte{0x31}, 20)
 	for _, tc := range []struct {

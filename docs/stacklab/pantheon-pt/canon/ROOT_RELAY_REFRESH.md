@@ -34,6 +34,13 @@ metadata and pathname are not substitutes for loaded-image identity. Artifact
 inspection with PID zero reports only the retained static hash and makes no
 loaded-image claim.
 
+The existing read-only `router relay maintenance-image --pid <pid>` form may
+omit `--payload` to report only the kernel-loaded CDHash, bracketed by matching
+kernel process-start observations. Use that value to identify a retained
+archive before evaluating its source profile. This observation is not a
+migration plan or source approval; supplying `--payload` still requires an
+exact loaded-hash match.
+
 Legacy migration is source-profile-specific. The implementation admits only
 the exact inspected consume-before-forward source pinned by
 `maintenanceLegacySource`, with an unmodified build. A retained archive's

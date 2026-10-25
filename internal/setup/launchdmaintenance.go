@@ -14,8 +14,9 @@ import (
 const RootRelayMaintenanceProfile = "root-relay-legacy-maintenance-v1"
 
 type MaintenanceImageIdentity struct {
-	PID    int    `json:"pid"`
-	CDHash string `json:"cdhash"`
+	PID         int    `json:"pid"`
+	CDHash      string `json:"cdhash"`
+	KernelStart string `json:"kernel_start,omitempty"`
 }
 
 // MaintenancePlan is not a drain receipt. Loaded identifies the retained old
