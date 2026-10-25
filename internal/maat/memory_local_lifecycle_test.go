@@ -549,24 +549,22 @@ func TestOwnerDispositionReconcilesEachRetainedPhaseAndFinalJournalFailure(t *te
 				localLifecyclePrefix(t, f.store, "attempts", f.store.attemptsFD, preview.PlanSHA256+".disposition-complete-v1.json", receipt, stage)
 			}
 			if phase == "journal-unavailable" {
-				lock := f.journal.Path + ".lock"
-				retained := lock + ".retained-fixture"
-				if err := os.Rename(lock, retained); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Mkdir(lock, 0o700); err != nil {
-					t.Fatal(err)
-				}
-				if _, err := f.store.ReconcileLocalPreventionDisposition(preview.PlanSHA256); err == nil {
-					t.Fatal("journal failure claimed full disposition success")
-				}
-				if r, err := f.store.Preflight(localWatchScope()); err == nil || r.Decision != PreflightUnverifiable {
-					t.Fatal("final projection debt did not block new action")
-				}
-				if err := os.Remove(lock); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Rename(retained, lock); err != nil {
+				// Hold the actual journal mutation primitive, rather than guessing
+				// its private lock filename. The second nonblocking acquisition
+				// must fail; the outer helper always releases, including Fatal.
+				if err := withJournalMutationLock(f.journal.Path, func() error {
+					_, err := f.store.ReconcileLocalPreventionDisposition(preview.PlanSHA256)
+					if err == nil {
+						t.Fatal("journal failure claimed full disposition success")
+					}
+					if !strings.Contains(err.Error(), "another local write or repair is in progress") {
+						t.Fatalf("fixture did not reach the journal mutation refusal: %v", err)
+					}
+					if r, err := f.store.Preflight(localWatchScope()); err == nil || r.Decision != PreflightUnverifiable {
+						t.Fatal("final projection debt did not block new action")
+					}
+					return nil
+				}); err != nil {
 					t.Fatal(err)
 				}
 			}
