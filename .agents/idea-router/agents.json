@@ -1,5 +1,16 @@
 {
   "agents": {
+    "codex-reprogramanything": {
+      "id": "codex-reprogramanything",
+      "attended": true,
+      "type": "codex",
+      "cwd": "/Users/thekryptodragon/Development/ReprogramAnything",
+      "repo": "/Users/thekryptodragon/Development/ReprogramAnything",
+      "workstream": "reprogramanything",
+      "wake": {
+        "mechanism": "none"
+      }
+    },
     "claude-assiduous": {
       "worker_answers": true,
       "id": "claude-assiduous",
