@@ -26,7 +26,7 @@ type Agent struct {
 // duplicate rows (Rule A27 idempotent-on-(agent_id,pid) intent).
 func (s *SQLiteStore) RegisterAgent(id string, pid int) error {
 	if strings.TrimSpace(id) == "" {
-		return fmt.Errorf("routerstore: RegisterAgent: id is required")
+		return fmt.Errorf("%w: routerstore: RegisterAgent: id is required", ErrInvalidInput)
 	}
 	now := s.clock().Format(time.RFC3339)
 	const q = `
@@ -123,7 +123,7 @@ func (s *SQLiteStore) SetState(key, value string) error {
 		return fmt.Errorf("Ma'at reservation writes require the atomic scheduler API; upgrade this client")
 	}
 	if strings.TrimSpace(key) == "" {
-		return fmt.Errorf("routerstore: SetState: key is required")
+		return fmt.Errorf("%w: routerstore: SetState: key is required", ErrInvalidInput)
 	}
 	const q = `INSERT INTO state (key, value) VALUES (?, ?)
 ON CONFLICT(key) DO UPDATE SET value=excluded.value;`
@@ -200,7 +200,7 @@ func (s *SQLiteStore) CompareAndSwapState(key, expected string, exists bool, val
 		return false, errors.New("sleep custody: generic CAS cannot create or replace authority")
 	}
 	if strings.TrimSpace(key) == "" {
-		return false, fmt.Errorf("routerstore: CompareAndSwapState: key is required")
+		return false, fmt.Errorf("%w: routerstore: CompareAndSwapState: key is required", ErrInvalidInput)
 	}
 	var result sql.Result
 	var err error

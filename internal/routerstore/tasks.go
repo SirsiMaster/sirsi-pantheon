@@ -89,35 +89,35 @@ func validLinkKind(kind string) bool {
 
 func validateTask(t Task) error {
 	if strings.TrimSpace(t.Agent) == "" || strings.TrimSpace(t.TaskID) == "" || strings.TrimSpace(t.Subject) == "" {
-		return fmt.Errorf("routerstore: task agent, task-id, and subject are required")
+		return fmt.Errorf("%w: routerstore: task agent, task-id, and subject are required", ErrInvalidInput)
 	}
 	if !validTaskStatus(t.Status) {
-		return fmt.Errorf("routerstore: invalid task status %q (want pending, in-progress, blocked, done or canceled)", t.Status)
+		return fmt.Errorf("%w: routerstore: invalid task status %q (want pending, in-progress, blocked, done or canceled)", ErrInvalidInput, t.Status)
 	}
 	if strings.TrimSpace(t.ResponsibleParty) == "" {
-		return fmt.Errorf("routerstore: task responsible-party is required")
+		return fmt.Errorf("%w: routerstore: task responsible-party is required", ErrInvalidInput)
 	}
 	if !validTestState(t.TestState) {
-		return fmt.Errorf("routerstore: invalid test-state %q", t.TestState)
+		return fmt.Errorf("%w: routerstore: invalid test-state %q", ErrInvalidInput, t.TestState)
 	}
 	if _, ok := stageRank[t.Stage]; !ok {
-		return fmt.Errorf("routerstore: invalid stage %q", t.Stage)
+		return fmt.Errorf("%w: routerstore: invalid stage %q", ErrInvalidInput, t.Stage)
 	}
 	if t.TokensConsumed < 0 || t.DurationSeconds < 0 {
-		return fmt.Errorf("routerstore: task accounting values cannot be negative")
+		return fmt.Errorf("%w: routerstore: task accounting values cannot be negative", ErrInvalidInput)
 	}
 	if _, err := time.Parse(time.RFC3339, t.CommissionedAt); err != nil {
-		return fmt.Errorf("routerstore: commissioned-at must be RFC3339 UTC: %w", err)
+		return fmt.Errorf("%w: routerstore: commissioned-at must be RFC3339 UTC: %w", ErrInvalidInput, err)
 	}
 	for i, entry := range t.Timeline {
 		if strings.TrimSpace(entry.Day) == "" || strings.TrimSpace(entry.Owner) == "" || strings.TrimSpace(entry.Label) == "" || entry.Hours < 0 || math.IsNaN(entry.Hours) || math.IsInf(entry.Hours, 0) {
-			return fmt.Errorf("routerstore: invalid timeline entry %d", i)
+			return fmt.Errorf("%w: routerstore: invalid timeline entry %d", ErrInvalidInput, i)
 		}
 	}
 	hasEvidence := false
 	for i, link := range t.Links {
 		if !validLinkKind(link.Kind) || strings.TrimSpace(link.Label) == "" || strings.TrimSpace(link.URL) == "" {
-			return fmt.Errorf("routerstore: invalid task link %d", i)
+			return fmt.Errorf("%w: routerstore: invalid task link %d", ErrInvalidInput, i)
 		}
 		hasEvidence = hasEvidence || link.Kind == "evidence"
 	}
@@ -303,7 +303,7 @@ func (s *SQLiteStore) UpdateTask(agent, taskID string, u TaskUpdate) (Task, erro
 
 func (s *SQLiteStore) updateTaskOnce(agent, taskID string, u TaskUpdate) (Task, error) {
 	if u.AddTokens < 0 || u.AddSeconds < 0 {
-		return Task{}, fmt.Errorf("routerstore: accounting increments cannot be negative")
+		return Task{}, fmt.Errorf("%w: routerstore: accounting increments cannot be negative", ErrInvalidInput)
 	}
 	t, observedLinks, err := s.taskWithRawLinks(agent, taskID)
 	if err != nil {
@@ -362,7 +362,7 @@ func (s *SQLiteStore) updateTaskOnce(agent, taskID string, u TaskUpdate) (Task, 
 	}
 	for i, link := range u.Links {
 		if !validLinkKind(link.Kind) || strings.TrimSpace(link.Label) == "" || strings.TrimSpace(link.URL) == "" {
-			return Task{}, fmt.Errorf("routerstore: invalid task link %d", i)
+			return Task{}, fmt.Errorf("%w: routerstore: invalid task link %d", ErrInvalidInput, i)
 		}
 	}
 	t.Links = mergeLinks(t.Links, u.Links)

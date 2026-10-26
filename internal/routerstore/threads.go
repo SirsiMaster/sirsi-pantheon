@@ -33,17 +33,17 @@ func decodeThreadCASArgument(raw []byte, record *ThreadRecord) error {
 			return err
 		}
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid insert-only thread argument")
+			return fmt.Errorf("%w: invalid insert-only thread argument", ErrInvalidInput)
 		}
 		var version string
 		if err := json.Unmarshal(parts[0], &version); err != nil || version != "thread-insert-only.v1" {
-			return fmt.Errorf("unsupported insert-only thread version")
+			return fmt.Errorf("%w: unsupported insert-only thread version", ErrInvalidInput)
 		}
 		if err := json.Unmarshal(parts[1], record); err != nil {
 			return err
 		}
 		if !record.CreateOnly {
-			return fmt.Errorf("insert-only thread restriction missing")
+			return fmt.Errorf("%w: insert-only thread restriction missing", ErrInvalidInput)
 		}
 		return nil
 	}
@@ -51,7 +51,7 @@ func decodeThreadCASArgument(raw []byte, record *ThreadRecord) error {
 		return err
 	}
 	if record.CreateOnly {
-		return fmt.Errorf("insert-only thread requires versioned argument")
+		return fmt.Errorf("%w: insert-only thread requires versioned argument", ErrInvalidInput)
 	}
 	return nil
 }

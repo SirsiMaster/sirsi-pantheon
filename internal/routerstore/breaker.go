@@ -148,7 +148,7 @@ func (s *SQLiteStore) Breakers() ([]Breaker, error) {
 // cause is fixed. It clears the trip and the failure count.
 func (s *SQLiteStore) ResetBreaker(domain string) error {
 	if strings.TrimSpace(domain) == "" {
-		return fmt.Errorf("routerstore: ResetBreaker: domain is required")
+		return fmt.Errorf("%w: routerstore: ResetBreaker: domain is required", ErrInvalidInput)
 	}
 	res, err := s.exec(`UPDATE breakers SET failures = 0, tripped_at = '', operator_item = '' WHERE domain = ?;`, domain)
 	if err != nil {

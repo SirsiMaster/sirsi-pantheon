@@ -115,10 +115,10 @@ func (s *SQLiteStore) MarkRequirementAudit(agent, evidenceRef string) error {
 	agent = strings.TrimSpace(agent)
 	evidenceRef = strings.TrimSpace(evidenceRef)
 	if agent == "" {
-		return fmt.Errorf("routerstore: requirement audit agent is required")
+		return fmt.Errorf("%w: routerstore: requirement audit agent is required", ErrInvalidInput)
 	}
 	if evidenceRef == "" {
-		return fmt.Errorf("routerstore: requirement audit evidence reference is required")
+		return fmt.Errorf("%w: routerstore: requirement audit evidence reference is required", ErrInvalidInput)
 	}
 	value := fmt.Sprintf("audited_at=%s evidence=%s", s.clock().UTC().Format(time.RFC3339), evidenceRef)
 	_, err := s.db.Exec(`INSERT INTO state(key,value) VALUES(?,?)
@@ -144,7 +144,7 @@ func requirementAuditExistsTx(tx *txHandle, agent string) (bool, error) {
 func (s *SQLiteStore) RunnableFor(agent string) (RunnableState, error) {
 	agent = strings.TrimSpace(agent)
 	if agent == "" {
-		return RunnableState{}, fmt.Errorf("routerstore: runnable agent is required")
+		return RunnableState{}, fmt.Errorf("%w: routerstore: runnable agent is required", ErrInvalidInput)
 	}
 
 	tx, err := s.db.Begin()

@@ -62,7 +62,7 @@ func (s *SQLiteStore) ClaimWakeEvent(ttl time.Duration) (*WakeEvent, error) {
 // another lane's delivery lease merely because it sorts first globally.
 func (s *SQLiteStore) ClaimWakeEventFor(agent string, ttl time.Duration) (*WakeEvent, error) {
 	if strings.TrimSpace(agent) == "" {
-		return nil, fmt.Errorf("routerstore: wake-event agent is required")
+		return nil, fmt.Errorf("%w: routerstore: wake-event agent is required", ErrInvalidInput)
 	}
 	return s.claimWakeEventFor(strings.TrimSpace(agent), ttl)
 }

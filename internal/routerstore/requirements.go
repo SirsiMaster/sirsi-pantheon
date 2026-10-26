@@ -134,7 +134,7 @@ func (s *SQLiteStore) AddRequirement(title, source, sourceRef, owner string) (Re
 func (s *SQLiteStore) RecordEvidence(reqID string, ev Evidence) error {
 	reqID = strings.ToUpper(strings.TrimSpace(reqID))
 	if !reqIDPattern.MatchString(reqID) {
-		return fmt.Errorf("routerstore: invalid requirement id %q (want REQ-NNN)", reqID)
+		return fmt.Errorf("%w: routerstore: invalid requirement id %q (want REQ-NNN)", ErrInvalidInput, reqID)
 	}
 	return s.withTx(func(tx *txHandle) error {
 		var cur Evidence
@@ -186,7 +186,7 @@ var ErrIncompleteEvidence = errors.New("routerstore: incomplete evidence")
 func (s *SQLiteStore) Satisfy(reqID string) error {
 	reqID = strings.ToUpper(strings.TrimSpace(reqID))
 	if !reqIDPattern.MatchString(reqID) {
-		return fmt.Errorf("routerstore: invalid requirement id %q (want REQ-NNN)", reqID)
+		return fmt.Errorf("%w: routerstore: invalid requirement id %q (want REQ-NNN)", ErrInvalidInput, reqID)
 	}
 	return s.withTx(func(tx *txHandle) error {
 		var ev Evidence
@@ -214,14 +214,14 @@ func (s *SQLiteStore) Satisfy(reqID string) error {
 func (s *SQLiteStore) Waive(reqID, reason, ownerDecisionRef string) error {
 	reqID = strings.ToUpper(strings.TrimSpace(reqID))
 	if !reqIDPattern.MatchString(reqID) {
-		return fmt.Errorf("routerstore: invalid requirement id %q (want REQ-NNN)", reqID)
+		return fmt.Errorf("%w: routerstore: invalid requirement id %q (want REQ-NNN)", ErrInvalidInput, reqID)
 	}
 	if strings.TrimSpace(reason) == "" {
-		return errors.New("routerstore: waiver reason is required — an unexplained waiver is a dropped requirement wearing a terminal status")
+		return fmt.Errorf("%w: routerstore: waiver reason is required — an unexplained waiver is a dropped requirement wearing a terminal status", ErrInvalidInput)
 	}
 	ownerDecisionRef = strings.TrimSpace(ownerDecisionRef)
 	if ownerDecisionRef == "" {
-		return errors.New("routerstore: waiver requires a terminal owner decision router item reference")
+		return fmt.Errorf("%w: routerstore: waiver requires a terminal owner decision router item reference", ErrInvalidInput)
 	}
 	return s.withTx(func(tx *txHandle) error {
 		var decisions int

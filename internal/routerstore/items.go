@@ -40,13 +40,13 @@ func validStatus(status string) bool {
 // on Send, the store's new-item write path, matching the file router.
 func (s *SQLiteStore) Put(it Item) error {
 	if strings.TrimSpace(it.ID) == "" {
-		return fmt.Errorf("routerstore: Put: id is required")
+		return fmt.Errorf("%w: routerstore: Put: id is required", ErrInvalidInput)
 	}
 	if it.Status == "" {
 		it.Status = "open"
 	}
 	if !validStatus(it.Status) {
-		return fmt.Errorf("routerstore: Put: invalid status %q", it.Status)
+		return fmt.Errorf("%w: routerstore: Put: invalid status %q", ErrInvalidInput, it.Status)
 	}
 	const q = `
 INSERT INTO items (` + itemCols + `)
@@ -93,7 +93,7 @@ ON CONFLICT(id) DO UPDATE SET
 func (s *SQLiteStore) AckItem(id string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return fmt.Errorf("routerstore: AckItem: id is required")
+		return fmt.Errorf("%w: routerstore: AckItem: id is required", ErrInvalidInput)
 	}
 	res, err := s.exec(`UPDATE items SET acked_at = ? WHERE id = ? AND acked_at = '';`,
 		s.clock().Format(time.RFC3339), id)
@@ -118,7 +118,7 @@ func (s *SQLiteStore) AckItem(id string) error {
 func (s *SQLiteStore) ReopenItem(id, note string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return fmt.Errorf("routerstore: ReopenItem: id is required")
+		return fmt.Errorf("%w: routerstore: ReopenItem: id is required", ErrInvalidInput)
 	}
 	res, err := s.exec(`UPDATE items SET status='open', closed='', instructions = instructions || ? || result, result='',
 		wake_status='', wake_error='' WHERE id = ? AND status = 'closed';`, note, id)
@@ -158,7 +158,7 @@ func (s *SQLiteStore) SetBlockedBy(id, blockedBy string) error {
 func (s *SQLiteStore) ReassignItem(id, from, to, note string) error {
 	id, from, to = strings.TrimSpace(id), strings.TrimSpace(from), strings.TrimSpace(to)
 	if id == "" || from == "" || to == "" {
-		return fmt.Errorf("routerstore: ReassignItem: id, from and to are required")
+		return fmt.Errorf("%w: routerstore: ReassignItem: id, from and to are required", ErrInvalidInput)
 	}
 	if from == to {
 		return fmt.Errorf("routerstore: ReassignItem %q: already addressed to %q", id, to)
@@ -189,7 +189,7 @@ func (s *SQLiteStore) ReassignItem(id, from, to, note string) error {
 // wiring the file writer and this store behind one facade is PRD Phase 3.
 func (s *SQLiteStore) Send(from, to, title, msgType, instructions string) (string, error) {
 	if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" {
-		return "", fmt.Errorf("routerstore: Send: from and to are required")
+		return "", fmt.Errorf("%w: routerstore: Send: from and to are required", ErrInvalidInput)
 	}
 	if err := validateMessageType(msgType); err != nil {
 		return "", err

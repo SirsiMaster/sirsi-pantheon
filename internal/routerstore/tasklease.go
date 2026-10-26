@@ -197,7 +197,7 @@ func (s *SQLiteStore) RenewTaskLease(agent, taskID, token string, ttl time.Durat
 // receipt the router verifies itself (receipts.go). Free text is refused.
 func (s *SQLiteStore) CompleteTaskLease(agent, taskID, token, resultRef string) error {
 	if strings.TrimSpace(resultRef) == "" {
-		return fmt.Errorf("routerstore: task completion receipt is required (%s)", receipts)
+		return fmt.Errorf("%w: routerstore: task completion receipt is required (%s)", ErrInvalidInput, receipts)
 	}
 	now := s.clock().UTC()
 	receipt, err := s.verifyReceipt(agent, resultRef, now)
@@ -337,7 +337,7 @@ func (s *SQLiteStore) ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseRecla
 // not cause that block, so this verb has no business clearing it.
 func (s *SQLiteStore) ResetTaskAttempts(agent, taskID string) error {
 	if strings.TrimSpace(agent) == "" || strings.TrimSpace(taskID) == "" {
-		return fmt.Errorf("routerstore: ResetTaskAttempts: agent and task-id are required")
+		return fmt.Errorf("%w: routerstore: ResetTaskAttempts: agent and task-id are required", ErrInvalidInput)
 	}
 	res, err := s.exec(`UPDATE tasks SET attempts=0, failure_reason='', lease_token='', lease_expires='', claimed_by='', thread_id='',
 		status=CASE WHEN status='blocked' AND (blocked_by IS NULL OR trim(blocked_by)='') THEN 'pending' ELSE status END
