@@ -143,7 +143,7 @@ func (s *SQLiteStore) RecordEvidence(reqID string, ev Evidence) error {
 			   FROM requirements WHERE req_id = ?;`, reqID)
 		if err := row.Scan(&cur.Commit, &cur.Tests, &cur.Security, &cur.Design, &cur.Deployment, &cur.Production); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("routerstore: %s not registered", reqID)
+				return fmt.Errorf("%w: routerstore: %s not registered", ErrInvalidInput, reqID)
 			}
 			return err
 		}
@@ -195,7 +195,7 @@ func (s *SQLiteStore) Satisfy(reqID string) error {
 			   FROM requirements WHERE req_id = ?;`, reqID)
 		if err := row.Scan(&ev.Commit, &ev.Tests, &ev.Security, &ev.Design, &ev.Deployment, &ev.Production); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("routerstore: %s not registered", reqID)
+				return fmt.Errorf("%w: routerstore: %s not registered", ErrInvalidInput, reqID)
 			}
 			return err
 		}
@@ -229,7 +229,7 @@ func (s *SQLiteStore) Waive(reqID, reason, ownerDecisionRef string) error {
 			return err
 		}
 		if decisions != 1 {
-			return fmt.Errorf("routerstore: waiver authority %q is not a terminal owner decision item with evidence", ownerDecisionRef)
+			return fmt.Errorf("%w: routerstore: waiver authority %q is not a terminal owner decision item with evidence", ErrInvalidInput, ownerDecisionRef)
 		}
 		res, err := tx.Exec(`UPDATE requirements SET status=?, waiver_reason=?, waiver_ref=?, updated=? WHERE req_id=?;`,
 			ReqWaived, reason, ownerDecisionRef, s.clock().UTC().Format(time.RFC3339), reqID)
@@ -237,7 +237,7 @@ func (s *SQLiteStore) Waive(reqID, reason, ownerDecisionRef string) error {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			return fmt.Errorf("routerstore: %s not registered", reqID)
+			return fmt.Errorf("%w: routerstore: %s not registered", ErrInvalidInput, reqID)
 		}
 		return nil
 	})

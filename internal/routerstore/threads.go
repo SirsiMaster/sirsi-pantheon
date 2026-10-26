@@ -590,7 +590,7 @@ func (s *SQLiteStore) AudienceSince(since string) (AudienceReport, error) {
 	// 2026-09-10, PR #726 r2 P2).
 	t, perr := time.Parse(time.RFC3339Nano, strings.TrimSpace(since))
 	if perr != nil {
-		return AudienceReport{}, fmt.Errorf("routerstore: AudienceSince: invalid since %q (want RFC3339): %w", since, perr)
+		return AudienceReport{}, fmt.Errorf("%w: routerstore: AudienceSince: invalid since %q (want RFC3339): %w", ErrInvalidInput, since, perr)
 	}
 	t = t.UTC()
 	sinceLog := t.Format(AudienceTS) // fixed-width, for the nanosecond audience_log

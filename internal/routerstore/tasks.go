@@ -330,7 +330,7 @@ func (s *SQLiteStore) updateTaskOnce(agent, taskID string, u TaskUpdate) (Task, 
 		// held by anyone — refusing to relabel it leaves a correctly-blocked
 		// task's status permanently wrong (rs-43).
 		if terminalTaskStatus(u.Status) || u.Status == "in-progress" || (t.Status == "in-progress" && leaseLive) {
-			return Task{}, fmt.Errorf("routerstore: executable task transition %q -> %q requires a fenced task lease", t.Status, u.Status)
+			return Task{}, fmt.Errorf("%w: routerstore: executable task transition %q -> %q requires a fenced task lease", ErrInvalidInput, t.Status, u.Status)
 		}
 	}
 	oldStage, oldSubject, oldCharter := t.Stage, t.Subject, t.Charter

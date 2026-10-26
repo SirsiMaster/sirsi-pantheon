@@ -132,7 +132,7 @@ func (s *SQLiteStore) ReopenItem(id, note string) error {
 	if gerr != nil {
 		return gerr
 	}
-	return fmt.Errorf("routerstore: ReopenItem %q: item is %q, not closed", id, it.Status)
+	return fmt.Errorf("%w: routerstore: ReopenItem %q: item is %q, not closed", ErrInvalidInput, id, it.Status)
 }
 
 // SetBlockedBy replaces an item's optional dependency edge.
@@ -161,7 +161,7 @@ func (s *SQLiteStore) ReassignItem(id, from, to, note string) error {
 		return fmt.Errorf("%w: routerstore: ReassignItem: id, from and to are required", ErrInvalidInput)
 	}
 	if from == to {
-		return fmt.Errorf("routerstore: ReassignItem %q: already addressed to %q", id, to)
+		return fmt.Errorf("%w: routerstore: ReassignItem %q: already addressed to %q", ErrInvalidInput, id, to)
 	}
 	res, err := s.exec(`UPDATE items SET to_agent = ?, instructions = instructions || ?, wake_status = '', wake_error = ''
 		WHERE id = ? AND to_agent = ? AND status = 'open' AND lease_token = '';`, to, note, id, from)
@@ -175,8 +175,8 @@ func (s *SQLiteStore) ReassignItem(id, from, to, note string) error {
 	if gerr != nil {
 		return gerr
 	}
-	return fmt.Errorf("routerstore: ReassignItem %q: not reassignable (to=%s status=%s; want to=%s, open and unclaimed)",
-		id, it.To, it.Status, from)
+	return fmt.Errorf("%w: routerstore: ReassignItem %q: not reassignable (to=%s status=%s; want to=%s, open and unclaimed)",
+		ErrInvalidInput, id, it.To, it.Status, from)
 }
 
 // Send creates a new open item from→to and returns its id. The id follows the
@@ -434,7 +434,7 @@ func (s *SQLiteStore) CloseItem(id, result string) error {
 	if it.Status == "closed" {
 		return ErrAlreadyClosed
 	}
-	return fmt.Errorf("routerstore: Close %q: item is %q, not open", id, it.Status)
+	return fmt.Errorf("%w: routerstore: Close %q: item is %q, not open", ErrInvalidInput, id, it.Status)
 }
 
 // scanItem reads one items row (in itemCols order) via the given scan func,

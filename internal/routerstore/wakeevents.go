@@ -122,7 +122,7 @@ func (s *SQLiteStore) claimWakeEventFor(agent string, ttl time.Duration) (*WakeE
 func (s *SQLiteStore) AckWakeEvent(eventID, token, ackRef string) error {
 	ackRef = strings.TrimSpace(ackRef)
 	if ackRef == "" {
-		return fmt.Errorf("routerstore: wake acknowledgment requires a store-action reference")
+		return fmt.Errorf("%w: routerstore: wake acknowledgment requires a store-action reference", ErrInvalidInput)
 	}
 	var agent, sourceKind, sourceID string
 	if err := s.db.QueryRow(`SELECT agent,source_kind,source_id FROM wake_events
@@ -193,7 +193,7 @@ func (s *SQLiteStore) validateWakeAckRef(agent, sourceKind, sourceID, ref string
 			return nil
 		}
 	}
-	return fmt.Errorf("routerstore: wake acknowledgment reference %q does not resolve to a real store action", ref)
+	return fmt.Errorf("%w: routerstore: wake acknowledgment reference %q does not resolve to a real store action", ErrInvalidInput, ref)
 }
 
 // expireWakeLeasesTx treats delivery without a real store acknowledgment as a

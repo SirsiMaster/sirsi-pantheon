@@ -206,7 +206,7 @@ func (s *SQLiteStore) PublishIdentifier(namespace string, number int, slug strin
 			return err
 		}
 		if n == 0 {
-			return fmt.Errorf("routerstore: publish %s-%03d: not allocated — claim it first", ns, number)
+			return fmt.Errorf("%w: routerstore: publish %s-%03d: not allocated — claim it first", ErrInvalidInput, ns, number)
 		}
 		return nil
 	})
@@ -228,7 +228,7 @@ func (s *SQLiteStore) WithdrawIdentifier(namespace string, number int) error {
 		}
 		n, _ := res.RowsAffected()
 		if n == 0 {
-			return fmt.Errorf("routerstore: withdraw %s-%03d: not allocated", ns, number)
+			return fmt.Errorf("%w: routerstore: withdraw %s-%03d: not allocated", ErrInvalidInput, ns, number)
 		}
 		return nil
 	})
