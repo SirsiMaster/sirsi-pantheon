@@ -56,6 +56,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 
 	// Find our own binary path for the command runner.
 	selfBin, _ := os.Executable()
+	fabricSource := ledger.NewFabricGenerationProducer(collectDashboardFabricRead, buildversion.Current("sirsi").Version)
 
 	srv := dashboard.New(dashboard.Config{
 		MercuryFn: mercury.NewConfigured().Read,
@@ -67,6 +68,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			snap := collectDashboardStats()
 			return json.Marshal(snap)
 		},
+		VitalsFn:     collectDashboardVitals,
 		NodeStatusFn: collectDashboardNodeStatus,
 		LedgerFn:     collectDashboardLedger,
 		FleetFn:      collectDashboardFleet,
@@ -78,7 +80,9 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			}
 			return unroutableAgents(repoRoot)
 		},
-		FabricFn:            collectDashboardFabric,
+		FabricReadFn:        collectDashboardFabricRead,
+		FabricSource:        fabricSource,
+		FabricBuild:         buildversion.Current("sirsi").Version,
 		MaatDecisionsFn:     collectDashboardMaatDecisions,
 		MaatCasebookFn:      collectDashboardMaatCasebook,
 		MaatKnowledgeFn:     collectDashboardMaatKnowledge,
@@ -119,6 +123,16 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	if nStore != nil {
 		nStore.Close()
 	}
+}
+
+// Explicit browser diagnostics use the exact ranked CLI producer. Periodic
+// dashboard stats do not call this; only GET /api/vitals does.
+func collectDashboardVitals() ([]byte, error) {
+	report, err := sampleVitalsReport(false, 5)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(report)
 }
 
 func collectDashboardMaatDecisions(limit int) ([]maat.Decision, error) {
@@ -177,16 +191,32 @@ func collectDashboardMaatKnowledge(query string) (knowledge.View, error) {
 	return knowledge.Load(home, query)
 }
 
-func collectDashboardFabric() (ledger.FabricBoard, error) {
+func collectDashboardFabricRead() (ledger.FabricRead, error) {
 	repoRoot, err := router.FindRepoRoot()
 	if err != nil {
-		return ledger.FabricBoard{}, fmt.Errorf("locate repo root: %w", err)
+		return ledger.FabricRead{}, fmt.Errorf("locate repo root: %w", err)
 	}
-	board, err := ledger.BuildFabric(repoRoot, buildversion.Current("sirsi").Version, time.Now().UTC())
+	return collectDashboardFabricReadAtRoot(repoRoot)
+}
+
+func collectDashboardFabricReadAtRoot(repoRoot string) (ledger.FabricRead, error) {
+	now := time.Now().UTC()
+	read, err := ledger.ReadFabric(repoRoot, now)
 	if err != nil {
-		return ledger.FabricBoard{}, fmt.Errorf("build fabric: %w", err)
+		return ledger.FabricRead{}, err
 	}
-	return board, nil
+	health := collectFabricHostHealth(repoRoot, now)
+	read.Evidence.Health = &health
+	return read, nil
+}
+func collectDashboardFabric() (ledger.FabricBoard, error) {
+	producer := ledger.NewFabricGenerationProducer(collectDashboardFabricRead, buildversion.Current("sirsi").Version)
+	generation, err := producer.Read(context.Background())
+	if err != nil {
+		return ledger.FabricBoard{}, err
+	}
+	view, err := generation.View()
+	return view.Board, err
 }
 
 // collectDashboardLedger wires GET /api/ledger (A26 Nexus seam) to the

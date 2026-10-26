@@ -6,6 +6,7 @@ struct LegacyRelayMaintenancePanel: View {
     let directory: URL
     @Environment(\.snapshotMode) private var snapshotMode
     @ObservedObject private var model: LegacyRelayMaintenanceModel
+    @ObservedObject private var appUpdate: MaatAppUpdateModel
     @State private var picker=false
     @State private var confirming=false
     @State private var approved: LegacyRelayMaintenanceModel.Approval?
@@ -20,10 +21,12 @@ struct LegacyRelayMaintenancePanel: View {
     @State private var approvedPublicBinding:LegacyRelayMaintenanceModel.PublicBindingApproval?
     @State private var confirmPublicBinding=false
 
-    init(directory:URL,model:LegacyRelayMaintenanceModel){self.directory=directory;self.model=model}
+    init(directory:URL,appUpdate:MaatAppUpdateModel){self.directory=directory;self.model=appUpdate.maintenance;self.appUpdate=appUpdate}
+
+    var managedUpdateControl: MaatAppUpdateControl { MaatAppUpdateControl(model: appUpdate) }
 
     var body: some View {
-        DisclosureGroup("Legacy root relay maintenance") {
+        DisclosureGroup("Pantheon and legacy relay maintenance") {
             VStack(alignment:.leading,spacing:10){
                 Text("Optional fallback for a recognized legacy root relay. Pantheon stays unprivileged; macOS asks permission for only the reviewed operation using the protected installed engine. Producer-covered maintenance remains separate.")
                     .sirsiFont(.caption).foregroundStyle(.secondary)
@@ -33,10 +36,14 @@ struct LegacyRelayMaintenancePanel: View {
                     Button("Read current transaction"){Task{await model.readStatus()}}.buttonStyle(.bordered)
                 }.disabled(snapshotMode)
                 if let notice=model.statusNotice {Text(notice).sirsiFont(.caption).foregroundStyle(.secondary)}
+                Text("Legacy app/helper recovery Installer. For a normal app update or exact rollback, use Managed Pantheon update below.")
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button("Check compatible Installer"){Task{await model.prepareInstaller()}}.buttonStyle(.bordered)
                     Button("Recheck installed pair"){Task{await model.recheckInstalledPair()}}.buttonStyle(.bordered)
                 }.disabled(model.busy||snapshotMode)
+                Divider()
+                managedUpdateControl.disabled(snapshotMode)
                 if let installer=model.installer {
                     Text("Verified normal PKG · \(installer.release)").sirsiFont(.caption)
                     Button("Open verified Installer"){approvedInstaller=installer;confirmInstaller=true}.buttonStyle(.bordered).disabled(model.busy||snapshotMode)

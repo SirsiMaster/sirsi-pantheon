@@ -23,6 +23,53 @@ struct LegacyRelayPlan: Codable, Equatable {
     }
 }
 
+// Exact native-to-CLI rollback request. The CLI still rechecks the installed
+// version, official release metadata, package custody and Ma'at admission.
+struct AppRollbackSelection: Equatable {
+    let release: String
+    init?(release: String) {
+        guard release.range(of: #"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$"#, options: .regularExpression) != nil else { return nil }
+        let parts = release.split(separator: ".").compactMap { UInt64($0) }
+        guard parts.count == 3, parts[0] > 0 || parts[1] > 24 || (parts[1] == 24 && parts[2] >= 115) else { return nil }
+        self.release = release
+    }
+    var commandArguments: [String] { ["update", "--rollback-version", release, "--confirm-rollback"] }
+}
+
+struct AppUpdateReconciliationReport: Decodable, Equatable {
+    struct Observation: Decodable, Equatable { let release: String }
+    let schema: String
+    let state: String
+    let attemptID: String?
+    let targetRelease: String?
+    let currentRelease: String?
+    let observation: Observation?
+    let reason: String?
+    enum CodingKeys: String, CodingKey {
+        case schema, state, observation, reason
+        case attemptID = "attempt_id"
+        case targetRelease = "target_release"
+        case currentRelease = "current_release"
+    }
+    var isBound: Bool {
+        guard schema == "sirsi.maat.app-update-reconciliation.v1" else { return false }
+        switch state {
+        case "no_pending_attempt": return attemptID == nil && targetRelease == nil && currentRelease == nil && observation == nil
+        case "resolved": return validIdentity && observation?.release == targetRelease
+        case "unresolved": return validIdentity
+        case "unverifiable", "unsupported": return !(reason ?? "").isEmpty
+        default: return false
+        }
+    }
+    private var validIdentity: Bool {
+        guard let attemptID, UUID(uuidString: attemptID) != nil,
+              let targetRelease, let currentRelease else { return false }
+        let releasePattern = #"^0\.[0-9]+\.[0-9]+$"#
+        return targetRelease.range(of: releasePattern, options: .regularExpression) != nil &&
+            currentRelease.range(of: releasePattern, options: .regularExpression) != nil
+    }
+}
+
 struct LegacyRelayTransaction: Codable, Equatable {
     let id: String
     let revision: UInt64
@@ -83,7 +130,16 @@ enum LegacyRelayAppHost {
     @Published private(set) var preview: LegacyRelayPlan?
     @Published private(set) var transaction: LegacyRelayTransaction?
     @Published private(set) var receipt: CommandExecution?
-    @Published private(set) var busy = false
+    @Published private(set) var busy = false {
+        didSet { if oldValue != busy { managedConsentEpoch = UUID() } }
+    }
+    // The existing legacy busy latch is also the native managed-app fence.
+    // Epoch changes invalidate review captured before another operation ran.
+    private(set) var managedConsentEpoch = UUID()
+    private var managedRequestID: UUID?
+    private var managedRequestGeneration: UUID?
+    private var managedRequestCancel: (@MainActor () -> Void)?
+    var managedAppRequestActive: Bool { managedRequestID != nil }
     @Published private(set) var error: String?
     @Published private(set) var canConfirm = false
     @Published private(set) var restoreApproval: RestoreApproval?
@@ -135,6 +191,23 @@ enum LegacyRelayAppHost {
         }
     }
 
+    func beginManagedAppRequest(expectedEpoch: UUID, cancel: @escaping @MainActor () -> Void) -> UUID? {
+        guard !busy, managedRequestID == nil, managedConsentEpoch == expectedEpoch else { return nil }
+        // Retained legacy approvals cannot survive a different app operation.
+        cancelReview(); installer = nil
+        let id = UUID(); managedRequestID = id; managedRequestGeneration = generation
+        managedRequestCancel = cancel; busy = true
+        return id
+    }
+    func managedRequestIsCurrent(_ id: UUID) -> Bool {
+        managedRequestID == id && managedRequestGeneration == generation && busy
+    }
+    func finishManagedAppRequest(_ id: UUID) {
+        guard managedRequestID == id else { return }
+        managedRequestID = nil; managedRequestGeneration = nil; managedRequestCancel = nil
+        busy = false
+    }
+
     func select(_ file: URL) { selectedFile = file; cancelReview() }
     func changeDirectory(_ directory: URL) { if self.directory != directory { self.directory = directory; cancelReview() } }
     func cancelReview() { generation = UUID(); approval = nil; restoreApproval = nil; actionApproval=nil;publicBindingApproval=nil;canConfirm = false; preview = nil }
@@ -153,6 +226,7 @@ enum LegacyRelayAppHost {
         installer=InstallerApproval(release:plan.release,package:plan.package,digest:plan.sha256,bytes:result.stdoutData,generation:token)
         statusNotice="Compatible signed/notarized PKG verified. Review and open normal Installer, then recheck the installed app/helper pair. No service action was performed."
     }
+
     func install(_ approved:InstallerApproval)->Task<Void,Never>? {
         guard !busy,installer==approved,generation==approved.generation,installerTimeout.isFinite,installerTimeout>0,installerTimeout<=130 else{return nil}
         installer=nil;busy=true;error=nil
@@ -169,7 +243,7 @@ enum LegacyRelayAppHost {
             if result.complete,result.exitCode==0,
                let plan=try?JSONDecoder().decode(InstallerEnvelope.self,from:result.stdoutData),plan.valid,
                plan.package==approved.package,plan.sha256==approved.digest,plan.release==approved.release,
-               self.generation==approved.generation,!Task.isCancelled,ProcessInfo.processInfo.systemUptime<deadline {
+               self.generation==approved.generation,!self.managedAppRequestActive,!Task.isCancelled,ProcessInfo.processInfo.systemUptime<deadline {
                 if self.openInstaller(URL(fileURLWithPath:plan.package)) {
                     self.statusNotice="Normal Installer opened. Complete its signed PKG workflow, then choose Recheck installed pair. If Pantheon was replaced, reopen the one installed app before maintenance."
                 }else{self.error="Installer did not open. Check the release again; no maintenance or installation was claimed."}
@@ -244,7 +318,10 @@ enum LegacyRelayAppHost {
 
     func resume(_ expected: LegacyRelayTransaction) -> Task<Void, Never>? { perform("recover",expected:expected) }
     func abortBeforeRetirement(_ expected: LegacyRelayTransaction) -> Task<Void, Never>? { perform("abort",expected:expected) }
-    func cancelInvocation(){cancelReview();observationTask?.cancel();activeTask?.cancel()}
+    func cancelInvocation(){
+        if let managedRequestCancel { managedRequestCancel(); return }
+        cancelReview();observationTask?.cancel();activeTask?.cancel()
+    }
 
     private func perform(_ operation: String,expected:LegacyRelayTransaction) -> Task<Void, Never>? {
         guard !busy,!outcomeUnknown,let consent=actionApproval,consent.operation==operation,consent.transaction==expected,
@@ -506,6 +583,22 @@ enum LegacyRelayAppHost {
         if result.childState == .notStarted,result.captureError == nil{
             lastResolved=retained;outstanding=nil;outcomeUnknown=false
             statusNotice="The submitted operation did not start. Its unused ticket may be superseded by a new reviewed preview."
+        }else if result.complete,let response=try?JSONDecoder().decode(MutationEnvelope.self,from:result.stdoutData),
+                 response.status.phase=="prepared"{
+            if response.terminal,!response.safeForNewPreview,response.ticketJSON==ticketJSON,response.status.isBound,
+               response.status.id==retained.ticket?.transaction,response.status.plan==retained.ticket?.plan{
+                // A prepared transaction is a typed proof that retirement has not been
+                // requested. Keep its exact receipt and route the operator to this
+                // transaction's existing reviewed recovery controls.
+                lastResolved=retained;outstanding=nil;outcomeUnknown=false;lifecycleDebt=true
+                transaction=response.status;transactionDirectory=scope
+                statusNotice="Refresh remains in the exact prepared transaction; retirement has not been requested. The durable hold blocks new current-client calls before publication. Use Resume to revalidate and continue this transaction, or review Abort while it is still prepared. A waiting call that reaches its deadline was not published and may be retried after the hold clears."
+            }else{
+                // Never let a generic terminal report clear the exact attempt when its
+                // prepared status, ticket, ID or plan does not match this submission.
+                outcomeUnknown=true
+                statusNotice="A prepared result did not match the exact retained operation. Keep the receipt and inspect this transaction; no new operation is authorized."
+            }
         }else if result.complete,let response=try?JSONDecoder().decode(MutationEnvelope.self,from:result.stdoutData),
                  response.ticketJSON==ticketJSON,response.terminal {
             lastResolved=retained;outstanding=nil;outcomeUnknown=false;lifecycleDebt = !response.safeForNewPreview

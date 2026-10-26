@@ -58,6 +58,11 @@ type Snapshot struct {
 // Build joins open items, terminal dependency truth, thread heartbeats/current
 // work, and the task registry. agent may be empty for a fleet-wide snapshot.
 func Build(repoRoot, agent string, now time.Time, staleAfter time.Duration) (Snapshot, error) {
+	snapshot, _, err := buildWithThreads(repoRoot, agent, now, staleAfter)
+	return snapshot, err
+}
+
+func buildWithThreads(repoRoot, agent string, now time.Time, staleAfter time.Duration) (Snapshot, *router.ThreadRegistry, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
@@ -66,23 +71,23 @@ func Build(repoRoot, agent string, now time.Time, staleAfter time.Duration) (Sna
 	}
 	f, err := dispatch.Open(repoRoot)
 	if err != nil {
-		return Snapshot{}, err
+		return Snapshot{}, nil, err
 	}
 	defer f.Close()
 	all, _, err := f.ListActive()
 	if err != nil {
-		return Snapshot{}, err
+		return Snapshot{}, nil, err
 	}
 	tasks, err := f.Store().ListTasks(agent)
 	if err != nil {
-		return Snapshot{}, err
+		return Snapshot{}, nil, err
 	}
 	routerRoot := repoRoot + "/.agents/idea-router"
 	threads, err := router.LoadThreadRegistry(routerRoot)
 	if err != nil {
-		return Snapshot{}, err
+		return Snapshot{}, nil, err
 	}
-	return BuildFrom(all, tasks, threads, agent, now, staleAfter), nil
+	return BuildFrom(all, tasks, threads, agent, now, staleAfter), threads, nil
 }
 
 func BuildFrom(all []work.Item, tasks []routerstore.Task, threads *router.ThreadRegistry, scope string, now time.Time, staleAfter time.Duration) Snapshot {
@@ -281,66 +286,7 @@ type BoardBlocker struct {
 
 // Summarize distills a Snapshot into a BoardSummary for compact surface rendering.
 func Summarize(s Snapshot) BoardSummary {
-	bs := BoardSummary{GeneratedAt: s.GeneratedAt}
-	// phaseOrder tracks insertion order so the board is stable.
-	phaseOrder := []string{}
-	phases := map[string]*PhaseGroup{}
-	for _, a := range s.Agents {
-		for _, t := range a.Tasks {
-			bs.TotalTasks++
-			switch t.Status {
-			case "done":
-				bs.DoneTasks++
-			case "blocked":
-				bs.BlockedTasks++
-			default:
-				bs.ActiveTasks++
-			}
-			// Phase grouping: tasks with a non-empty Phase field are clustered.
-			label := t.Phase
-			if label == "" {
-				label = "General"
-			}
-			pg := phases[label]
-			if pg == nil {
-				pg = &PhaseGroup{Name: label}
-				phases[label] = pg
-				phaseOrder = append(phaseOrder, label)
-			}
-			pg.Total++
-			switch t.Status {
-			case "done":
-				pg.Done++
-			case "blocked":
-				pg.Blocked++
-			default:
-				pg.Active++
-			}
-		}
-		for _, it := range a.Items {
-			bs.OpenItems++
-			if it.Blocked {
-				bs.BlockedItems++
-				bs.Blockers = append(bs.Blockers, BoardBlocker{
-					Agent:  a.AgentID,
-					ItemID: it.ID,
-					Title:  it.Title,
-					Age:    FormatAge(it.AgeSeconds),
-				})
-			}
-		}
-	}
-	if bs.TotalTasks > 0 {
-		bs.PctDone = bs.DoneTasks * 100 / bs.TotalTasks
-	}
-	for _, name := range phaseOrder {
-		pg := phases[name]
-		if pg.Total > 0 {
-			pg.PctDone = pg.Done * 100 / pg.Total
-		}
-		bs.Phases = append(bs.Phases, *pg)
-	}
-	return bs
+	return fabricFacts(s).Ledger
 }
 
 // TextBoard renders a compact multi-line ASCII board for CLI/MCP text output.
@@ -351,6 +297,7 @@ func (bs BoardSummary) TextBoard() string {
 		bar := progressBar(bs.PctDone, 20)
 		fmt.Fprintf(&sb, "  Tasks     %s  %d%%\n", bar, bs.PctDone)
 		fmt.Fprintf(&sb, "  Done %-4d  Active %-4d  Blocked  %d\n", bs.DoneTasks, bs.ActiveTasks, bs.BlockedTasks)
+		fmt.Fprintln(&sb, "  Active includes blocked tasks; blocked is a subset.")
 		if len(bs.Phases) > 1 {
 			fmt.Fprintf(&sb, "\n  By phase:\n")
 			for _, pg := range bs.Phases {

@@ -7,6 +7,11 @@
   --wakeable:color-mix(in srgb,var(--emerald) 55%,var(--panel));
   --ease:cubic-bezier(.2,.8,.2,1);
 }
+.fabric-role-ok{color:var(--ok)}
+.fabric-role-gold{color:var(--gold)}
+.fabric-role-warn{color:var(--warn)}
+.fabric-role-ink2{color:var(--ink2)}
+.fabric-role-dim{color:var(--dim)}
 *{box-sizing:border-box;margin:0}
 html{-webkit-text-size-adjust:100%}
 body{font:15px/1.47 var(--font);letter-spacing:-.011em;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;min-height:100vh}

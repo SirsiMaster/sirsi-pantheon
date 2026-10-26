@@ -52,45 +52,46 @@ package routerboard
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os/exec"
-	"strings"
+	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 )
-
-// stallSeconds matches the Python STALL_SECONDS and the v7 liveness contract:
-// a pending/in-progress task untouched this long is stalled, not active.
-const stallSeconds = 4 * 3600
-
-// activityCap bounds the transition feed. Unbounded growth in a long-lived
-// server is a slow leak and nobody scrolls past a few dozen transitions.
-const activityCap = 200
 
 // Board polls the router and holds the payload every surface renders.
 type Board struct {
 	sirsiBin   string
 	agentsJSON string
+	read       ledger.FabricGenerationReader
+	pollMu     sync.Mutex
 
-	mu       sync.RWMutex
-	payload  []byte // marshaled Payload
-	version  uint64 // bumped only when the payload actually CHANGES
-	valid    bool   // true only when the last poll's authoritative read (ledger) succeeded
-	buildID  string
-	prev     map[string]string // agent\x00task_id -> last seen status
-	activity []Event
-	// completed is a cumulative tally of transitions INTO done. Done is
-	// terminal, so counting arrivals is the honest metric for it — unlike
-	// in-progress, which is counted live.
-	completed int
+	mu      sync.RWMutex
+	payload []byte // marshaled Payload
+	version uint64 // bumped only when the payload actually CHANGES
+	valid   bool   // true only when the last poll's authoritative read (ledger) succeeded
+	buildID string
 }
 
 func New(sirsiBin, agentsJSON, buildID string) *Board {
-	return &Board{
-		sirsiBin: sirsiBin, agentsJSON: agentsJSON, buildID: buildID,
-		prev: map[string]string{}, activity: []Event{},
+	producer := ledger.NewFabricGenerationProducer(func() (ledger.FabricRead, error) {
+		parent := filepath.Dir(agentsJSON)
+		if filepath.Base(agentsJSON) != "agents.json" || filepath.Base(parent) != "idea-router" || filepath.Base(filepath.Dir(parent)) != ".agents" {
+			return ledger.FabricRead{}, fmt.Errorf("canonical router root unavailable")
+		}
+		return ledger.ReadFabric(filepath.Dir(filepath.Dir(parent)), time.Now().UTC())
+	}, buildID)
+	return NewWithProducer(sirsiBin, agentsJSON, buildID, producer.Read)
+}
+
+func NewWithProducer(sirsiBin, agentsJSON, buildID string, read ledger.FabricGenerationReader) *Board {
+	if read == nil {
+		read = func(context.Context) (*ledger.FabricGeneration, error) {
+			return nil, fmt.Errorf("fabric producer unavailable")
+		}
 	}
+	return &Board{sirsiBin: sirsiBin, agentsJSON: agentsJSON, buildID: buildID, read: read}
 }
 
 // Event is one observed status transition.
@@ -104,17 +105,19 @@ type Event struct {
 }
 
 // Payload is the whole board. Field names and shapes are the Python original's
-// verbatim, because index.html renders them directly and is unchanged: a
+// compatible, because index.html and external Nexus consumers read them: a
 // renamed key is an empty cell, and an empty cell reads as "no data" rather
 // than as a bug.
 type Payload struct {
-	Build       string       `json:"build"`
-	DataErrors  []string     `json:"data_errors"`
-	GeneratedAt string       `json:"generated_at"`
-	Counters    Counters     `json:"counters"`
-	Activity    []Event      `json:"activity"`
-	Fleet       []Lane       `json:"fleet"`
-	Board       BoardSummary `json:"board"`
+	Generation  string              `json:"generation,omitempty"`
+	Fabric      *ledger.FabricBoard `json:"fabric,omitempty"`
+	Build       string              `json:"build"`
+	DataErrors  []string            `json:"data_errors"`
+	GeneratedAt string              `json:"generated_at"`
+	Counters    Counters            `json:"counters"`
+	Activity    []Event             `json:"activity"`
+	Fleet       []Lane              `json:"fleet"`
+	Board       BoardSummary        `json:"board"`
 	// Ledger is the SAME BoardSummary under the key index.html actually reads.
 	// The UI renders d.ledger; the payload carried only d.board, so every tile
 	// bound to it read undefined and the page displayed nonsense while the API
@@ -162,21 +165,28 @@ type Item struct {
 }
 
 type Lane struct {
-	Agent          string         `json:"agent"`
-	Type           string         `json:"type"`
-	WakeState      string         `json:"wake_state"`
-	Activity       string         `json:"activity"`
-	OpenItems      int            `json:"open_items"`
-	Items          []Item         `json:"items"`
-	OldestMsgStale bool           `json:"oldest_msg_stale"`
-	TasksTotal     int            `json:"tasks_total"`
-	Counts         map[string]int `json:"counts"`
-	UnblockedOpen  int            `json:"unblocked_open"`
-	IdleWithWork   bool           `json:"idle_with_work"`
-	Registered     Registered     `json:"registered"`
-	LastTouch      string         `json:"last_touch"`
-	Tasks          []rawTask      `json:"tasks"`
-	Consumer       *Consumer      `json:"consumer"`
+	State           string         `json:"state,omitempty"`
+	Role            string         `json:"role,omitempty"`
+	TaskOpen        int            `json:"open_tasks"`
+	Active          int            `json:"active"`
+	Stalled         int            `json:"stalled"`
+	BlockedTasks    int            `json:"blocked_tasks"`
+	Agent           string         `json:"agent"`
+	Type            string         `json:"type"`
+	WakeState       string         `json:"wake_state"`
+	Activity        string         `json:"activity"`
+	OpenItems       int            `json:"open_items"`
+	Items           []Item         `json:"items"`
+	OldestMsgStale  bool           `json:"oldest_msg_stale"`
+	TasksTotal      int            `json:"tasks_total"`
+	Counts          map[string]int `json:"counts"`
+	UnblockedOpen   int            `json:"unblocked_open"`
+	IdleWithWork    bool           `json:"idle_with_work"`
+	Registered      Registered     `json:"registered"`
+	RegisteredKnown bool           `json:"registered_known"`
+	LastTouch       string         `json:"last_touch"`
+	Tasks           []rawTask      `json:"tasks"`
+	Consumer        *Consumer      `json:"consumer"`
 }
 
 type Thread struct {
@@ -248,79 +258,6 @@ func (t rawTask) str(k string) string {
 		return v
 	}
 	return ""
-}
-
-// runJSON executes a sirsi subcommand and decodes its JSON.
-//
-// Absolute binary path, and a non-zero exit is recorded as a DATA ERROR rather
-// than swallowed: the Python original rendered zeros for hours because a bare
-// "sirsi" was not on launchd's PATH and the failure was silent.
-func (b *Board) runJSON(ctx context.Context, timeout time.Duration, args []string, out interface{}, errs *[]string) bool {
-	c, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(c, b.sirsiBin, args...)
-	stdout, err := cmd.Output()
-	label := strings.Join(args, " ")
-	if err != nil {
-		*errs = append(*errs, fmt.Sprintf("%s: %v", label, err))
-		return false
-	}
-	// The CLI prefixes glyphs/ANSI on some paths; decode from the first brace
-	// or bracket rather than assuming the stream starts clean.
-	s := stdout
-	if i := indexAny(s, '{', '['); i > 0 {
-		s = s[i:]
-	}
-	if len(strings.TrimSpace(string(s))) == 0 {
-		*errs = append(*errs, label+": empty output")
-		return false
-	}
-	if err := json.Unmarshal(s, out); err != nil {
-		*errs = append(*errs, fmt.Sprintf("%s: decode: %v", label, err))
-		return false
-	}
-	return true
-}
-
-func indexAny(b []byte, a, c byte) int {
-	for i, x := range b {
-		if x == a || x == c {
-			return i
-		}
-	}
-	return -1
-}
-
-// ageSeconds returns seconds since an RFC3339 UTC router timestamp.
-//
-// Parsed as UTC explicitly. The Python original used a local-time parse at
-// first, which shifted every age by the UTC offset: stalls under-reported by
-// four hours and negative ages printed as "-1d20h".
-func ageSeconds(ts string) (float64, bool) {
-	if len(ts) < 19 {
-		return 0, false
-	}
-	t, err := time.Parse("2006-01-02T15:04:05", ts[:19])
-	if err != nil {
-		return 0, false
-	}
-	return time.Since(t.UTC()).Seconds(), true
-}
-
-func ageStr(ts string) string {
-	secs, ok := ageSeconds(ts)
-	if !ok {
-		return "?"
-	}
-	if secs < 0 {
-		secs = 0 // clock skew must read 0m, never a negative duration
-	}
-	d := int(secs) / 86400
-	h := (int(secs) % 86400) / 3600
-	if d > 0 {
-		return fmt.Sprintf("%dd%dh", d, h)
-	}
-	return fmt.Sprintf("%dh%dm", h, (int(secs)%3600)/60)
 }
 
 // Version reports the current payload version. Callers stream on change.

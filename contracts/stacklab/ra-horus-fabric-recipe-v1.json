@@ -39,11 +39,11 @@
     {
       "id": "router-a2a-mcp-shared-core",
       "source": ["internal/routermcp", "internal/mcp/server.go", "internal/routerstore/resolve.go", "internal/routerstore/remote.go", "internal/router/threadcaller.go", "internal/router/threads.go", "cmd/sirsi/routermcp.go", "cmd/sirsi-router-mcp/main.go", "docs/ADR-068-ROUTER-A2A-MCP-FRONT-END.md"],
-      "tests": ["internal/routermcp/manifest_test.go", "internal/routermcp/registration_test.go", "internal/routermcp/close_completion_test.go", "internal/routermcp/lifecycle_test.go", "internal/routermcp/cancellation_test.go", "internal/routermcp/audience_test.go", "internal/routermcp/legacy_lifecycle_test.go", "internal/routermcp/io_failure_test.go", "internal/routerstore/resolve_caller_test.go", "internal/routerstore/resolve_test.go", "cmd/sirsi/routermcp_test.go", "cmd/sirsi-router-mcp/main_test.go"],
+      "tests": ["internal/routermcp/manifest_test.go", "internal/routermcp/claim_exact_test.go", "internal/routermcp/registration_test.go", "internal/routermcp/close_completion_test.go", "internal/routermcp/lifecycle_test.go", "internal/routermcp/cancellation_test.go", "internal/routermcp/audience_test.go", "internal/routermcp/legacy_lifecycle_test.go", "internal/routermcp/io_failure_test.go", "internal/routerstore/resolve_caller_test.go", "internal/routerstore/resolve_test.go", "cmd/sirsi/routermcp_test.go", "cmd/sirsi-router-mcp/main_test.go"],
       "inputs": ["JSON-RPC stdio", "one configured process agent and canonical router repo", "existing resolver/session/relay authority", "existing strict completion helper and exact session claim"],
-      "outputs": ["unchanged seven bare tools, inbox resource and advertised handshake", "JSON-only stdout and stderr diagnostics", "per-instance real registration, explicit service-minted RPC audience and claims in durable mode including board readers", "legacy file board and JSON lifecycle mode preserved without forced cutover or RPC isolation claim", "joined EOF/cancel/terminal-I/O cleanup"],
+      "outputs": ["seven bare tools with optional exact id on router_claim; other tool schemas, inbox resource and advertised handshake unchanged", "JSON-only stdout and stderr diagnostics", "per-instance real registration, explicit service-minted RPC audience and claims in durable mode including board readers", "legacy file board and JSON lifecycle mode preserved without forced cutover or RPC isolation claim", "joined EOF/cancel/terminal-I/O cleanup"],
       "writes": ["existing dispatch/lease operations and resident thread lifecycle only; no managed configuration or credential writer"],
-      "upgrade_recipe": ["ship the canonical sirsi router-mcp subcommand, not a separately packaged engine", "keep legacy launcher as the same library caller", "keep generic mcp framing and toolset unchanged", "never weaken proof/claim-expiry or durable completion fencing", "use explicit immutable agent/thread resolver for post-registration tools and lifecycle; no global identity/environment/cache swapping", "qualify real same-PID registration and authenticated remote audiences plus terminal-I/O cleanup", "qualify actual manifest and both entrypoints plus moved strict completion fixtures", "retain explicit pending managed-config migration and installed-caller evidence", "source-only candidate; no tests/build/config/service actions by producer"]
+      "upgrade_recipe": ["ship the canonical sirsi router-mcp subcommand, not a separately packaged engine", "keep legacy launcher as the same library caller", "keep generic mcp framing and tool names unchanged; exact optional id changes only router_claim schema", "omit id to preserve ClaimNext/15-minute lease and local map; typed ErrNoWork is a friendly empty-inbox result only when id is omitted; exact ClaimItem refusal never falls back or bypasses recipient/eligibility", "DC01 authenticated atomic claim/session binding remains separately owned; frontend selection is not security/task closure", "never weaken proof/claim-expiry or durable completion fencing", "use explicit immutable agent/thread resolver for post-registration tools and lifecycle; no global identity/environment/cache swapping", "qualify real same-PID registration and authenticated remote audiences plus terminal-I/O cleanup", "qualify actual manifest and both entrypoints plus moved strict completion fixtures", "retain explicit pending managed-config migration and installed-caller evidence", "source-only candidate; no tests/build/config/service actions by producer"]
     },
     {
       "id": "finite-own-task-evidence-relocation",
@@ -77,26 +77,90 @@
       "source": [
         "internal/ra",
         "internal/routerstore",
-        "internal/ledger"
+        "internal/ledger",
+        "internal/ledger/fabric.go",
+        "internal/ledger/fabric_tasks.go",
+        "internal/ledger/fabric_presentation.go",
+        "internal/ledger/fabric_generation.go",
+        "internal/ledger/fabric_facts.go",
+        "internal/ledger/fabric_metadata.go",
+        "internal/routerboard/generation.go",
+        "internal/routerboard/http.go",
+        "internal/routerboard/ui/index.html",
+        "internal/dashboard/fabric_generation.go",
+        "internal/brand/brand.go",
+        "internal/router/readiness_projection.go",
+        "internal/dashboard/fabric.go",
+        "internal/dashboard/fleet.go",
+        "cmd/sirsi/fabric_host.go",
+        "cmd/sirsi/routerfabriccmd.go",
+        "cmd/sirsi/dashboard.go",
+        "internal/dashboard/ui.go",
+        "internal/dashboard/ui/fabric.js",
+        "internal/dashboard/ui/app.js",
+        "macapp/Sources/SirsiMenubar/CanonicalFabric.swift",
+        "macapp/Sources/SirsiMenubar/SirsiEngine.swift",
+        "macapp/Sources/SirsiMenubar/Views.swift"
       ],
       "tests": [
         "internal/ra",
         "internal/routerstore",
-        "internal/ledger"
+        "internal/ledger",
+        "internal/ledger/fabric_join_test.go",
+        "internal/ledger/fabric_tasks_test.go",
+        "internal/ledger/fabric_generation_test.go",
+        "internal/routerboard/generation_test.go",
+        "internal/dashboard/fabric_generation_test.go",
+        "internal/routerboard/testdata/generation.test.cjs",
+        "internal/dashboard/testdata/fabric-generation-controls.json",
+        "cmd/sirsi-menubar/fabric_generation_test.go",
+        "internal/dashboard/fabric_join_test.go",
+        "internal/dashboard/fabric_tasks_test.go",
+        "internal/dashboard/router_test.go",
+        "cmd/sirsi/fabric_host_test.go",
+        "internal/dashboard/testdata/fabric.test.cjs",
+        "internal/dashboard/testdata/fabric_app.test.cjs",
+        "macapp/Tests/SirsiMenubarTests/CanonicalFabricTests.swift"
       ],
       "inputs": [
         "router receipts",
         "ledger tasks",
-        "lane state"
+        "lane state",
+        "existing canonical ClassifyLane + registry/PingLane readiness readbacks",
+        "existing NodeCapacity, Known-bearing swap/free sample, bounded repository status and engine session telemetry",
+        "same-snapshot FleetTracker status observations",
+        "Fabric-owned source timestamp/read error/clock and this-mac telemetry binding",
+        "already-read canonical Snapshot Agent.Tasks, safe field projection and existing brand tokens"
       ],
       "outputs": [
-        "FabricBoard"
+        "FabricBoard",
+        "distinct task/message/runtime/host planes",
+        "real observed transitions with explicit unseeded coverage",
+        "null unavailable host facts; known zero preserved; engine session observation is not readiness",
+        "64-row open-task pages, exact task detail/provenance and public-projection digest-bound continuation",
+        "producer-assigned semantic roles with the same brand palette in native and web",
+        "private immutable producer generation with shared facts and detached read-only compatibility adapters; registry/ledger lane union includes taskless services"
       ],
       "writes": [],
       "upgrade_recipe": [
         "preserve stream-separated counts",
         "add fixture before changing classification",
-        "run focused and race tests"
+        "run focused and race tests",
+        "preserve original full Fabric surface contract; never infer WORKING from heartbeat/task liveness",
+        "same producer for protected native CLI and current web endpoint; failed producer means unavailable, never empty",
+        "first observation seeds quietly; no synthetic timeline events or persistent second history",
+        "qualify actual Go endpoint JSON in Node and native consumers, normal/race and compiled semantic negatives",
+        "retain foreign Nexus/Horus mapping/readback obligations with their owners via Main",
+        "do not serialize raw tasks, lease columns, charter/outline/phase/timeline bodies or local reference paths",
+        "changed task continuation refuses409; explicit first-page refresh is available; no hard count-only truncation",
+        "qualify task detail/paging/privacy and semantic token mapping through actual Go JSON consumers",
+        "Nexus independent routerboard ledger counts and conditional8734 retirement do not establish R4 same-wire convergence",
+        "existing board-serve keeps its listener, router-board.v1 keys, full Nexus task/phase/step details and SSE; Horus keeps router-surface.v1 and its separate Ra authority plane",
+        "derive common gauges and real transitions once per generation; inclusive active includes blocked as a subset, never sum both",
+        "canonical task liveness and IDLE_WITH_WORK enums must not be re-derived from local age, display labels or heartbeat; service registration is not worker activity",
+        "safe Fabric projection remains bounded and private; existing legacy detail does not widen FabricBoard task rows",
+        "qualify mixed actual Go generation through existing HTTP/menu/Node adapters and existing-consumer readback before R4 closure; do not infer process retirement or cross-process atomic observations",
+        "see docs/stacklab/ra/canon/FABRIC_SURFACE_PRODUCER_V1.md; source-only unqualified candidate"
       ]
     },
     {
@@ -236,6 +300,46 @@
         "a producer error is a 5xx, never an empty panel",
         "add a test that the SPA carries the view and its nav entry",
         "run focused and race tests"
+      ]
+    },
+    {
+      "id": "scoped-native-transport",
+      "source": [
+        "scripts/maat/fabric-run.sh",
+        "scripts/maat/fabric-endpoints.py",
+        "scripts/maat/README.md",
+        "docs/stacklab/ra/canon/NATIVE_FABRIC_SELF_DISPATCH_V1.md"
+      ],
+      "tests": [
+        "scripts/maat/fabric-endpoints.test.py",
+        "scripts/maat/fabric-run.test.py",
+        "scripts/maat/fabric-locality.test.py",
+        "scripts/maat/fabric-self-dispatch.test.py"
+      ],
+      "inputs": [
+        "closed target and exact enrolled numeric destination from existing endpoint table",
+        "bounded native kernel interface inventory + observed native UUID",
+        "real/effective kernel UID and bounded closed configured-account child result",
+        "own scope verified by unchanged normal native executor",
+        "exact work/CPU/timeout/literal argv",
+        "existing proxy and strict host pins for remote/unknown"
+      ],
+      "outputs": [
+        "one real registered native executor for qualified locality",
+        "unchanged supervised strict remote origin/destination path otherwise",
+        "bounded closed JSON stderr observation, not authorization or a new receipt store"
+      ],
+      "writes": [
+        "no new DB, enrollment, grant, key, config or signer; existing native execution lifecycle only when invoked"
+      ],
+      "upgrade_recipe": [
+        "publish reviewed shell/selector pair together; admitted-run separate owner untouched",
+        "require exact unique active non-loopback kernel ownership; never DNS/hostname/model/ambient authority or empty-ID SameMachine",
+        "retain actual UUID only as executor observation; no fabricated target binding",
+        "local admission, metadata cleanup uncertainty and SSH/auth failure terminal; no next route",
+        "retain payload mask, literal argv and normal real executor/receipt/completion semantics",
+        "qualify all existing/new inert suites and causal controls under Main, then actual own M5 route",
+        "source-only unrun; no installed/all-peer SSH/task completion claim"
       ]
     }
   ]

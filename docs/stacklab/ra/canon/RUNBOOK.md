@@ -75,8 +75,10 @@ Install `scripts/maat/fabric-run.sh` as `~/.local/bin/sirsi-fabric-run` (0700);
 then use `sirsi-fabric-run m1|m5|studio --work <own-work> --cpu-cores 1 --timeout 90 -- /usr/bin/true`
 for a harmless proof. Local commands retain the installed `sirsi-maat-run`.
 
-The helper requires the runtime's loopback SOCKS proxy and preserves existing
-strict SSH pins/public-key authentication. It supervises the actual origin and
+Remote/unknown routes require the runtime's loopback SOCKS proxy (or explicit
+allowed direct mode) and preserve existing strict SSH pins/public-key auth. Exact
+enrolled endpoint kernel ownership plus native UUID/UID/account evidence selects
+the existing normal local executor instead; this grants no new scope or identity. It supervises the actual origin and
 destination separately and quotes all remote argv. Do not change an active
 worker's immutable managed mask, copy keys, bypass managed requirements or
 silently restart attended sessions. Update the pinned canonical registry and
@@ -85,3 +87,6 @@ lane without an enrolled route/pin remains unverified, not a destination outage.
 Record actual per-lane terminal/exit/release readback; a configured profile or
 finite source inspection is not a three-host PASS. See `scripts/maat/README.md`
 for the bounded transport contract and same-user attribution limitations.
+
+Own-target source/proof boundaries: `NATIVE_FABRIC_SELF_DISPATCH_V1.md`. No retry
+from failed SSH or native admission into a different route.

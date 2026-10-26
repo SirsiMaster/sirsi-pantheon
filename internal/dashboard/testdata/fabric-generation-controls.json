@@ -1,0 +1,76 @@
+{
+  "status": "AUTHORED_NOT_EXECUTED",
+  "scope": "Main-owned private source overlays only; original fixture bytes unchanged; no live services, model, registry or arm target",
+  "controls": [
+    {
+      "id": "registry-union-omitted",
+      "path": "internal/ledger/fabric_generation.go",
+      "package": "./internal/dashboard",
+      "selector": "^TestFabricGenerationMixedExistingConsumersShareFactsAndNoReacquisition$",
+      "marker": "registry/ledger lane union lost taskless service or unregistered work",
+      "replace_old": "if !seen[id] {",
+      "replace_new": "if !seen[id] && false {",
+      "expected": "compiled named fixture fails semantically; compile/setup failure is not evidence"
+    },
+    {
+      "id": "legacy-liveness-rederived",
+      "path": "internal/routerboard/generation.go",
+      "package": "./internal/dashboard",
+      "selector": "^TestFabricGenerationMixedExistingConsumersShareFactsAndNoReacquisition$",
+      "marker": "adapter recalculated canonical liveness from local age",
+      "replace_old": "liveness := t.str(\"liveness\")",
+      "replace_new": "liveness := \"unknown\"",
+      "expected": "compiled named fixture fails semantically; compile/setup failure is not evidence"
+    },
+    {
+      "id": "blocked-excluded",
+      "path": "internal/ledger/fabric_facts.go",
+      "package": "./internal/ledger",
+      "selector": "^TestFabricFactsInclusiveActiveAndCanonicalLiveness$",
+      "marker": "shared inclusive/liveness facts differ",
+      "replace_old": "f.Ledger.ActiveTasks, f.Ledger.BlockedTasks = f.Work.Open, f.Work.Blocked",
+      "replace_new": "f.Ledger.ActiveTasks, f.Ledger.BlockedTasks = f.Work.Open-f.Work.Blocked, f.Work.Blocked",
+      "expected": "compiled named fixture fails semantically; compile/setup failure is not evidence"
+    },
+    {
+      "id": "cancelled-history-accepted",
+      "path": "internal/ledger/fabric_generation.go",
+      "package": "./internal/ledger",
+      "selector": "^TestFabricGenerationFailureAndCancellationDoNotAdvanceHistory$",
+      "marker": "cancelled acquisition accepted",
+      "replace_old": "if err = ctx.Err(); err != nil {\n\t\treturn nil, err\n\t}",
+      "replace_new": "// negative control: accept a cancelled completed acquisition",
+      "expected": "compiled named fixture fails semantically; compile/setup failure is not evidence"
+    },
+    {
+      "id": "changed-page-accepted",
+      "path": "internal/ledger/fabric_generation.go",
+      "package": "./internal/ledger",
+      "selector": "^TestFabricGenerationRejectedContinuationDoesNotAdvanceHistory$",
+      "marker": "changed continuation accepted",
+      "replace_old": "if validate != nil {",
+      "replace_new": "if validate != nil && false {",
+      "expected": "compiled named fixture fails semantically; compile/setup failure is not evidence"
+    },
+    {
+      "id": "readonly-arm-exposed",
+      "path": "internal/routerboard/http.go",
+      "package": "./internal/dashboard",
+      "selector": "^TestFabricGenerationExistingHTTPShapesAndReadOnlyBoundary$",
+      "marker": "read-only adapter exposed arm mutation",
+      "replace_old": "func (h *Handler) RegisterReadOnly(mux *http.ServeMux) {",
+      "replace_new": "func (h *Handler) RegisterReadOnly(mux *http.ServeMux) {\n\tmux.HandleFunc(\"/api/arm\", h.arm)",
+      "expected": "compiled named fixture fails semantically; compile/setup failure is not evidence"
+    },
+    {
+      "id": "enum-replaced-by-label",
+      "path": "internal/ledger/fabric_facts.go",
+      "package": "./cmd/sirsi-menubar",
+      "selector": "^TestFabricMenuUsesGenerationCanonicalIdleEnum$",
+      "marker": "actual menu helper failed canonical IDLE_WITH_WORK",
+      "replace_old": "if lane.State == \"IDLE_WITH_WORK\" {",
+      "replace_new": "if lane.State == \"IDLE with work\" {",
+      "expected": "compiled named fixture fails semantically; compile/setup failure is not evidence"
+    }
+  ]
+}

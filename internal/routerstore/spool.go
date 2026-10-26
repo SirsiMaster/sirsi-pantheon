@@ -269,6 +269,9 @@ const (
 // able to mint, list or revoke host tokens through the relay's own token.
 var spoolRefused = map[string]bool{"MintHostToken": true, "MintScopedHostToken": true, "RevokeHostToken": true, "ListHostTokens": true}
 
+var errSpoolMaintenancePending = errors.New("spool admission: retained root maintenance transaction")
+var errRelaySettlementUnresolved = errors.New("relay: response settlement remains unresolved; retained inflight/outbox evidence requires recovery")
+
 // spoolRequest is one file in <spool>/<agent>/req/.
 type spoolRequest struct {
 	Method  string            `json:"method"`
@@ -316,6 +319,8 @@ func (t *spoolTransport) nextID() string {
 
 // RoundTrip publishes the request atomically and waits for the response file.
 func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	callCtx, callCancel := context.WithTimeout(r.Context(), t.wait)
+	defer callCancel()
 	method := strings.TrimPrefix(r.URL.Path, "/v1/call/")
 	if method == "" || method == r.URL.Path {
 		return nil, fmt.Errorf("spool: not a router call: %s", r.URL.Path)
@@ -347,18 +352,38 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	// A canceled/paused call has not published anything; the existing uncertainty
 	// classification still governs requests already consumed by the relay.
-	admissionCtx, admissionCancel := context.WithTimeout(r.Context(), t.wait)
-	defer admissionCancel()
-	admission, admissionErr := lockSpoolAdmission(admissionCtx, root, false)
-	if admissionErr != nil {
-		return nil, fmt.Errorf("spool admission: request not published: %w", admissionErr)
+	var admission *os.File
+	for {
+		admission, rerr = lockSpoolAdmission(callCtx, root, false)
+		if rerr == nil {
+			break
+		}
+		if !errors.Is(rerr, errSpoolMaintenancePending) {
+			if errors.Is(rerr, context.DeadlineExceeded) || errors.Is(rerr, context.Canceled) {
+				return nil, fmt.Errorf("spool admission: router refresh is still pending; request not published, retry after the retained maintenance transaction completes: %w", rerr)
+			}
+			return nil, fmt.Errorf("spool admission: request not published: %w", rerr)
+		}
+		timer := time.NewTimer(spoolPoll)
+		select {
+		case <-callCtx.Done():
+			timer.Stop()
+			return nil, fmt.Errorf("spool admission: router refresh is still pending; request not published, retry after the retained maintenance transaction completes: %w", callCtx.Err())
+		case <-timer.C:
+		}
 	}
 	defer admission.Close()
+	if err := callCtx.Err(); err != nil {
+		return nil, fmt.Errorf("spool admission: request not published: %w", err)
+	}
 	reqDir, resDir := filepath.Join(t.agent, "req"), filepath.Join(t.agent, "res")
 	// t.agent itself (<spool>/<agent>) is included: the relay needs to traverse
 	// INTO it, not just into its req/res/slots children, and MkdirAll creates
 	// it as an intermediate directory with the same requested mode.
 	for _, d := range []string{t.agent, reqDir, resDir, filepath.Join(t.agent, "slots")} {
+		if err := callCtx.Err(); err != nil {
+			return nil, fmt.Errorf("spool admission: request not published: %w", err)
+		}
 		if err := mkdirTrustedIn(root, d, dirMode, trustGID); err != nil {
 			return nil, fmt.Errorf("spool: %w", err)
 		}
@@ -370,8 +395,14 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	defer func() { _ = root.Remove(slot) }()
+	if err := callCtx.Err(); err != nil {
+		return nil, fmt.Errorf("spool admission: request not published: %w", err)
+	}
 	id := t.nextID()
 	reqPath := filepath.Join(reqDir, id+".json")
+	if err := callCtx.Err(); err != nil {
+		return nil, fmt.Errorf("spool admission: request not published: %w", err)
+	}
 	if err := writeAtomicRoot(root, reqPath, req, fileMode); err != nil {
 		return nil, fmt.Errorf("spool: publish %s id %s: %w", method, id, err)
 	}
@@ -388,9 +419,10 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 		return fmt.Errorf("spool: %s id %s: OUTCOME UNKNOWN — a relay consumed the request but no response arrived (%s); re-query before retrying a mutation", method, id, cause)
 	}
-	ctx := r.Context()
-	deadline := t.now().Add(t.wait)
 	for {
+		if err := callCtx.Err(); err != nil {
+			return nil, uncertain(err.Error())
+		}
 		if f, oerr := root.Open(resPath); oerr == nil {
 			// A response file exists, so the request was consumed and forwarded:
 			// any defect in the file is an UNCERTAIN outcome for the caller.
@@ -415,12 +447,9 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			return &http.Response{StatusCode: sr.Status, Status: http.StatusText(sr.Status), Header: http.Header{"Content-Type": {"application/json"}},
 				Body: io.NopCloser(bytes.NewReader(sr.Body)), ContentLength: int64(len(sr.Body)), Request: r}, nil
 		}
-		if t.now().After(deadline) {
-			return nil, uncertain(fmt.Sprintf("no response within %s", t.wait))
-		}
 		select {
-		case <-ctx.Done():
-			return nil, uncertain(ctx.Err().Error())
+		case <-callCtx.Done():
+			return nil, uncertain(callCtx.Err().Error())
 		case <-time.After(spoolPoll):
 		}
 	}
@@ -615,11 +644,13 @@ type Relay struct {
 	// service of another lane (SSA 2026-09-10: a global wait barrier starved
 	// newly arriving lanes past the client's 5 s deadline). Each worker drains
 	// its lane's queue in order; consume-before-forward is unchanged.
-	laneMu     sync.Mutex
-	lanes      map[string]chan struct{}
-	unreadable map[string]bool // lane dirs already reported as not readable by this uid
-	handled    atomic.Int32
-	scans      atomic.Int32 // discovery passes (tests assert no spin under backlog)
+	laneMu           sync.Mutex
+	lanes            map[string]chan struct{}
+	workers          sync.WaitGroup
+	settlementFailed atomic.Bool
+	unreadable       map[string]bool // lane dirs already reported as not readable by this uid
+	handled          atomic.Int32
+	scans            atomic.Int32 // discovery passes (tests assert no spin under backlog)
 	// Per-instance deterministic scheduler probe; nil uses real discovery.
 	discoverFn func(context.Context) int
 	// Instance-local fixture seam; nil always uses the retained native marker.
@@ -686,7 +717,8 @@ func (rl *Relay) Serve(ctx context.Context) (result error) {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			rl.workers.Wait()
+			return rl.settlementError()
 		default:
 		}
 		discover(ctx)
@@ -708,10 +740,18 @@ func (rl *Relay) Serve(ctx context.Context) (result error) {
 		// independent lane workers keep draining without this polling delay.
 		select {
 		case <-ctx.Done():
-			return nil
+			rl.workers.Wait()
+			return rl.settlementError()
 		case <-time.After(spoolPoll):
 		}
 	}
+}
+
+func (rl *Relay) settlementError() error {
+	if rl.settlementFailed.Load() {
+		return errRelaySettlementUnresolved
+	}
+	return nil
 }
 
 // discover lists pending request files, wakes each lane's worker (starting it
@@ -751,7 +791,11 @@ func (rl *Relay) discover(ctx context.Context) int {
 		if !ok {
 			ch = make(chan struct{}, 1)
 			rl.lanes[agent] = ch
-			go rl.laneWorker(ctx, agent, ch)
+			rl.workers.Add(1)
+			go func() {
+				defer rl.workers.Done()
+				rl.laneWorker(ctx, agent, ch)
+			}()
 		}
 		select { // coalesce wakes: one pending signal is enough
 		case ch <- struct{}{}:
@@ -790,6 +834,9 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 		files, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "req", "*.json"))
 		sort.Strings(files)
 		for _, f := range files {
+			if ctx.Err() != nil {
+				return
+			}
 			mu.Lock()
 			dup := started[f]
 			mu.Unlock()
@@ -801,23 +848,34 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 			case <-ctx.Done():
 				return
 			}
+			// A ready semaphore can win select even when cancellation is also
+			// ready. Recheck before claiming this queued file or starting work.
+			if ctx.Err() != nil {
+				<-sem
+				return
+			}
 			mu.Lock()
 			started[f] = true
 			mu.Unlock()
+			rl.workers.Add(1)
 			go func(f string) {
 				defer func() {
+					rl.workers.Done()
 					mu.Lock()
 					delete(started, f)
 					mu.Unlock()
 					<-sem
 				}()
-				rl.handleOne(agent, f)
+				rl.handleOne(ctx, agent, f)
 			}(f)
+		}
+		if ctx.Err() != nil {
+			return
 		}
 		// ADR-069: re-forward any messages held during a prior outage, in order.
 		// If some are still unreachable, schedule a backed-off re-wake so they
 		// drain when the cloud returns — without hot-looping.
-		if rl.drainOutbox(agent) > 0 {
+		if rl.drainOutbox(ctx, agent) > 0 && ctx.Err() == nil {
 			rl.scheduleOutboxRewake(ctx, agent)
 		}
 	}
@@ -826,13 +884,28 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 // handleOne consumes one request atomically (rename into inflight/ BEFORE the
 // HTTP forward; a failed rename means another relay owns it), publishes the
 // response, then deletes the in-flight file last. Returns whether it forwarded.
-func (rl *Relay) handleOne(agent, f string) bool {
+func (rl *Relay) handleOne(ctx context.Context, agent, f string) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	id := strings.TrimSuffix(filepath.Base(f), ".json")
 	inflight := filepath.Join(rl.Spool, agent, "inflight", id+".json")
 	if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
 		return false
 	}
+	if ctx.Err() != nil {
+		return false
+	}
 	if err := os.Rename(f, inflight); err != nil {
+		return false
+	}
+	// If cancellation won after the pre-rename check, restore the untouched
+	// request instead of starting another forward during shutdown.
+	if ctx.Err() != nil {
+		if err := os.Rename(inflight, f); err != nil {
+			rl.settlementFailed.Store(true)
+			rl.Log.Error("relay: canceled request could not be restored; retained inflight", "agent", agent, "id", id, "err", err)
+		}
 		return false
 	}
 	rl.handled.Add(1)
@@ -845,17 +918,28 @@ func (rl *Relay) handleOne(agent, f string) bool {
 		outbox := filepath.Join(rl.Spool, agent, "outbox", id+".json")
 		if mkErr := os.MkdirAll(filepath.Dir(outbox), 0o700); mkErr == nil {
 			if mvErr := os.Rename(inflight, outbox); mvErr == nil {
-				rl.publish(agent, id, queuedForRetryResponse(id))
+				if err := rl.publish(agent, id, queuedForRetryResponse(id)); err != nil {
+					rl.settlementFailed.Store(true)
+					rl.Log.Error("relay: queued response publication failed; retained outbox", "agent", agent, "id", id, "err", err)
+				}
 				return false
 			}
 		}
 		// Could not stage the outbox — do not lose it silently; report unknown.
 		b, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: "relay: could not stage " + id + " for retry: OUTCOME UNKNOWN — re-query before retrying a mutation"}})
-		rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: b})
+		if err := rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: b}); err != nil {
+			rl.settlementFailed.Store(true)
+			rl.Log.Error("relay: unknown response publication failed; retained inflight", "agent", agent, "id", id, "err", err)
+			return false
+		}
 		_ = os.Remove(inflight)
 		return false
 	}
-	rl.publish(agent, id, sr)
+	if err := rl.publish(agent, id, sr); err != nil {
+		rl.settlementFailed.Store(true)
+		rl.Log.Error("relay: response publication failed; retained inflight", "agent", agent, "id", id, "err", err)
+		return false
+	}
 	_ = os.Remove(inflight)
 	return true
 }
@@ -883,14 +967,27 @@ const (
 // post-send OUTCOME-UNKNOWN result is parked for audit — never auto-deleted and
 // never auto-re-forwarded, because the service may already have committed it.
 // The client already received QUEUED_FOR_RETRY, so no response is re-published.
-func (rl *Relay) retryOutboxOne(agent, f string) outboxOutcome {
+func (rl *Relay) retryOutboxOne(ctx context.Context, agent, f string) outboxOutcome {
+	if ctx.Err() != nil {
+		return outboxHeld
+	}
 	id := strings.TrimSuffix(filepath.Base(f), ".json")
 	inflight := filepath.Join(rl.Spool, agent, "inflight", id+".json")
 	if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
 		return outboxHeld // could not stage — leave it in the outbox, stop the drain
 	}
+	if ctx.Err() != nil {
+		return outboxHeld
+	}
 	if err := os.Rename(f, inflight); err != nil {
 		return outboxHeld // lost the race / gone — treat as still held, stop the drain
+	}
+	if ctx.Err() != nil {
+		if err := os.Rename(inflight, f); err != nil {
+			rl.settlementFailed.Store(true)
+			rl.Log.Error("relay: canceled outbox item could not be restored; retained inflight", "agent", agent, "id", id, "err", err)
+		}
+		return outboxHeld
 	}
 	sr := rl.forward(agent, id, inflight)
 	switch {
@@ -922,11 +1019,11 @@ func (rl *Relay) retryOutboxOne(agent, f string) outboxOutcome {
 // reachable, forwarding the later one first would violate ADR-069's
 // ordered-release guarantee. The frontier (the first non-delivered item and
 // everything after it) is left for the next wake.
-func (rl *Relay) drainOutbox(agent string) int {
+func (rl *Relay) drainOutbox(ctx context.Context, agent string) int {
 	held, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "outbox", "*.json"))
 	sort.Strings(held)
 	for i, f := range held {
-		if rl.retryOutboxOne(agent, f) != outboxDelivered {
+		if ctx.Err() != nil || rl.retryOutboxOne(ctx, agent, f) != outboxDelivered {
 			// Stop at the frontier. Count the rest as unresolved so the caller
 			// schedules a backed-off re-wake to drain from here next time.
 			return len(held) - i
@@ -962,7 +1059,7 @@ func (rl *Relay) serveOnce() int {
 	sort.Strings(files)
 	n := 0
 	for _, f := range files {
-		if rl.handleOne(filepath.Base(filepath.Dir(filepath.Dir(f))), f) {
+		if rl.handleOne(context.Background(), filepath.Base(filepath.Dir(filepath.Dir(f))), f) {
 			n++
 		}
 	}
@@ -981,14 +1078,14 @@ func (rl *Relay) serveOnce() int {
 	sort.Strings(lanes) // deterministic: lanes in name order
 	for _, agent := range lanes {
 		before, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "outbox", "*.json"))
-		remaining := rl.drainOutbox(agent)
+		remaining := rl.drainOutbox(context.Background(), agent)
 		n += len(before) - remaining // items delivered before this lane's frontier
 	}
 	return n
 }
 
 // publish writes the response file atomically.
-func (rl *Relay) publish(agent, id string, sr spoolResponse) {
+func (rl *Relay) publish(agent, id string, sr spoolResponse) error {
 	resPath := filepath.Join(rl.Spool, agent, "res", id+".json")
 	fileMode := os.FileMode(0o600)
 	if rl.TrustGroup != "" {
@@ -1013,8 +1110,7 @@ func (rl *Relay) publish(agent, id string, sr spoolResponse) {
 		dirMode = 0o770
 		g, gerr := user.LookupGroup(rl.TrustGroup)
 		if gerr != nil {
-			rl.Log.Error("relay: resolve trust group", "agent", agent, "id", id, "group", rl.TrustGroup, "err", gerr)
-			return
+			return fmt.Errorf("relay: resolve trust group %q: %w", rl.TrustGroup, gerr)
 		}
 		if gid, aerr := strconv.Atoi(g.Gid); aerr == nil {
 			trustGID = gid
@@ -1025,12 +1121,12 @@ func (rl *Relay) publish(agent, id string, sr spoolResponse) {
 		mkErr = mkdirTrusted(resDir, dirMode, trustGID)
 	}
 	if mkErr != nil {
-		rl.Log.Error("relay: create response dir", "agent", agent, "id", id, "err", mkErr)
-		return
+		return fmt.Errorf("relay: create response directory: %w", mkErr)
 	}
 	if err := writeAtomic(resPath, sr, fileMode); err != nil {
-		rl.Log.Error("relay: write response", "agent", agent, "id", id, "err", err)
+		return fmt.Errorf("relay: write response: %w", err)
 	}
+	return nil
 }
 
 // recoverInflight runs once at startup: anything under <agent>/inflight/ was
@@ -1051,7 +1147,11 @@ func (rl *Relay) recoverInflight() int {
 			}
 		}
 		body, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: "relay restarted after consuming " + method + " " + id + ": OUTCOME UNKNOWN — re-query before retrying a mutation"}})
-		rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: body})
+		if err := rl.publish(agent, id, spoolResponse{Status: http.StatusBadGateway, Body: body}); err != nil {
+			rl.settlementFailed.Store(true)
+			rl.Log.Error("relay: outcome-unknown response publication failed; retained inflight", "agent", agent, "id", id, "err", err)
+			continue
+		}
 		_ = os.Remove(f)
 		rl.Log.Warn("relay: in-flight request from a previous relay reported as outcome-unknown", "agent", agent, "method", method, "id", id)
 	}

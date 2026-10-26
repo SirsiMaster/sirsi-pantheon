@@ -45,11 +45,12 @@ const (
 // VerdictSubject pins a screen to the immutable change it assessed. A result
 // cannot be reused after its head changes.
 type VerdictSubject struct {
-	Kind     string `json:"kind"`
-	Repo     string `json:"repo"`
-	Ref      string `json:"ref"`
-	HeadSHA  string `json:"head_sha"`
-	Boundary string `json:"boundary,omitempty"`
+	Kind        string `json:"kind"`
+	Repo        string `json:"repo"`
+	Ref         string `json:"ref"`
+	HeadSHA     string `json:"head_sha"`
+	Boundary    string `json:"boundary,omitempty"`
+	HostBinding string `json:"host_binding,omitempty"`
 }
 
 // ScreenFinding is a bounded, evidence-linked observation. Confidence belongs
@@ -532,6 +533,9 @@ func validateSubject(subject VerdictSubject) error {
 	}
 	if !oneOf(subject.Boundary, "", "security", "delivery", "identity") {
 		return fmt.Errorf("maat system one: unsupported subject boundary %q", subject.Boundary)
+	}
+	if subject.HostBinding != "" && (subject.HostBinding != DiagnosticHostBinding || subject.Kind != "host" || subject.Ref != "diagnostic" || !strings.HasPrefix(subject.Repo, "local-host-") || !validDigest(strings.TrimPrefix(subject.Repo, "local-host-"))) {
+		return fmt.Errorf("maat system one: invalid closed diagnostic host binding")
 	}
 	return nil
 }

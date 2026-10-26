@@ -89,6 +89,7 @@ func TestSourceScreenRejectsInvalidSemanticInputs(t *testing.T) {
 		{"version", func(s *SourceScreen) { s.SchemaVersion = 3 }},
 		{"contract", func(s *SourceScreen) { s.Contract = "unknown" }},
 		{"host", func(s *SourceScreen) { s.Subject.Kind = "host" }},
+		{"source-host-binding", func(s *SourceScreen) { s.Subject.HostBinding = DiagnosticHostBinding }},
 		{"boundary", func(s *SourceScreen) { s.Subject.Boundary = "other" }},
 		{"score-negative", func(s *SourceScreen) { s.FeatherWeight = -1 }},
 		{"score-high", func(s *SourceScreen) { s.FeatherWeight = 101 }},
@@ -138,7 +139,7 @@ func TestSourceScreenRejectsInvalidSemanticInputs(t *testing.T) {
 	}
 }
 
-const sourceJSONFixture = `{"contract":"maat.adr070.source-screen","schema_version":2,"subject":{"kind":"commit","repo":"fixture/repo","ref":"main","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","boundary":""},"feather_weight":92,"confidence":0.96,"findings":[{"id":"x","severity":"minor","category":"correctness","file":"fixture.go","line":0,"claim":"fixture","evidence":"inert proof","evidence_id":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","confidence":0}],"floor":{"passed":true,"checks":[{"name":"gofmt","passed":true},{"name":"vet","passed":true},{"name":"golangci-lint","passed":true},{"name":"test-race","passed":true}]},"model":{"provider":"local:fixture","version":"fixture-v1","local":false,"latency_ms":0,"evidence_set_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","calibration_id":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","calibration":"unqualified"}}`
+const sourceJSONFixture = `{"contract":"maat.adr070.source-screen","schema_version":2,"subject":{"kind":"commit","repo":"fixture/repo","ref":"main","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","boundary":"","host_binding":""},"feather_weight":92,"confidence":0.96,"findings":[{"id":"x","severity":"minor","category":"correctness","file":"fixture.go","line":0,"claim":"fixture","evidence":"inert proof","evidence_id":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","confidence":0}],"floor":{"passed":true,"checks":[{"name":"gofmt","passed":true},{"name":"vet","passed":true},{"name":"golangci-lint","passed":true},{"name":"test-race","passed":true}]},"model":{"provider":"local:fixture","version":"fixture-v1","local":false,"latency_ms":0,"evidence_set_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","calibration_id":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","calibration":"unqualified"}}`
 
 func TestSourceScreenStrictJSONRequiredClosedKeys(t *testing.T) {
 	if s, err := DecodeSourceScreen([]byte(sourceJSONFixture)); err != nil {

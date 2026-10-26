@@ -119,7 +119,7 @@ struct CommandExecution: Equatable {
     var jsonRead: SirsiEngine.JSONCommandRead {
         SirsiEngine.JSONCommandRead(data: complete ? stdoutData : Data(),
             exitStatus: complete ? exitCode : nil, timedOut: timedOut,
-            launchError: issue)
+            launchError: issue, stderrData: complete ? stderrData : Data())
     }
 }
 

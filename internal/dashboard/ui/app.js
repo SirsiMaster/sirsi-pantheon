@@ -1,4 +1,4 @@
-/* Horus dashboard — reads /api/router, /api/fleet, /api/stats. No framework, no build step. */
+/* Horus dashboard — reads /api/router, /api/fabric, /api/stats. No framework, no build step. */
 (function(){
 'use strict';
 var $=function(s,r){return (r||document).querySelector(s)};
@@ -25,13 +25,13 @@ var stopMercury=null;
 function get(u){return fetch(u,{cache:'no-store',signal:AbortSignal.timeout(15000)}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j})})}
 function load(){
  if(state.loading)return state.loading;
- setLive('Refreshing…','stale');
- var router=get('/api/router/v1/snapshot').then(function(d){state.data=d;state.err=null;state.at=new Date()}).catch(function(e){state.err=e.message}).then(function(){render();setLive(state.err?'Stale / unavailable · '+state.err:'Received '+state.at.toLocaleTimeString(),' '+(state.err?'err':''))});
+ setLive('Router refreshing…','stale');
+ var router=get('/api/router/v1/snapshot').then(function(d){state.data=d;state.err=null;state.at=new Date()}).catch(function(e){state.err=e.message}).then(function(){render();setLive(state.err?'Router stale / unavailable · '+state.err:'Router received '+state.at.toLocaleTimeString(),' '+(state.err?'err':''))});
  var host=get('/api/stats').then(function(d){state.stats=d;state.hostErr=null}).catch(function(e){state.hostErr=e.message}).then(function(){if(state.view==='host')render()});
  var fleet=loadFleet();
  state.loading=Promise.allSettled([router,host,fleet]).finally(function(){state.loading=null});return state.loading;
 }
-function loadFleet(){return get('/api/fleet').then(function(f){state.fleet=f;state.fleetErr=null}).catch(function(e){state.fleetErr=e.message}).then(function(){if(state.view==='fleet')render()})}
+function loadFleet(taskPage){var selected=taskPage===undefined?state.fabricTaskPage:taskPage,url='/api/fabric',generation=(state.fabricReadGeneration||0)+1;state.fabricReadGeneration=generation;state.fabricTaskPage=selected||null;if(selected)url+='?tasks_offset='+encodeURIComponent(selected.offset)+'&tasks_snapshot='+encodeURIComponent(selected.snapshot);return get(url).then(function(f){if(generation!==state.fabricReadGeneration)return;if(!PantheonFabric.valid(f))throw new Error('Invalid fabric projection');state.fleet=f;state.fleetErr=null}).catch(function(e){if(generation===state.fabricReadGeneration)state.fleetErr=e.message}).then(function(){if(generation===state.fabricReadGeneration&&(state.view==='fleet'||state.view==='overview'||state.view==='host'))render()})}
 function setLive(t,cls){$('#live-t').textContent=t;$('#live .dot').className='dot'+(cls?' '+cls:'')}
 
 function nav(){
@@ -97,24 +97,36 @@ function vFailures(d){
  var k=d.known_failures||[];
  return '<p class="sub" style="margin-bottom:16px">A recurring failure is registered once with its signature and cause. The fix records the release it shipped in and a regression test that must exist. The wake loop recognizes the failure next time instead of waiting for a person.</p><table class="table responsive-table"><thead><tr><th>Failure</th><th>Status</th><th>Fixed in</th><th>Regression guard</th></tr></thead><tbody>'+k.map(function(x){return '<tr><td data-label="Failure"><button class="lane-select" data-failure="'+esc(x.id)+'">'+esc(x.id)+'</button><div class="dim">'+esc(x.title)+'</div></td><td data-label="Status"><span class="chip st-'+esc(x.status)+'">'+esc(x.status)+'</span></td><td data-label="Fixed in" class="mono">'+esc(x.fixed_in||'—')+'</td><td data-label="Regression guard" class="mono">'+esc(x.guard||'—')+'</td></tr>'}).join('')+'</tbody></table>';
 }
+function fabricReceipt(){return PantheonFabric.receipt(state.fleet,state.fleetErr,Date.now(),esc)}
+function fabricHeadlines(){return fabricReceipt()+PantheonFabric.headlines(state.fleet,esc)}
+function bindFabricLanes(el){PantheonFabric.bindLaneInspectors(el,state.fleet,fabricInspector);PantheonFabric.bindTaskInspectors(el,state.fleet,fabricTaskInspector,function(page){loadFleet(page)})}
+function ageFabric(){document.querySelectorAll('.fabric-receipt').forEach(function(node){var f=PantheonFabric.freshness(state.fleet,state.fleetErr,Date.now());node.textContent=f.text;node.dataset.fabricState=f.state})}
 function vFleet(){
- if(state.fleetErr&&!state.fleet)return '<div class="card err-card"><h2>Fleet unavailable</h2>'+esc(state.fleetErr)+'</div>';
- var f=state.fleet;if(!f)return skeleton();
- var s=f.summary||{};
- var h='<div class="grid g4">'+
- '<div class="card kpi"><h2>Completed</h2><div class="v">'+s.pct_done+'%</div><div class="l">'+s.done+' of '+s.total+' tasks</div></div>'+
- '<div class="card kpi"><h2>In progress</h2><div class="v">'+s.active+'</div><div class="l">'+s.assigned+' assigned, not started</div></div>'+
- '<div class="card kpi"><h2>Blocked</h2><div class="v">'+s.blocked+'</div><div class="l">'+s.stalled+' more stalled</div></div>'+
- '<div class="card kpi"><h2>Lanes</h2><div class="v">'+s.lanes_working+' <span style="font-size:20px;color:var(--dim)">of '+s.lanes_total+'</span></div><div class="l">working · '+s.idle_lanes+' idle with work</div></div></div>';
- h+='<h2 class="sec">Lanes</h2><table class="table responsive-table"><thead><tr><th>Lane</th><th>State</th><th class="num">Open</th><th class="num">Inbox</th><th class="num">Blocked</th><th>Last touched</th></tr></thead><tbody>'+(f.lanes||[]).map(function(l){return '<tr><td data-label="Lane" class="mono"><button class="lane-select" data-inspect="'+esc(l.agent)+'">'+esc(l.agent)+'</button>'+'</td><td data-label="State"><span class="chip" style="--c:'+(l.state==='WORKING'?'var(--ok)':l.state==='UNROUTABLE'?'var(--danger)':'var(--warn)')+'">'+esc(l.state.replace(/_/g,' ').toLowerCase())+'</span></td><td data-label="Open items" class="num">'+l.open+'</td><td data-label="Inbox" class="num">'+l.inbox+'</td><td data-label="Blocked" class="num">'+l.blocked+'</td><td data-label="Last ledger update" class="dim">'+esc(l.touched_ago||'—')+'</td></tr>'}).join('')+'</tbody></table>';
- return h;
+ if(state.fleetErr&&!state.fleet)return '<div class="card err-card"><h2>Fabric unavailable</h2>'+esc(state.fleetErr)+'</div>';
+ return fabricReceipt()+PantheonFabric.render(state.fleet,esc);
+}
+function memoryDiagnostics(){
+ var m=state.memory,err=state.memoryErr,busy=state.memoryBusy;
+ var body=err?'<p class="stale-banner" role="status">Memory diagnostics unavailable · '+esc(err)+'. Try Inspect memory again.</p>':'';
+ if(m){
+  body+='<p class="sub">'+(err?'Previous read · ':'Read at ')+esc(state.memoryAt)+'</p>';
+  body+=m.top.length?'<table class="table responsive-table"><thead><tr><th>Process</th><th>PID</th><th>Memory</th></tr></thead><tbody>'+m.top.map(function(p){return '<tr><td data-label="Process">'+esc(p.name)+'</td><td data-label="PID" class="mono">'+esc(p.pid)+'</td><td data-label="Memory">'+(Number.isFinite(p.rss_bytes)?esc((p.rss_bytes/1048576).toFixed(1))+' MiB':'—')+'</td></tr>'}).join('')+'</tbody></table>':'<p class="sub">No ranked process data was returned. This does not establish that no processes are running.</p>';
+ }else if(!err){body='<p class="sub">Inspect the largest sampled memory users. This read runs only when requested.</p>'}
+ return '<section class="card" aria-labelledby="memory-users-title"><h2 id="memory-users-title">Memory users</h2><button type="button" class="btn" data-memory="inspect"'+(busy?' disabled':'')+'>'+(busy?'Reading memory…':'Inspect memory')+'</button><div aria-live="polite">'+body+'</div></section>';
+}
+async function inspectMemory(){
+ if(state.memoryBusy)return;
+ state.memoryBusy=true;state.memoryErr=null;render();
+ try{var read=await get('/api/vitals');if(!read||!Array.isArray(read.top))throw new Error('ranked data was not returned');state.memory=read;state.memoryAt=new Date().toLocaleTimeString()}
+ catch(e){state.memoryErr=e.message}
+ finally{state.memoryBusy=false;if(state.view==='host')render()}
 }
 function vHost(d){
- var st=state.stats||{},s=d.swap;
- var ram=st.ram_percent!=null?Math.round(st.ram_percent):null;
- return (state.hostErr?'<p class="stale-banner">Host refresh failed · '+esc(state.hostErr)+'</p>':'')+'<div class="grid g2">'+
- '<div class="card kpi with-ring">'+ring(ram||0,ram>85?'var(--danger)':ram>70?'var(--warn)':'var(--emerald)')+'<div><h2>Memory</h2><div class="v">'+(ram==null?'—':ram+'%')+'</div><div class="l">'+(st.used_ram?Math.round(st.used_ram/1073741824*10)/10+' GB used of '+Math.round(st.total_ram/1073741824)+' GB':'')+'</div></div></div>'+
- '<div class="card"><h2>Swap hygiene</h2>'+(s?'<div style="font-size:24px;font-weight:700;letter-spacing:-.02em">'+esc(s.verdict.replace('-',' '))+'</div><p class="sub">'+Math.round(s.used_mib)+' of '+Math.round(s.total_mib)+' MiB allocated · '+s.free_pct+'% free · paging delta '+(s.delta_pages<0?'not measurable yet':s.delta_pages+' pages')+'</p><p style="margin-top:12px">Correctness-only diagnosis: <b>'+(s.correctness_only_ok==null?'unknown':s.correctness_only_ok?'eligible':'not eligible')+'</b><br>Release-timing qualification: <b>'+(s.release_timing_ok==null?'unknown':s.release_timing_ok?'eligible':'not eligible')+'</b></p>'+(s.restart_proposed?'<p style="color:var(--danger);margin-top:12px"><b>A coordinated restart is proposed</b> for the owner and workload owners. Nothing was restarted.</p>':'')+'<p class="sub" style="margin-top:12px">Sampled '+rel(s.at)+'. Allocation is not paging: the verdict comes from swap movement between samples.</p>':'<p class="sub">No receipt yet. Run <span class="mono">sirsi swap-hygiene</span>.</p>')+'</div></div>';
+ var s=d.swap,h=state.fleet&&state.fleet.health;
+ var ram=h&&h.ram_pct!=null?h.ram_pct:null;
+ return fabricReceipt()+'<div class="grid g2">'+
+ '<div class="card"><h2>Host facts — canonical Fabric observation</h2><p>RAM availability complement: '+(ram==null?'Unavailable':esc(ram)+'%')+'</p><p>Capacity: '+(h&&h.total_ram!=null?esc(h.total_ram)+' bytes':'Unavailable')+' · CPU cores: '+(h&&h.cpu_cores!=null?esc(h.cpu_cores):'Unavailable')+'</p><p>Swap: '+(h&&h.swap!=null?esc(h.swap)+' bytes':'Unavailable')+' · Engine session: '+esc(h&&h.engine||'unknown')+' · '+esc(h&&h.engine_state||'unavailable')+' (not readiness proof)</p><p>Fabric observed '+esc(state.fleet&&state.fleet.generated_at||'Unavailable')+'</p></div>'+
+ '<div class="card"><h2>Swap hygiene — retained separate receipt</h2>'+(s?'<div style="font-size:24px;font-weight:700;letter-spacing:-.02em">'+esc(s.verdict.replace('-',' '))+'</div><p class="sub">'+Math.round(s.used_mib)+' of '+Math.round(s.total_mib)+' MiB allocated · '+s.free_pct+'% free · paging delta '+(s.delta_pages<0?'not measurable yet':s.delta_pages+' pages')+'</p><p style="margin-top:12px">Correctness-only diagnosis: <b>'+(s.correctness_only_ok==null?'unknown':s.correctness_only_ok?'eligible':'not eligible')+'</b><br>Release-timing qualification: <b>'+(s.release_timing_ok==null?'unknown':s.release_timing_ok?'eligible':'not eligible')+'</b></p>'+(s.restart_proposed?'<p style="color:var(--danger);margin-top:12px"><b>A coordinated restart is proposed</b> for the owner and workload owners. Nothing was restarted.</p>':'')+'<p class="sub" style="margin-top:12px">Sampled '+rel(s.at)+'. Allocation is not paging: the verdict comes from swap movement between samples.</p>':'<p class="sub">No receipt yet. Run <span class="mono">sirsi swap-hygiene</span>.</p>')+'</div></div>'+memoryDiagnostics();
 }
 var RENDER={overview:vOverview,lanes:vLanes,queue:vQueue,releases:vReleases,failures:vFailures,host:vHost};
 function render(){
@@ -128,9 +140,10 @@ function render(){
  $('#live').hidden=state.view==='mercury'; // Mercury owns its own typed read-state label, not the router receipt's lamp.
  if(state.view==='mercury'){if(!stopMercury){el.replaceChildren();stopMercury=window.mountMercury(el)}return}
  if(stopMercury){stopMercury();stopMercury=null}
- if(state.view==='fleet'){el.innerHTML=(state.fleetErr?'<p class="stale-banner">Fleet refresh failed · '+esc(state.fleetErr)+'</p>':'')+vFleet();return}
- if(!state.data){el.innerHTML=state.err?'<div class="card err-card"><h2>Router unavailable</h2>'+esc(state.err)+'</div>':skeleton();return}
- var opened=Array.from(el.querySelectorAll('details[open]')).map(function(x){return x.dataset.release});el.innerHTML=(state.err?'<p class="stale-banner">Retained snapshot · '+esc(state.data.generated_at||'time unknown')+' · '+esc(state.err)+'</p>':'')+RENDER[state.view](state.data);el.querySelectorAll('details').forEach(function(x){x.open=opened.includes(x.dataset.release)});
+ if(state.view==='fleet'){el.innerHTML=(state.fleetErr?'<p class="stale-banner">Fleet refresh failed · '+esc(state.fleetErr)+'</p>':'')+vFleet();bindFabricLanes(el);return}
+ if(state.view==='host'){el.innerHTML=vHost(state.data||{});return}
+ if(!state.data){el.innerHTML=(state.view==='overview'?fabricHeadlines():'')+(state.err?'<div class="card err-card"><h2>Router unavailable</h2>'+esc(state.err)+'</div>':skeleton());return}
+ var opened=Array.from(el.querySelectorAll('details[open]')).map(function(x){return x.dataset.release});el.innerHTML=(state.err?'<p class="stale-banner">Retained snapshot · '+esc(state.data.generated_at||'time unknown')+' · '+esc(state.err)+'</p>':'')+(state.view==='overview'?fabricHeadlines():'')+RENDER[state.view](state.data);el.querySelectorAll('details').forEach(function(x){x.open=opened.includes(x.dataset.release)});
  if(state.view==='lanes')bindLanes();
  if(key){var replacement=document.getElementById(key);if(replacement){replacement.focus({preventScroll:true});if(start!=null&&replacement.setSelectionRange)replacement.setSelectionRange(start,end)}}
  window.scrollTo(0,scroll);
@@ -140,9 +153,11 @@ function showInspector(title,body,persistent){
 
  var dlg=document.createElement('dialog');dlg.className='inspector';dlg.setAttribute('aria-label',title);
  dlg.innerHTML='<div class="inspector-head"><h2>'+esc(title)+'</h2><button class="btn" data-close>Close</button></div>'+body;
- var previous=document.activeElement;var previousAgent=previous&&previous.dataset&&previous.dataset.inspect;document.body.appendChild(dlg);if(persistent&&window.matchMedia('(min-width:1200px)').matches){dlg.classList.add('persistent');document.body.classList.add('has-inspector')}
-dlg.addEventListener('keydown',function(e){if(e.key==='Escape'){e.preventDefault();dlg.close()}});dlg.querySelector('[data-close]').onclick=function(){dlg.close()};dlg.addEventListener('close',function(){dlg.remove();document.body.classList.remove('has-inspector');if(previous&&previous.isConnected)previous.focus();else if(previousAgent){var target=Array.from(document.querySelectorAll('[data-inspect]')).find(function(x){return x.dataset.inspect===previousAgent});if(target)target.focus();else $('#main').focus()}});if(dlg.classList.contains('persistent'))dlg.show();else dlg.showModal();dlg.querySelector('[data-close]').focus();
+ var previous=document.activeElement;var previousAgent=previous&&previous.dataset&&previous.dataset.inspect;var previousFabricAgent=previous&&previous.dataset&&previous.dataset.fabricInspect;var previousTask=previous&&previous.dataset&&previous.dataset.fabricTaskId;var previousTaskAgent=previous&&previous.dataset&&previous.dataset.fabricTaskAgent;document.body.appendChild(dlg);if(persistent&&window.matchMedia('(min-width:1200px)').matches){dlg.classList.add('persistent');document.body.classList.add('has-inspector')}
+dlg.addEventListener('keydown',function(e){if(e.key==='Escape'){e.preventDefault();dlg.close()}});dlg.querySelector('[data-close]').onclick=function(){dlg.close()};dlg.addEventListener('close',function(){dlg.remove();document.body.classList.remove('has-inspector');if(previous&&previous.isConnected)previous.focus();else if(previousAgent||previousFabricAgent||previousTask){var target=Array.from(document.querySelectorAll('[data-inspect],[data-fabric-inspect],[data-fabric-task-id]')).find(function(x){return previousTask?x.dataset.fabricTaskId===previousTask&&x.dataset.fabricTaskAgent===previousTaskAgent:previousFabricAgent?x.dataset.fabricInspect===previousFabricAgent:x.dataset.inspect===previousAgent});if(target)target.focus();else $('#main').focus()}});if(dlg.classList.contains('persistent'))dlg.show();else dlg.showModal();dlg.querySelector('[data-close]').focus();
 }
+function fabricInspector(board,agent){showInspector('Fabric lane inspector',PantheonFabric.laneDetail(board,agent,esc),true)}
+function fabricTaskInspector(board,agent,id){showInspector('Canonical task inspector',PantheonFabric.taskDetail(board,agent,id,esc),true)}
 function failureInspector(id){
  var failure=((state.data||{}).known_failures||[]).find(function(x){return x.id===id});if(!failure)return;
  showInspector('Failure details','<h3>'+esc(failure.id)+'</h3><p>'+esc(failure.title)+'</p><dl>'+[['Status',failure.status],['Fixed in',failure.fixed_in],['Regression guard',failure.guard],['Signature',failure.signature],['Cause',failure.cause],['Resolution',failure.resolution]].map(function(x){return '<dt>'+esc(x[0])+'</dt><dd>'+esc(x[1]??'Not supplied by this snapshot')+'</dd>'}).join('')+'</dl>');
@@ -151,13 +166,15 @@ function inspector(agent){
  var l=((state.data||{}).lanes||{}).list||[],lane=l.find(function(x){return x.agent===agent});
  showInspector('Lane inspector','<p class="sub">Snapshot '+esc(state.data&&state.data.generated_at||'time unknown')+' · Reopen to see the latest received snapshot.</p><h3>'+esc(agent)+'</h3>'+(lane?chip(lane.verdict)+'<p>'+esc(lane.detail)+'</p><dl>'+[['Open items',lane.open],['Observed',lane.observed_at],['Worker thread',lane.worker_thread_id],['Last report',lane.last_report_at],['Report',lane.last_report_summary]].map(function(x){return '<dt>'+esc(x[0])+'</dt><dd>'+esc(x[1]??'Unknown / not supplied')+'</dd>'}).join('')+'</dl>'+nextStep(lane.next):'<p>No lane projection supplied for this recipient.</p>'),true);
 }
-document.addEventListener('click',function(e){var b=e.target.closest('[data-queue],[data-item],[data-inspect],[data-copy],[data-failure],[data-view]');if(!b)return;if(b.dataset.queue){state.recipient=b.dataset.queue;go('queue')}else if(b.dataset.item)itemInspector(b.dataset.item);else if(b.dataset.view)go(b.dataset.view);else if(b.dataset.failure)failureInspector(b.dataset.failure);else if(b.dataset.inspect)inspector(b.dataset.inspect);else if(!navigator.clipboard){$('#announcement').textContent='Clipboard unavailable. Command: '+b.dataset.copy}else navigator.clipboard.writeText(b.dataset.copy).then(function(){$('#announcement').textContent='Command copied.'}).catch(function(){$('#announcement').textContent='Clipboard unavailable. Command: '+b.dataset.copy})});
+document.addEventListener('click',function(e){var b=e.target.closest('[data-memory],[data-queue],[data-item],[data-inspect],[data-copy],[data-failure],[data-view]');if(!b)return;if(b.dataset.memory){inspectMemory()}else if(b.dataset.queue){state.recipient=b.dataset.queue;go('queue')}else if(b.dataset.item)itemInspector(b.dataset.item);else if(b.dataset.view)go(b.dataset.view);else if(b.dataset.failure)failureInspector(b.dataset.failure);else if(b.dataset.inspect)inspector(b.dataset.inspect);else if(!navigator.clipboard){$('#announcement').textContent='Clipboard unavailable. Command: '+b.dataset.copy}else navigator.clipboard.writeText(b.dataset.copy).then(function(){$('#announcement').textContent='Command copied.'}).catch(function(){$('#announcement').textContent='Clipboard unavailable. Command: '+b.dataset.copy})});
 document.addEventListener('keydown',function(e){var dlg=$('.inspector.persistent');if(e.key==='Escape'&&dlg&&dlg.open&&!e.target.closest('input,textarea,select,[contenteditable]')){e.preventDefault();dlg.close();return}if(e.target.closest('input,textarea,select,dialog')||e.metaKey||e.ctrlKey||e.altKey)return;if(e.key==='r'){e.preventDefault();if(stopMercury)stopMercury.refresh();else load()}if(e.key==='/'){e.preventDefault();go('lanes');$('#lq').focus()}});
 $('#refresh').addEventListener('click',function(){if(stopMercury)stopMercury.refresh();else load()});
 window.addEventListener('pagehide',function(){if(stopMercury){stopMercury();stopMercury=null}});
-window.addEventListener('pageshow',function(){if(state.view==='mercury'&&!stopMercury)render()});
+window.addEventListener('pageshow',function(){ageFabric();if(state.view==='mercury'&&!stopMercury)render()});
+document.addEventListener('visibilitychange',function(){if(!document.hidden)ageFabric()});
 window.addEventListener('hashchange',function(){var h=location.hash.slice(1);if(h&&h!==state.view&&VIEWS.some(function(v){return v[0]===h}))go(h)});
 var h0=location.hash.slice(1);if(VIEWS.some(function(v){return v[0]===h0}))state.view=h0;
 render();load().then(function(){if(state.view==='fleet'&&!state.fleet)loadFleet()});
-state.timer=setInterval(function(){if(!document.hidden)load()},30000);
+var nextPoll=Date.now()+30000;
+state.timer=setInterval(function(){if(!document.hidden){ageFabric();if(Date.now()>=nextPoll){nextPoll=Date.now()+30000;load()}}},5000);
 })();

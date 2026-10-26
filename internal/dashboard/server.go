@@ -31,6 +31,9 @@ type Config struct {
 	// StatsFn returns the current system stats as JSON bytes.
 	// The menubar marshals its own StatsSnapshot; we pass it through.
 	StatsFn func() ([]byte, error)
+	// VitalsFn returns the existing ranked CLI vitals contract on explicit reads.
+	// It is never called by periodic stats collection.
+	VitalsFn func() ([]byte, error)
 	// StelePath is the path to the Stele JSONL ledger.
 	// If empty, defaults to ~/.config/ra/stele.jsonl.
 	StelePath string
@@ -78,6 +81,11 @@ type Config struct {
 	// their state from this producer). If nil, the endpoint returns 503
 	// rather than a misleading zero-valued payload.
 	FabricFn FabricProducer
+	// FabricReadFn is the existing authority join before rendering. The server
+	// wraps it in an instance-owned immutable generation producer, not a second read.
+	FabricReadFn func() (ledger.FabricRead, error)
+	FabricSource ledger.FabricGenerationSource
+	FabricBuild  string
 	// RouterFn produces GET /api/router: lane verdicts, queue, consumer cap,
 	// registry pin, known-failure catalog, swap-hygiene receipt and what each
 	// release added. Wired by the caller, which owns registry/store access.
@@ -141,6 +149,9 @@ type Server struct {
 
 // New creates a dashboard server with all routes registered.
 func New(cfg Config) *Server {
+	if cfg.FabricSource == nil && cfg.FabricReadFn != nil {
+		cfg.FabricSource = ledger.NewFabricGenerationProducer(cfg.FabricReadFn, cfg.FabricBuild)
+	}
 	if cfg.Port == 0 {
 		cfg.Port = DashboardPort
 	}
@@ -179,6 +190,7 @@ func New(cfg Config) *Server {
 
 	// JSON API endpoints
 	mux.HandleFunc("/api/stats", s.apiStats)
+	mux.HandleFunc("/api/vitals", s.apiVitals)
 	mux.HandleFunc("/api/mercury", s.apiMercury)
 	mux.HandleFunc("/api/notifications", s.apiNotifications)
 	mux.HandleFunc("/api/stele", s.apiStele)

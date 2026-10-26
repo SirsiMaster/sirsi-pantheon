@@ -5,6 +5,7 @@ package routerstore
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 )
 
 func TestSpoolAdmissionCrossProcess(t *testing.T) {
@@ -87,6 +90,144 @@ func TestSpoolAdmissionPausedCallNeverPublishes(t *testing.T) {
 	})
 	if e != nil {
 		t.Fatal(e)
+	}
+}
+
+func TestSpoolAdmissionPendingMaintenanceWaitDoesNotPublishAndCanResume(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, servicedrain.MaintenanceMarkerName)
+	if err := os.WriteFile(marker, []byte("retained transaction fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	short := newSpoolTransport(dir, "own")
+	short.wait = 30 * time.Millisecond
+	req, err := http.NewRequest(http.MethodPost, "http://spool/v1/call/Inbox", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = short.RoundTrip(req)
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "request not published") {
+		t.Fatalf("pending maintenance must produce a known-not-published timeout: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "own")); !os.IsNotExist(err) {
+		t.Fatalf("timed-out pending request created a lane: %v", err)
+	}
+	tr := newSpoolTransport(dir, "own")
+	tr.wait = 2 * time.Second
+
+	result := make(chan error, 1)
+	go func() {
+		response, callErr := tr.RoundTrip(req)
+		if callErr == nil {
+			_, callErr = io.Copy(io.Discard, response.Body)
+			_ = response.Body.Close()
+		}
+		result <- callErr
+	}()
+	deadline := time.Now().Add(100 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(filepath.Join(dir, "own")); !os.IsNotExist(err) {
+			t.Fatalf("request was published before retained marker cleared: %v", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "own")); !os.IsNotExist(err) {
+		t.Fatalf("pending request created a lane: %v", err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	var requests []string
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		requests, _ = filepath.Glob(filepath.Join(dir, "own", "req", "*.json"))
+		if len(requests) == 1 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(requests) != 1 {
+		t.Fatal("waiting request was not published after the marker cleared")
+	}
+	if err := writeAtomic(filepath.Join(dir, "own", "res", filepath.Base(requests[0])), spoolResponse{
+		Status: http.StatusOK, Body: []byte(`{"result":[]}`),
+	}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-result; err != nil {
+		t.Fatalf("call did not resume after retained hold cleared: %v", err)
+	}
+}
+
+func TestSpoolAdmissionAndResponseShareOneCallBudget(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, servicedrain.MaintenanceMarkerName)
+	if err := os.WriteFile(marker, []byte("retained transaction fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tr := newSpoolTransport(dir, "budget-lane")
+	tr.wait = 500 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	startedBody := make(chan struct{})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://spool/v1/call/Inbox", &signalBody{read: startedBody})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		_, callErr := tr.RoundTrip(req) // no caller deadline: transport owns one shared budget
+		result <- callErr
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-finished:
+		case <-time.After(time.Second):
+			t.Error("RoundTrip did not finish during fixture cleanup")
+		}
+	})
+	select {
+	case <-startedBody: // RoundTrip created its budget and began reading this request.
+	case <-time.After(time.Second):
+		t.Fatal("RoundTrip did not begin")
+	}
+	started := time.Now()
+	time.Sleep(180 * time.Millisecond)
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	publicationDeadline := started.Add(350 * time.Millisecond)
+	var published []string
+	for time.Now().Before(publicationDeadline) {
+		published, _ = filepath.Glob(filepath.Join(dir, "budget-lane", "req", "*.json"))
+		if len(published) == 1 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(published) != 1 {
+		t.Fatal("budget regression was not exercised: request never reached published response-wait state")
+	}
+	remaining := time.Until(started.Add(tr.wait + 100*time.Millisecond))
+	if remaining <= 0 {
+		t.Fatal("request was not observed before the original call budget")
+	}
+	select {
+	case err := <-result:
+		if err == nil || !strings.Contains(err.Error(), "nothing was sent") {
+			t.Fatalf("withheld published request did not retain the no-response classification: %v", err)
+		}
+		if elapsed := time.Since(started); elapsed > tr.wait+100*time.Millisecond {
+			t.Fatalf("admission time was reset for response waiting: total call took %s", elapsed)
+		}
+	case <-time.After(remaining):
+		t.Fatal("published request did not honor the original shared call deadline")
+	}
+	if pending, _ := filepath.Glob(filepath.Join(dir, "budget-lane", "req", "*.json")); len(pending) != 0 {
+		t.Fatalf("request remained pending after the bounded call: %v", pending)
 	}
 }
 func TestSpoolAdmissionRefusesSymlink(t *testing.T) {

@@ -9,9 +9,9 @@ import (
 	"strings"
 )
 
-// ReleaseForVersion reuses the normal configured release client for exact
-// same-release PKG repair. It does not guess that an older/newer tag contains
-// the required helper, and it never changes ordinary update selection.
+// ReleaseForVersion reuses the normal configured release client for one exact
+// release selection. Callers still validate update/rollback direction and the
+// normal package owner verifies the exact signed payload before handoff.
 func (c *Client) ReleaseForVersion(version string) (*Release, error) {
 	version = strings.TrimPrefix(version, "v")
 	if !updateVersionPattern.MatchString(version) {

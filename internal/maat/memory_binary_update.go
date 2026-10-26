@@ -319,6 +319,19 @@ func (s *Store) BeginBinaryUpdateAttempt(m BinaryUpdateManifest, receipt Preflig
 	if err := m.ValidateFresh(); err != nil {
 		return BinaryUpdateAttempt{}, err
 	}
+	if err := s.ensureNoConflictingRawSelfUpdateLocked(); err != nil {
+		return BinaryUpdateAttempt{}, err
+	}
+	if _, err := s.pendingLivenessWatchAttemptLocked(); err == nil {
+		return BinaryUpdateAttempt{}, errors.New("maat memory: incomplete liveness-watch installation must be inspected before binary update")
+	} else if !errors.Is(err, ErrNoIncompleteLivenessWatchAttempt) {
+		return BinaryUpdateAttempt{}, fmt.Errorf("maat memory: shared attempt history is unverifiable: %w", err)
+	}
+	if _, err := s.pendingAppUpdateAttemptLocked(); err == nil {
+		return BinaryUpdateAttempt{}, errors.New("maat memory: incomplete whole-app update must be inspected before binary update")
+	} else if !errors.Is(err, ErrNoIncompleteAppUpdateAttempt) {
+		return BinaryUpdateAttempt{}, fmt.Errorf("maat memory: shared attempt history is unverifiable: %w", err)
+	}
 	if receipt.RegistrySnapshotVersion != 2 {
 		return BinaryUpdateAttempt{}, errors.New("maat memory: historical receipt cannot admit binary update")
 	}

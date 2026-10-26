@@ -1,0 +1,2 @@
+### Fixed
+- Ask the atomic Ma’at scheduler for an explicit loaded request when the current lookup is not that caller’s valid admission, even when the caller uses its existing registered thread rather than a new executor. A foreign bounded CPU row no longer prevents the request from reaching the scheduler. Scheduler refusals, insufficient shares and foreign grants still prevent child execution; only the caller’s new grant is released.

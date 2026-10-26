@@ -328,6 +328,44 @@ func (b *rootRelayOutput) Write(p []byte) (int, error) {
 	return b.data.Write(p)
 }
 
+// rootRelayMaintenanceDiagnostic returns only a closed, non-sensitive subset
+// of maintenance-image errors. The child can include arbitrary data in stderr;
+// never forward that body, paths, or signing details to the caller.
+func rootRelayMaintenanceDiagnostic(stderr []byte) string {
+	text := regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`).ReplaceAllString(string(stderr), "")
+	patterns := []struct {
+		pattern string
+		format  string
+	}{
+		{`kernel loaded-image CDHash unavailable: csops\(CS_OPS_CDHASH\) failed \(errno ([0-9]{1,3})\)`, "legacy maintenance: kernel loaded-image CDHash unavailable: csops(CS_OPS_CDHASH) failed (errno %s)"},
+		{`retained signed image unavailable: strict retained signature inspection failed \(status (-?[0-9]{1,6})\)`, "legacy maintenance: retained signed image unavailable: strict retained signature inspection failed (status %s)"},
+	}
+	for _, candidate := range patterns {
+		matches := regexp.MustCompile(candidate.pattern).FindStringSubmatch(text)
+		if len(matches) == 2 {
+			return fmt.Sprintf(candidate.format, matches[1])
+		}
+	}
+	for _, diagnostic := range []string{
+		"legacy maintenance: selected PID changed during loaded-image observation",
+		"legacy maintenance: selected PID changed during image verification",
+		"legacy maintenance: retained signed image does not match kernel-loaded CDHash",
+		"legacy maintenance: selected PID start identity unavailable",
+		"legacy maintenance: kernel loaded-image CDHash has invalid length",
+		"legacy maintenance: invalid selected image PID",
+	} {
+		if strings.Contains(text, diagnostic) {
+			return diagnostic
+		}
+	}
+	return ""
+}
+
+func rootRelayMaintenanceImageCommand(args []string) bool {
+	return len(args) == 7 && args[0] == "router" && args[1] == "relay" && args[2] == "maintenance-image" &&
+		args[3] == "--payload" && args[4] != "" && args[5] == "--pid" && args[6] != ""
+}
+
 func rootRelayRead(ctx context.Context, input []byte, executable string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -335,9 +373,20 @@ func rootRelayRead(ctx context.Context, input []byte, executable string, args ..
 	if input != nil {
 		cmd.Stdin = bytes.NewReader(input)
 	}
-	var out rootRelayOutput
-	cmd.Stdout, cmd.Stderr = &out, io.Discard
+	var out, stderr rootRelayOutput
+	cmd.Stdout = &out
+	maintenanceImage := rootRelayMaintenanceImageCommand(args)
+	if maintenanceImage {
+		cmd.Stderr = &stderr
+	} else {
+		cmd.Stderr = io.Discard
+	}
 	if err := cmd.Run(); err != nil {
+		if maintenanceImage {
+			if diagnostic := rootRelayMaintenanceDiagnostic(stderr.data.Bytes()); diagnostic != "" {
+				return nil, fmt.Errorf("service lifecycle: relay %s failed: %w: %s", filepath.Base(executable), err, diagnostic)
+			}
+		}
 		return nil, fmt.Errorf("service lifecycle: relay %s failed: %w", filepath.Base(executable), err)
 	}
 	return out.data.Bytes(), nil

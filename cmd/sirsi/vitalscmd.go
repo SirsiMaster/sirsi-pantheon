@@ -10,6 +10,8 @@ package main
 // SampleNodeCapacity uses (kernel dispatch → daemon cache → bootstrap), and
 // reads swap via the same sysctl the doctor's swap check runs. NO new probing
 // logic — this command only exposes what the guard engine already measures.
+// --summary selects the capacity-only guard sampler before any process work;
+// native periodic reads use it while explicit diagnostics retain ranking.
 
 import (
 	"encoding/json"
@@ -35,6 +37,7 @@ var vitalsTop int
 var (
 	vitalsProvidersMu sync.Mutex
 	vitalsMemFn       = guard.SampleMemory
+	vitalsSummaryFn   = guard.SampleMemorySummary
 	vitalsPressureFn  = guard.EffectivePressure
 	vitalsSwapFn      = func() int64 { return guard.SwapUsedBytes(platform.Current()) }
 )
@@ -106,6 +109,7 @@ pressure level, swap in use, and the processes holding the most memory.
   sirsi vitals              Snapshot with the top memory users
   sirsi vitals --top 10     Show more memory users
   sirsi vitals --json       Structured output for tools and dashboards
+  sirsi vitals --summary --json  Capacity, pressure and swap without process ranking
 
 It samples once and returns immediately (built for a 2-second dashboard tick).
 For the full 12-check health diagnostic, run sirsi diagnose.`,
@@ -114,16 +118,33 @@ For the full 12-check health diagnostic, run sirsi diagnose.`,
 
 func init() {
 	vitalsCmd.Flags().IntVar(&vitalsTop, "top", 5, "Number of top memory users to include")
+	vitalsCmd.Flags().Bool("summary", false, "Read capacity, pressure and swap without process enumeration; top is empty")
+}
+
+// sampleVitalsReport is shared by explicit CLI and on-demand browser reads.
+// Summary selects the cheaper producer before sampling, not after ranking.
+func sampleVitalsReport(summary bool, topN int) (vitalsReport, error) {
+	vitalsProvidersMu.Lock()
+	memFn, pressureFn, swapFn := vitalsMemFn, vitalsPressureFn, vitalsSwapFn
+	if summary {
+		memFn = vitalsSummaryFn
+	}
+	vitalsProvidersMu.Unlock()
+	mem, err := memFn()
+	if err != nil {
+		return vitalsReport{}, err
+	}
+	pressure, pressureSource := pressureFn(mem.FreeBytes, mem.TotalRAM)
+	return buildVitalsReport(mem, pressure, pressureSource, swapFn(), topN), nil
 }
 
 func runVitals(cmd *cobra.Command, args []string) error {
 	start := time.Now()
-
-	vitalsProvidersMu.Lock()
-	memFn, pressureFn, swapFn := vitalsMemFn, vitalsPressureFn, vitalsSwapFn
-	vitalsProvidersMu.Unlock()
-
-	mem, err := memFn()
+	summary, err := cmd.Flags().GetBool("summary")
+	if err != nil {
+		return err
+	}
+	report, err := sampleVitalsReport(summary, vitalsTop)
 	if err != nil {
 		if JsonOutput {
 			return fmt.Errorf("vitals: memory sample failed: %w", err)
@@ -134,9 +155,6 @@ func runVitals(cmd *cobra.Command, args []string) error {
 		res.Render()
 		return nil
 	}
-	pressure, pressureSource := pressureFn(mem.FreeBytes, mem.TotalRAM)
-	report := buildVitalsReport(mem, pressure, pressureSource, swapFn(), vitalsTop)
-
 	if JsonOutput {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")

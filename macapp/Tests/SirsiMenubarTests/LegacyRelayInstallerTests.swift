@@ -35,6 +35,46 @@ import XCTest
         XCTAssertEqual(model.transaction?.phase, "completed")
     }
 
+    func testTypedRollbackSelectionUsesOnlyExactCurrentCLICommand() async throws {
+        let selection = try XCTUnwrap(AppRollbackSelection(release: "0.24.137"))
+        XCTAssertNil(AppRollbackSelection(release: "latest"))
+        XCTAssertNotNil(AppRollbackSelection(release: "0.24.136"))
+        XCTAssertNil(AppRollbackSelection(release: "0.24.114"))
+        XCTAssertNil(AppRollbackSelection(release: "0.24.137/../0.24.200"))
+        var argv = [[String]]()
+        let memoryFixture = MaatDiagnosticCorrelationFixture()
+        let maintenanceFixture = LegacyRelayFixture()
+        let maintenance = LegacyRelayMaintenanceModel(directory: maintenanceFixture.scope, storage: maintenanceFixture.storage)
+        let model = MaatAppUpdateModel(memory: memoryFixture.model(), recovery: MaatPreparedPreflightRecovery(), maintenance: maintenance, capture: { args, authorize in
+            XCTAssertTrue(authorize()); argv.append(args)
+            return CommandExecution(stdout: Data("Ma'at rollback attempt retained".utf8), exitCode: 0, childState: .exitConfirmed)
+        })
+        await model.review(.rollback(selection))?.value
+        let approved = try XCTUnwrap(model.approval)
+        await model.confirm(approved)?.value
+        XCTAssertEqual(argv, [["update", "--rollback-version", "0.24.137", "--confirm-rollback"]])
+        XCTAssertTrue(model.commandReceipt?.stdout.contains("rollback attempt retained") == true)
+    }
+
+    func testRetainedMaatAttemptButtonUsesOnlyDataOnlyRecheckAndShowsReceipt() async throws {
+        let retained = Data("{\"schema\":\"sirsi.maat.app-update-reconciliation.v1\",\"state\":\"resolved\",\"attempt_id\":\"a5340000-0000-4000-8000-000000000001\",\"target_release\":\"0.24.137\",\"current_release\":\"0.24.138\",\"observation\":{\"release\":\"0.24.137\"}}".utf8)
+        var argv = [[String]]()
+        let memoryFixture = MaatDiagnosticCorrelationFixture()
+        let maintenanceFixture = LegacyRelayFixture()
+        let maintenance = LegacyRelayMaintenanceModel(directory: maintenanceFixture.scope, storage: maintenanceFixture.storage)
+        let model = MaatAppUpdateModel(memory: memoryFixture.model(), recovery: MaatPreparedPreflightRecovery(), maintenance: maintenance, capture: { args, authorize in
+            XCTAssertTrue(authorize()); argv.append(args)
+            return CommandExecution(stdout: retained, exitCode: 0, childState: .exitConfirmed)
+        })
+        await model.inspectAttempt()?.value
+        XCTAssertEqual(argv, [["update", "--reconcile-app-attempt"]])
+        XCTAssertEqual(model.attemptReport?.attemptID, "a5340000-0000-4000-8000-000000000001")
+        XCTAssertEqual(model.attemptReport?.state, "resolved")
+        XCTAssertTrue(model.message?.contains("0.24.137") == true)
+        XCTAssertNotNil(model.readbackReceipt)
+        XCTAssertNil(model.commandReceipt, "Data-only readback cannot synthesize an Installer/update invocation")
+    }
+
     func testChangedOrUnverifiedPackageNeverOpensInstaller() async throws {
         for failure in ["changed", "trust-refused", "canceled"] {
             let f = LegacyRelayFixture()

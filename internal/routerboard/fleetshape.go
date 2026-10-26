@@ -1,6 +1,12 @@
 package routerboard
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+)
 
 // FleetShape projects the board payload into the {summary, lanes} shape the
 // menubar decodes.
@@ -71,18 +77,11 @@ func ToFleetShape(p Payload) FleetShape {
 		// State names match internal/supervision so the menubar, the board, and
 		// the supervisor all use one vocabulary. Derived from the SAME lane
 		// fields the board renders — never recomputed from the store.
-		state := "IDLE"
-		switch {
-		case f.IdleWithWork:
-			state = "IDLE_WITH_WORK"
-		case f.Activity == "active now":
-			state = "WORKING"
-		case f.TasksTotal == 0 && f.OpenItems == 0:
-			state = "NO_WORK"
-		case f.Counts["blocked"] > 0 && f.UnblockedOpen == 0:
-			state = "BLOCKED"
+		state := f.State
+		if state == "" {
+			state = "UNKNOWN"
 		}
-		if f.IdleWithWork {
+		if state == "IDLE_WITH_WORK" {
 			out.Summary.IdleLanes++
 		}
 		if state == "WORKING" {
@@ -99,9 +98,26 @@ func ToFleetShape(p Payload) FleetShape {
 				if f.LastTouch == "" {
 					return ""
 				}
-				return ageStr(f.LastTouch)
+				at, err := time.Parse(time.RFC3339Nano, p.GeneratedAt)
+				if err != nil {
+					return "?"
+				}
+				return ageAt(f.LastTouch, at)
 			}(),
 		})
+	}
+	if p.Fabric != nil {
+		w := p.Fabric.Work
+		out.Summary.Active, out.Summary.Assigned, out.Summary.Stalled = w.InProgress, w.AssignedNotStarted, w.Stalled
+		byID := map[string]ledger.FabricLane{}
+		for _, lane := range p.Fabric.Lanes {
+			byID[lane.Agent] = lane
+		}
+		for i := range out.Lanes {
+			lane := byID[out.Lanes[i].Agent]
+			out.Lanes[i].Active = lane.Active
+			out.Lanes[i].Stalled = lane.Stalled
+		}
 	}
 	return out
 }
@@ -109,9 +125,12 @@ func ToFleetShape(p Payload) FleetShape {
 // SnapshotFleetShape returns the menubar projection of the current payload.
 // version 0 means no poll has completed; the caller must not print zeros.
 func (b *Board) SnapshotFleetShape() ([]byte, uint64, error) {
-	body, version := b.Snapshot()
+	body, version, valid := b.SnapshotState()
 	if version == 0 || len(body) == 0 {
 		return nil, 0, nil
+	}
+	if !valid {
+		return nil, version, fmt.Errorf("fabric producer unavailable")
 	}
 	var p Payload
 	if err := json.Unmarshal(body, &p); err != nil {

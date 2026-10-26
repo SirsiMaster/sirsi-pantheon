@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 type recordingDecisionJournal struct{ decisions []Decision }
@@ -38,6 +40,10 @@ func testActions() []RecoveryAction {
 func privateMemoryStoreRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("canonicalize private owned memory fixture: %v", err)
+	}
 	if err := os.Chmod(root, 0o700); err != nil {
 		t.Fatalf("prepare private owned memory fixture: %v", err)
 	}
@@ -46,6 +52,43 @@ func privateMemoryStoreRoot(t *testing.T) string {
 		t.Fatalf("memory fixture mode is not0700: %v", err)
 	}
 	return root
+}
+
+func TestPrivateMemoryStoreRootCanonicalizesSymlinkedTempDir(t *testing.T) {
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("canonicalize physical temporary parent: %v", err)
+	}
+	real := filepath.Join(parent, "real")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatalf("create real temporary directory: %v", err)
+	}
+	alias := filepath.Join(parent, "alias")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Fatalf("create temporary directory alias: %v", err)
+	}
+	t.Setenv("TMPDIR", alias)
+
+	t.Run("fresh TempDir parent", func(t *testing.T) {
+		root := privateMemoryStoreRoot(t)
+		canonical, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			t.Fatalf("resolve private memory fixture root: %v", err)
+		}
+		if root != canonical {
+			t.Fatalf("private memory fixture root is not canonical: got %q, want %q", root, canonical)
+		}
+		if !strings.HasPrefix(root, real+string(os.PathSeparator)) {
+			t.Fatalf("private memory fixture root did not use the aliased temporary parent: got %q, want parent %q", root, real)
+		}
+		fd, err := openAbsoluteDirectory(root)
+		if err != nil {
+			t.Fatalf("open canonical private memory fixture root: %v", err)
+		}
+		if err := unix.Close(fd); err != nil {
+			t.Fatalf("close canonical private memory fixture root: %v", err)
+		}
+	})
 }
 
 func TestStorePrivateFixtureDoesNotRelaxPublicRootRefusal(t *testing.T) {

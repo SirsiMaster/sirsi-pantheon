@@ -504,6 +504,54 @@ func TestRootRelayOutputBoundCannotBeBypassedByReadFrom(t *testing.T) {
 	}
 }
 
+func TestRootRelayMaintenanceDiagnosticIsCanonicalAndBounded(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "kernel errno",
+			raw:  "\x1b[31mError: legacy maintenance: kernel loaded-image CDHash unavailable: csops(CS_OPS_CDHASH) failed (errno 13)\x1b[0m\n",
+			want: "legacy maintenance: kernel loaded-image CDHash unavailable: csops(CS_OPS_CDHASH) failed (errno 13)",
+		},
+		{
+			name: "signature status",
+			raw:  "Error: legacy maintenance: retained signed image unavailable: strict retained signature inspection failed (status -67050)\n",
+			want: "legacy maintenance: retained signed image unavailable: strict retained signature inspection failed (status -67050)",
+		},
+		{
+			name: "untrusted details omitted",
+			raw:  "Error: legacy maintenance: kernel loaded-image CDHash unavailable: csops(CS_OPS_CDHASH) failed (errno 13) /Users/private/key.pem payload=secret\n",
+			want: "legacy maintenance: kernel loaded-image CDHash unavailable: csops(CS_OPS_CDHASH) failed (errno 13)",
+		},
+		{
+			name: "unknown body omitted",
+			raw:  "Error: /Users/private/key.pem payload=secret\n",
+			want: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := rootRelayMaintenanceDiagnostic([]byte(tc.raw))
+			if got != tc.want || strings.Contains(got, "/Users/") || strings.Contains(got, "secret") {
+				t.Fatalf("safe maintenance diagnostic = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	if !rootRelayMaintenanceImageCommand([]string{"router", "relay", "maintenance-image", "--payload", "/protected/image", "--pid", "539"}) {
+		t.Fatal("exact maintenance image command not recognized")
+	}
+	for _, args := range [][]string{
+		{"router", "relay", "maintenance-image", "--pid", "539"},
+		{"router", "relay", "maintenance-image", "--payload", "/protected/image", "--pid", "539", "--extra"},
+		{"router", "relay", "serve", "--payload", "/protected/image", "--pid", "539"},
+	} {
+		if rootRelayMaintenanceImageCommand(args) {
+			t.Fatalf("noncanonical maintenance command accepted: %#v", args)
+		}
+	}
+}
+
 func TestRootRelayProducerAdmissionRefusalNeverBootsOut(t *testing.T) {
 	f, b := newRelayNativeFixture(t)
 	b.relay.admission = func(context.Context, func() error) error { return errors.New("producer still in flight") }

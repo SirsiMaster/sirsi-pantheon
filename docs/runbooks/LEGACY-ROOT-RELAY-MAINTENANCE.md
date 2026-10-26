@@ -5,6 +5,37 @@ producer-covered route, published135, or SHA's installed pilot. It does not
 change `launchd restart`, its strict selected-instance checks, the five original
 profiles, or Horus/surface/model ownership.
 
+## Current-source handoff boundary
+
+The current spool client takes the existing shared directory lock before it
+creates a lane or publishes a request and retains it through response readback.
+When the durable legacy-maintenance marker or preparation is present, a current
+client uses one existing 30-second call budget across admission and response
+readback. While the marker or preparation is present it waits without creating
+a lane, slot or request. If that budget expires before publication, the command
+reports that the request was not published and may be retried after the exact
+retained transaction is resolved; after publication, the existing consumed or
+outcome-unknown classification applies. The maintenance UI keeps a typed
+`prepared` transaction actionable through its existing reviewed Resume/Abort
+controls; it does not report a drain.
+The owner waits for current shared calls under the same physical directory's
+exclusive lock before retirement. If that bounded wait expires, the prepared
+transaction remains held for explicit recovery. The current relay tracks and
+joins its lane/request workers on shutdown, and a failed response publication
+leaves the original inflight/outbox object as recovery evidence. After joining,
+`Serve` returns an unresolved-settlement error if such evidence remains; worker
+exit alone is not reported as a clean settlement.
+
+This is cooperative behavior of the current source only. The exact loaded/source
+matches for 121, 122 and 129 do not establish their shared-lock admission or a
+joined shutdown, so none is added to the maintenance profile. An installed old
+app can receive the normal signed app replacement, but its already-running
+process keeps its old code until the canonical app is relaunched. That makes the
+current maintenance UI reachable; it does not make an old relay/client safe to
+drain. For those old sources, in-flight remote outcomes remain explicitly
+unknown and are never replayed automatically. Their lossless session-preserving
+retirement remains open pending an actual source-supported join boundary.
+
 ## Closed operation
 
 The canonical app engine exposes `launchd legacy-maintenance` with `preview`,

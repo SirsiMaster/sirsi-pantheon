@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/updater"
 )
@@ -59,6 +60,32 @@ func TestMaintenanceInstallerClosedAssetSelection(t *testing.T) {
 	}
 }
 
+func TestMaintenanceRollbackAssetRequiresExactOlderCompletePair(t *testing.T) {
+	selected := maintenanceReleaseFixture([]byte("inert rollback package bytes"))
+	selected.TagName = "v0.24.137"
+	for i := range selected.Assets {
+		selected.Assets[i].Name = strings.ReplaceAll(selected.Assets[i].Name, "0.24.200", "0.24.137")
+		selected.Assets[i].BrowserDownloadURL = strings.ReplaceAll(selected.Assets[i].BrowserDownloadURL, "0.24.200", "0.24.137")
+	}
+	asset, err := maintenanceRollbackPackageAsset("0.24.138", selected)
+	if err != nil || asset == nil || asset.Name != "SirsiPantheon-0.24.137-arm64.pkg" {
+		t.Fatalf("exact complete older commercial pair refused: asset=%+v err=%v", asset, err)
+	}
+	badURL := *selected
+	badURL.Assets = append([]updater.Asset(nil), selected.Assets...)
+	badURL.Assets[1].BrowserDownloadURL = strings.ReplaceAll(badURL.Assets[1].BrowserDownloadURL, "SirsiPantheon-0.24.137-arm64.pkg", "SirsiPantheon-0.24.200-arm64.pkg")
+	if _, err := maintenanceRollbackPackageAsset("0.24.138", &badURL); err == nil {
+		t.Fatal("rollback accepted a package URL whose basename identifies a different release")
+	}
+	if _, err := maintenanceRollbackPackageAsset("0.24.138", maintenanceReleaseFixture([]byte("inert package"))); err == nil {
+		t.Fatal("newer package passed rollback selection")
+	}
+	selected.Assets = selected.Assets[:1]
+	if _, err := maintenanceRollbackPackageAsset("0.24.138", selected); err == nil {
+		t.Fatal("partial older package pair passed rollback selection")
+	}
+}
+
 func TestMaintenanceInstallerStagesAndRechecksCapturedBytes(t *testing.T) {
 	// Only the transport and trust probes are injected. The actual command,
 	// private staging, checksum, retained-file and captured-selection checks run.
@@ -70,9 +97,12 @@ func TestMaintenanceInstallerStagesAndRechecksCapturedBytes(t *testing.T) {
 		download: func(_ context.Context, _ string, path string) error {
 			return os.WriteFile(path, data, 0600)
 		},
-		inspect: func(context.Context, string, string) (setup.LegacyAppCapability, error) {
+		inspect: func(context.Context, string, string) (maintenancePackageInspection, error) {
 			inspections++
-			return setup.LegacyAppCapability{Schema: 1, Native: true, Protocol: "root-relay-local-app-v1", Release: "0.24.200", Implementation: strings.Repeat("a", 64)}, nil
+			return maintenancePackageInspection{Capability: setup.LegacyAppCapability{Schema: 1, Native: true, Protocol: "root-relay-local-app-v1", Release: "0.24.200", Implementation: strings.Repeat("a", 64)},
+				EngineSHA256: strings.Repeat("b", 64), InstallerIdentity: "Developer ID Installer: Sirsi Technologies Inc. (9D382WV988)", Notarization: "Notarized Developer ID",
+				TargetBundleID: "ai.sirsi.pantheon", TargetAppPath: "/Applications/Pantheon.app", TargetHelperPath: "/usr/local/libexec/sirsi-pantheon/sirsi",
+				Dependencies: []string{"/Applications/Pantheon.app", "/usr/local/libexec/sirsi-pantheon/sirsi"}}, nil
 		},
 	}
 	plan, err := stageMaintenanceInstaller(context.Background(), "0.24.200", ops)
@@ -129,9 +159,9 @@ func TestMaintenanceInstallerTrustRefusalNeverProducesOpenSelection(t *testing.T
 					}
 					return os.WriteFile(dest, data, 0600)
 				},
-				inspect: func(context.Context, string, string) (setup.LegacyAppCapability, error) {
+				inspect: func(context.Context, string, string) (maintenancePackageInspection, error) {
 					calls++
-					return setup.LegacyAppCapability{}, errors.New("inert " + failure + " refused")
+					return maintenancePackageInspection{}, errors.New("inert " + failure + " refused")
 				},
 			}
 			plan, err := stageMaintenanceInstaller(context.Background(), "0.24.200", ops)
@@ -173,5 +203,25 @@ func TestMaintenanceInstallerObservedPackageInfoContract(t *testing.T) {
 				t.Fatal(name, err)
 			}
 		})
+	}
+}
+
+func TestAppRollbackRecoveryCapabilityRequiresExactReaderSchema(t *testing.T) {
+	valid, err := json.Marshal(maat.CurrentAppUpdateRecoveryCapability())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := decodeAppUpdateRecoveryCapability(valid)
+	if err != nil || got != maat.CurrentAppUpdateRecoveryCapability() {
+		t.Fatalf("exact attempt reader capability refused: %+v %v", got, err)
+	}
+	for _, raw := range [][]byte{
+		[]byte(`{"schema":1,"protocol":"root-relay-local-app-v1","native":true}`),
+		[]byte(`{"schema":"sirsi.maat.app-update-recovery.v1","manifest_schema":"wrong","pending_read":true,"installed_resolve":true}`),
+		[]byte(`{}`),
+	} {
+		if _, err := decodeAppUpdateRecoveryCapability(raw); err == nil {
+			t.Fatalf("legacy/missing/mismatched reader capability accepted: %s", raw)
+		}
 	}
 }

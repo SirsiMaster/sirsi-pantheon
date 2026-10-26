@@ -3,13 +3,17 @@ package dashboard
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 )
 
 // RouterSnapshot is the router panel: everything an operator needs to see about
 // the router in one read, produced by the caller (the dashboard does not import
 // the registry or store itself).
 type RouterSnapshot struct {
-	GeneratedAt string `json:"generated_at"`
+	Fabric           *ledger.FabricBoard `json:"fabric,omitempty"`
+	FabricGeneration string              `json:"fabric_generation,omitempty"`
+	GeneratedAt      string              `json:"generated_at"`
 	// BuiltMs is how long producing this snapshot took, and Timings the same by
 	// stage, so a slow panel can be traced to its source rather than guessed at.
 	BuiltMs       int64             `json:"built_ms"`

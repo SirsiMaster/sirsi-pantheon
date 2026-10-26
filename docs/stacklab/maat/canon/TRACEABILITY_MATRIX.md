@@ -1,5 +1,16 @@
 # Traceability matrix — Ma'at
 
+O7 local confirmed diagnostics record: `cmd/sirsi/maattriage{,_memory}.go` uses
+`diagnostic_observation.go` and `memory_diagnostic.go` for bounded coded privacy,
+exact full-manifest receipt/intent, existing `RecordSystemOne` through atomic
+append-once, strict readback and data-only debt reconciliation. Shared liveness
+history recognizes and validates only the new closed diagnostic filenames.
+`memory_diagnostic_test.go` and `maattriage_memory_test.go` author causal actual
+entry/file-journal coverage; existing triage tests retain closed repair/gate
+assertions with explicit provenance/private-store preconditions. Source only;
+no execution, export authority, native installed or full-O7 completion claim.
+See [O7 scope and upgrade](DIAGNOSTIC_RECORD_V1.md).
+
 G02 prepared-receipt reachability: `memory_prepared_receipts.go` and
 `maatmemory_prepared.go` extend the existing memory inspector with a verified
 complete historical reader and exact intent/store target before any Casebook
@@ -52,7 +63,8 @@ No G01/G02 learning workflow or full original-scope completion is claimed.
 | Decisions are append-only | Ma'at journal recorder | journal write/readback tests | source-bound |
 | Failure memory binds evidence to exact scope | `internal/maat/memory.go` | deterministic signature, retained no-follow evidence, create-only prepared/committed leaves, predecessor-bound terminal events, scope-isolation, tamper and race tests | source-bound; surface projection required |
 | Failure memory executes only closed matching guards and cannot block on FIFO open | `internal/maat/memoryguard.go`, `memory.go`; `memoryguard_test.go` | typed-call observation, implementation-byte digest, unsupported/mixed/scope/terminal controls; FIFO/size refusal; reopen and failed-write debt; independent concurrent writers; one-way journal failure | corrective SOURCE ONLY, tests not executed here; eight operation integrations and installed proof OPEN |
-| Binary-drift update/recovery consumes failure memory at the authoritative Cobra boundary | `cmd/sirsi/maatrepair_binary_drift.go`, `internal/maat/memory_binary_update.go`, existing `internal/maat/memory_receipts.go` | actual `maat repair binary-drift --confirm` route: exact reject/unverifiable zero-effect checks, canonical typed full-receipt projection plus exact Store attempt reference before one injected updater call, strict FileDecisionJournal acceptance, real running schema-ceiling observation and persisted `version.Info`, historical freshness and aged reopen, manifest/registry drift, concurrent preview variants, exact postcheck failure, typed invocation barrier, unknown-launch no-replay, owned pre-invocation reconciliation, refused/mismatched claim cannot discharge an older case-A claim or admit case B, and terminal/projection/readback recovery with zero updater calls | source authored; gofmt and diff-only checks by subtask author; no tests/builds executed here; binary-drift slice only, raw self-update/commercial update routes and qualification remain OPEN |
+| Binary-drift update/recovery consumes failure memory at the authoritative Cobra boundary | `cmd/sirsi/maatrepair_binary_drift.go`, `internal/maat/memory_binary_update.go`, existing `internal/maat/memory_receipts.go`; raw self-update in `cmd/sirsi/selfupdate.go`, `cmd/sirsi/selfupdate_maat.go`, and `internal/maat/memory_raw_self_update.go` | Homebrew route: exact reject/unverifiable zero-effect checks, canonical typed full-receipt projection plus exact Store attempt reference before one injected updater call, strict FileDecisionJournal acceptance, real running schema-ceiling observation and persisted `version.Info`, historical freshness and aged reopen, manifest/registry drift, concurrent preview variants, exact postcheck failure, typed invocation barrier, unknown-launch no-replay, owned pre-invocation reconciliation, refused/mismatched claim cannot discharge an older case-A claim or admit case B, and terminal/projection/readback recovery with zero updater calls. Separate existing raw self-update Cobra route: binding displayed before interactive confirmation, retained receipt and durable attempt/read-back before invocation, inert SafeReplace seam, owner rejection, exact target and schema postcheck, terminal projection debt reconciled without replacement. | source authored; gofmt and diff-only checks by subtask author; no tests/builds executed here; Main qualification remains open; commercial whole-app update/install and O4 rollback remain separate OPEN scope |
+| Existing macOS whole-app update keeps the signed-PKG Installer owner behind scoped Ma’at admission | `internal/maat/memory_app_update.go`, `cmd/sirsi/update.go`, `cmd/sirsi/update_app_darwin.go`, `cmd/sirsi/launchdmaintenance_installer_darwin.go` | Existing O2 source fixtures cover package/signature/target/dependency/schema refusals, Installer handoff/readback, and no-replay debt; composed receipt join uses opaque retained receipt and exact Store readback; reciprocal app/raw/binary/liveness admission fences are source-authored | Source only, unqualified; Main normal/race qualification remains pending. Raw self-update source, alternate installer routes, installed proof, and full O4 rollback remain open |
 | Ma'at liveness-watch remains rootless and does not strand first-use/interrupted operators in CLI output | `internal/maat/memory_root.go`, `memory_liveness.go`, `cmd/sirsi/maatrepair_liveness.go`, `internal/liveness/localinstall_unix.go`, native `MaatCasebookView.swift` | canonical engine/HOME local APIs; explicit confirmed first-use genesis; read-only inspect; confirmed no-replay re-observation; native review/recheck and fixed engine arguments | source candidate only; unqualified until focused Go/native qualification and installed evidence; other seven rows OPEN |
 | Casebook is read-only | `internal/maat/casebook/` | projection and API tests | source-bound |
 | Retained Ma'at history is bounded, scoped, and recoverable in the native surface | `internal/maat/history_query.go`, `internal/maat/casebook/casebook.go`, `internal/maat/diagnostic_resolution.go`, `cmd/sirsi/maatcasebook.go`, native `MaatCasebookView.swift` and `MaatOperationState.swift`; `contracts/stacklab/maat-system-one-recipe-v1.json` | explicit-empty JSON arrays, physically late match after a budget chunk, canonical owner-review/acceptance without resolving the original multi-finding screen, pre-limit kind/text/status, >50 screen/calibration pagination with query-versus-tail count provenance, final-materialization cancellation, strict old-review lookup beyond `Recent(1000)` with malformed-history refusal, and native zero-exit/partial/failed-refresh/same-snapshot continuation fixtures | corrective source candidate only; Go/native qualification not run; no journal contents ingested; `Recent` behavior is unchanged and browse cursors do not authorize mutation |
@@ -82,3 +94,23 @@ setup in `memory_test.go`/`memoryguard_test.go`, using the exact855 private help
 and public0755 no-chmod refusal fixture without its API adaptations. Production
 mode policy and all old assertions remain unchanged; whole-core normal/race
 under022 is required rather than narrowing away these tests.
+
+O7 native request consumer continuation: `MaatDiagnosticCorrelation.swift` decodes
+the accepted73d canonical request/record/page DTOs. `MaatDiagnosticRecordModel`
+retains the request key before preparation, verifies prepared custody, submits
+once, then reads that exact request; uncertain preparation/invocation is read or
+confirmed-resolve only. Discovery follows one query/snapshot chain with eight
+pages per UI turn and explicit continuation, rather than a total128-row cap. A
+completed chain is revalidated against the producer's full-namespace snapshot
+before new preparation. `MaatDiagnosticRecordView` exposes partial/restart/debt
+and retained typed receipts; `MaatDiagnosticResolution.recordFreshScreen` uses
+the engine-owned model rather than a second legacy submitter. Existing
+query-owned refresh and UI1/UI2 completion retention remain. Corresponding
+record/resolution/correlation tests include129 historical rows, cancellation,
+snapshot drift, missing preparation, exact tuple refusal and an external
+Go-produced wire input (explicit skip without Main artifact). Go57 and native458 now have Main-owned bounded runtime and four normal-window
+observations: exact evidence and limits are recorded in
+[diagnostic qualification](DIAGNOSTIC_RECORD_V1.md#exact-bounded-evidence-2026-10-25).
+The earlier author-only/unrun handoff is historical. New integrated-head checks,
+installed adoption, authorized export and full-O7 acceptance remain open. See
+[consumer boundary](DIAGNOSTIC_NATIVE_REQUEST_ADAPTER_V1.md).

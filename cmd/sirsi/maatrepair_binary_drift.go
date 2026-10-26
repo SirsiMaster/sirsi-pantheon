@@ -936,7 +936,7 @@ func validateMaatBinaryDriftCase(journal maat.DecisionJournal, evidence string) 
 		return fmt.Errorf("Ma'at binary-drift recovery: retained System One case is invalid: %w", err)
 	}
 	host, hostErr := maatTriageHostname()
-	if hostErr != nil || verdict.Subject.Kind != "host" || verdict.Subject.Ref != "diagnostic" || verdict.Subject.Repo != strings.TrimSpace(host) {
+	if hostErr != nil || !maat.DiagnosticHostMatches(verdict.Subject, host) {
 		return errors.New("Ma'at binary-drift recovery: the retained evidence is not this host's diagnostic screen")
 	}
 	raw, err := json.Marshal(verdict)

@@ -7,8 +7,18 @@ import Foundation
 final class MaatHistoryRefreshStore: ObservableObject {
     @Published private(set) var state: MaatHistoryRefreshState
 
-    init(projection: MaatCasebookProjection? = nil) {
+    typealias Reader = @Sendable ([String]) async -> SirsiEngine.JSONCommandRead
+    private let reader: Reader
+    init(projection: MaatCasebookProjection? = nil,
+         read: @escaping Reader = { await SirsiEngine.runJSONRead(args: $0) }) {
         state = MaatHistoryRefreshState(projection: projection)
+        self.reader = read
+    }
+
+    // A verified write starts a new snapshot of the committed query; its old
+    // cursor is not replayed. load retains the existing generation/cancel fence.
+    func refresh(scope: String) async {
+        await load(scope: scope, query: state.refreshQuery, run: reader)
     }
 
     func load(scope: String, query: String? = nil, cursor: String? = nil,
@@ -250,15 +260,25 @@ final class MaatCaseOperationStore: ObservableObject {
     let failureMemoryReceipts: MaatPreflightReceiptReadStore
     let preparedPreflightRecovery: MaatPreparedPreflightRecovery
     let localPreventions: MaatLocalPreventionModel
+    let diagnosticRecord: MaatDiagnosticRecordModel
+    private let suppliedLegacyMaintenance: LegacyRelayMaintenanceModel?
+    lazy var legacyMaintenance = suppliedLegacyMaintenance ?? LegacyRelayMaintenanceModel(directory: URL(fileURLWithPath: NSHomeDirectory()))
+    lazy var appUpdate = MaatAppUpdateModel(memory: diagnosticRecord, recovery: preparedPreflightRecovery, maintenance: legacyMaintenance)
     @Published private(set) var records: [MaatOperationKey: MaatOperationRecord] = [:]
     private var historyReads: [MaatOperationKey: (generation: UUID, continuation: MaatExactHistoryContinuation)] = [:]
 
     init(preparedPreflightRecovery: MaatPreparedPreflightRecovery? = nil,
          localPreventions: MaatLocalPreventionModel? = nil,
-         failureMemoryReceipts: MaatPreflightReceiptReadStore? = nil) {
-        self.preparedPreflightRecovery = preparedPreflightRecovery ?? MaatPreparedPreflightRecovery()
+         failureMemoryReceipts: MaatPreflightReceiptReadStore? = nil,
+         diagnosticRecord: MaatDiagnosticRecordModel? = nil,
+         legacyMaintenance: LegacyRelayMaintenanceModel? = nil) {
+        let recoveryOwner = preparedPreflightRecovery ?? MaatPreparedPreflightRecovery()
+        let diagnosticOwner = diagnosticRecord ?? MaatDiagnosticRecordModel()
+        self.preparedPreflightRecovery = recoveryOwner
         self.localPreventions = localPreventions ?? MaatLocalPreventionModel()
         self.failureMemoryReceipts = failureMemoryReceipts ?? MaatPreflightReceiptReadStore()
+        self.diagnosticRecord = diagnosticOwner
+        self.suppliedLegacyMaintenance = legacyMaintenance
     }
 
     func record(for key: MaatOperationKey) -> MaatOperationRecord? {

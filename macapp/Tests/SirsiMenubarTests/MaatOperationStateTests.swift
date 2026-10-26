@@ -88,6 +88,27 @@ final class MaatOperationStateTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testCasebookSummaryDetailUsesOptionalHistoryArgument() {
+        let summary = MaatCasebookSummary(total: 0, open: 0, urgent: 0, high: 0, resolved: 0)
+        XCTAssertEqual(
+            MaatCasebookView.summaryDetail(summary, history: nil),
+            "No decisions match this page"
+        )
+
+        let partialHistory = MaatHistoryWindow(
+            scope: "all", queryID: "query:bounded", snapshot: "sha256:bounded", returned: 0,
+            candidateMatches: 0, countScope: "query", evidenceMatches: 0,
+            evidenceMatchesComplete: true, candidateMatchesComplete: false, pageSize: 50,
+            coverage: "partial", hasMore: true, hasMoreKnown: true, nextCursor: "cursor:next",
+            totalComplete: false, total: nil, scannedRecords: 8, scannedBytes: 4096
+        )
+        XCTAssertEqual(
+            MaatCasebookView.summaryDetail(summary, history: partialHistory),
+            "No matches in this bounded scan chunk; history remains incomplete."
+        )
+    }
+
     func testLivenessFailureMemoryControlsUseOnlyClosedConfirmedMaAtActions() {
         XCTAssertEqual(
             maatCasebookFailureMemoryArguments(.initialize),
@@ -193,6 +214,112 @@ final class MaatOperationStateTests: XCTestCase {
         tail["journal_integrity"] = ["invalid_count": 1, "issues": []]
         receiveHistory(SirsiEngine.JSONCommandRead(data: try JSONSerialization.data(withJSONObject: tail), exitStatus: 0, timedOut: false, launchError: nil), state: &continued, scope: "system-one")
         XCTAssertEqual(continued.projection?.historyEmptyState, .invalidHistory)
+    }
+
+    func testHistoryRefreshClassifiesExactSnapshotRefusalWithoutExposingStderr() throws {
+        let previousPage = try XCTUnwrap(MaatCasebookView.decode(
+            browseRead(scope: "system-one", queryID: "query:old", snapshot: "sha256:old", cursor: "stale-cursor")))
+        let canonical = "maat decision history: snapshot changed; refresh the query"
+        let actualANSISurface = "  \u{001B}[1;38;2;242;84;91m𓁵\u{001B}[m \u{001B}[38;2;230;239;233m\(canonical)\u{001B}[m\n"
+        let captured = CommandExecution(stderr: Data(actualANSISurface.utf8), exitCode: 1,
+            childState: .exitConfirmed).jsonRead
+        XCTAssertEqual(captured.stderrData, Data(actualANSISurface.utf8))
+        let staleRead = captured
+
+        func classify(_ read: SirsiEngine.JSONCommandRead) -> MaatHistoryRefreshState {
+            var state = MaatHistoryRefreshState(projection: previousPage)
+            guard let request = state.begin(scope: "system-one", cursor: "stale-cursor") else {
+                XCTFail("Retained cursor should belong to the previous page")
+                return state
+            }
+            state.complete(read, for: request, cancelled: false)
+            return state
+        }
+
+        let stale = classify(staleRead)
+        XCTAssertEqual(stale.failure, .staleSnapshot)
+        XCTAssertEqual(stale.projection?.history?.snapshot, "sha256:old")
+        XCTAssertTrue(stale.error?.contains("restart from the latest snapshot") == true)
+        XCTAssertFalse(stale.error?.contains(canonical) == true)
+
+        let nearMatch = classify(SirsiEngine.JSONCommandRead(data: Data(), exitStatus: 1, timedOut: false,
+            launchError: nil, stderrData: Data("\(canonical); private=do-not-display\n".utf8)))
+        XCTAssertEqual(nearMatch.failure, .commandFailed)
+        XCTAssertFalse(nearMatch.error?.contains("do-not-display") == true)
+        XCTAssertEqual(classify(SirsiEngine.JSONCommandRead(data: Data(), exitStatus: 1, timedOut: false,
+            launchError: nil, stderrData: Data("unrecognized refusal\n".utf8))).failure, .commandFailed)
+        XCTAssertEqual(classify(SirsiEngine.JSONCommandRead(data: Data("{".utf8), exitStatus: 0,
+            timedOut: false, launchError: nil)).failure, .malformedResponse)
+        XCTAssertEqual(classify(SirsiEngine.JSONCommandRead(data: Data(), exitStatus: nil,
+            timedOut: true, launchError: "deadline expired")).failure, .timedOut)
+
+        let partial = MaatCasebookView.decode(SirsiEngine.JSONCommandRead(
+            data: historyEnvelope(coverage: "partial", cursor: "next", countScope: "scanned-so-far"),
+            exitStatus: 0, timedOut: false, launchError: nil))
+        XCTAssertEqual(partial?.history?.scannedRecords, 1)
+        XCTAssertEqual(partial?.history?.scannedBytes, 10)
+        XCTAssertEqual(partial?.history?.boundedProgressText,
+            "This bounded read scanned 1 journal rows (10 bytes). Results remain incomplete.")
+    }
+
+    @MainActor
+    func testStaleCursorRestartRetainsPageAndRetriesWithoutCursor() async throws {
+        let responses = ControlledHistoryResponses()
+        let store = MaatHistoryRefreshStore()
+        let staleRead = SirsiEngine.JSONCommandRead(data: Data(), exitStatus: 1, timedOut: false,
+            launchError: nil, stderrData: Data("𓁵 maat decision history: snapshot changed; refresh the query\n".utf8))
+
+        let initial = Task {
+            await store.load(scope: "all", query: "needle") { arguments in
+                await responses.read(arguments)
+            }
+        }
+        await responses.waitForCount(1)
+        let firstArguments = await responses.arguments()
+        XCTAssertEqual(firstArguments, [maatCasebookHistoryArguments(scope: "all", query: "needle")])
+        let oldPage = try browseRead(scope: "all", queryID: "query:old", snapshot: "sha256:old", cursor: "stale-cursor")
+        await responses.finish(0, with: oldPage)
+        await initial.value
+        XCTAssertEqual(store.state.query, "needle")
+
+        let continuation = Task {
+            await store.load(scope: "all", cursor: "stale-cursor") { arguments in
+                await responses.read(arguments)
+            }
+        }
+        await responses.waitForCount(2)
+        let continuationArguments = await responses.arguments()
+        XCTAssertEqual(continuationArguments[1], maatCasebookHistoryArguments(scope: "all", query: "needle", cursor: "stale-cursor"))
+        await responses.finish(1, with: staleRead)
+        await continuation.value
+        XCTAssertEqual(store.state.failure, .staleSnapshot)
+        XCTAssertEqual(store.state.projection?.history?.snapshot, "sha256:old")
+        XCTAssertEqual(store.state.query, "needle")
+        XCTAssertEqual(store.state.projection?.history?.nextCursor, "stale-cursor")
+
+        let restart = Task {
+            await store.load(scope: "all") { arguments in
+                await responses.read(arguments)
+            }
+        }
+        await responses.waitForCount(3)
+        XCTAssertTrue(store.state.loading)
+        XCTAssertEqual(store.state.projection?.history?.snapshot, "sha256:old",
+            "The retained page stays available while the fresh snapshot read is pending")
+        XCTAssertEqual(store.state.failure, .staleSnapshot)
+        XCTAssertEqual(store.state.query, "needle")
+        let allArguments = await responses.arguments()
+        XCTAssertEqual(allArguments[2], maatCasebookHistoryArguments(scope: "all", query: "needle"),
+            "Restart must preserve the query and omit the stale cursor")
+
+        let fresh = try browseRead(scope: "all", queryID: "query:fresh", snapshot: "sha256:fresh")
+        await responses.finish(2, with: fresh)
+        await restart.value
+        XCTAssertFalse(store.state.loading)
+        XCTAssertNil(store.state.error)
+        XCTAssertNil(store.state.failure)
+        XCTAssertEqual(store.state.projection?.history?.snapshot, "sha256:fresh")
+        XCTAssertEqual(store.state.projection?.history?.queryID, "query:fresh")
     }
 
     func testExactActionPreflightConsumesOnlyBoundedSameSnapshotScanContinuations() async throws {
@@ -629,7 +756,8 @@ final class MaatOperationStateTests: XCTestCase {
                 history: MaatHistoryWindow(scope: "all", queryID: "query:test", snapshot: "sha256:test", returned: cases.count,
                     candidateMatches: cases.count, countScope: "query", evidenceMatches: rawEvidenceCount ?? cases.count, evidenceMatchesComplete: true, candidateMatchesComplete: true,
                     pageSize: 100, coverage: "complete", hasMore: false, hasMoreKnown: true,
-                    nextCursor: nil, totalComplete: true, total: cases.count)
+                    nextCursor: nil, totalComplete: true, total: cases.count,
+                    scannedRecords: nil, scannedBytes: nil)
             )
             : nil
         return MaatOperationPreflight.evaluate(

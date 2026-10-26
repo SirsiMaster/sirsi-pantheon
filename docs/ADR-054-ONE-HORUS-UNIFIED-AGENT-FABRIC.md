@@ -234,3 +234,40 @@ win and supervision records why it yielded.
 Non-goals: rewriting the store; replacing ADR-051 (it is the messages
 plane); public A2A wire-format interop (a later adapter, not a
 prerequisite).
+
+## R4 corrective composition: immutable acquisition, compatible readers (2026-10-25)
+
+`ledger.FabricGenerationProducer` captures the existing ledger, node/runtime and
+sanitized registry/thread metadata into private detached bytes. Common facts and
+real task transitions are computed once before any shape adapter. The producer
+normalizes the registry/ledger lane union, including registered taskless services;
+no synthetic task, worker, answer role or healthy runtime is created. Missing
+supervised evidence remains UNKNOWN. Failed, cancelled and rejected-continuation
+observations cannot advance transition history. First observation seeds quietly.
+
+The existing standalone board continues to own its listener and once mode.
+`router-board.v1` retains fleet/board/ledger/tasks/threads/counters/activity/build/
+data_errors/registration_gaps and full existing task/phase/step details. Horus
+retains `router-surface.v1` and its Ra-owned status/queue/consumer plane, with a
+separately timestamped canonical Fabric observation. Neither schema is renamed.
+Dashboard, board and menu use the shared producer/adapters; adapters cannot
+reacquire a store, command or clock. This is one immutable observation per
+acquisition, not a new global cache or an atomic snapshot across processes/OS/SQL.
+
+Common active is inclusive open work: blocked is a subset, never an additional
+segment. Canonical task liveness is not recomputed from local timestamp age.
+`IDLE_WITH_WORK` is an enum, while its display label is presentation only. Legacy
+inbox blockers and task blockers keep their existing distinct field scopes and
+phase rounding/default labels. Existing legacy detail does not widen the bounded
+canonical Fabric task whitelist or expose leases/credentials through it.
+
+Existing HTTP paths, GET/OPTIONS, origin allowlist, no-store, pre-first/current
+failure 503 and SSE invalidation remain. Read-only registration excludes arm;
+standalone registration retains that existing selected mutation. No AltPorts
+activation, endpoint retirement, new listener/store/security authority is added.
+Nexus's 9119 ledger/8734 fallback and 8734 task detail contracts remain supported.
+
+Authored mixed-generation, real BuildFrom registry-only service, unknown runtime,
+immutability, cancellation, continuation, HTTP/SSE, menu and actual-Go-wire Node
+fixtures require Main's admitted qualification. Existing consumer readback and
+owner rollout remain open; source composition alone does not close R4.

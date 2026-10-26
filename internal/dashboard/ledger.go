@@ -20,10 +20,29 @@ type LedgerSummarizer func() (ledger.BoardSummary, error)
 
 // apiLedger serves GET /api/ledger (A26 Nexus seam).
 // Returns the compact ledger.BoardSummary JSON expected by the Nexus board renderer.
-// Read-only: no method-gating, no ConfirmGuard path, no side effects.
+// Read-only GET/OPTIONS: no ConfirmGuard path or mutation side effects.
 // CORS scoping matches /api/node-status (allowNexusOrigin, ADR-047).
 func (s *Server) apiLedger(w http.ResponseWriter, r *http.Request) {
 	allowNexusOrigin(w, r)
+	w.Header().Set("Cache-Control", "no-store")
+	if !fabricReadMethod(w, r) {
+		return
+	}
+	if s.cfg.FabricSource != nil {
+		g, err := s.cfg.FabricSource.Read(r.Context())
+		if err != nil {
+			writeError(w, "ledger generation unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		v, err := g.View()
+		if err != nil {
+			writeError(w, "ledger generation unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("X-Sirsi-Fabric-Generation", v.ID)
+		writeJSON(w, v.Facts.Ledger)
+		return
+	}
 	if s.cfg.LedgerFn == nil {
 		writeError(w, "ledger not available (summarizer not wired)", http.StatusServiceUnavailable)
 		return
