@@ -1,0 +1,2 @@
+### Evidence
+- **ADR-062 G3 two-host contention: PASS.** M1 and M5 raced 1,000 rounds of `sirsi router task claim-id` against a test router service with a 312 ms (2× p99) injected delay, and every round had exactly one winner. The negative control, with separate ledgers, saw two winners in 50 of 50 rounds. The harness and raw per-round data are under `docs/evidence/ADR-062-G3-TWO-HOST-CONTENTION-20261026/`. Limit: the test service used SQLite, not Postgres. Refs: ADR-062.
