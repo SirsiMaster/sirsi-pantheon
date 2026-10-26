@@ -50,7 +50,8 @@ func NewMemJournal() Journal { return &memJournal{} }
 func (j *memJournal) Append(r schedule.Reservation) (Entry, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	e := Entry{Seq: int64(len(j.entries)) + 1, Reservation: r}
+	r.Seq = int64(len(j.entries)) + 1
+	e := Entry{Seq: r.Seq, Reservation: r}
 	j.entries = append(j.entries, e)
 	return e, nil
 }
@@ -98,7 +99,8 @@ func (j *FileJournal) Append(r schedule.Reservation) (Entry, error) {
 	if err != nil {
 		return Entry{}, err
 	}
-	e := Entry{Seq: head + 1, Reservation: r}
+	r.Seq = head + 1
+	e := Entry{Seq: r.Seq, Reservation: r}
 	line, err := json.Marshal(e)
 	if err != nil {
 		return Entry{}, err

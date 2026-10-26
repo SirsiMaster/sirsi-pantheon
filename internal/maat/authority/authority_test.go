@@ -176,9 +176,14 @@ func TestRenew_SupersededEpochFencesPermanently(t *testing.T) {
 	_, cloud, auth := harness(t, "2026-10-22T10:00:00Z", "2026-10-22T22:00:00Z")
 	// A fresh Delegate() for the same pod bumps the epoch out from under the
 	// running Authority instance (ADR-120 §1/§3): a new authority took over.
+	// Reissuing the same pod is itself fenced until the old delegation's
+	// window plus the handback margin elapses (delegationHandbackMargin), so
+	// the reissue must happen on or after that boundary, not at the original
+	// harness "now".
+	cloud.WithClock(func() time.Time { return at("2026-10-22T22:05:01Z") })
 	if _, err := cloud.Delegate(schedule.Delegation{
 		Pod: "studio-m5", AuthorityMachine: "M5-Studio-2", Resources: []string{"studio", "m5"},
-		IssuedAt: "2026-10-22T10:05:00Z", NotAfter: "2026-10-22T22:05:00Z",
+		IssuedAt: "2026-10-22T22:05:01Z", NotAfter: "2026-10-23T04:05:01Z",
 	}); err != nil {
 		t.Fatalf("reissue: %v", err)
 	}
