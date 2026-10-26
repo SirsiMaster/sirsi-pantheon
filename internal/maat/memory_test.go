@@ -69,21 +69,26 @@ func TestPrivateMemoryStoreRootCanonicalizesSymlinkedTempDir(t *testing.T) {
 	}
 	t.Setenv("TMPDIR", alias)
 
-	root := privateMemoryStoreRoot(t)
-	canonical, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatalf("resolve private memory fixture root: %v", err)
-	}
-	if root != canonical {
-		t.Fatalf("private memory fixture root is not canonical: got %q, want %q", root, canonical)
-	}
-	fd, err := openAbsoluteDirectory(root)
-	if err != nil {
-		t.Fatalf("open canonical private memory fixture root: %v", err)
-	}
-	if err := unix.Close(fd); err != nil {
-		t.Fatalf("close canonical private memory fixture root: %v", err)
-	}
+	t.Run("fresh TempDir parent", func(t *testing.T) {
+		root := privateMemoryStoreRoot(t)
+		canonical, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			t.Fatalf("resolve private memory fixture root: %v", err)
+		}
+		if root != canonical {
+			t.Fatalf("private memory fixture root is not canonical: got %q, want %q", root, canonical)
+		}
+		if !strings.HasPrefix(root, real+string(os.PathSeparator)) {
+			t.Fatalf("private memory fixture root did not use the aliased temporary parent: got %q, want parent %q", root, real)
+		}
+		fd, err := openAbsoluteDirectory(root)
+		if err != nil {
+			t.Fatalf("open canonical private memory fixture root: %v", err)
+		}
+		if err := unix.Close(fd); err != nil {
+			t.Fatalf("close canonical private memory fixture root: %v", err)
+		}
+	})
 }
 
 func TestStorePrivateFixtureDoesNotRelaxPublicRootRefusal(t *testing.T) {
