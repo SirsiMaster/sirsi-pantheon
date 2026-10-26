@@ -43,6 +43,12 @@ import (
 // ErrNotFound is returned by Get/Close when no item has the given id.
 var ErrNotFound = errors.New("routerstore: item not found")
 
+// ErrInvalidInput marks a caller-side validation failure (bad argument,
+// missing required field, unknown enum value) — never a store/DB fault.
+// writeCallErr maps it to HTTP 400, same as ErrLaneScope maps to 403: a
+// client mistake is not a retryable server error (router-client-errors-not-500).
+var ErrInvalidInput = errors.New("routerstore: invalid input")
+
 // ErrAlreadyClosed is returned by Close when the item is already closed,
 // mirroring internal/work.Close semantics.
 var ErrAlreadyClosed = errors.New("routerstore: item already closed")

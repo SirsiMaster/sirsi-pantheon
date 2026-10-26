@@ -497,6 +497,6 @@ func validateMessageType(msgType string) error {
 	case "", "proposal", "review", "decision":
 		return nil
 	default:
-		return fmt.Errorf("routerstore: invalid type %q: ADR-024 §5 allows proposal, review, or decision", msgType)
+		return fmt.Errorf("%w: invalid type %q: ADR-024 §5 allows proposal, review, or decision", ErrInvalidInput, msgType)
 	}
 }
