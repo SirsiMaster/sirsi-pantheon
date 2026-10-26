@@ -35,7 +35,7 @@ func (s *SQLiteStore) ClaimNextTask(agent, worker, threadID string, ttl time.Dur
 func (s *SQLiteStore) ClaimTask(agent, taskID, worker, threadID string, ttl time.Duration) (*TaskLease, error) {
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
-		return nil, fmt.Errorf("routerstore: exact task claim requires task id")
+		return nil, fmt.Errorf("%w: routerstore: exact task claim requires task id", ErrInvalidInput)
 	}
 	return s.claimTask(agent, taskID, worker, threadID, ttl)
 }
@@ -52,7 +52,7 @@ func (s *SQLiteStore) claimTaskSession(agent, exactTaskID, worker, threadID, ses
 	worker = strings.TrimSpace(worker)
 	threadID = strings.TrimSpace(threadID)
 	if agent == "" || worker == "" || threadID == "" {
-		return nil, fmt.Errorf("routerstore: task claim requires agent, worker, and thread id")
+		return nil, fmt.Errorf("%w: routerstore: task claim requires agent, worker, and thread id", ErrInvalidInput)
 	}
 	var err error
 	ttl, err = boundedLeaseTTL(ttl)

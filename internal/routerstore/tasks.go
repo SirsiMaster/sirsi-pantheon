@@ -127,8 +127,8 @@ func validateTask(t Task) error {
 		// gate is broken" — two agents independently recorded it as unsatisfiable
 		// and adopted "close without test-state" as the workaround, which discards
 		// the completion signal this gate exists to preserve.
-		return fmt.Errorf("routerstore: test-state passed requires a link of kind %q, but none of the %d attached link(s) has that kind (kinds present: %s); attach one with --link 'evidence:<label>:<url>'",
-			"evidence", len(t.Links), linkKindsPresent(t.Links))
+		return fmt.Errorf("%w: routerstore: test-state passed requires a link of kind %q, but none of the %d attached link(s) has that kind (kinds present: %s); attach one with --link 'evidence:<label>:<url>'",
+			ErrInvalidInput, "evidence", len(t.Links), linkKindsPresent(t.Links))
 	}
 	return nil
 }
@@ -373,10 +373,10 @@ func (s *SQLiteStore) updateTaskOnce(agent, taskID string, u TaskUpdate) (Task, 
 		t.Stage = u.Stage
 	}
 	if stageRank[t.Stage] < stageRank[oldStage] && (strings.TrimSpace(u.Subject) == "" || strings.TrimSpace(u.Subject) == strings.TrimSpace(oldSubject)) {
-		return Task{}, fmt.Errorf("routerstore: stage regression requires a replacement subject stating why")
+		return Task{}, fmt.Errorf("%w: routerstore: stage regression requires a replacement subject stating why", ErrInvalidInput)
 	}
 	if u.CharterSet && oldCharter != nil && *oldCharter != u.Charter && !hasOwnerInstruction(u.Links) {
-		return Task{}, fmt.Errorf("routerstore: charter amendment requires an owner-instruction link")
+		return Task{}, fmt.Errorf("%w: routerstore: charter amendment requires an owner-instruction link", ErrInvalidInput)
 	}
 	t.TokensConsumed += u.AddTokens
 	t.DurationSeconds += u.AddSeconds

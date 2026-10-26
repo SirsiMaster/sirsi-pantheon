@@ -57,7 +57,7 @@ func boundedLeaseTTL(ttl time.Duration) (time.Duration, error) {
 		return 10 * time.Minute, nil
 	}
 	if ttl > MaxLeaseTTL {
-		return 0, fmt.Errorf("routerstore: lease ttl %s exceeds maximum %s; renew bounded leases for long work", ttl, MaxLeaseTTL)
+		return 0, fmt.Errorf("%w: routerstore: lease ttl %s exceeds maximum %s; renew bounded leases for long work", ErrInvalidInput, ttl, MaxLeaseTTL)
 	}
 	return ttl, nil
 }
