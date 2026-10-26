@@ -105,3 +105,23 @@ This implements the Cross-Agent Referral Logic from ADR-005 principle #7.
 - [ADR-005](ADR-005-PANTHEON-UNIFICATION.md) — Pantheon vision, principle #7 (inter-deity referral)
 - [SIRSI_PORTFOLIO_STANDARD](SIRSI_PORTFOLIO_STANDARD.md) — Rule 28 (Cross-Agent Referral Logic)
 - Session 11 diagnosis: Antigravity IDE consuming 219% CPU, rendering buttons unclickable
+
+## 2026-10-26: Observe a holder, then request actual authority
+
+An existing registered caller making an explicit `loaded` request must not treat
+the first reservation returned by `who-is-on` as the scheduler's answer. A
+foreign CPU/relay holder is an observation, not either permission to borrow its
+grant or a denial of the caller's request. This corrects the client path in
+`scripts/maat/admitted-run.py`; it changes no scheduler, resource class, TTL,
+identity, quiet-window, model conflict or server authority policy.
+
+If the looked-up row is not the caller's valid loaded admission, request its own
+atomic reservation. Spawn only after the normal returned-grant and exact
+readback checks. Preserve a real scheduler denial and its blocker, refuse
+insufficient or foreign replies, and release only a newly returned own grant.
+An already valid own loaded admission retains its prior behavior.
+
+Four model-free regression tests cover these cases. The prior client fails the
+missed-request assertions before the repair; the complete Python suite passes
+afterward. This is source qualification, not a claim that every reported host
+incident used this exact path or that any installed client was replaced.

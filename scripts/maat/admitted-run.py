@@ -1058,7 +1058,11 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
         # Ask the atomic scheduler for this executor's own exact decision.
         fresh_executor = isinstance(backend, Native) and backend.executor_thread is not None
         row = None if fresh_executor else backend.lookup(resource)
-        if fresh_executor or regime == 'quiet' or row is None or (cpu_cores and not valid(row, resource, agent, work, cpu_cores, regime)):
+        # A loaded caller without a new executor must also ask the scheduler
+        # when its lookup names another grant. A foreign CPU row is not a
+        # scheduler denial, and must never be borrowed as model admission.
+        if (fresh_executor or regime == 'quiet' or row is None or
+                ((cpu_cores or regime == 'loaded') and not valid(row, resource, agent, work, cpu_cores, regime))):
             reservation_requested = True
             confirmed_at = time.monotonic()
             reply = backend.reserve(resource, agent, work)
