@@ -178,6 +178,15 @@
       "causal_control": "Old helper compiled and failed the exact canonical-root regression assertion as expected.",
       "production_changes": 0,
       "preserved_failure": "Normal pre-push on0f failed16 diagnostic/history fixtures because HOME inherited /var alias; prior isolated canonical-TMP passes did not cover this. SSH also closed, so transport-only retry would be insufficient."
+    },
+    "loaded_reserve_client": {
+      "source": "ef118841ec83fb1f8429176311f9d2ffceda5cff",
+      "tree": "9144719b20accada73b315443248483430241145",
+      "source_review_sha256": "056a6614de800f52f09c61151cc96e5702f0f2d39d02f932f78c66530acf974b",
+      "qualified_receipt_sha256": "5cbc223efb215a22898e1e2e752cb139177846a26a282533ebe3887c513ddf2b",
+      "actual_python_tests": 150,
+      "existing_contracts": 3,
+      "scope": "Requests owned atomic admission for explicit loaded caller after invalid lookup; scheduler/TTL/identity/quiet/model-conflict policy unchanged. Model-free; no installed adoption inferred."
     }
   },
   "delivery": "One existing normal release train and one publisher after final qualification; no version/tag/publication created by this source record.",
