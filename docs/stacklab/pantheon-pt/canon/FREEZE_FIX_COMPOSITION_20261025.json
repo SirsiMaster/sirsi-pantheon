@@ -6,15 +6,15 @@
     "tree": "e0dae007221eb22948149e4f602c415a2d53faef"
   },
   "source_checkpoint": {
-    "commit": "dc1376c2d8cf82b849f651977d8caef4afd4322b",
-    "tree": "16cde927844d68c8b2e84db390ac4561804fc71e",
-    "purpose": "Exact code checkpoint after DC01 and Fabric R4 imports, before this canon-only record; no self-hash or runtime acceptance."
+    "commit": "9d578a601171a243d241953e04b53cbbe147b416",
+    "tree": "40ef6b45608d3dc3451f3b695316bc16efab23c4",
+    "purpose": "Qualified code checkpoint before metadata-only fingerprint and this canon refresh; no self-hash."
   },
   "components": [
     {
       "name": "Integrated eight-donor fixes and fixture-family repairs",
       "source": "20f3e888c03713023a1d038b1334569fa7de448f",
-      "boundary": "Prior r7 failed at routerstore package race deadline; no overall qualification inherited"
+      "boundary": "Historical import-time: Prior r7 failed at routerstore package race deadline; no overall qualification inherited"
     },
     {
       "name": "History stale-snapshot recovery and optional summary compile correction",
@@ -24,20 +24,20 @@
         "7197bd6fc2127a0239fd616841e7904fa1559dd4",
         "c73084832f0014cd9b7ee819d2d125f525128e19"
       ],
-      "boundary": "Five positive native tests and semantic negative belong to donor; continuous-append history remains open"
+      "boundary": "Historical import-time: Five positive native tests and semantic negative belong to donor; continuous-append history remains open"
     },
     {
       "name": "Local Tier1 CPU execution, cleanup and optional Stack Lab workflow",
       "source": "36cc78f2435cb6ed7e71d8256256cc3cd9b13faa",
       "import_range": "35f411c1..36cc78f2",
-      "boundary": "Prior c185 first13 rows passed, whole run failed native compile; route corrected at36cc. Remaining qualification unrun; no whole-run acceptance inherited"
+      "boundary": "Historical import-time: Prior c185 first13 rows passed, whole run failed native compile; route corrected at36cc. Remaining qualification unrun; no whole-run acceptance inherited"
     },
     {
       "name": "Fabric canonical runtime health, task detail and shared semantic roles",
       "source": "16aa3f2552ce802c3ecc4a647ca3623101bb90a7",
       "import_range": "b4db388c..16aa3f25",
       "accepted_source_review_sha256": "fe3748a7cb8b565d4356988cb3ebff5dcb23d6ec9b58917e0baca13dfb2afdb8",
-      "boundary": "New R1/R2 fixtures unrun; installed adoption R3 and independent Nexus/Horus convergence/conditional8734 retirement R4 open"
+      "boundary": "Historical import-time: New R1/R2 fixtures unrun; installed adoption R3 and independent Nexus/Horus convergence/conditional8734 retirement R4 open"
     },
     {
       "name": "Current-source root relay identity and cooperative handoff",
@@ -47,7 +47,7 @@
         "210dbf6d711bdfdaa4299d311b609b9cff5d0474f41541778211f708d52c0be6",
         "2dcd1cf4ddaeee763df3974340038208b23859068c18e2662dbdf9f3e68dbec6"
       ],
-      "boundary": "Source/fixtures only; no tests/runtime or old loaded121/129/122 safe retirement inferred"
+      "boundary": "Historical import-time: Source/fixtures only; no tests/runtime or old loaded121/129/122 safe retirement inferred"
     },
     {
       "name": "Same-endpoint native fabric dispatch and bounded metadata lifecycle",
@@ -57,7 +57,7 @@
         "3e9f08b933e151077e352b61409c8e4545290991"
       ],
       "accepted_source_review_sha256": "90a199e62abcc7628a085921ab580623e21ccad43cdb0b661d2b4f75b4322104",
-      "boundary": "47 authored tests/five controls and actual own-route completion unrun; no new credentials or authorization"
+      "boundary": "Historical import-time: 47 authored tests/five controls and actual own-route completion unrun; no new credentials or authorization"
     },
     {
       "name": "Managed native app update, memory recovery and shared operation custody",
@@ -67,7 +67,7 @@
         "b0a23116012d31278379414250d846ff6ccc0e85"
       ],
       "accepted_source_review_sha256": "9039651266b6ab470c2a50be12660a4735acdf3d333d3a2e1b6c0dff1c84f3ae",
-      "boundary": "Canonical Go authority unchanged; native command/capture fence does not certify external Installer lifetime. At donor import tests were unrun; subsequent430 ancestor qualification is recorded separately."
+      "boundary": "Historical import-time: Canonical Go authority unchanged; native command/capture fence does not certify external Installer lifetime. At donor import tests were unrun; subsequent430 ancestor qualification is recorded separately."
     },
     {
       "name": "DC01 atomic authenticated item claim and durable session ownership",
@@ -79,7 +79,7 @@
       ],
       "accepted_source_review_sha256": "240d44b48d73964fa47df716187979a4faab1fed0825963d8e6434ffda469687",
       "accepted_metadata_review_sha256": "7ee0ad0417899a5e9858814f5e77a5b329d133077c4da46f3d7509991cfa5fa1",
-      "boundary": "SSA donor qualified SQLite whole normal/race734PASS8SKIP each and focused private PostgreSQL16 normal/race6PASS each, with server stopped. Main independently read raw outcomes; combined-source affected qualification and actual deployed own-item lifecycle remain open."
+      "boundary": "Historical import-time: SSA donor qualified SQLite whole normal/race734PASS8SKIP each and focused private PostgreSQL16 normal/race6PASS each, with server stopped. Main independently read raw outcomes; combined-source affected qualification and actual deployed own-item lifecycle remain open."
     },
     {
       "name": "Existing Ra/Horus/Fabric module: shared immutable generation successor",
@@ -87,10 +87,28 @@
       "imported_commits": [
         "5915af1de3a1769fcce68004769713fbe725a58d"
       ],
-      "source_review_status": "INDEPENDENT_EXACT_OBJECT_REVIEW_PENDING",
+      "source_review_status": "ACCEPTED_WITH_REVIEWED_ZERO_STATUS_AND_LINT_SUCCESSORS",
       "producer_receipt_sha256": "16fe226b1cf382ec4ebf27a7da99f7c030365cc51cae808ef3301f934d3819d8",
       "owner_contract_audit_sha256": "9d3a1ccd72eaca746f9c46f83113775ae6e600e4e7375251a0e49231d7999b30",
-      "boundary": "Shared task/message facts, canonical liveness and registry/ledger union precede existing adapters. Preserve distinct schemas, legacy Nexus8734 task/ledger APIs, full detail, SSE, unavailable states and access controls. No new listener/store/auth or whole cross-process atomic observation is claimed. Runtime qualification and actual existing-consumer readback remain open."
+      "boundary": "Historical import-time: Shared task/message facts, canonical liveness and registry/ledger union precede existing adapters. Preserve distinct schemas, legacy Nexus8734 task/ledger APIs, full detail, SSE, unavailable states and access controls. No new listener/store/auth or whole cross-process atomic observation is claimed. Runtime qualification and actual existing-consumer readback remain open.",
+      "source_review_sha256": [
+        "16f1edb771cf13f516fab4883175c9b56f4ecb19d086e74bec5c3ec7df009300",
+        "b246b39bf545809cae5116c5c93a928ffc3c9a74b077c025a2b7d078a19cedf5",
+        "f8f5a3ce60373897626184dd6c9836a658b402357e4f2adc138f4abb63c62a32"
+      ],
+      "current_qualification": "See qualification.focused_dc01_r4. Existing installed Nexus/Horus/menu readbacks remain open; retain8734 compatibility."
+    },
+    {
+      "name": "Bounded exact-ID pending executor registration recovery",
+      "donors": [
+        "438ef41bfbbf3963279892d0cb54a022d00b8aa4",
+        "0d8cac659771336e81b18677db8193d00600d4c0"
+      ],
+      "imports": [
+        "615a9dc6e7bfabe6580042a96a26779009eac497",
+        "9d578a601171a243d241953e04b53cbbe147b416"
+      ],
+      "boundary": "146 combined supervisor tests and three existing source contracts passed. One Register only; safe initial cause retained, bounded same-ID observation, shared denial classifier. M1 installed adoption remains open."
     }
   ],
   "custom_composition": [
@@ -106,12 +124,13 @@
     }
   ],
   "pending_source": [
-    "Full append-tolerant history needs bounded-budget closure; current candidate includes explicit stale-cursor recovery only.",
-    "DC01 source is imported; combined-source affected qualification and deployed own-item completion/remint/restart evidence remain open.",
-    "Fabric R4 frozen source is imported pending exact review, affected normal/race/HTTP/SSE/wire/controls and actual existing-consumer installed readbacks."
+    "Full append-tolerant history remains outside current stale-cursor recovery guarantee.",
+    "DC01 combined-source tests passed; deployed own-item completion/remint/restart still requires installed evidence.",
+    "Fabric R4 source and focused qualification passed; installed existing-consumer readbacks remain open.",
+    "Native Apollo Run corrective471d4d56 is separate source-only; not imported. Existing producer cannot encode requested resource envelope; no completed resource-controlled Run claim."
   ],
   "qualification": {
-    "candidate_tests": "PENDING_FRESH_AFFECTED_CHECKS_AFTER_DC01_AND_R4",
+    "candidate_tests": "QUALIFIED_SOURCE_WITH_EXPLICIT_ATTRIBUTION",
     "candidate_build": "ANCESTOR_430_QUALIFIED_NOT_THIS_CHILD",
     "candidate_install": "NOT_RUN",
     "candidate_publication": "NOT_RUN",
@@ -126,6 +145,25 @@
       "commit": "430c47129aa533b68caa6bfd225eb21822a250c7",
       "receipt_sha256": "112a31510443b8e11aa027bdc8081db8c9af93956ac4c3c943c88198aea3a96f",
       "attribution": "18 actual development app/DMG/unsigned-PKG/expanded/copied checks passed. Three29-entry inventories agree on payload content and are Python-free. Does not certify this later child, commercial signing/notary/publication or installation."
+    },
+    "focused_dc01_r4": {
+      "commit": "b18e66e35c7a2f91644b35a6cb4ddb37ed0d9db8",
+      "receipt_sha256": "31b8ba0fa8e4af3d1c7e633c95a12c813d688a1ef64adf80731d57757efd372a",
+      "fresh_rows": 18,
+      "prior4cef_rows": 27,
+      "attribution": "24 prior whole-package normal/race rows contain6258PASS20explicitSKIP; fresh lint, actual normal/race Go wires, Node4+7each, Swift1each0skip, seven compiled semantic negatives. No failed prior lint credit."
+    },
+    "combined_supervisor": {
+      "commit": "9d578a601171a243d241953e04b53cbbe147b416",
+      "receipt_sha256": "12ede01ef976dedd9efc4f30bf647d4d634277dfaecc91f4bcc9f792d0e29def",
+      "actual_tests": 146,
+      "source_contracts": 3,
+      "unchanged_from_b18": [
+        "internal",
+        "cmd",
+        "macapp"
+      ],
+      "runtime_adoption": "NOT_INFERRED"
     }
   },
   "delivery": "One existing normal release train and one publisher after final qualification; no version/tag/publication created by this source record.",
@@ -133,5 +171,10 @@
     "commit": "75a6a0595f428c595fe17026b54ede26707c6d83",
     "sha256": "2e989be9bc95afd201a7c632486b3fd046f68e5e594f19f13a98832c7e93542c",
     "scope": "Finite source preservation before the managed-update import; not combined runtime acceptance."
+  },
+  "security_metadata": {
+    "donor": "bd3b3a69f1d26fd051423b63571afb0eddfe818a",
+    "source_review_sha256": "51da01d59ca6257cd2017a1789af3bd0cb3aa84162dcc025a9b4518b7054221e",
+    "scope": "Exact historical noncredential XCTest request-UUID fingerprint only; no whole-path/rule/value suppression."
   }
 }
