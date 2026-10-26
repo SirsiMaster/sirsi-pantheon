@@ -164,6 +164,20 @@
         "macapp"
       ],
       "runtime_adoption": "NOT_INFERRED"
+    },
+    "normal_macos_fixture_correction": {
+      "source": "4b43a57ab696517369b5bb5789e116816174d008",
+      "tree": "a7b197665655dfabcc17a5020801aeafee5cc864",
+      "receipt_sha256": "3ff46d2bbc1a3ccbbf5fd2a0db3452e294b33972c3ed40c022f2f641eb50044a",
+      "positive_parent_tests_each_mode": 27,
+      "modes": [
+        "normal",
+        "race"
+      ],
+      "explicit_skips": 0,
+      "causal_control": "Old helper compiled and failed the exact canonical-root regression assertion as expected.",
+      "production_changes": 0,
+      "preserved_failure": "Normal pre-push on0f failed16 diagnostic/history fixtures because HOME inherited /var alias; prior isolated canonical-TMP passes did not cover this. SSH also closed, so transport-only retry would be insufficient."
     }
   },
   "delivery": "One existing normal release train and one publisher after final qualification; no version/tag/publication created by this source record.",
