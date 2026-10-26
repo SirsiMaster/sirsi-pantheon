@@ -1,6 +1,7 @@
 package routerstore
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,9 @@ func TestTaskEligibilityExplainsEveryRefusal(t *testing.T) {
 	add("leased", "", "")
 	add("flaky", "", "")
 
+	if _, err := s.TaskEligibility("lane", "missing"); !errors.Is(err, ErrNotFound) || sentinelName(err) != "ErrNotFound" {
+		t.Fatalf("unknown task must be ErrNotFound (wire name), got %v", err)
+	}
 	e, err := s.TaskEligibility("lane", "free")
 	if err != nil || !e.Claimable || !e.Dispatchable || !has(e, "would succeed") {
 		t.Fatalf("free task: %+v err=%v", e, err)
