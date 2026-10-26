@@ -14,6 +14,13 @@ It was normally squash-merged as `d4cc850deedc7672872859acf71fe4a91c97e009`.
 This release preparation assembles its retained fragments into versioned notes,
 updates VERSION and records this sequence; product bytes are not reimplemented.
 
+Post-merge Secrets Scan40421025681 rediscovered the previously reviewed XCTest
+mock request UUID under the new squash identity. Its line7 bytes independently
+match accepted5cb (SHA25658812f94d1e3c884c7aae5aa47032aab8f0f5aa5617a1006d170ec7f808c96e1).
+Retain the failed run and add only the exact immutable d4cc commit/path/rule/line
+fingerprint to the existing ignore file. No UUID-pattern, whole-file, rule,
+future-commit exemption, credential rotation or product-code change is made.
+
 Retain the original failed protected pushes and the canonical-temp-fixture causal
 correction. The loaded caller's missed-Reserve defect has an old-source failing
 control, four new model-free controls and150 combined Python tests plus three

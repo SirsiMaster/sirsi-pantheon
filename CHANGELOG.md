@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.138] — 2026-10-26
 
+- Bind the already-reviewed XCTest mock-request UUID exception to the exact PR1224 squash fingerprint. The literal is byte-identical to its reviewed predecessor; no file/rule/value wildcard, future-commit exception or credential change is introduced.
+
 - **`sirsi router task why` on an unknown task now reports "not found" instead of an HTTP 500.** `TaskEligibility` returned a plain error string, which the store service could not match to a known error, so it answered with a 500 server error. It now wraps `ErrNotFound`, so the client receives the named not-found error. Refs: ADR-062.
 
 - Canonicalize owned Ma’at test fixture roots on macOS before using them as HOME. Production no-follow path checks remain unchanged. A deterministic aliased-TMPDIR regression and the original failed cases pass in normal and race modes; restoring the old helper fails the regression.
