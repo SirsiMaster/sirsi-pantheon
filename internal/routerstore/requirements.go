@@ -143,7 +143,7 @@ func (s *SQLiteStore) RecordEvidence(reqID string, ev Evidence) error {
 			   FROM requirements WHERE req_id = ?;`, reqID)
 		if err := row.Scan(&cur.Commit, &cur.Tests, &cur.Security, &cur.Design, &cur.Deployment, &cur.Production); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("%w: routerstore: %s not registered", ErrInvalidInput, reqID)
+				return fmt.Errorf("%w: routerstore: %s not registered", ErrNotFound, reqID)
 			}
 			return err
 		}
@@ -195,7 +195,7 @@ func (s *SQLiteStore) Satisfy(reqID string) error {
 			   FROM requirements WHERE req_id = ?;`, reqID)
 		if err := row.Scan(&ev.Commit, &ev.Tests, &ev.Security, &ev.Design, &ev.Deployment, &ev.Production); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("%w: routerstore: %s not registered", ErrInvalidInput, reqID)
+				return fmt.Errorf("%w: routerstore: %s not registered", ErrNotFound, reqID)
 			}
 			return err
 		}
@@ -237,7 +237,7 @@ func (s *SQLiteStore) Waive(reqID, reason, ownerDecisionRef string) error {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			return fmt.Errorf("%w: routerstore: %s not registered", ErrInvalidInput, reqID)
+			return fmt.Errorf("%w: routerstore: %s not registered", ErrNotFound, reqID)
 		}
 		return nil
 	})
