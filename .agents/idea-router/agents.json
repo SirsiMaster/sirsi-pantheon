@@ -749,6 +749,7 @@
     "codex-sirsinexusapp": {
       "id": "codex-sirsinexusapp",
       "type": "codex",
+      "callsign": "RPA",
       "command": [
         "codex"
       ],
@@ -1301,6 +1302,8 @@
     "m5-apollo-rail": "claude-apollo-m5-rail",
     "claude-io-cylton": "mercury",
     "cylton-mercury": "mercury",
-    "m5-mercury": "mercury"
+    "m5-mercury": "mercury",
+    "rpa": "codex-sirsinexusapp",
+    "RPA": "codex-sirsinexusapp"
   }
 }
