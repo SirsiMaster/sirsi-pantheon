@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "e26e324be107ab541ec8d4d1400392e1ee55fc26",
-  "source_tree": "d349d4e390d9c5399bd1b08349aab5f851fcea0c",
+  "source_commit": "3d67b0c3068ed3250ab353ec5d6832c5ce63f1b0",
+  "source_tree": "00d52079022f61edfe932310c29172ea53c017ff",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -190,7 +190,7 @@
         },
         {
           "path": "cmd/sirsi/gemma_worker.go",
-          "sha256": "412f6048784f79ccf429625390dfcca61723bb0f4924712652636aa38fd1420d"
+          "sha256": "ca0a75a40ae7fe614503c91a22743ffe0b70b436cd36726a9767a3eca25b9b86"
         },
         {
           "path": "cmd/sirsi/gemma_worker_apollo.go",
@@ -243,6 +243,10 @@
         {
           "path": "cmd/sirsi/launchdcmd.go",
           "sha256": "30b95a20c1423fab7f3cafe7ec1f7df285dca0d0b5a38dc223de8dfc7258c643"
+        },
+        {
+          "path": "cmd/sirsi/launchdgemma.go",
+          "sha256": "b9f680e21c05cf83e89511ec1b0f6a0a3f677d1d28110b4f3e6b1b84e742fe26"
         },
         {
           "path": "cmd/sirsi/launchdmaintenance.go",
@@ -884,7 +888,7 @@
         },
         {
           "path": "cmd/sirsi/gemma_worker_test.go",
-          "sha256": "2b214ab0795e99a16ed2e9f257f935ca302fa2029a6c46f56885041d8a63314e"
+          "sha256": "4a76c35104e6e5ad62216ffa4de015f73ec529003374c4ca05a8837bc5e5307f"
         },
         {
           "path": "cmd/sirsi/ghosts_clean_test.go",
@@ -2001,7 +2005,7 @@
         },
         {
           "path": "internal/dashboard/fabric.go",
-          "sha256": "f0228042912ee62ac9c220841aea06da38844a6d17009f44b03571ad50f172bf"
+          "sha256": "344692fb959deff55e3f839d231b84dde9639964ec2b6d96bd7bf523568da401"
         },
         {
           "path": "internal/dashboard/fabric_generation.go",
@@ -2090,6 +2094,10 @@
           "sha256": "19be07eb3e9efea34bead2da9973421c07113364e6327390bb1c8bbaf6d48d56"
         },
         {
+          "path": "internal/dashboard/fabric_filters_test.go",
+          "sha256": "ea7e27f28aee483e64a21ebabb15146ab0df693af9b8ed65af8e5a567c142141"
+        },
+        {
           "path": "internal/dashboard/fabric_generation_test.go",
           "sha256": "00c4b7f94e9567c212ab4bfa56bd86c1a9cf3b1bc420acabf012df15279fb8c6"
         },
@@ -2100,6 +2108,10 @@
         {
           "path": "internal/dashboard/fabric_tasks_test.go",
           "sha256": "87d07822e889d6c67f18ceadf5b548b6560cc26bcefdd7528662c9239dd25ea1"
+        },
+        {
+          "path": "internal/dashboard/fabric_visual_fixture_test.go",
+          "sha256": "02012789bf54c5a14d4680155eb45b79270062ab352bbcbe19639b60c54aa28e"
         },
         {
           "path": "internal/dashboard/fleet_readiness_test.go",
@@ -2513,7 +2525,7 @@
         },
         {
           "path": "internal/guard/deathspiral.go",
-          "sha256": "24a0febfd53f20f04c0a1f9c90ba23eaf2c173a59e76dc7de59a23fa87830d45"
+          "sha256": "2833d0da07ae0ca632b816cd79b48cca5ce2ef16afc61db80b0ade8dd193cd9e"
         },
         {
           "path": "internal/guard/demotions.go",
@@ -2659,7 +2671,7 @@
         },
         {
           "path": "internal/guard/deathspiral_test.go",
-          "sha256": "ed900e2ceb760e4e096d16e714f8e0e34c978ebea9abaa8e2b0b243a1ca8371d"
+          "sha256": "648d23f79b8c67635011deaf39c04523aed5c6ce2a0549b59ad824e4507aea11"
         },
         {
           "path": "internal/guard/demotions_test.go",
@@ -3226,7 +3238,7 @@
         },
         {
           "path": "internal/ledger/fabric_generation.go",
-          "sha256": "9ffbf99c4a81ce444da710701873cbfee1c16cb38b10ceb47455bc7ee548f209"
+          "sha256": "b057d2309f318abad0e42a89ad358d5dd55819256c752f13feca8d23f615b7d1"
         },
         {
           "path": "internal/ledger/fabric_metadata.go",
@@ -3238,7 +3250,7 @@
         },
         {
           "path": "internal/ledger/fabric_tasks.go",
-          "sha256": "8dbd5d3f735c3c920a8d6e4632b0afc201e3c0c15089640c180ff99403210774"
+          "sha256": "557455fd7d8a0a5d547a982e64ea1124bb5419942d7ca9c46caaeb41b5089f73"
         },
         {
           "path": "internal/ledger/ledger.go",
@@ -3246,6 +3258,10 @@
         }
       ],
       "tests": [
+        {
+          "path": "internal/ledger/fabric_filters_test.go",
+          "sha256": "061b05ee3c46e494745c33a7fdcebaa52f6f5e2c3e2be8d56fd9f1ac86bbd12f"
+        },
         {
           "path": "internal/ledger/fabric_generation_test.go",
           "sha256": "0ef0860ec9c062ff6a9e67d43537d1e7c11cba2fa1630bd9e4b2a677a429b541"
@@ -3280,7 +3296,7 @@
       "source": [
         {
           "path": "internal/liveness/livenesswatch.go",
-          "sha256": "6c6afb3ca3ea414d249a0e1e8f38d7ad9cfcc4a4c300676f556e420159d1da79"
+          "sha256": "62f7ac44c26216c5deb23762e737c085a353fe33c14756c21f667307add62d22"
         },
         {
           "path": "internal/liveness/localinstall_unix.go",
@@ -3306,7 +3322,7 @@
       "tests": [
         {
           "path": "internal/liveness/livenesswatch_test.go",
-          "sha256": "3e0ca26c185c554d576f2d3c614532515bfdd61d36e328030f7582500e0d837b"
+          "sha256": "94fb4b65dc69d819003036c1a045ed8bef44074420888c78134633336cd94781"
         },
         {
           "path": "internal/liveness/localinstall_darwin_test.go",
@@ -6928,6 +6944,18 @@
           "sha256": "6dfb1601446bff7d2a60492959a5c3fd0613d692a8663fd5d55a69c5b3fee94c"
         },
         {
+          "path": "internal/setup/launchdgemma.go",
+          "sha256": "4174e0ecd281f86731387eea47fe92f5d3471b12f859e67e0fbcc7408431252d"
+        },
+        {
+          "path": "internal/setup/launchdgemma_darwin.go",
+          "sha256": "99c125b6c8bcce83466fb96e3cc7a853f0733e04497356d0c00f1d403521ff72"
+        },
+        {
+          "path": "internal/setup/launchdgemma_other.go",
+          "sha256": "ff8abf64cc0fac1c646874b72caffccd111ec9c0f3294ebd36ec5e6a041bad09"
+        },
+        {
           "path": "internal/setup/launchdhorus_darwin.go",
           "sha256": "558c86e123fddb873d7fee397e50ea2de7c7a4f7ae446f7bc63f08b17006684b"
         },
@@ -6969,7 +6997,7 @@
         },
         {
           "path": "internal/setup/launchdmaintenance_darwin.go",
-          "sha256": "ce1152bf9e93e7732df805c021475390ff72f65f02f6bfbb9a712d2c3fd039de"
+          "sha256": "a75aa5e0a7d5c5bf44d325de9febfa55ecd397201a6a04b276d305369e971d64"
         },
         {
           "path": "internal/setup/launchdmaintenance_image.go",
@@ -7078,6 +7106,14 @@
           "sha256": "f13aa0b35427cdc73b3e87fec8099978d48157fad2929f3a852183bdc888c9cf"
         },
         {
+          "path": "internal/setup/launchdgemma_native_darwin_test.go",
+          "sha256": "01fb7433cdd30bf05df37a5072b669efc4ab0f0b9d80dc54fcf943ddae4c2509"
+        },
+        {
+          "path": "internal/setup/launchdgemma_test.go",
+          "sha256": "7178b204b7693e1508004144788f4d138a611fe34412df3624e6338067da8e28"
+        },
+        {
           "path": "internal/setup/launchdhorus_darwin_test.go",
           "sha256": "db2f4af982e4ca21a177bf5adeac80a2cd78399e42547ff20feb85596de637b8"
         },
@@ -7135,7 +7171,7 @@
         },
         {
           "path": "internal/setup/launchdmaintenance_profile_darwin_test.go",
-          "sha256": "0989e0813ab11f24115195f04a1f672c98736c5b8812772f5dc068d6e858ee05"
+          "sha256": "fabebe8bb7c78f9bac5f95686cec5779700ff2f168ed2a5a03034124b0223332"
         },
         {
           "path": "internal/setup/launchdmaintenance_recovery_test.go",
@@ -8567,7 +8603,7 @@
         },
         {
           "path": "scripts/maat/test_heavy_launch.py",
-          "sha256": "74a22a2b144358e625576ee9e296afef63e15e34219bdaedb12029b154110710"
+          "sha256": "191c49d488a566825aae9810f4c25b2b91af912cd674eb93b40acbb7ca89f1cb"
         },
         {
           "path": "scripts/maat/test_job_stop_ownership.py",
@@ -8907,7 +8943,7 @@
         },
         {
           "path": "contracts/stacklab/pantheon.pt-wing-001-wing-v1.json",
-          "sha256": "27a7c95633b6124500d7e4e463b8c772c295c2c0b867f951ed2749a8e5d3e3e5"
+          "sha256": "743e7148cf2e68e58b742231dc3064d1a0be968cf1ccfd239d3d4be3b39e7d21"
         },
         {
           "path": "contracts/stacklab/ra-horus-fabric-recipe-v1.json",
@@ -9195,15 +9231,15 @@
       "files": [
         {
           "path": "internal/dashboard/ui/app.css",
-          "sha256": "d587f376cdb0d68d149a6fa566968c08ee1ea24495f3091edfe6a76c41271ed3"
+          "sha256": "75d6be8c726b6f1cb8cb2201174d227bea6fb30787a4c000d6615edcbbce7ae6"
         },
         {
           "path": "internal/dashboard/ui/app.js",
-          "sha256": "4427d46d61a467449db602c56c6c0db963c7804c10708d445fe9b223986b8cbc"
+          "sha256": "83804d209c253162b3dcce8f6317b3895fc5a15ec42e8fbb472b6e2e195060a3"
         },
         {
           "path": "internal/dashboard/ui/fabric.js",
-          "sha256": "0e4187e8dfe739711e2b004cb6fd664bf98d4fb0d176d3cec5151d98bcf31669"
+          "sha256": "20b42d31f9cc41b8fa1ae3caf541475883f7e4795d918ef68be0d823004bd7c2"
         },
         {
           "path": "internal/dashboard/ui/index.html",
@@ -9231,7 +9267,7 @@
         },
         {
           "path": ".github/workflows/ci.yml",
-          "sha256": "7d050db96061001bab9bd58500a84404b6fd2c334c9fa2712f2cfa40d5704a5b"
+          "sha256": "13bd5deab686a9cc66568beeed1de753d40e07b5cc93be0338085ffac63adc95"
         },
         {
           "path": ".github/workflows/claude.yml",

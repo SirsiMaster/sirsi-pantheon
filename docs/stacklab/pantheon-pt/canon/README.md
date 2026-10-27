@@ -41,5 +41,6 @@ replacement boundaries. The remaining full-census diagrams are
 [Ra/Horus operations](DIAGRAMS_FABRIC_OPERATIONS.md) and
 [product operations](DIAGRAMS_PRODUCT_OPERATIONS.md). The84-group index covers
 the finite independent census; diagram counts are not installed acceptance.
-Refresh the historical source inventory against the final integrated source
-before claiming its freshness for141.
+The inventory is regenerated from the committed141 composition named in
+CERTIFICATION. Final-head digest equality, publication and installed evidence
+remain separate acceptance steps.

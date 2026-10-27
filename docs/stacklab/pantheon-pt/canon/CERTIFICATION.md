@@ -1,15 +1,19 @@
 # Pantheon wing and release certification
 
 Owner: Codex Pantheon (source/canon), SSA (independent review, release and selected
-runtime adoption), Ra (fabric and registry coordination). Reviewed source base:
-`e26e324be107ab541ec8d4d1400392e1ee55fc26`, 2026-10-27.
-The source branch now normally includes origin/main
-`2d668ffcce4919e88ea6eb13850634b1a929b571` (runner and worker integrations).
-The module snapshot remains explicitly e26 history, not a hash of these later
-bytes; final source-freshness review must use the composed release source.
-Target composition: **v0.24.141**, not yet released. Public140 remains the exact
-historical baseline. This document defines full acceptance and records evidence;
-it is not a certificate merely because the file exists.
+runtime adoption), Ra (fabric and registry coordination).
+The finite84-group source canon was independently accepted at `f6760af1` and
+normally merged as `24b4e50b3df08505c7669091eb9aae9142c8ca42` on 2026-10-27.
+The composed source inventory now binds committed candidate `3d67b0c3068ed3250ab353ec5d6832c5ce63f1b0`,
+tree `00d52079022f61edfe932310c29172ea53c017ff`, with101 packages/targets,
+856 source files,848 test files and222 supporting files (1,926 total).
+The inventory itself and these record updates are a subsequent metadata commit;
+final acceptance must compare every inventoried final-head blob to its digest
+and bind that final commit/tree in an external receipt. The inventory never
+pretends to contain its own final commit hash. Retained e26 evidence stays historical.
+Target composition: **v0.24.141 release candidate**, not yet published. Public140
+remains the exact historical baseline. This document defines acceptance and
+records scoped evidence; it is not a certificate merely because the file exists.
 
 ## Binding criteria
 
@@ -31,9 +35,9 @@ versioned source and evidence, never a particular host or agent memory.
 | ID / requirements | Acceptance | Actual evidence and scope | Owner / remaining action |
 |---|---|---|---|
 | PT-C01 / REQ11 | Origin/main wing, declared roster and byte-identical universal registry pin | Independent2026-10-27 GitHub readback: origin and pin SHA256 `27a7c95633b6124500d7e4e463b8c772c295c2c0b867f951ed2749a8e5d3e3e5`, same Git blob `d92b972ec832d659a0b490961e3c4cd07fa5754a`; roster includes PT; installed doctor returned no findings | Main/Ra: PASS for observed historical wing; any changed wing needs origin merge, repin and fresh readback |
-| PT-C02 / REQ02,11 | Nine maintained records accurately cover current product | All nine files present; this corrective change expands previously skeletal product/stories/design/security/runbook/plan and marks source versus runtime evidence | Main: independent semantic review and normal origin integration required; existence alone is not PASS |
-| PT-C03 / REQ08,11 | Complete component/dependency/upgrade and process-diagram coverage | COMPONENT_CATALOG, DIAGRAM_INDEX and detailed diagrams; recipes name sources, tests, inputs/outputs, writes and replacement constraints | Main: reconcile inventory denominator and every source branch/recovery with independent review; no runtime claim from diagram coverage |
-| PT-C04 / REQ01,02,05 | Exact clean composed source, full Go/Swift correctness/security/resource qualification and Ma'at A17 assessment | PR1239 merged as f648; Ma'at PR1240 merged as e26. Exact component normal/race/causal receipts exist. Runner1243 and worker1244 are now normally merged on main (951 and2d); UI1241 and legacy1242 still require their current integration checks | Main/SSA: integrate remaining corrective source normally, then qualify final composition and bind exact commit/tree/logs; retain Ma'at assessment and honor A17 score85 stable-release threshold without treating a score as whole-product proof |
+| PT-C02 / REQ02,11 | Nine maintained records accurately cover current product | Nine records and84-group finite census independently accepted at f676, normally merged as24b4e50b; final composed-source refresh is this candidate | Main/SSA: preserve that acceptance scope and independently check the final refresh; product/runtime acceptance remains separate |
+| PT-C03 / REQ08,11 | Complete component/dependency/upgrade and process-diagram coverage | 84 groups,277 parsed Mermaid blocks, source semantics reviewed at f676. MODULE_INVENTORY now enumerates1,926 committed file digests from3d67b0c3, including joined worker/UI/legacy/bootstrap and memory-copy corrections | Main: prove final-head digest equality and review bounded corrective crosswalks; no runtime claim from diagrams or source inventory |
+| PT-C04 / REQ01,02,05 | Exact clean composed source, full Go/Swift correctness/security/resource qualification and Ma’at A17 assessment | PR1239 f648,1240 e26,1243 951,1244 2d,1242 d684,1241 d34,1246 90cec and1245 24b are normally merged. Memory-copy2025 has independent source review and focused CPU1 Ma’at PASS;8970 extends its UTC bracket. VERSION141 and changelog are prepared through the existing helpers exactly once | Main/SSA: qualify exact final candidate and bind commit/tree/logs; retain A17 assessment and score85 stable-release threshold without treating a score as whole-product proof |
 | PT-C05 / REQ03,10 | Same signed/notarized/stapled one-engine Python-free app in DMG and PKG | Public140 independent asset/signature/staple/cask readback exists; not proof for141 | SSA: final141 inventory, linkage/resources/modes, app/installer Team, notary/staple receipts and same-payload proof |
 | PT-C06 / REQ02,03 | One exact tag/release and canonical cask with remote bytes | Public140 asset hashes below independently verified;141 tag/release/cask not created here | SSA: one supported publisher, paired remote asset SHA/size, tag/source join and exact canonical tap readback |
 | PT-C07 / REQ04,09 | Supported install/upgrade/rollback/uninstall, loaded adoption and cleanup | Actual140 M5 root transaction completed with selected identity; old outcomes explicitly unknown_not_certified_drained. Old dashboard process remains independently identified | SSA/SHA: qualify141 supported isolated lifecycle, selected actual loaded UI/client adoption, original caller proofs and cleanup/debt; do not blindly restart fleet |
@@ -42,7 +46,7 @@ versioned source and evidence, never a particular host or agent memory.
 | PT-C10 / REQ08 | Stack Lab recipe inspection and selection/run preserve exact authority | Existing local source catalog and native recipe source/tests; SNE construction remains upstream sovereign | Main: verify installed inspection, full component/resources/options, selection/preflight/qualified execution/result and unsupported-option recovery; no invented producer capability |
 | PT-C11 / REQ11 | Repository, Owner Reading Room and native Workspace cross-linked and current | Repository is authority. This updated candidate has not yet been integrated or synchronized to human mirrors | SSA publication custodian: reuse stable existing IDs, record source hash/time and readback. Mark stale until actual synchronization, never assume current |
 | PT-C12 / all | Independent integrated review, reproducible completion proof and truthful original task closure | Source reviews and individual receipts remain scoped; this file supplies no blanket acceptance | Main/SSA: review all applicable rows against final source and installed evidence; close satisfied originals only, keep owned next action for residuals |
-| PT-C13 / REQ11 | Project wing and recorded GCP billing/cost ownership crosswalk | SSA is independently reconciling portfolio origin/pins and existing GCP project/billing mappings; no PT-specific final crosswalk receipt is asserted here | SSA: link exact canonical crosswalk and readback; distinguish billing association, storage cost sidecar, budget and paid-resource authority; create no new paid project/IAM/budget merely to fill a record |
+| PT-C13 / REQ11 | Project wing and recorded GCP billing/cost ownership crosswalk | Central Stack Lab PR504 normally merged as360a1b533001e1d540626f867be0d001b8b867a2:20 repositories and5 named projects registered. SSA private publication/readback proof SHA2566bed753490120cdc23e9187db6a047205fcca80c5f223b814742257d4a48b9bd records existing billing associations, an immutable private cost-register object and human reading copies | PASS for bounded portfolio registration/accounting publication only. Final PT wing repin remains C01. This is neither native per-repository Cloud Billing enrollment, measured cost allocation, budget creation nor full product certification; no financial account details are published here |
 
 `REQnn` refers to `PT-REQ-nn` in PRD. Detailed process/requirement mappings are
 in DIAGRAM_INDEX and TRACEABILITY_MATRIX. Upstream inference/hardware qualification
