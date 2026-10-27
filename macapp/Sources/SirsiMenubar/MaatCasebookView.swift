@@ -3699,7 +3699,9 @@ struct MaatHistoryRefreshState {
                   history?.queryID.isEmpty == false, history?.snapshot.isEmpty == false else {
                 pending = nil
                 loading = false
-                setFailure(.invalidResponse)
+                failure = .invalidResponse
+                error = MaatHistoryRefreshFailure.invalidResponse.message
+                continuationPaused = false
                 return nil
             }
         }

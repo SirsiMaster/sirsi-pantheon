@@ -552,6 +552,7 @@ final class MaatOperationStateTests: XCTestCase {
         XCTAssertEqual(store.state.projection?.history?.nextCursor, "cursor:two")
         XCTAssertNotNil(store.state.error)
         XCTAssertFalse(store.state.loading)
+        XCTAssertFalse(store.state.restartRequired, "A locally mismatched cursor does not invalidate the retained cursor")
         let drift = Task { await store.load(scope: "all", cursor: "cursor:two") { await responses.read($0) } }
         await responses.waitForCount(3)
         await responses.finish(2, with: changed)
@@ -561,6 +562,7 @@ final class MaatOperationStateTests: XCTestCase {
         XCTAssertEqual(store.state.projection?.history?.nextCursor, "cursor:two")
         XCTAssertNotNil(store.state.error)
         XCTAssertFalse(store.state.loading)
+        XCTAssertTrue(store.state.restartRequired, "A response proving snapshot drift requires a fresh query")
         try await assertOptionalGoProducedHistoryFixture()
     }
 
