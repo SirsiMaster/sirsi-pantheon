@@ -144,7 +144,10 @@ func TestGemmaLifecycleLegacy140IsRetirementNotPauseAck(t *testing.T) {
 	d.inspect = func(c context.Context, t string) (GemmaWorkerPlan, error) {
 		q, e := inspect(c, t)
 		if q.KernelStart == p.KernelStart {
-			return p, e
+			q = p
+			q.Legacy140 = false
+			q.Digest = gemmaPlanDigest(q)
+			return q, e
 		}
 		return q, e
 	}
@@ -214,5 +217,18 @@ func TestGemmaLifecycleReplacementDiskDiffersFromOldLoaded(t *testing.T) {
 	}
 	if e := applyGemmaWorker(context.Background(), d, p, "ssa"); e != nil {
 		t.Fatal(e)
+	}
+}
+
+func TestGemmaLifecycleLegacy140WrongLoadedHashRefused(t *testing.T) {
+	d, p, _, ev := gemmaLifecycleFixture()
+	p.Legacy140 = true
+	p.CDHash = strings.Repeat("d", 40)
+	p.Digest = gemmaPlanDigest(p)
+	if applyGemmaWorker(context.Background(), d, p, "ssa") == nil {
+		t.Fatal("unrecognized old image accepted")
+	}
+	if len(*ev) != 0 {
+		t.Fatal("refusal touched controller", *ev)
 	}
 }

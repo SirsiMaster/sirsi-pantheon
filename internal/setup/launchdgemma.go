@@ -105,6 +105,10 @@ func applyGemmaWorker(ctx context.Context, d gemmaWorkerOperations, p GemmaWorke
 	if e != nil {
 		return e
 	}
+	// Requested protocol mode is not a physical observation. p was validated
+	// above, including the exact140 loaded-image gate. Preserve every other pin.
+	actual.Legacy140 = p.Legacy140
+	actual.Digest = gemmaPlanDigest(actual)
 	if actual != p {
 		return errors.New("Gemma lifecycle: selected identity changed")
 	}
