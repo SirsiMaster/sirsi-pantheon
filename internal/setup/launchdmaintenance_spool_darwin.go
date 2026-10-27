@@ -28,7 +28,7 @@ func maintenanceSpool(device, inode uint64) (*os.Root, unix.Stat_t, error) {
 	if err != nil {
 		return nil, st, err
 	}
-	if unix.Fstat(fd, &st) != nil || (st.Uid != uint32(uid) && st.Uid != 0) || st.Mode&0002 != 0 || (st.Mode&0020 != 0 && st.Gid != uint32(gid)) || (inode != 0 && (uint64(st.Dev) != device || uint64(st.Ino) != inode)) {
+	if unix.Fstat(fd, &st) != nil || !maintenanceSpoolIdentityAllowed(st, uid, gid, device, inode) {
 		return nil, st, errors.New("legacy maintenance: physical spool identity/owner/group changed")
 	}
 	root, err := os.OpenRoot(rootRelayPhysicalSpool)
@@ -48,6 +48,11 @@ func maintenanceSpool(device, inode uint64) (*os.Root, unix.Stat_t, error) {
 		return nil, st, errors.New("legacy maintenance: physical spool substituted during open")
 	}
 	return root, st, nil
+}
+
+func maintenanceSpoolIdentityAllowed(st unix.Stat_t, uid, gid int, device, inode uint64) bool {
+	return (st.Uid == uint32(uid) || st.Uid == 0) && st.Gid == uint32(gid) && st.Mode&0002 == 0 &&
+		(inode == 0 || (uint64(st.Dev) == device && uint64(st.Ino) == inode))
 }
 
 func maintenanceMarkerValue(s MaintenanceStatus) servicedrain.MaintenanceMarker {
