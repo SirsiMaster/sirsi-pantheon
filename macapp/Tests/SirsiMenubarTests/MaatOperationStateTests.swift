@@ -434,12 +434,103 @@ final class MaatOperationStateTests: XCTestCase {
     }
 
     @MainActor
+    func testSupersedingRetryPreservesRetainedCommandAndSnapshotFailures() async throws {
+        do {
+            let responses = ControlledHistoryResponses()
+            let store = MaatHistoryRefreshStore()
+            let initial = Task {
+                await store.load(scope: "all", query: "retry-A") { await responses.read($0) }
+            }
+            await responses.waitForCount(1)
+            await responses.finish(0, with: try browseRead(scope: "all", queryID: "query:A",
+                snapshot: "snapshot:A", cursor: "cursor:A"))
+            await initial.value
+
+            let failedRetry = Task {
+                await store.load(scope: "all", cursor: "cursor:A") { await responses.read($0) }
+            }
+            await responses.waitForCount(2)
+            await responses.finish(1, with: SirsiEngine.JSONCommandRead(data: Data(), exitStatus: 7,
+                timedOut: false, launchError: nil))
+            await failedRetry.value
+            XCTAssertEqual(store.state.failure, .commandFailed)
+
+            let retryA = Task {
+                await store.load(scope: "all", cursor: "cursor:A") { await responses.read($0) }
+            }
+            await responses.waitForCount(3)
+            let queryB = Task {
+                await store.load(scope: "all", query: "query-B") { await responses.read($0) }
+            }
+            await responses.waitForCount(4)
+            XCTAssertEqual(store.state.failure, .commandFailed,
+                "Superseding a retry must retain the prior command failure until B succeeds")
+            XCTAssertNotNil(store.state.error)
+
+            await responses.finish(3, with: try historyRead(scope: "all", queryID: "query:B",
+                snapshot: "snapshot:B", coverage: "complete", cursor: nil, countScope: "query"))
+            await queryB.value
+            await responses.finish(2, with: try browseRead(scope: "all", queryID: "query:A",
+                snapshot: "snapshot:A", cursor: "cursor:A"))
+            await retryA.value
+            XCTAssertEqual(store.state.query, "query-B")
+            XCTAssertEqual(store.state.projection?.history?.snapshot, "snapshot:B")
+            XCTAssertNil(store.state.failure)
+            XCTAssertNil(store.state.error)
+        }
+
+        do {
+            let stale = SirsiEngine.JSONCommandRead(data: Data(), exitStatus: 1, timedOut: false,
+                launchError: nil, stderrData: Data("maat decision history: snapshot changed; refresh the query\n".utf8))
+            let responses = ControlledHistoryResponses()
+            let store = MaatHistoryRefreshStore()
+            let initial = Task {
+                await store.load(scope: "all", query: "retry-A") { await responses.read($0) }
+            }
+            await responses.waitForCount(1)
+            await responses.finish(0, with: try browseRead(scope: "all", queryID: "query:A",
+                snapshot: "snapshot:A", cursor: "cursor:A"))
+            await initial.value
+
+            let failedRestart = Task {
+                await store.load(scope: "all", cursor: "cursor:A") { await responses.read($0) }
+            }
+            await responses.waitForCount(2)
+            await responses.finish(1, with: stale)
+            await failedRestart.value
+            XCTAssertEqual(store.state.failure, .staleSnapshot)
+            XCTAssertTrue(store.state.restartRequired)
+
+            let retryA = Task { await store.load(scope: "all") { await responses.read($0) } }
+            await responses.waitForCount(3)
+            let queryB = Task {
+                await store.load(scope: "all", query: "query-B") { await responses.read($0) }
+            }
+            await responses.waitForCount(4)
+            XCTAssertEqual(store.state.failure, .staleSnapshot,
+                "Superseding a restart cannot erase retained snapshot drift")
+            XCTAssertTrue(store.state.restartRequired)
+
+            await responses.finish(3, with: try historyRead(scope: "all", queryID: "query:B",
+                snapshot: "snapshot:B", coverage: "complete", cursor: nil, countScope: "query"))
+            await queryB.value
+            await responses.finish(2, with: try browseRead(scope: "all", queryID: "query:A",
+                snapshot: "snapshot:A"))
+            await retryA.value
+            XCTAssertEqual(store.state.query, "query-B")
+            XCTAssertEqual(store.state.projection?.history?.snapshot, "snapshot:B")
+            XCTAssertNil(store.state.failure)
+            XCTAssertFalse(store.state.restartRequired)
+        }
+    }
+
+    @MainActor
     func testHistoryContinuationCommitsQueryAndCursorTogetherAndRejectsMismatchedPair() async throws {
         let initial = try browseRead(scope: "all", queryID: "query:needle", snapshot: "snapshot:stable", cursor: "cursor:one")
         let tail = try browseRead(scope: "all", queryID: "query:needle", snapshot: "snapshot:stable", cursor: "cursor:two")
         let changed = try browseRead(scope: "all", queryID: "query:other", snapshot: "snapshot:replacement")
         let responses = ControlledHistoryResponses()
-        let store = MaatHistoryRefreshStore()
+        let store = MaatHistoryRefreshStore(maximumBurstReads: 1)
         let first = Task { await store.load(scope: "all", query: "  needle  ") { await responses.read($0) } }
         await responses.waitForCount(1)
         await responses.finish(0, with: initial)
@@ -676,7 +767,10 @@ final class MaatOperationStateTests: XCTestCase {
     @MainActor
     func testParentCancellationFinalizesCurrentBurstBeforeReleasingOwnership() async throws {
         let responses = ControlledHistoryResponses()
-        let store = MaatHistoryRefreshStore()
+        let delivery = ControlledHistoryCancellationDelivery()
+        let store = MaatHistoryRefreshStore(cancellationDelivery: { callback in
+            delivery.enqueue(callback)
+        })
         let task = Task { await store.load(scope: "all") { await responses.read($0) } }
         await responses.waitForCount(1)
         await responses.finish(0, with: try historyRead(scope: "all", queryID: "query:cancel-race",
@@ -684,9 +778,10 @@ final class MaatOperationStateTests: XCTestCase {
             countScope: "scanned-so-far"))
         await responses.waitForCount(2)
 
-        // Cancellation is recorded while the second child read is suspended;
-        // releasing that read forces the child-return/finalization ordering.
+        // Hold MainActor cancellation delivery until the read-return finalizer
+        // has published its cancellation state and released burst ownership.
         task.cancel()
+        await delivery.waitForCallback()
         await responses.finish(1, with: try historyRead(scope: "all", queryID: "query:cancel-race",
             snapshot: "snapshot:cancel-race", coverage: "complete", cursor: nil,
             countScope: "query"))
@@ -698,6 +793,9 @@ final class MaatOperationStateTests: XCTestCase {
         XCTAssertEqual(store.state.projection?.history?.nextCursor, "cursor:accepted")
         let arguments = await responses.arguments()
         XCTAssertEqual(arguments.count, 2)
+        delivery.releaseCallback()
+        XCTAssertFalse(store.state.loading)
+        XCTAssertEqual(store.state.projection?.history?.nextCursor, "cursor:accepted")
     }
 
     @MainActor
@@ -1368,6 +1466,46 @@ private actor ControlledHistoryDeadline {
         let ready = waiters.filter { $0.count <= observed }
         waiters.removeAll { $0.count <= observed }
         ready.forEach { $0.continuation.resume() }
+    }
+}
+
+private final class ControlledHistoryCancellationDelivery: @unchecked Sendable {
+    typealias Callback = @MainActor @Sendable () -> Void
+
+    private let lock = NSLock()
+    private var callback: Callback?
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func enqueue(_ callback: @escaping Callback) {
+        lock.lock()
+        self.callback = callback
+        let ready = waiters
+        waiters.removeAll()
+        lock.unlock()
+        ready.forEach { $0.resume() }
+    }
+
+    func waitForCallback() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if callback != nil {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                waiters.append(continuation)
+                lock.unlock()
+            }
+        }
+    }
+
+    @MainActor
+    func releaseCallback() {
+        lock.lock()
+        let ready = callback
+        callback = nil
+        lock.unlock()
+        guard let ready else { preconditionFailure("Missing gated cancellation callback") }
+        ready()
     }
 }
 

@@ -39,12 +39,14 @@ final class MaatHistoryRefreshStore: ObservableObject {
     typealias MonotonicNow = @Sendable () -> TimeInterval
     typealias DeadlineSleep = @Sendable (TimeInterval) async throws -> Void
     typealias DeadlineHandled = @Sendable () async -> Void
+    typealias CancellationDelivery = @Sendable (@escaping @MainActor @Sendable () -> Void) -> Void
     private let reader: Reader
     private let maximumBurstReads: Int
     private let maximumBurstDuration: TimeInterval
     private let monotonicNow: MonotonicNow
     private let deadlineSleep: DeadlineSleep
     private let deadlineHandled: DeadlineHandled
+    private let cancellationDelivery: CancellationDelivery
     private var activeBurstID: UUID?
     private var activeCancellation: MaatHistoryBurstCancellation?
     private var readTask: Task<Void, Never>?
@@ -59,6 +61,9 @@ final class MaatHistoryRefreshStore: ObservableObject {
              try await Task.sleep(nanoseconds: nanoseconds)
          },
          deadlineHandled: @escaping DeadlineHandled = {},
+         cancellationDelivery: @escaping CancellationDelivery = { callback in
+             _ = Task { @MainActor in callback() }
+         },
          read: @escaping Reader = { await SirsiEngine.runJSONRead(args: $0) }) {
         state = MaatHistoryRefreshState(projection: projection)
         self.reader = read
@@ -67,6 +72,7 @@ final class MaatHistoryRefreshStore: ObservableObject {
         self.monotonicNow = monotonicNow
         self.deadlineSleep = deadlineSleep
         self.deadlineHandled = deadlineHandled
+        self.cancellationDelivery = cancellationDelivery
     }
 
     // A verified write starts a new snapshot of the committed query; its old
@@ -94,6 +100,7 @@ final class MaatHistoryRefreshStore: ObservableObject {
         readTask = task
         let sleepUntilDeadline = deadlineSleep
         let burstDuration = maximumBurstDuration
+        let deliverCancellation = cancellationDelivery
         deadlineTask = Task { [weak self] in
             do {
                 try await sleepUntilDeadline(burstDuration)
@@ -108,7 +115,7 @@ final class MaatHistoryRefreshStore: ObservableObject {
             await task.value
         } onCancel: { [weak self] in
             if cancellation.cancel() {
-                Task { @MainActor in self?.cancelBurst(id: burstID) }
+                deliverCancellation { [weak self] in self?.cancelBurst(id: burstID) }
             }
         }
         finishBurst(id: burstID)
@@ -193,7 +200,8 @@ final class MaatHistoryRefreshStore: ObservableObject {
 
     private func cancelActiveBurst() {
         guard let activeBurstID else { return }
-        pauseBurst(id: activeBurstID, failure: nil)
+        _ = activeCancellation?.cancel()
+        releaseBurst(id: activeBurstID, cancelRead: true)
     }
 
     private func finishBurst(id: UUID, cancelRead: Bool = false) {
