@@ -341,6 +341,75 @@
         "qualify all existing/new inert suites and causal controls under Main, then actual own M5 route",
         "source-only unrun; no installed/all-peer SSH/task completion claim"
       ]
+    },
+    {
+      "id": "gemma-maintenance-claim-barrier",
+      "source": [
+        "internal/routerstore/lease.go",
+        "internal/routerstore/tasklease.go",
+        "internal/routerstore/taskresume.go",
+        "internal/routerstore/laneclaimbarrier.go",
+        "internal/routerstore/laneclaimbarrier_remote.go",
+        "internal/routerstore/serve.go",
+        "internal/routerstore/remote.go",
+        "internal/routerstore/store_iface.go",
+        "cmd/sirsi/gemma_worker.go"
+      ],
+      "tests": [
+        "internal/routerstore/laneclaimbarrier_test.go",
+        "internal/routerstore/taskresume_barrier_test.go",
+        "internal/routerstore/remote_test.go",
+        "cmd/sirsi/gemma_worker_test.go"
+      ],
+      "inputs": [
+        "operator-controlled Gemma lane maintenance barrier and actual registered SSA controller identity",
+        "new item/task claim requests and fresh task-resume claim requests",
+        "task-resume inspect requests without a lease; separately, exact replay requests for a previously issued claim"
+      ],
+      "outputs": [
+        "typed pause refusal for new item, task, and task-resume claims; no new lease, attempt, audit, or wake mutation",
+        "controller status reports the actual paused state and active item/task counts for typed idle assessment",
+        "existing item/task lease renewal and settlement remain available; task inspect is read-only and exact claim replay remains idempotent while paused"
+      ],
+      "writes": [
+        "no fresh lease, attempt, audit, or wake mutation on pause refusal, inspect, or existing-claim replay; claim replay still performs the shared lane-row no-op UPSERT/lock and transaction commit"
+      ],
+      "upgrade_recipe": [
+        "check the maintenance pause under the same durable lane-row lock and transaction/context across every new item, task, and resume claim path",
+        "preserve read-only inspect, exact existing-claim replay, and live lease renewal/settlement while paused; replay serializes through the shared lock",
+        "preserve task CAS, principal checks, and history behavior; do not treat lease expiry as proof the lane is idle",
+        "keep controller, client, and server versions matched before live activation; pause has no automatic expiry, activation, wake, or unpause and only the explicit SSA operator may resume the lane"
+      ]
+    },
+    {
+      "id": "host-scoped-node-status-observation",
+      "source": [
+        "internal/router/nodestatus.go",
+        "cmd/sirsi/routernodestatus.go",
+        "macapp/Sources/SirsiMenubar/SirsiEngine.swift",
+        "macapp/Sources/SirsiMenubar/Views.swift"
+      ],
+      "tests": [
+        "internal/router/nodestatus_hostscope_test.go",
+        "macapp/Tests/SirsiMenubarTests/RouterBoardUnverifiedInboxTests.swift"
+      ],
+      "inputs": [
+        "registered thread host and machine identifiers",
+        "current node stable machine identifier and existing read-only process/watcher observations",
+        "pending work and the existing node-status refresh path"
+      ],
+      "outputs": [
+        "local process and loop probes only when both stable machine identifiers are nonempty and equal",
+        "foreign or unidentified loop-monitor work reported with remote or unknown scope as verification pending",
+        "CLI and native RouterBoard projections retain unverified counts and scope; native refresh re-reads node status"
+      ],
+      "writes": [],
+      "upgrade_recipe": [
+        "keep unequal, empty, or unavailable machine identifiers outside local PID and watcher probes",
+        "preserve heartbeat freshness as recorded while keeping foreign or unknown process liveness unknown",
+        "keep unverified pending work distinct from dead-stranded work in collector projection and operator surfaces",
+        "use the existing forced node-status refresh only; do not offer wake installation as remote verification or add a remote probe API"
+      ]
     }
   ]
 }
