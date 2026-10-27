@@ -34,7 +34,6 @@ const (
 	maxHistoryRowBudget          = 10000
 	defaultHistoryTimeBudget     = 300 * time.Millisecond
 	maxHistoryTimeBudget         = 2 * time.Second
-	historyCursorVersion         = 5
 	maxHistoryQualificationBatch = 48
 )
 
@@ -994,7 +993,7 @@ func historyOrderAfter(candidate, after historyOrder) bool {
 }
 
 func nextHistoryPageCursor(state *historyCursor, last historyOrder) *historyCursor {
-	return &historyCursor{Version: historyCursorVersion, Snapshot: state.Snapshot, PrefixBytes: state.PrefixBytes, PrefixSHA: state.PrefixSHA, QueryKey: state.QueryKey, Phase: "scan", Limit: state.Limit, After: &last}
+	return &historyCursor{Version: state.Version, Snapshot: state.Snapshot, PrefixBytes: state.PrefixBytes, PrefixSHA: state.PrefixSHA, QueryKey: state.QueryKey, Phase: "scan", Limit: state.Limit, After: &last}
 }
 
 func encodeHistoryCursor(state *historyCursor) (string, error) {
@@ -1031,7 +1030,14 @@ func validateHistoryCursor(state *historyCursor, limit int, fileSize int64) erro
 	if state == nil || state.Offset < 0 || state.Line < 0 || state.Seen < 0 || state.EvidenceSeen < 0 || state.InvalidCount < 0 || state.Limit != limit || len(state.Candidates) > limit+1 || len(state.Issues) > maxRetainedJournalIssues || state.PrefixBytes < 0 || state.PrefixBytes > fileSize {
 		return fmt.Errorf("maat decision history: invalid continuation")
 	}
-	if state.PrefixSHA != "" && !validHistoryDigest(state.PrefixSHA) || state.Phase != "anchor" && !validHistoryDigest(state.PrefixSHA) {
+	if state.Version != historyCursorVersion {
+		return fmt.Errorf("maat decision history: invalid continuation")
+	}
+	if historyCursorVersion == 4 {
+		if state.Phase == "anchor" || state.PrefixBytes != 0 || state.PrefixSHA != "" {
+			return fmt.Errorf("maat decision history: invalid continuation")
+		}
+	} else if state.PrefixSHA != "" && !validHistoryDigest(state.PrefixSHA) || state.Phase != "anchor" && !validHistoryDigest(state.PrefixSHA) {
 		return fmt.Errorf("maat decision history: invalid continuation")
 	}
 	if state.DiscardingLine && (state.DiscardLine <= 0 || state.DiscardLine > state.Line || !validHistoryDigest(state.DiscardDigest)) {

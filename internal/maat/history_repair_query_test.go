@@ -157,9 +157,7 @@ func TestHistoryRepairCursorVersionAndReadOnlyIntegrity(t *testing.T) {
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("read-only history changed retained journal bytes")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	query.Context = ctx
+	query.Context = context.Background()
 	query.ByteBudget, query.RowBudget = 1, 1
 	partial, err := journal.QueryHistory(query)
 	if err != nil || partial.Cursor == "" {

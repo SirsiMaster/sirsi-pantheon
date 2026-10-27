@@ -183,6 +183,10 @@ arbitrary journal-size cutoff, cache, second database, lock, write or auth
 change. A prefix that cannot be fully verified within the two-second deadline
 does not advance.
 
+The strict retained-parent and frozen-prefix reader is currently Unix-scoped.
+Windows retains the prior bounded snapshot reader and its history-read behavior;
+this change makes no Windows frozen-prefix or strict no-follow guarantee.
+
 Authored source-only adversarial coverage includes append-between-phase and
 older-page behavior, a fresh query after append, same-inode prefix mutation
 with restored mtime, same-UID leaf replacement, symlink/hard-link/truncation

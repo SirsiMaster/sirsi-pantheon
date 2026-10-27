@@ -88,6 +88,9 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 	} else if state.QueryKey != query.QueryKey || state.Version != historyCursorVersion || state.PrefixBytes < 0 || state.PrefixBytes > size || !validHistoryDigest(state.PrefixSHA) || (state.Phase == "anchor" && state.Snapshot != snapshot) || (state.Phase != "anchor" && state.Snapshot != file.prefixSnapshotID(state.PrefixBytes, state.PrefixSHA)) {
 		return HistoryPage{}, ErrHistorySnapshotChanged
 	}
+	if state.Phase != "anchor" {
+		snapshot = state.Snapshot
+	}
 	if err := validateHistoryCursor(state, query.Limit, state.PrefixBytes); err != nil {
 		return HistoryPage{}, err
 	}
@@ -105,9 +108,12 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 			return HistoryPage{}, err
 		}
 		if !time.Now().Before(overallDeadline) {
-			return HistoryPage{}, context.DeadlineExceeded
+			if working.Phase == "anchor" {
+				return HistoryPage{}, context.DeadlineExceeded
+			}
+			break
 		}
-		if workClock.expired() || remainingBytes <= 0 || remainingRows <= 0 {
+		if working.Phase != "anchor" && (workClock.expired() || remainingBytes <= 0 || remainingRows <= 0) {
 			page.Cursor, err = encodeHistoryCursor(working)
 			if err != nil {
 				return HistoryPage{}, err
@@ -127,13 +133,25 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 		var passRows int
 		var passDone bool
 		stopAfterPass := false
-		if phase == "anchor" || phase == "scan" || phase == "links" || phase == "candidate-links" || phase == "batch-links" {
-			expected := tentative.PrefixSHA
-			if phase == "anchor" {
-				expected = ""
+		if phase == "anchor" {
+			workClock.pause()
+			digest, passErr := historyPrefixPass(file, tentative.PrefixBytes, "", ctx, overallDeadline, nil)
+			workClock.resume()
+			if passErr != nil {
+				return HistoryPage{}, passErr
 			}
+			tentative.PrefixSHA = digest
+			tentative.Snapshot = file.prefixSnapshotID(tentative.PrefixBytes, digest)
+			tentative.Phase = "scan"
+			working, snapshot = tentative, tentative.Snapshot
+			page.Snapshot = snapshot
+			page.VerificationBytes += tentative.PrefixBytes
+			continue
+		}
+		if phase == "scan" || phase == "links" || phase == "candidate-links" || phase == "batch-links" {
+			expected := tentative.PrefixSHA
 			digest, passErr := historyPrefixPass(file, tentative.PrefixBytes, expected, workCtx, overallDeadline, func(reader *bufio.Reader) error {
-				if phase != "anchor" && tentative.Offset > 0 {
+				if tentative.Offset > 0 {
 					workClock.pause()
 					_, skipErr := io.CopyN(io.Discard, reader, tentative.Offset)
 					workClock.resume()
@@ -142,7 +160,7 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 					}
 				}
 				switch phase {
-				case "anchor", "scan":
+				case "scan":
 					passDone, passBytes, passRows, err = scanHistoryChunkReader(workCtx, workDeadline, reader, tentative, remainingBytes, remainingRows, query.Scope, query.Evidence, query.Match, query.NeedsState, query.MatchState)
 				case "links":
 					passDone, passBytes, passRows, err = scanHistoryLinksReader(workCtx, workDeadline, reader, tentative, remainingBytes, remainingRows)
@@ -156,18 +174,17 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 				return err
 			})
 			if passErr != nil {
+				if errors.Is(passErr, context.DeadlineExceeded) && ctx.Err() == nil {
+					break
+				}
 				return HistoryPage{}, passErr
 			}
-			if phase == "anchor" {
-				tentative.PrefixSHA = digest
-				tentative.Snapshot = file.prefixSnapshotID(tentative.PrefixBytes, digest)
-				page.Snapshot = tentative.Snapshot
-			} else if digest != tentative.PrefixSHA {
+			if digest != tentative.PrefixSHA {
 				return HistoryPage{}, ErrHistorySnapshotChanged
 			}
 			if passDone {
 				switch phase {
-				case "anchor", "scan":
+				case "scan":
 					if len(tentative.Candidates) == 0 {
 						page.VerificationBytes += tentative.PrefixBytes
 						page.ScannedBytes += passBytes
@@ -231,7 +248,7 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 			phasePage = HistoryPage{Coverage: HistoryCoveragePartial, Snapshot: snapshot, Candidates: []HistoryCandidate{}, Links: HistoryLinks{Acceptances: []Decision{}, ReviewedResolutionFor: []string{}}, AfterCursor: tentative.After != nil}
 			capturedPage, captureErr := queryHistoryCapturedPhase(file, tentative, phaseQuery, phasePage, workCtx, workDeadline, overallDeadline, page.ScannedBytes > 0 || page.ScannedRecords > 0)
 			if captureErr != nil {
-				if errors.Is(captureErr, errHistoryWorkBudget) {
+				if errors.Is(captureErr, errHistoryWorkBudget) || errors.Is(captureErr, context.DeadlineExceeded) && ctx.Err() == nil {
 					break
 				}
 				return HistoryPage{}, captureErr
@@ -500,7 +517,7 @@ func finishCapturedHistoryCandidate(ref *historyCandidateRef, acceptance, repair
 		return false, ErrHistorySnapshotChanged
 	}
 	if query.MatchState != nil && !query.MatchState(decision, state) {
-		return false, ErrHistorySnapshotChanged
+		return false, nil
 	}
 	return true, nil
 }
@@ -616,7 +633,7 @@ func openHistoryPrefix(path string) (*historyPrefixFile, int64, error) {
 		}
 	}()
 	base := filepath.Base(absolute)
-	fd, err := unix.Openat(parentFD, base, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	fd, err := unix.Openat(parentFD, base, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, 0, fmt.Errorf("maat decision history: open journal without following links: %w", err)
 	}

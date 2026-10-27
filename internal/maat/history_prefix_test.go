@@ -1,3 +1,5 @@
+//go:build !windows
+
 package maat
 
 import (
@@ -43,20 +45,6 @@ func historyPrefixCursorFixture(t *testing.T, path, query string, limit int) *hi
 	return &historyCursor{Version: historyCursorVersion, Snapshot: file.prefixSnapshotID(size, digest), PrefixBytes: size, PrefixSHA: digest, QueryKey: query, Phase: "scan", Limit: limit}
 }
 
-func historyPrefixCursorFixture(t *testing.T, path, query string, limit int) *historyCursor {
-	t.Helper()
-	file, size, err := openHistoryPrefix(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.close()
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &historyCursor{Version: historyCursorVersion, Snapshot: file.snapshotID(), PrefixBytes: size, PrefixSHA: digestBytes(raw), QueryKey: query, Phase: "scan", Limit: limit}
-}
-
 func drainPrefixQuery(t *testing.T, journal *FileDecisionJournal, query HistoryQuery, appendEach bool) HistoryPage {
 	t.Helper()
 	for calls := 0; calls < 100; calls++ {
@@ -93,6 +81,10 @@ func TestHistoryFrozenPrefixAllowsBetweenPhaseAppendsAndFreshQuerySeesThem(t *te
 	page, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "frozen-prefix", Limit: 5, RowBudget: 1})
 	if err != nil || page.Coverage != HistoryCoveragePartial || page.Cursor == "" || page.VerificationBytes <= 0 {
 		t.Fatalf("anchor page=%+v err=%v", page, err)
+	}
+	state, err := decodeHistoryCursor(page.Cursor)
+	if err != nil || state == nil || state.Phase != "scan" || !validHistoryDigest(state.PrefixSHA) || state.Snapshot != page.Snapshot || state.Snapshot == "" {
+		t.Fatalf("anchor did not establish a resumable prefix identity: state=%+v snapshot=%q err=%v", state, page.Snapshot, err)
 	}
 	appendPrefixFixture(t, journal.Path, historyFixtureScreen(t, "2026-10-27T12:01:00Z", "appended:after-anchor"))
 	continued := drainPrefixQuery(t, journal, HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "frozen-prefix", Limit: 5, RowBudget: 1, Cursor: page.Cursor}, true)

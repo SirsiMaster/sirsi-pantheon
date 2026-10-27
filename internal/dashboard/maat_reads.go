@@ -262,7 +262,9 @@ func maatCursor(value string, history bool) error {
 	}
 	if history {
 		phase := text("phase", 32)
-		if !integer("v", 5, 5) || !integer("offset", 0, 1<<62) || !integer("prefix_bytes", 0, 1<<62) || !integer("limit", 1, 100) || text("prefix_sha256", 80) == "" || text("snapshot", 4096) == "" || text("query", 128) == "" {
+		version4 := integer("v", 4, 4)
+		version5 := integer("v", 5, 5)
+		if (!version4 && !version5) || !integer("offset", 0, 1<<62) || !integer("limit", 1, 100) || text("snapshot", 4096) == "" || text("query", 128) == "" || version4 && (phase == "anchor" || text("prefix_sha256", 80) != "") || version5 && (!integer("prefix_bytes", 0, 1<<62) || text("prefix_sha256", 80) == "") {
 			return errors.New("invalid history continuation envelope")
 		}
 		switch phase {
