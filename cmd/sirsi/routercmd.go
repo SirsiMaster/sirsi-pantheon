@@ -306,7 +306,7 @@ cutover live the store row IS the record.
 				return err
 			}
 			if JsonOutput {
-				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(routerSendJSON{ID: res.ID, From: from, To: to, Deduped: res.Deduped}); err != nil {
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(routerSendJSON{ID: res.ID, From: from, To: res.To, Deduped: res.Deduped}); err != nil {
 					return fmt.Errorf("router send committed item %s but JSON response write failed; reconcile by ID and do not retry: %w", res.ID, err)
 				}
 				return nil

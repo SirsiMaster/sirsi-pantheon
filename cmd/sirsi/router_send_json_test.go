@@ -50,11 +50,14 @@ func newRouterSendFixtureCommandWithLoader(t *testing.T, output io.Writer, opera
 
 func TestRouterSendJSONWritesTypedCommitWithoutHumanOrBodyText(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		deduped bool
+		name        string
+		inputTo     string
+		effectiveTo string
+		deduped     bool
 	}{
-		{name: "new-send"},
-		{name: "deduped", deduped: true},
+		{name: "new-send", inputTo: "recipient-fixture", effectiveTo: "recipient-fixture"},
+		{name: "deduped", inputTo: "recipient-fixture", effectiveTo: "recipient-fixture", deduped: true},
+		{name: "resolved-alias", inputTo: "old-b", effectiveTo: "b"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
@@ -63,16 +66,16 @@ func TestRouterSendJSONWritesTypedCommitWithoutHumanOrBodyText(t *testing.T) {
 			showVerdict := true
 			cmd := newRouterSendFixtureCommand(t, &out, func(from, to, title, typ, body string) (dispatch.SendResult, func(bool), error) {
 				calls++
-				if from != "sender-fixture" || to != "recipient-fixture" || title != "fixture title" || typ != "decision" || body != "private fixture body" {
+				if from != "sender-fixture" || to != tc.inputTo || title != "fixture title" || typ != "decision" || body != "private fixture body" {
 					t.Fatalf("send input = %q %q %q %q %q", from, to, title, typ, body)
 				}
-				return dispatch.SendResult{ID: "committed-fixture-id", Deduped: tc.deduped}, func(show bool) {
+				return dispatch.SendResult{ID: "committed-fixture-id", To: tc.effectiveTo, Deduped: tc.deduped}, func(show bool) {
 					finishCalls++
 					showVerdict = show
 				}, nil
 			})
 			// The fixture owns its reader and writer; no router client is opened.
-			cmd.SetArgs([]string{"router", "send", "--json", "--from", "sender-fixture", "--to", "recipient-fixture", "--title", "fixture title", "--type", "decision", "--instructions", "fixture-reader"})
+			cmd.SetArgs([]string{"router", "send", "--json", "--from", "sender-fixture", "--to", tc.inputTo, "--title", "fixture title", "--type", "decision", "--instructions", "fixture-reader"})
 			if err := cmd.Execute(); err != nil {
 				t.Fatalf("Execute(): %v", err)
 			}
@@ -93,7 +96,7 @@ func TestRouterSendJSONWritesTypedCommitWithoutHumanOrBodyText(t *testing.T) {
 			if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 				t.Fatal(err)
 			}
-			want := routerSendJSON{ID: "committed-fixture-id", From: "sender-fixture", To: "recipient-fixture", Deduped: tc.deduped}
+			want := routerSendJSON{ID: "committed-fixture-id", From: "sender-fixture", To: tc.effectiveTo, Deduped: tc.deduped}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("JSON result = %+v, want %+v", got, want)
 			}
@@ -117,6 +120,24 @@ func TestRouterSendErrorDoesNotEmitCommitSuccess(t *testing.T) {
 	}
 	if out.Len() != 0 || calls != 1 {
 		t.Fatalf("stdout=%q send calls=%d, want empty output and one attempt", out.String(), calls)
+	}
+}
+
+func TestRouterSendAuditPublicationFailureRetainsCommittedIDWithoutSuccessOutput(t *testing.T) {
+	var out bytes.Buffer
+	commitErr := errors.New("inert audit publication failure after store commit")
+	calls := 0
+	cmd := newRouterSendFixtureCommand(t, &out, func(string, string, string, string, string) (dispatch.SendResult, func(bool), error) {
+		calls++
+		return dispatch.SendResult{ID: "committed-before-audit-failure", To: "recipient-fixture"}, nil, commitErr
+	})
+	cmd.SetArgs([]string{"router", "send", "--json", "--from", "sender-fixture", "--to", "recipient-fixture", "--title", "fixture title", "--type", "decision", "--instructions", "fixture-reader"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "committed-before-audit-failure") || !strings.Contains(err.Error(), "do not retry") || !errors.Is(err, commitErr) {
+		t.Fatalf("Execute() error = %v, want committed ID, no-retry guidance and publication cause", err)
+	}
+	if out.Len() != 0 || calls != 1 {
+		t.Fatalf("stdout=%q send calls=%d, want no success output and exactly one send", out.String(), calls)
 	}
 }
 

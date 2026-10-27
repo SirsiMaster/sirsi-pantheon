@@ -38,6 +38,9 @@ func TestSendToAliasDeliversToSuccessor(t *testing.T) {
 	if it.To != "b" {
 		t.Fatalf("alias send landed in %q, want successor b", it.To)
 	}
+	if res.To != "b" {
+		t.Fatalf("send result recipient = %q, want resolved successor b", res.To)
+	}
 	// Negative control: an unknown, undeclared name is still refused, not aliased.
 	if _, err := f.Send("a", "nobody", "t", "", "x"); err == nil {
 		t.Fatal("send to an undeclared non-alias must be refused")
