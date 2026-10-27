@@ -119,8 +119,12 @@ flowchart TD
   PREP --> ADMIT[Ma’at admission for this request]
   ADMIT -->|denied or unavailable| REFUSE[Do not begin native inference]
   ADMIT -->|admitted| RUN[Run installed native Apollo backend]
-  RUN --> RESULT[Return actual chat result and metrics]
-  RUN -->|failure or cancellation| FAIL[Return observed failure or cancellation]
+  RUN --> READMETRICS[Read actual metrics before release]
+  RUN -->|failure or cancellation| READMETRICS
+  READMETRICS --> RELEASE[Deferred release with independent fifteen-second cleanup context]
+  RELEASE -->|work or release error| FAIL[Return joined observed error]
+  RELEASE -->|success| PERSIST[Persist actual metrics]
+  PERSIST --> RESULT[Return actual chat result and metrics or persistence error]
   CLUSTER[Cluster command] -->|sourced refusal path| REFUSECLUSTER[Return unsupported cluster response]
 ```
 
@@ -140,7 +144,9 @@ flowchart LR
   CHAT --> REQUEST[Prepared chat request]
   REQUEST --> ADMIT
   ADMIT -->|exact admitted request| BACKEND[Native Apollo executor]
-  BACKEND --> RESULT[Chat output and actual run metrics]
+  BACKEND -->|read metrics before release| METRICS[Actual run metrics]
+  METRICS --> RELEASE[Deferred backend Release on success, error or panic]
+  RELEASE --> RESULT[Joined work and cleanup errors or persisted successful metrics]
   CLUSTER[Cluster capability commands] -->|explicit unsupported response| REFUSAL[Refusal result]
   PLAN[Plan output] -. no inference, reservation or telemetry read implied .-> VIEW
   LIVE[Live model run] -. not observed in this documentation task .-> BACKEND
@@ -279,7 +285,9 @@ flowchart TD
   ACTION -->|start| INSTALLED{Native broker installed and not quarantined?}
   INSTALLED -->|no| REFUSE[Return unavailable or quarantined error]
   INSTALLED -->|yes| KICK[launchctl kickstart fixed label]
-  KICK --> READY[Poll local readiness]
+  KICK --> STARTREADY[Poll local readiness for ordinary start]
+  STARTREADY -->|failure| STARTFAIL[Return readiness error without restore compensation]
+  STARTREADY -->|success| STARTOK[Return ready]
   ACTION -->|stop| STOP[Signal PID from local broker pid file]
   STOP --> NOTE[launchd may restore service]
   ACTION -->|quarantine| MOVE[Move broker plist to quarantine]
@@ -289,15 +297,19 @@ flowchart TD
   CHECK -->|no| CLEAR[Remove pid and port files]
   ACTION -->|restore| ENABLE[Enable label and restore plist]
   ENABLE --> BOOT[Bootstrap launchd job]
-  BOOT --> READY
-  READY -->|failure| REQUARANTINE[Quarantine again]
+  BOOT -->|bootstrap failure| BOOTCOMP[Attempt plist quarantine and label disable]
+  BOOTCOMP --> BOOTFAIL[Return original bootstrap error, compensation errors are ignored]
+  BOOT -->|bootstrap succeeds| RESTOREREADY[Poll restored service readiness]
+  RESTOREREADY -->|failure| REQUARANTINE[Attempt gemmaServerQuarantine]
+  REQUARANTINE --> RESTOREFAIL[Return readiness error, ignored compensation error is not proof of quarantine]
+  RESTOREREADY -->|success| RESTOREOK[Return ready]
   ORPHAN[Operator invokes orphan reap] --> ID[Classify exact broker process identities]
   ID -->|canonical identity uncertain| REFUSE
   ID -->|confirmed orphan| REAP[Apply selected orphan reap]
   ID -->|canonical broker| KEEP[Preserve canonical broker]
 ```
 
-`serve` start, status, stop, quarantine, restore and orphan reap are distinct commands. Restore readiness failure re-quarantines the broker. Quarantine checks launchd loaded state and may return an error while the plist remains quarantined. The orphan-reap path refuses to guess when canonical identity is missing. Component tests do not constitute installed lifecycle or live service receipts.
+`serve` start, status, stop, quarantine, restore and orphan reap are distinct commands. Restore bootstrap failure attempts plist quarantine and disable; restore readiness failure attempts `gemmaServerQuarantine`. Both compensation calls discard errors, so this documentation cannot certify compensation succeeded. Ordinary start readiness failure simply returns its error. Quarantine checks launchd loaded state and may return an error while the plist remains quarantined. The orphan-reap path refuses to guess when canonical identity is missing. Component tests do not constitute installed lifecycle or live service receipts.
 
 <a id="pt-p56"></a>
 ## PT-P56 — Mercury producer schema and consumer read models
@@ -444,7 +456,13 @@ flowchart LR
   RELIEVE[Explicit relieve request] --> FIND[Select highest eligible CPU candidate]
   FIND -->|renice +10 and background QoS| PROC[Selected live process]
   PROC --> EXIT[Priority resets on process exit]
-  PROC -. no source command for restoring original priority .-> OP
+  UNDO[Explicit guard undo PID] --> PIDCHECK{PID greater than one?}
+  PIDCHECK -->|no| UNDOERR[Refuse invalid or protected system PID range]
+  PIDCHECK -->|yes| NICE0[Set nice to zero]
+  NICE0 -->|failure| UNDOERR
+  NICE0 -->|success| QOS[Clear Background QoS]
+  QOS --> UNDORESULT[Return success or QoS error, nice may already have changed]
+  UNDORESULT -. resets default settings, not arbitrary original priority .-> OP
   SWAP[Separate swap hygiene measurement and policy] --> SWAPOUT[Swap hygiene result]
   REAPER[Separate reaper selection and logic] --> REAPOUT[Reaper result]
   SIGNAL --> REPORT
@@ -452,7 +470,7 @@ flowchart LR
   REAPOUT --> REPORT
 ```
 
-The CLI also exposes `hapi protect <pid>` and `hapi release <pid>` registry mutations. `relieve` lowers one eligible process with renice and background QoS, and its source has no command that restores the process to its prior priority. The guard package notes priority returns when the process exits. Hapi registered-process signaling, user-triggered relieve, reaping and swap hygiene are distinct paths. No live action was run.
+The CLI also exposes `hapi protect <pid>` and `hapi release <pid>` registry mutations. `relieve` lowers one eligible process with renice and background QoS, and `sirsi guard undo <pid>` separately rejects PID≤1, sets nice to0, then clears Background QoS. A first error stops the sequence; a QoS error may follow an already-applied nice change. This resets defaults, not an arbitrary saved original priority. The guard package notes priority returns when the process exits. Hapi registered-process signaling, user-triggered relieve, reaping and swap hygiene are distinct paths. No live action was run.
 
 <a id="pt-p70"></a>
 ## PT-P70 — Isis diagnosis, network and supported repairs
@@ -635,7 +653,15 @@ flowchart TD
   ADR -->|claim| ALLOC[Transactionally allocate next ADR number]
   ALLOC --> DOC[Owner writes ADR document separately]
   DOC -->|adr publish path| PUB[Write published identifier and path to store]
-  REQ -->|list or audit| READ[Read registry and evidence state]
+  REQ -->|list| READ[Read registry and evidence state]
+  REQ -->|audit with required evidence| AUDIT[Upsert lane canon-audit marker and evidence reference]
+  AUDIT --> AUDITOUT[Distinguish audited-empty lane from never-audited lane]
+  WS -->|list or inventory| WSREAD[Read selected workstream inventory]
+  OP -->|net status or align| NEITH[Resolve repository root and assess plan or cross-module alignment]
+  NEITH --> ALIGNOUT[Return alignment findings or command failure]
+  WSREAD --> OUT
+  AUDITOUT --> OUT
+  ALIGNOUT --> OUT
   STORE --> OUT[Return command outcome]
   LAUNCH --> OUT
   REQWRITE --> OUT
@@ -661,12 +687,17 @@ flowchart LR
   ADRSTORE --> DOC[Owner authors ADR file]
   DOC --> ADRPUB[adr publish path mutation]
   ADRPUB --> ADRSTORE
-  REQSTORE --> READ[Requirement list and audit readback]
+  REQSTORE --> READ[Requirement list readback]
+  AUDITCMD[req audit with required evidence reference] -->|MarkRequirementAudit upsert| AUDITSTORE[(Lane audit marker and evidence)]
+  AUDITSTORE --> ELIGIBILITY[Runnable enumeration knows audited-empty versus never-audited]
+  PRD[Selected repository PRD, plan and build facts] --> NEITH[net status or align assessment]
+  NEITH --> ALIGN[Alignment result or error]
+  WS --> WSLIST[workstream list or inventory readback]
   ADRSTORE --> READ
   WS --> READ
 ```
 
-`req add`, `req evidence`, `req satisfy` and `req waive` mutate the router requirement store. Satisfy requires the evidence references and waiver requires a reason plus terminal owner decision. `adr claim` allocates a number transactionally, authoring the file is separate, and `adr publish` records the path. These are distinct from workstream CRUD and Neith assessment. A failed mutation must be resolved by reading the store and repository state, not by assuming rollback.
+`req add`, `req evidence`, `req satisfy` and `req waive` mutate the router requirement store. Satisfy requires the evidence references and waiver requires a reason plus terminal owner decision. `adr claim` allocates a number transactionally, authoring the file is separate, and `adr publish` records the path. `req audit` also mutates a lane audit marker/evidence via `MarkRequirementAudit`; it is not a list/read-only command. Workstream list/inventory and Neith status/alignment are separately mapped reads/assessments. These are distinct from workstream CRUD. A failed mutation must be resolved by reading the store and repository state, not by assuming rollback.
 
 <a id="pt-p74"></a>
 ## PT-P74 — Osiris risk assessment and checkpoint
@@ -735,7 +766,7 @@ flowchart TD
   OBS -->|--format html| HTML[Write .pantheon/infra-map.html]
   CMD -->|diagram| DIAG[Generate selected Mermaid diagrams]
   DIAG -->|--html| DHTML[Write .pantheon/diagrams.html and docs/seba.html]
-  CMD -->|book| BOOK[Enumerate projects and write registry]
+  CMD -->|book| BOOK[Enumerate repositories and print table or dashboard]
   CMD -->|hardware| HW[Observe hardware descriptors]
   CMD -->|profile| PROF[Collect profile and write JSON report]
   CMD -->|compute --tokenize text| TOKEN[Call guard.Tokenize on supplied text]
@@ -766,8 +797,8 @@ flowchart LR
   OBS --> GRAPH[Typed graph or report]
   GRAPH -->|html option| FILE1[(.pantheon/infra-map.html)]
   DIAG[Mermaid diagram generator] -->|html option| FILE2[(.pantheon/diagrams.html and docs/seba.html)]
-  CWD[Current directory project entries] --> BOOK[Project registry generator]
-  BOOK --> FILE3[(Selected registry output)]
+  CWD[Current directory project entries] --> BOOK[Inspect one-level repository entries and last commits]
+  BOOK --> BOOKOUT[Printed table or dashboard, no registry-file persistence]
   PROFILE[Host profile collector] --> FILE4[(JSON profile report)]
   TEXT[Explicit tokenization text] --> COMPUTE[guard.Tokenize]
   COMPUTE --> RESULT[Token count, accelerator label and elapsed time]
@@ -798,6 +829,13 @@ flowchart TD
   CMD -->|status| STATUS[Read persisted mode]
   CMD -->|run| APPROVED[Run one approved-fix pass regardless of switch]
   APPROVED --> PASSREPORT[Report outcomes, leave persisted switch unchanged]
+  BRAIN[Operator runs brain role command] --> ROLE{status, route, test or use}
+  ROLE -->|status or route| ROLEOBS[Inspect configured roles and route]
+  ROLE -->|dry-run test| ROLETEST[Return selected route test without role mutation]
+  ROLE -->|use| ROLEWRITE[Persist selected provider-role configuration]
+  ROLEOBS --> OUT
+  ROLETEST --> OUT
+  ROLEWRITE --> OUT
   OP2[Operator or launchd invokes conduit tick] --> TICK[Read queue and current mode]
   TICK -->|mode ON| EXEC[Plan and dispatch actionable items]
   TICK -->|mode OFF| HOLD[Hold items as proposals]
@@ -820,6 +858,9 @@ flowchart TD
 
 ```mermaid
 flowchart LR
+  ROLECMD[brain status, route or dry-run test] --> ROLECONF[(Provider and role configuration)]
+  ROLECONF --> ROLEVIEW[Role inspection and routing result]
+  ROLEUSE[brain use explicit role selection] -->|configuration write| ROLECONF
   MODE[(~/.sirsi/brain.yaml autonomous switch)] --> ON[autonomous on persists ON]
   ON --> IMMEDIATE[Immediately invokes one autoheal pass]
   OFF[autonomous off persists OFF] --> MODE
@@ -852,8 +893,8 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  CALL[Desktop sleep custody request] --> ADMIT[Validate exact local request and record finite session]
-  ADMIT --> PRE[Record bounded pre-sleep facts]
+  CALL[Desktop sleep custody request] --> SLEEP_ADMIT[Validate exact local request and record finite session]
+  SLEEP_ADMIT --> PRE[Record bounded pre-sleep facts]
   PRE --> SLEEP[Request sleep]
   SLEEP --> WAKE[Observe return event and gather selected facts]
   WAKE --> CLOSE[Close custody session and report outcome]
@@ -863,14 +904,14 @@ flowchart TD
   CAP -->|no| REFUSE[Refuse session]
   CAP -->|yes| REPLAY{Capability already consumed or expired?}
   REPLAY -->|yes| REFUSE
-  REPLAY -->|no| ADMIT[Consume capability and create separate session admission]
-  ADMIT --> SESSION[Create node-bound expiring browser session]
+  REPLAY -->|no| RECOVERY_ADMIT[Consume capability and create separate session admission]
+  RECOVERY_ADMIT --> SESSION[Create node-bound expiring browser session]
   SESSION --> COOKIE[Set session cookie for browser websocket]
   COOKIE --> RFB[RFB proxy to selected node address]
   RFB -->|browser to node bytes| NODE[Remote framebuffer service]
   NODE -->|node to browser bytes| RFB
   RFB -->|disconnect or expiry| END[Close active session and remove session entry]
-  ADMIT --> SAVE[Persist capability consumption and expiry]
+  RECOVERY_ADMIT --> SAVE[Persist capability consumption and expiry]
 ```
 
 **Data and trust view**
@@ -1005,14 +1046,25 @@ flowchart TD
   ACTIVATE --> EXIT[Terminate new process]
   PEER -->|none| EXIT
   LEASE -->|acquired| ENUM[Enumerate matching app and legacy executable peers]
-  ENUM --> AGE[Retire older peers and legacy Go peer]
+  ENUM --> AGE[Request retirement of older and legacy peers]
+  ENUM --> START[Create app window and menu bar without waiting for retirement]
   AGE --> TERM[Request polite terminate]
-  TERM --> WAIT[Wait up to three seconds]
+  TERM --> ASYNC[Enqueue global asynchronous retirement task]
+  ASYNC --> WAIT[Wait up to three seconds in background task]
   WAIT -->|still running| FORCE[Force terminate peer]
-  WAIT -->|terminated| START[Build app window and menu bar item]
-  FORCE --> START
-  OP2[Operator runs setup or lifecycle command] --> SETUP[Run selected setup or installer path]
-  SETUP --> DONE[Return command outcome]
+  WAIT -->|terminated| RETIRED[Background task ends]
+  FORCE --> RETIRED
+  OP2[Operator runs setup] --> SMODE{JSON inspection or setup application?}
+  SMODE -->|setup --json| INSPECT[Report surfaces, dependencies and permissions without actions]
+  SMODE -->|application path| SELECT[Choose explicit surfaces or wizard selections]
+  SELECT --> APPLY[Run selected installers and dependency steps]
+  APPLY --> FDA[Offer or open permission guidance, user owns actual grants]
+  FDA --> SETUPRESULT[Retain selected setup results and failures]
+  LIFE[Selected install, update, refresh or removal command] --> LIFEAUTH[Existing typed updater and selected lifecycle authority]
+  LIFEAUTH --> LIFEOUT[Installed/readback result or retained recovery, not blanket setup authority]
+  INSPECT --> DONE[Return command outcome]
+  SETUPRESULT --> DONE
+  LIFEOUT --> DONE
   START --> DONE
 ```
 
@@ -1024,22 +1076,33 @@ flowchart LR
   LOCK -->|acquired| ENUM[Enumerate bundle ID and executable name peers]
   ENUM -->|older or legacy peer| TERM[Request peer terminate]
   TERM -->|after three seconds still live| FORCE[Force terminate peer]
-  ENUM -->|no retired peer remains| ACTIVE[Activate normal app window and menu bar surface]
+  ENUM -->|caller proceeds after scheduling retirement| ACTIVE[Create normal app window and menu bar surface concurrently]
   LOCK -->|unavailable or contended| PEER[Activate first matching peer when present]
   PEER --> EXIT[Terminate new process]
   LOCKFILE[(Open descriptor-held lock)] --> LIFETIME[Lock lives through app lifetime]
   LIFETIME -->|normal exit or crash| RELEASE[OS releases descriptor lock]
-  SETUP[Separate setup and install commands] --> RESULT[Selected installer outcome]
+  SREAD[setup --json observation] --> REPORT[Surface, dependency and permission status]
+  SELECT[Explicit surfaces or wizard choices] --> SETUP[Selected setup installers]
+  SETUP --> CONFIG[(Selected app, integration and launch definitions)]
+  DEP[Dependency checks or installs] --> SETUP
+  USER[User grants OS permission separately] --> PERM[Permission readiness, not fabricated consent]
+  LIFEACTION[Separate managed install, update, refresh or removal] --> ATTEMPT[(Existing typed lifecycle attempt and readback)]
+  REPORT --> RESULT[Observed report or selected installer outcome]
+  CONFIG --> RESULT
+  ATTEMPT --> RESULT
   ACTIVE --> RESULT
   EXIT --> RESULT
 ```
 
-The native app source implements a per-user descriptor-held flock. A process that cannot acquire it activates a matching peer if present and exits. A lease holder enumerates matching bundle or executable peers, asks older or legacy peers to terminate, then force-terminates after three seconds if needed before building the surface. This is source-described lifecycle control. Installed-app behavior and qualification receipts are separate and remain unknown here.
+The native app source implements a per-user descriptor-held flock. A process that cannot acquire it activates a matching peer if present and exits. A lease holder enumerates matching bundle or executable peers, asks older or legacy peers to terminate, schedules the background three-second wait and possible force termination, and continues building the surface without joining that task. This is source-described lifecycle control. Installed-app behavior and qualification receipts are separate and remain unknown here.
+
+
+Peer retirement is asynchronous after each polite terminate request. The app does not join that background three-second wait before creating its UI, so source single-instance intent is not proof of confirmed peer absence at first render. Setup inspection, selected surface application, dependency handling, OS permission grants and managed install/update/removal have separate effects and observations.
 
 <a id="pt-p81"></a>
 ## PT-P81 — Activity, Stele and native consent classification
 
-**Owner:** Oplog owns destructive operation history. Notifications own persistent surfaced outcomes. Stele owns its separate append-only hash chain and reader offset. Ma’at owns confirmed owner-resolution records. Native classification owns its local consent and capture flow.
+**Owner:** Oplog owns destructive operation history. Notifications own persistent surfaced outcomes. Stele owns its separate append-only hash chain and reader offset. Ma’at owns confirmed owner-resolution records. Native Activity owns the retained entry and confirmation UI for Ma’at review.
 
 **Logical view**
 
@@ -1054,13 +1117,13 @@ flowchart TD
   DB --> READ
   OP -->|activity command| OREAD[Read typed operation log records]
   OP -->|Stele command| SREAD[Read separate append-only chain]
-  CONTENT[Selected native content] --> CLASS[Native classification flow]
-  CLASS --> CONSENT{Consent recorded for this exact capture?}
-  CONSENT -->|no| ASK[Ask user for this capture]
-  ASK -->|declined| DECLINE[Retain declined outcome and stop]
-  ASK -->|approved| CAPTURE[Capture this selection once]
-  CONSENT -->|yes| CAPTURE
-  CAPTURE --> CLASSIFIED[Classification result]
+  ACTIVITY[Retained native ActivityEntry command and outcome] --> REVIEWBUTTON[User selects Ma’at review]
+  REVIEWBUTTON --> CONSENT{Confirm Record Ma’at review?}
+  CONSENT -->|cancel| DECLINE[Keep retained activity without submitting]
+  CONSENT -->|confirm| ARGUMENTS[activityMaatReviewArgs for this exact entry]
+  ARGUMENTS --> COMMANDRUN[Canonical maat record-resolution with confirm and retained command/outcome]
+  COMMANDRUN -->|result| CLASSIFIED[Display Ma’at classification and next safe action]
+  COMMANDRUN -->|no result| RETRY[Keep activity open with retry error]
   OP -->|selected guidance finding| REVIEW[Review exact retained observation]
   REVIEW -->|sirsi maat record-resolution --confirm| CASEBOOK[Write owner-resolution evidence to Ma’at journal]
   CASEBOOK --> INSPECT[Inspect Ma’at Casebook]
@@ -1087,9 +1150,10 @@ flowchart LR
   CLEAR[notifications clear] -->|delete all notification rows| DB
   OPLOG[(operations.log typed operation records)] --> ACTCMD[activity command]
   STELE[(Separate append-only hash chain)] --> STELEVIEW[Stele reader]
-  NATIVE[Selected native content] --> CONSENT[Exact capture consent]
-  CONSENT -->|approved for this capture| CAPTURE[Capture selected content once]
-  CAPTURE --> NATIVEVIEW[Native classification outcome and activity presentation]
+  NATIVE[Retained ActivityEntry command, title and outcome] --> CONSENT[Explicit review confirmation]
+  CONSENT -->|confirmed| ARGS[activityMaatReviewArgs builds exact command and outcome evidence]
+  ARGS --> JOURNAL[Canonical Ma’at record-resolution with confirm]
+  JOURNAL --> NATIVEVIEW[Ma’at result or retryable review error]
   HEALTH[Selected diagnostic finding in Health screen] -->|second confirmation invokes maat record-resolution --confirm| MAAT[Ma’at owner-resolution journal path]
   MAAT -->|inspect then separately accept with evidence and confirmation| ACCEPT[Owner acceptance record]
   FIX[Selected remediation] --> POST[System postcheck result]
@@ -1106,7 +1170,7 @@ flowchart LR
   REVIEW[Ma’at evidence review] -. not the same operation as system remediation postcheck .-> VIEW
 ```
 
-`sirsi notifications` reads recent, filtered or full notification history and `notifications clear` deletes the stored rows. Notification history is separate from the typed operation log and Stele chain. The TUI Activity screen reads the operation log and Ma’at Casebook separately. In Health, a selected guidance finding requires a second confirmation before `sirsi maat record-resolution --confirm` records the exact diagnostic owner-review decision. Casebook inspection and owner acceptance are subsequent distinct steps. Neither review nor acceptance repairs the system. A system fix and its postcheck are another path. Native installed-capture and actual confirmation receipts remain separate evidence.
+`sirsi notifications` reads recent, filtered or full notification history and `notifications clear` deletes the stored rows. Notification history is separate from the typed operation log and Stele chain. The TUI Activity screen reads the operation log and Ma’at Casebook separately. In Health, a selected guidance finding requires a second confirmation before `sirsi maat record-resolution --confirm` records the exact diagnostic owner-review decision. Casebook inspection and owner acceptance are subsequent distinct steps. Neither review nor acceptance repairs the system. A system fix and its postcheck are another path. Native Activity review retains the existing command/outcome, asks confirmation, constructs `activityMaatReviewArgs(for: entry)` and calls the canonical Ma’at command. A nil result leaves the same activity open with a retry error. This records/classifies evidence and does not replay the retained command or repair the system. Installed confirmation/result receipts remain separate evidence.
 
 <a id="pt-p82"></a>
 ## PT-P82 — Web, TUI, MCP and runner surface protocols
