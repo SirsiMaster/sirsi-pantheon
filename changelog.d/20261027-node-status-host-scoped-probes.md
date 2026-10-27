@@ -1,0 +1,1 @@
+Node status now probes process and loop liveness only when both stable machine IDs are present and equal; foreign or unidentified thread projections report unknown local-process scope without treating remote loop monitors as dead. Refs: `internal/router/nodestatus.go`; `internal/router/nodestatus_hostscope_test.go`.

@@ -101,6 +101,9 @@ type NodeStatus struct {
 type ThreadSummary struct {
 	ThreadID      string       `json:"thread_id"`
 	AgentID       string       `json:"agent_id"`
+	Host          string       `json:"host"`
+	MachineID     string       `json:"machine_id"`
+	OSScope       string       `json:"os_scope"` // local | remote | unknown; stable machine IDs only
 	Surface       string       `json:"surface"`
 	Status        ThreadStatus `json:"status"`
 	Watches       []string     `json:"watches,omitempty"`
@@ -113,7 +116,7 @@ type ThreadSummary struct {
 	IdleSeconds   float64      `json:"idle_seconds"`
 	Stale         bool         `json:"stale,omitempty"`
 	PID           int          `json:"pid,omitempty"`
-	OSState       PIDState     `json:"os_state,omitempty"` // OS-truth liveness of PID
+	OSState       PIDState     `json:"os_state,omitempty"` // Local OS-truth liveness; unknown outside local scope.
 	// Honest liveness (owner priority 2026-06-19, codex-validated). watcher_type is
 	// the thread's canonical watcher (WatcherFor().Type). loop_state is the
 	// surface-native loop-evidence verdict: "alive"/"dead" for loop-bearing surfaces
@@ -127,6 +130,22 @@ type ThreadSummary struct {
 	LoopState   string `json:"loop_state,omitempty"` // alive | dead | na | unknown
 	Armed       bool   `json:"armed"`
 	ArmedReason string `json:"armed_reason,omitempty"`
+}
+
+const (
+	threadOSScopeLocal   = "local"
+	threadOSScopeRemote  = "remote"
+	threadOSScopeUnknown = "unknown"
+)
+
+func threadOSScope(recordMachineID, localMachineID string) string {
+	if recordMachineID == "" || localMachineID == "" {
+		return threadOSScopeUnknown
+	}
+	if recordMachineID == localMachineID {
+		return threadOSScopeLocal
+	}
+	return threadOSScopeRemote
 }
 
 // AgentHealthCheck reports whether a local agent CLI is available and authenticated.
@@ -490,9 +509,17 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 			if thr.Status == ThreadStatusSuspended {
 				continue
 			}
+			osScope := threadOSScope(thr.MachineID, machineID)
+			osState := PIDUnknown
+			if osScope == threadOSScopeLocal {
+				osState = PIDStateOf(thr.PID, thr.StartTime)
+			}
 			sum := ThreadSummary{
 				ThreadID:      thr.ThreadID,
 				AgentID:       thr.AgentID,
+				Host:          thr.Host,
+				MachineID:     thr.MachineID,
+				OSScope:       osScope,
 				Surface:       thr.Surface,
 				Status:        thr.Status,
 				Watches:       append([]string(nil), thr.Watches...),
@@ -505,9 +532,9 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 				IdleSeconds:   now.Sub(thr.LastSeenAt).Seconds(),
 				Stale:         thr.IsStale(now, DefaultThreadStaleAfter),
 				PID:           thr.PID,
-				OSState:       PIDStateOf(thr.PID, thr.StartTime),
+				OSState:       osState,
 			}
-			osDead := SameMachine(thr.MachineID, machineID) && (sum.OSState == PIDGone || sum.OSState == PIDDefunct || sum.OSState == PIDRecycled || sum.OSState == PIDMismatched)
+			osDead := sum.OSScope == threadOSScopeLocal && (sum.OSState == PIDGone || sum.OSState == PIDDefunct || sum.OSState == PIDRecycled || sum.OSState == PIDMismatched)
 			// Honest liveness, classified by watcher_type (codex-home SME verdict on #79):
 			//  - loop-monitor (Claude) ONLY requires pgrep `thr-<id>` loop evidence —
 			//    its /loop is thr-id-keyed AND its heartbeat is harness-gated, so it can
@@ -520,6 +547,10 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 			//    pull-loop: loop_state "na"; heartbeat freshness is the armed proof.
 			sum.WatcherType = WatcherFor(thr.Surface, thr.AgentID, thr.ThreadID).Type
 			switch {
+			case requiresThreadIDLoop(sum.WatcherType) && sum.OSScope != threadOSScopeLocal:
+				// A local process table cannot prove or disprove a foreign/unknown
+				// loop. Keep heartbeat age as recorded, but never infer loop death.
+				sum.LoopState, sum.Armed, sum.ArmedReason = "unknown", false, "process-scope-"+sum.OSScope
 			case osDead:
 				sum.Stale, sum.LoopState, sum.Armed, sum.ArmedReason = true, "dead", false, "os-"+string(sum.OSState)
 			case requiresThreadIDLoop(sum.WatcherType):
