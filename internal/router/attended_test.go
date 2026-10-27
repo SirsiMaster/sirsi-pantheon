@@ -73,20 +73,28 @@ func TestAttendedSessionLive_LiveClaudeSessionCounts(t *testing.T) {
 	}
 }
 
-// THE case that produced tonight's stall, and the reason this reuses
-// threadArmedForNewest instead of heartbeat freshness.
-//
-// A claude session record can be fresh while its /loop watcher process is dead:
-// the session is registered, heartbeating through the harness, and consuming
-// nothing. Heartbeat-based liveness calls that attended and the worker goes on
-// deferring to a session that will never claim the item. Loop evidence calls it
-// what it is, so the worker collapses its wait and picks the item up.
-func TestAttendedSessionLive_ClaudeSessionWithDeadLoopIsNotAttending(t *testing.T) {
+// ADR-079 D1 reverses the earlier loop-evidence rule. ADR-065 retired the watch
+// loop, so a fresh claude session with no loop process is the normal attended
+// state, not a stall. Requiring the loop made every Claude lane read as
+// unattended, and a headless worker answered beside the live session (Ra,
+// 2026-10-26). Owner: the interactive session is the lane; a quiet lane is
+// surfaced as needs-owner, never raced by a second consumer.
+func TestAttendedSessionLive_FreshClaudeSessionWithoutLoopCounts(t *testing.T) {
 	stubWatcher(t, false)
-	root := writeThreads(t, attendedThread("claude-home", surfaceClaude, 10*time.Second))
+	root := writeThreads(t, attendedThread("ra", surfaceClaude, 10*time.Second))
 
-	if AttendedSessionLive(root, "claude-home") {
-		t.Error("a claude session whose /loop is dead counted as attending — this is exactly the stall: the worker defers to a session that consumes nothing")
+	if !AttendedSessionLive(root, "ra") {
+		t.Error("a heartbeat-fresh claude session read as unattended because no watch loop exists — the headless worker would answer beside it")
+	}
+}
+
+// The heartbeat is now the whole proof for claude too, so staleness must end it.
+func TestAttendedSessionLive_StaleClaudeSessionDoesNotCount(t *testing.T) {
+	stubWatcher(t, true)
+	root := writeThreads(t, attendedThread("ra", surfaceClaude, 2*time.Hour))
+
+	if AttendedSessionLive(root, "ra") {
+		t.Error("a stale claude record counted as attended — dispatch would be suppressed for a session that is gone")
 	}
 }
 
@@ -101,12 +109,6 @@ func TestAttendedSessionLive_CodexSessionCounts(t *testing.T) {
 // A stale attended session is not attending: the session exited, its record
 // lingered, and the worker would go on deferring to a thread that is never
 // coming back.
-//
-// Asserted on codex, not claude, on purpose. The two attended surfaces prove
-// liveness differently — claude by loop evidence (covered above), codex by
-// heartbeat freshness. threadArmedForNewest short-circuits on loop evidence for
-// claude and never consults staleness at all, so a stale CLAUDE thread would
-// pass this for an unrelated reason and assert nothing about the heartbeat path.
 func TestAttendedSessionLive_StaleSessionDoesNotCount(t *testing.T) {
 	root := writeThreads(t, attendedThread("codex-pantheon", surfaceCodex, 2*time.Hour))
 
