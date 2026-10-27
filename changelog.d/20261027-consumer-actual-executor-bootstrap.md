@@ -1,0 +1,1 @@
+- Clarify the nonresident CompassPoint consumer's already-authorized queue assignment and dispatcher identity, and point Ma'at's existing refusal diagnostic to `--register-executor` plus standalone coordination calls. No admission, ancestry, permission, answering-role or backoff policy is relaxed. Refs: `docs/runbooks/CONSUMER_BOOTSTRAP_ACTUAL_EXECUTOR.md`.
