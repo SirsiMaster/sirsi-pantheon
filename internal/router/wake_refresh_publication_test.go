@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,13 +14,14 @@ import (
 )
 
 type refreshPublicationNotice struct {
-	agentID       string
-	root          string
-	watchOnly     chan struct{}
-	heartbeat     chan struct{}
-	barrierErr    chan error
-	watchOnce     sync.Once
-	heartbeatOnce sync.Once
+	agentID        string
+	root           string
+	watchOnly      chan struct{}
+	heartbeat      chan struct{}
+	barrierErr     chan error
+	watchOnce      sync.Once
+	heartbeatCount atomic.Int32
+	retried        chan struct{}
 }
 
 func (n *refreshPublicationNotice) Write(p []byte) (int, error) {
@@ -33,7 +35,12 @@ func (n *refreshPublicationNotice) Write(p []byte) (int, error) {
 	}
 	if strings.Contains(line, "wake-loop "+n.agentID+": heartbeat FAILED; new dispatch held") &&
 		strings.Contains(strings.ToLower(line), "permission denied") {
-		n.heartbeatOnce.Do(func() { close(n.heartbeat) })
+		switch n.heartbeatCount.Add(1) {
+		case 1:
+			close(n.heartbeat)
+		case 2:
+			close(n.retried)
+		}
 	}
 	return len(p), nil
 }
@@ -64,7 +71,7 @@ func TestWakeLoopRefreshPublicationFailureHoldsObserver(t *testing.T) {
 	notice := &refreshPublicationNotice{
 		agentID: agentID, root: root,
 		watchOnly: make(chan struct{}),
-		heartbeat: make(chan struct{}), barrierErr: make(chan error, 1),
+		heartbeat: make(chan struct{}), retried: make(chan struct{}), barrierErr: make(chan error, 1),
 	}
 	previousOutput := log.Writer()
 	log.SetOutput(notice)
@@ -108,8 +115,19 @@ func TestWakeLoopRefreshPublicationFailureHoldsObserver(t *testing.T) {
 		t.Fatal("canonical heartbeat failure with permission denied was not observed")
 	}
 	select {
+	case <-notice.retried:
 	case err := <-done:
-		t.Fatalf("observer exited after transient publication failure: %v", err)
-	default:
+		t.Fatalf("observer exited instead of retrying after publication failure: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("observer did not retry under the publication write barrier")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("observer cancellation after publication retry: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("observer did not finish after cancellation")
 	}
 }
