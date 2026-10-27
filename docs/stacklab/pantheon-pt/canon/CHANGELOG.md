@@ -2,6 +2,8 @@
 
 ## 2026-10-26 — v0.24.139 release candidate
 
+- Recognize the separately inspected 0.24.121 source revision in the existing protected legacy maintenance preview profile and bind the selected revision into the plan digest. This records source-profile support only; it does not perform a rollover or claim the legacy worker is drained or cancel-joined.
+
 - Declare the existing attended RPA Codex session as the metadata-only `codex-sirsinexusapp` lane; no worker, launch agent, or answer capability is configured. Refs: session `01a179d5-340d-7e72-962d-8b828ad7960e`; thread `thr-a74850a2ddb72c1e`.
 - Node status now probes process and loop liveness only when both stable machine IDs are present and equal. Foreign or unidentified loop-monitor lanes with pending work are shown as unverified from this node, not falsely armed or dead-stranded. Refs: `internal/router/nodestatus.go`; `internal/router/nodestatus_hostscope_test.go`.
 - Maat's create-only write helper now treats an explicit close attempt as consumed even when close reports an error, so deferred cleanup cannot close a potentially reused descriptor a second time. Refs: `internal/maat/memory.go`; `internal/maat/memory_create_or_verify_raw_test.go`.
