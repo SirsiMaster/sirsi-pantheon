@@ -473,6 +473,339 @@ final class MaatOperationStateTests: XCTestCase {
         try await assertOptionalGoProducedHistoryFixture()
     }
 
+    @MainActor
+    func testHistoryRefreshAutomaticallyContinuesBothScopesAndStopsAtCompleteOlderCursor() async throws {
+        for scope in ["all", "system-one"] {
+            let responses = ControlledHistoryResponses()
+            let store = MaatHistoryRefreshStore(maximumBurstReads: 8)
+            let task = Task {
+                await store.load(scope: scope, query: "needle") { await responses.read($0) }
+            }
+            await responses.waitForCount(1)
+            await responses.finish(0, with: try historyRead(scope: scope, queryID: "query:stable",
+                snapshot: "snapshot:stable", coverage: "partial", cursor: "scan:one",
+                countScope: "scanned-so-far"))
+            await responses.waitForCount(2)
+            XCTAssertTrue(store.state.loading, "The burst remains busy between subprocess reads")
+            XCTAssertEqual(store.state.projection?.history?.nextCursor, "scan:one")
+            await responses.finish(1, with: try historyRead(scope: scope, queryID: "query:stable",
+                snapshot: "snapshot:stable", coverage: "partial", cursor: "scan:two",
+                countScope: "after-cursor-scanned-so-far"))
+            await responses.waitForCount(3)
+            XCTAssertTrue(store.state.loading)
+            await responses.finish(2, with: try historyRead(scope: scope, queryID: "query:stable",
+                snapshot: "snapshot:stable", coverage: "complete", cursor: "older:page",
+                countScope: "query", hasMore: true))
+            await task.value
+
+            XCTAssertFalse(store.state.loading)
+            XCTAssertNil(store.state.error)
+            XCTAssertEqual(store.state.projection?.history?.coverage, "complete")
+            XCTAssertEqual(store.state.projection?.history?.nextCursor, "older:page")
+            let arguments = await responses.arguments()
+            XCTAssertEqual(arguments, [
+                maatCasebookHistoryArguments(scope: scope, query: "needle"),
+                maatCasebookHistoryArguments(scope: scope, query: "needle", cursor: "scan:one"),
+                maatCasebookHistoryArguments(scope: scope, query: "needle", cursor: "scan:two"),
+            ])
+            let callCount = await responses.callCount()
+            XCTAssertEqual(callCount, 3, "A complete page's older cursor is user driven")
+        }
+    }
+
+    @MainActor
+    func testHistoryRefreshExplicitOlderPageMayAutoContinueItsPartialScan() async throws {
+        let older = try historyRead(scope: "all", queryID: "query:older", snapshot: "snapshot:stable",
+            coverage: "complete", cursor: "older:one", countScope: "query", hasMore: true)
+        let store = MaatHistoryRefreshStore(projection: MaatCasebookView.decode(older))
+        let responses = ControlledHistoryResponses()
+        let task = Task {
+            await store.load(scope: "all", cursor: "older:one") { await responses.read($0) }
+        }
+        await responses.waitForCount(1)
+        await responses.finish(0, with: try historyRead(scope: "all", queryID: "query:older",
+            snapshot: "snapshot:stable", coverage: "partial", cursor: "older:scan",
+            countScope: "after-cursor-scanned-so-far"))
+        await responses.waitForCount(2)
+        await responses.finish(1, with: try historyRead(scope: "all", queryID: "query:older",
+            snapshot: "snapshot:stable", coverage: "complete", cursor: "older:two",
+            countScope: "after-cursor", hasMore: true))
+        await task.value
+
+        XCTAssertEqual(store.state.projection?.history?.coverage, "complete")
+        XCTAssertEqual(store.state.projection?.history?.nextCursor, "older:two")
+        let arguments = await responses.arguments()
+        XCTAssertEqual(arguments, [
+            maatCasebookHistoryArguments(scope: "all", cursor: "older:one"),
+            maatCasebookHistoryArguments(scope: "all", cursor: "older:scan"),
+        ])
+    }
+
+    @MainActor
+    func testHistoryRefreshCallAndClockBudgetsPauseWithAcceptedCursorForExplicitContinue() async throws {
+        do {
+            let responses = ControlledHistoryResponses()
+            let store = MaatHistoryRefreshStore(maximumBurstReads: 1)
+            let first = Task { await store.load(scope: "all") { await responses.read($0) } }
+            await responses.waitForCount(1)
+            await responses.finish(0, with: try historyRead(scope: "all", queryID: "query:budget",
+                snapshot: "snapshot:budget", coverage: "partial", cursor: "cursor:accepted",
+                countScope: "scanned-so-far"))
+            await first.value
+            XCTAssertFalse(store.state.loading)
+            XCTAssertTrue(store.state.continuationPaused)
+            XCTAssertEqual(store.state.projection?.history?.nextCursor, "cursor:accepted")
+
+            let continued = Task {
+                await store.load(scope: "all", cursor: "cursor:accepted") { await responses.read($0) }
+            }
+            await responses.waitForCount(2)
+            await responses.finish(1, with: try historyRead(scope: "all", queryID: "query:budget",
+                snapshot: "snapshot:budget", coverage: "complete", cursor: nil,
+                countScope: "query"))
+            await continued.value
+            XCTAssertNil(store.state.error)
+            XCTAssertFalse(store.state.continuationPaused)
+            let callCount = await responses.callCount()
+            XCTAssertEqual(callCount, 2)
+        }
+
+        do {
+            let responses = ControlledHistoryResponses()
+            let clock = TestHistoryMonotonicClock([0, 0, 0, 8])
+            let store = MaatHistoryRefreshStore(monotonicNow: { clock.now() })
+            let task = Task { await store.load(scope: "system-one") { await responses.read($0) } }
+            await responses.waitForCount(1)
+            await responses.finish(0, with: try historyRead(scope: "system-one", queryID: "query:clock",
+                snapshot: "snapshot:clock", coverage: "partial", cursor: "cursor:clock",
+                countScope: "scanned-so-far"))
+            await task.value
+            let callCount = await responses.callCount()
+            XCTAssertEqual(callCount, 1, "The monotonic deadline prevents another dispatch")
+            XCTAssertTrue(store.state.continuationPaused)
+            XCTAssertNil(store.state.failure)
+            XCTAssertEqual(store.state.projection?.history?.nextCursor, "cursor:clock")
+        }
+    }
+
+    @MainActor
+    func testHistoryRefreshDeadlineAndUserCancelKeepCursorAndDoNotDispatchAgain() async throws {
+        do {
+            let responses = ControlledHistoryResponses()
+            let deadline = ControlledHistoryDeadline()
+            let store = MaatHistoryRefreshStore(deadlineSleep: { _ in await deadline.sleep() },
+                deadlineHandled: { await deadline.markHandled() })
+            let task = Task { await store.load(scope: "all") { await responses.read($0) } }
+            await deadline.waitForCount(1)
+            await responses.waitForCount(1)
+            await responses.finish(0, with: try historyRead(scope: "all", queryID: "query:deadline",
+                snapshot: "snapshot:deadline", coverage: "partial", cursor: "cursor:kept",
+                countScope: "scanned-so-far"))
+            await responses.waitForCount(2)
+            await deadline.releaseAll()
+            await deadline.waitForHandled(1)
+            XCTAssertFalse(store.state.loading)
+            XCTAssertTrue(store.state.continuationPaused)
+            XCTAssertNil(store.state.failure)
+            XCTAssertEqual(store.state.projection?.history?.nextCursor, "cursor:kept")
+            await responses.finish(1, with: try historyRead(scope: "all", queryID: "query:deadline",
+                snapshot: "snapshot:deadline", coverage: "partial", cursor: "cursor:late",
+                countScope: "after-cursor-scanned-so-far"))
+            await task.value
+            let callCount = await responses.callCount()
+            XCTAssertEqual(callCount, 2)
+            XCTAssertEqual(store.state.projection?.history?.nextCursor, "cursor:kept")
+            await deadline.releaseAll()
+        }
+
+        do {
+            let responses = ControlledHistoryResponses()
+            let store = MaatHistoryRefreshStore()
+            let task = Task { await store.load(scope: "system-one") { await responses.read($0) } }
+            await responses.waitForCount(1)
+            await responses.finish(0, with: try historyRead(scope: "system-one", queryID: "query:cancel",
+                snapshot: "snapshot:cancel", coverage: "partial", cursor: "cursor:kept",
+                countScope: "scanned-so-far"))
+            await responses.waitForCount(2)
+            store.cancel()
+            XCTAssertFalse(store.state.loading)
+            XCTAssertTrue(store.state.continuationPaused)
+            XCTAssertNil(store.state.error)
+            await responses.finish(1, with: try historyRead(scope: "system-one", queryID: "query:cancel",
+                snapshot: "snapshot:cancel", coverage: "partial", cursor: "cursor:late",
+                countScope: "after-cursor-scanned-so-far"))
+            await task.value
+            let callCount = await responses.callCount()
+            XCTAssertEqual(callCount, 2)
+            XCTAssertEqual(store.state.projection?.history?.nextCursor, "cursor:kept")
+        }
+    }
+
+    @MainActor
+    func testSupersedingHistoryQueryRejectsOldSuccessFailureCancellationAndDeadline() async throws {
+        let staleResults = [
+            SirsiEngine.JSONCommandRead(data: try historyRead(scope: "all", queryID: "query:old",
+                snapshot: "snapshot:old", coverage: "complete", cursor: nil, countScope: "query").data,
+                exitStatus: 0, timedOut: false, launchError: nil),
+            SirsiEngine.JSONCommandRead(data: Data(), exitStatus: 9, timedOut: false, launchError: nil),
+            SirsiEngine.JSONCommandRead(data: Data(), exitStatus: nil, timedOut: false, launchError: "cancelled"),
+        ]
+        for stale in staleResults {
+            let responses = ControlledHistoryResponses()
+            let store = MaatHistoryRefreshStore()
+            let old = Task { await store.load(scope: "all", query: "old") { await responses.read($0) } }
+            await responses.waitForCount(1)
+            let fresh = Task { await store.load(scope: "all", query: "new") { await responses.read($0) } }
+            await responses.waitForCount(2)
+            await responses.finish(1, with: try historyRead(scope: "all", queryID: "query:new",
+                snapshot: "snapshot:new", coverage: "complete", cursor: nil, countScope: "query"))
+            await fresh.value
+            await responses.finish(0, with: stale)
+            await old.value
+            XCTAssertEqual(store.state.query, "new")
+            XCTAssertEqual(store.state.projection?.history?.snapshot, "snapshot:new")
+            XCTAssertNil(store.state.error)
+            XCTAssertFalse(store.state.loading)
+        }
+
+        let responses = ControlledHistoryResponses()
+        let deadline = ControlledHistoryDeadline()
+        let store = MaatHistoryRefreshStore(deadlineSleep: { _ in await deadline.sleep() },
+            deadlineHandled: { await deadline.markHandled() })
+        let old = Task { await store.load(scope: "all", query: "old") { await responses.read($0) } }
+        await deadline.waitForCount(1)
+        await responses.waitForCount(1)
+        let fresh = Task { await store.load(scope: "all", query: "new") { await responses.read($0) } }
+        await deadline.waitForCount(2)
+        await responses.waitForCount(2)
+        await responses.finish(1, with: try historyRead(scope: "all", queryID: "query:new",
+            snapshot: "snapshot:new", coverage: "complete", cursor: nil, countScope: "query"))
+        await fresh.value
+        await deadline.releaseAll()
+        await deadline.waitForHandled(2)
+        await responses.finish(0, with: try historyRead(scope: "all", queryID: "query:old",
+            snapshot: "snapshot:old", coverage: "complete", cursor: nil, countScope: "query"))
+        await old.value
+        XCTAssertEqual(store.state.query, "new")
+        XCTAssertEqual(store.state.projection?.history?.snapshot, "snapshot:new")
+        XCTAssertNil(store.state.error)
+        XCTAssertFalse(store.state.loading)
+    }
+
+    @MainActor
+    func testHistoryRefreshRejectsMissingRepeatedCyclicAndDriftedContinuations() async throws {
+        do {
+            let responses = ControlledHistoryResponses()
+            let store = MaatHistoryRefreshStore()
+            let task = Task { await store.load(scope: "all") { await responses.read($0) } }
+            await responses.waitForCount(1)
+            await responses.finish(0, with: try historyRead(scope: "all", queryID: "query:missing",
+                snapshot: "snapshot:missing", coverage: "partial", cursor: nil,
+                countScope: "scanned-so-far"))
+            await task.value
+            XCTAssertTrue(store.state.restartRequired)
+            let callCount = await responses.callCount()
+            XCTAssertEqual(callCount, 1)
+        }
+
+        for cursors in [["repeat", "repeat"], ["cycle:a", "cycle:b", "cycle:a"]] {
+            let responses = ControlledHistoryResponses()
+            let store = MaatHistoryRefreshStore()
+            let task = Task { await store.load(scope: "all") { await responses.read($0) } }
+            for (index, cursor) in cursors.enumerated() {
+                await responses.waitForCount(index + 1)
+                await responses.finish(index, with: try historyRead(scope: "all", queryID: "query:loop",
+                    snapshot: "snapshot:loop", coverage: "partial", cursor: cursor,
+                    countScope: index == 0 ? "scanned-so-far" : "after-cursor-scanned-so-far"))
+            }
+            await task.value
+            XCTAssertTrue(store.state.restartRequired)
+            let callCount = await responses.callCount()
+            XCTAssertEqual(callCount, cursors.count)
+            XCTAssertEqual(store.state.projection?.history?.nextCursor, cursors[cursors.count - 2],
+                "The last accepted cursor remains visible while restart is required")
+        }
+
+        for drift in ["query", "snapshot"] {
+            let responses = ControlledHistoryResponses()
+            let store = MaatHistoryRefreshStore()
+            let task = Task { await store.load(scope: "all") { await responses.read($0) } }
+            await responses.waitForCount(1)
+            await responses.finish(0, with: try historyRead(scope: "all", queryID: "query:stable",
+                snapshot: "snapshot:stable", coverage: "partial", cursor: "cursor:stable",
+                countScope: "scanned-so-far"))
+            await responses.waitForCount(2)
+            await responses.finish(1, with: try historyRead(scope: "all",
+                queryID: drift == "query" ? "query:changed" : "query:stable",
+                snapshot: drift == "snapshot" ? "snapshot:changed" : "snapshot:stable",
+                coverage: "partial", cursor: "cursor:drifted", countScope: "after-cursor-scanned-so-far"))
+            await task.value
+            XCTAssertEqual(store.state.failure, .staleSnapshot)
+            XCTAssertTrue(store.state.restartRequired)
+            XCTAssertEqual(store.state.projection?.history?.nextCursor, "cursor:stable")
+            let callCount = await responses.callCount()
+            XCTAssertEqual(callCount, 2)
+        }
+    }
+
+    @MainActor
+    func testHistoryRefreshMidBurstCommandAndDecodeFailuresRetainAcceptedProgress() async throws {
+        let failures = [
+            SirsiEngine.JSONCommandRead(data: Data(), exitStatus: 7, timedOut: false, launchError: nil),
+            SirsiEngine.JSONCommandRead(data: Data("{".utf8), exitStatus: 0, timedOut: false, launchError: nil),
+        ]
+        for failure in failures {
+            let responses = ControlledHistoryResponses()
+            let store = MaatHistoryRefreshStore()
+            let task = Task { await store.load(scope: "all") { await responses.read($0) } }
+            await responses.waitForCount(1)
+            await responses.finish(0, with: try historyRead(scope: "all", queryID: "query:retained",
+                snapshot: "snapshot:retained", coverage: "partial", cursor: "cursor:retained",
+                countScope: "scanned-so-far"))
+            await responses.waitForCount(2)
+            await responses.finish(1, with: failure)
+            await task.value
+            XCTAssertEqual(store.state.projection?.history?.nextCursor, "cursor:retained")
+            XCTAssertEqual(store.state.projection?.history?.snapshot, "snapshot:retained")
+            XCTAssertNotNil(store.state.error)
+            let callCount = await responses.callCount()
+            XCTAssertEqual(callCount, 2)
+        }
+    }
+
+    private func historyRead(
+        scope: String,
+        queryID: String,
+        snapshot: String,
+        coverage: String,
+        cursor: String?,
+        countScope: String,
+        hasMore: Bool = false
+    ) throws -> SirsiEngine.JSONCommandRead {
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: historyEnvelope(
+            coverage: coverage, cursor: cursor, countScope: countScope)) as? [String: Any])
+        var history = try XCTUnwrap(root["history"] as? [String: Any])
+        history["scope"] = scope
+        history["query_id"] = queryID
+        history["snapshot"] = snapshot
+        history["coverage"] = coverage
+        history["count_scope"] = countScope
+        history["next_cursor"] = cursor
+        history["has_more"] = hasMore
+        history["has_more_known"] = coverage == "complete"
+        history["candidate_matches_complete"] = coverage == "complete"
+        history["evidence_matches_complete"] = coverage == "complete"
+        history["total_complete"] = coverage == "complete"
+        if coverage == "complete" {
+            history["total"] = hasMore ? 2 : 0
+        } else {
+            history.removeValue(forKey: "total")
+        }
+        root["history"] = history
+        return SirsiEngine.JSONCommandRead(data: try JSONSerialization.data(withJSONObject: root),
+            exitStatus: 0, timedOut: false, launchError: nil)
+    }
+
     func testExactActionPreflightRefusesChangedSnapshotAndBoundedExhaustion() async throws {
         let changed = HistoryReadRecorder()
         await changed.enqueue(SirsiEngine.JSONCommandRead(data: historyEnvelope(
@@ -855,4 +1188,62 @@ private actor ControlledHistoryResponses {
     }
 
     func arguments() -> [[String]] { recorded }
+}
+
+private actor ControlledHistoryDeadline {
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+    private var countWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var handledCount = 0
+    private var handledWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+
+    func sleep() async {
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+            resumeReady(&countWaiters, observed: continuations.count)
+        }
+    }
+
+    func waitForCount(_ count: Int) async {
+        if continuations.count >= count { return }
+        await withCheckedContinuation { countWaiters.append((count, $0)) }
+    }
+
+    func markHandled() {
+        handledCount += 1
+        resumeReady(&handledWaiters, observed: handledCount)
+    }
+
+    func waitForHandled(_ count: Int) async {
+        if handledCount >= count { return }
+        await withCheckedContinuation { handledWaiters.append((count, $0)) }
+    }
+
+    func releaseAll() {
+        let waiting = continuations
+        continuations.removeAll()
+        waiting.forEach { $0.resume() }
+    }
+
+    private func resumeReady(
+        _ waiters: inout [(count: Int, continuation: CheckedContinuation<Void, Never>)],
+        observed: Int
+    ) {
+        let ready = waiters.filter { $0.count <= observed }
+        waiters.removeAll { $0.count <= observed }
+        ready.forEach { $0.continuation.resume() }
+    }
+}
+
+private final class TestHistoryMonotonicClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [TimeInterval]
+
+    init(_ values: [TimeInterval]) { self.values = values }
+
+    func now() -> TimeInterval {
+        lock.lock()
+        defer { lock.unlock() }
+        if values.count > 1 { return values.removeFirst() }
+        return values.first ?? 0
+    }
 }

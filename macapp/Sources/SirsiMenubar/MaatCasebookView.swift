@@ -186,9 +186,11 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
             } else if loading {
                 VStack(spacing: 10) {
                     ProgressView()
-                    Text("Opening retained System One evidence…")
+                    Text("Searching retained history…")
                         .sirsiFont(.subheadline)
                         .foregroundStyle(.secondary)
+                    Button("Cancel") { historyRefresh.cancel() }
+                        .buttonStyle(.bordered)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
@@ -228,7 +230,10 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         } message: {
             Text("This retains public certificate-name and fingerprint evidence only. It does not read private keys, passwords, notarization material, or contact Apple.")
         }
-        .onDisappear { sourceImport.cancelReview() }
+        .onDisappear {
+            historyRefresh.cancel()
+            sourceImport.cancelReview()
+        }
     }
 
     private func unavailableState(_ message: String) -> some View {
@@ -274,9 +279,14 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                     VStack(alignment: .leading, spacing: 16) {
                         summary(screens: screens, calibrations: calibrations, history: casebook.history)
                         if loading {
-                            Label("Refreshing history; the current page remains visible.", systemImage: "arrow.clockwise")
-                                .sirsiFont(.caption)
-                                .foregroundStyle(.secondary)
+                            HStack {
+                                Label("Searching retained history…", systemImage: "arrow.clockwise")
+                                    .sirsiFont(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Cancel") { historyRefresh.cancel() }
+                                    .buttonStyle(.borderless)
+                            }
                         }
                         if casebook.journalIntegrity.invalidCount > 0 {
                             MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
@@ -286,7 +296,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                                 Label(loadError, systemImage: "exclamationmark.triangle.fill")
                                     .sirsiFont(.subheadline)
                                     .foregroundStyle(.orange)
-                                if historyRefresh.state.failure == .staleSnapshot {
+                                if historyRefresh.state.restartRequired {
                                     Button("Restart history from the latest snapshot") { Task { await load() } }
                                         .buttonStyle(.borderedProminent)
                                         .disabled(loading)
@@ -324,7 +334,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                             Label(history.coverage == "partial" ? "Continue history search" : "Load older", systemImage: "clock.arrow.circlepath")
                         }
                         .buttonStyle(.borderless)
-                        .disabled(loading || historyRefresh.state.failure == .staleSnapshot)
+                        .disabled(loading || historyRefresh.state.restartRequired)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -354,7 +364,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 if let cursor = history?.nextCursor {
                     Button("Continue history search") { Task { await load(cursor: cursor) } }
                         .buttonStyle(.borderedProminent)
-                        .disabled(loading || historyRefresh.state.failure == .staleSnapshot)
+                        .disabled(loading || historyRefresh.state.restartRequired)
                 }
             }
         } else if casebook.historyEmptyState == .olderPage {
@@ -367,7 +377,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 if let cursor = history?.nextCursor {
                     Button("Load older System One history") { Task { await load(cursor: cursor) } }
                         .buttonStyle(.borderedProminent)
-                        .disabled(loading || historyRefresh.state.failure == .staleSnapshot)
+                        .disabled(loading || historyRefresh.state.restartRequired)
                 }
             }
         } else if casebook.historyEmptyState == .invalidHistory {
@@ -1372,14 +1382,17 @@ struct MaatKnownFailureProposalsView: View {
             guard casebook == nil else { return }
             await load()
         }
+        .onDisappear { historyRefresh.cancel() }
     }
 
     private var loadingState: some View {
         VStack(spacing: 10) {
             ProgressView()
-            Text("Opening the local casebook…")
+            Text("Searching retained history…")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
+            Button("Cancel") { historyRefresh.cancel() }
+                .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -1440,9 +1453,14 @@ struct MaatKnownFailureProposalsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(casebook.summary, history: casebook.history)
                     if loading {
-                        Label("Refreshing history; the current page remains visible.", systemImage: "arrow.clockwise")
-                            .sirsiFont(.caption)
-                            .foregroundStyle(.secondary)
+                        HStack {
+                            Label("Searching retained history…", systemImage: "arrow.clockwise")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Cancel") { historyRefresh.cancel() }
+                                .buttonStyle(.borderless)
+                        }
                     }
                     if casebook.journalIntegrity.invalidCount > 0 {
                         MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
@@ -1453,7 +1471,7 @@ struct MaatKnownFailureProposalsView: View {
                             Label(loadError, systemImage: "exclamationmark.triangle.fill")
                                 .sirsiFont(.subheadline)
                                 .foregroundStyle(.orange)
-                            if historyRefresh.state.failure == .staleSnapshot {
+                            if historyRefresh.state.restartRequired {
                                 Button("Restart history from the latest snapshot") { Task { await load() } }
                                     .buttonStyle(.borderedProminent)
                                     .disabled(loading)
@@ -1468,7 +1486,7 @@ struct MaatKnownFailureProposalsView: View {
                                 .foregroundStyle(.secondary)
                             Button("Continue history search") { Task { await load(cursor: cursor) } }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(loading || historyRefresh.state.failure == .staleSnapshot)
+                                .disabled(loading || historyRefresh.state.restartRequired)
                         }
                     } else if visible.isEmpty, casebook.historyEmptyState == .olderPage, let cursor = casebook.history?.nextCursor {
                         VStack(alignment: .leading, spacing: 8) {
@@ -1477,7 +1495,7 @@ struct MaatKnownFailureProposalsView: View {
                                 .foregroundStyle(.secondary)
                             Button("Load older decisions") { Task { await load(cursor: cursor) } }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(loading || historyRefresh.state.failure == .staleSnapshot)
+                                .disabled(loading || historyRefresh.state.restartRequired)
                         }
                     } else if visible.isEmpty, casebook.historyEmptyState == .invalidHistory {
                         Text("No valid decision matched this page. Invalid journal rows prevent a complete absence conclusion.")
@@ -1517,7 +1535,7 @@ struct MaatKnownFailureProposalsView: View {
                         Label(history.coverage == "partial" ? "Continue history search" : "Load older", systemImage: "clock.arrow.circlepath")
                     }
                     .buttonStyle(.borderless)
-                    .disabled(loading || loadError != nil)
+                    .disabled(loading || historyRefresh.state.restartRequired)
                 }
             }
             .padding(.horizontal, 16)
@@ -3654,6 +3672,8 @@ struct MaatHistoryRefreshState {
     private(set) var failure: MaatHistoryRefreshFailure?
     private(set) var query: String
     private(set) var loading: Bool
+    private(set) var continuationPaused: Bool
+    private(set) var restartRequired: Bool
     private var pending: MaatHistoryRefreshRequest?
 
     init(projection: MaatCasebookProjection?, error: String? = nil, query: String = "") {
@@ -3662,6 +3682,8 @@ struct MaatHistoryRefreshState {
         failure = nil
         self.query = query
         loading = projection == nil
+        continuationPaused = false
+        restartRequired = false
     }
 
     // A write refresh must not replace an in-flight newly selected filter with
@@ -3673,7 +3695,7 @@ struct MaatHistoryRefreshState {
         let nextCursor = cursor.flatMap { $0.isEmpty ? nil : $0 }
         let history = projection?.history
         if let nextCursor {
-            guard history?.scope == scope, history?.nextCursor == nextCursor, nextQuery == query,
+            guard !restartRequired, history?.scope == scope, history?.nextCursor == nextCursor, nextQuery == query,
                   history?.queryID.isEmpty == false, history?.snapshot.isEmpty == false else {
                 pending = nil
                 loading = false
@@ -3681,6 +3703,8 @@ struct MaatHistoryRefreshState {
                 return nil
             }
         }
+        if nextCursor == nil { restartRequired = false }
+        continuationPaused = false
         let request = MaatHistoryRefreshRequest(scope: scope, query: nextQuery, cursor: nextCursor,
             queryID: nextCursor == nil ? nil : history?.queryID, snapshot: nextCursor == nil ? nil : history?.snapshot)
         pending = request
@@ -3689,7 +3713,13 @@ struct MaatHistoryRefreshState {
     }
 
     @discardableResult
-    mutating func complete(_ read: SirsiEngine.JSONCommandRead, for request: MaatHistoryRefreshRequest, cancelled: Bool) -> Bool {
+    mutating func complete(
+        _ read: SirsiEngine.JSONCommandRead,
+        for request: MaatHistoryRefreshRequest,
+        cancelled: Bool,
+        keepLoading: Bool = false,
+        seenCursors: Set<String> = []
+    ) -> Bool {
         guard isCurrent(request) else { return false }
         pending = nil
         loading = false
@@ -3717,9 +3747,22 @@ struct MaatHistoryRefreshState {
             setFailure(.invalidResponse)
             return true
         }
+        guard !history.queryID.isEmpty, !history.snapshot.isEmpty else {
+            setFailure(.invalidResponse)
+            return true
+        }
         if request.cursor != nil {
             guard history.queryID == request.queryID, history.snapshot == request.snapshot else {
                 setFailure(.staleSnapshot)
+                return true
+            }
+        }
+        if history.coverage == "partial" {
+            let validCountScope = history.countScope == "scanned-so-far" ||
+                history.countScope == "after-cursor-scanned-so-far"
+            guard validCountScope, let nextCursor = history.nextCursor, !nextCursor.isEmpty,
+                  nextCursor != request.cursor, !seenCursors.contains(nextCursor) else {
+                setFailure(.invalidResponse)
                 return true
             }
         }
@@ -3727,7 +3770,34 @@ struct MaatHistoryRefreshState {
         query = request.query
         error = nil
         failure = nil
+        restartRequired = false
+        continuationPaused = false
+        loading = keepLoading && history.coverage == "partial"
         return true
+    }
+
+    mutating func pauseContinuation(failure: MaatHistoryRefreshFailure? = nil) {
+        pending = nil
+        loading = false
+        let hasAcceptedCursor = projection?.history?.coverage == "partial" &&
+            projection?.history?.nextCursor?.isEmpty == false && !restartRequired
+        continuationPaused = hasAcceptedCursor
+        if hasAcceptedCursor {
+            error = nil
+            self.failure = nil
+        } else if let failure {
+            setFailure(failure)
+        } else {
+            error = nil
+            self.failure = nil
+        }
+    }
+
+    mutating func rejectContinuationForRestart() {
+        pending = nil
+        loading = false
+        continuationPaused = false
+        setFailure(.invalidResponse)
     }
 
     func isCurrent(_ request: MaatHistoryRefreshRequest) -> Bool { pending == request }
@@ -3735,6 +3805,8 @@ struct MaatHistoryRefreshState {
     private mutating func setFailure(_ failure: MaatHistoryRefreshFailure) {
         self.failure = failure
         error = failure.message
+        continuationPaused = false
+        restartRequired = failure == .invalidResponse || failure == .staleSnapshot
     }
 
     private static func isExactStaleSnapshotFailure(_ read: SirsiEngine.JSONCommandRead) -> Bool {

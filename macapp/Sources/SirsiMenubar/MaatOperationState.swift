@@ -1,6 +1,23 @@
 import Combine
 import Foundation
 
+private final class MaatHistoryBurstCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+}
+
 /// Both browse surfaces publish one state value. Only the current request may
 /// commit after suspension; failures retain the latest committed page here.
 @MainActor
@@ -8,11 +25,37 @@ final class MaatHistoryRefreshStore: ObservableObject {
     @Published private(set) var state: MaatHistoryRefreshState
 
     typealias Reader = @Sendable ([String]) async -> SirsiEngine.JSONCommandRead
+    typealias MonotonicNow = @Sendable () -> TimeInterval
+    typealias DeadlineSleep = @Sendable (TimeInterval) async throws -> Void
+    typealias DeadlineHandled = @Sendable () async -> Void
     private let reader: Reader
+    private let maximumBurstReads: Int
+    private let maximumBurstDuration: TimeInterval
+    private let monotonicNow: MonotonicNow
+    private let deadlineSleep: DeadlineSleep
+    private let deadlineHandled: DeadlineHandled
+    private var activeBurstID: UUID?
+    private var activeCancellation: MaatHistoryBurstCancellation?
+    private var readTask: Task<Void, Never>?
+    private var deadlineTask: Task<Void, Never>?
+
     init(projection: MaatCasebookProjection? = nil,
+         maximumBurstReads: Int = 128,
+         maximumBurstDuration: TimeInterval = 8,
+         monotonicNow: @escaping MonotonicNow = { ProcessInfo.processInfo.systemUptime },
+         deadlineSleep: @escaping DeadlineSleep = { seconds in
+             let nanoseconds = UInt64(max(0, seconds) * 1_000_000_000)
+             try await Task.sleep(nanoseconds: nanoseconds)
+         },
+         deadlineHandled: @escaping DeadlineHandled = {},
          read: @escaping Reader = { await SirsiEngine.runJSONRead(args: $0) }) {
         state = MaatHistoryRefreshState(projection: projection)
         self.reader = read
+        self.maximumBurstReads = min(128, max(1, maximumBurstReads))
+        self.maximumBurstDuration = min(8, max(0.001, maximumBurstDuration))
+        self.monotonicNow = monotonicNow
+        self.deadlineSleep = deadlineSleep
+        self.deadlineHandled = deadlineHandled
     }
 
     // A verified write starts a new snapshot of the committed query; its old
@@ -23,10 +66,132 @@ final class MaatHistoryRefreshStore: ObservableObject {
 
     func load(scope: String, query: String? = nil, cursor: String? = nil,
               run: @escaping @Sendable ([String]) async -> SirsiEngine.JSONCommandRead) async {
-        guard !Task.isCancelled, let request = state.begin(scope: scope, query: query, cursor: cursor) else { return }
-        let read = await run(request.arguments)
-        guard state.isCurrent(request) else { return }
-        state.complete(read, for: request, cancelled: Task.isCancelled)
+        guard !Task.isCancelled else { return }
+        cancelActiveBurst(failure: .cancelled)
+        guard let request = state.begin(scope: scope, query: query, cursor: cursor) else { return }
+
+        let burstID = UUID()
+        let cancellation = MaatHistoryBurstCancellation()
+        let started = monotonicNow()
+        activeBurstID = burstID
+        activeCancellation = cancellation
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.runBurst(id: burstID, first: request, started: started,
+                                cancellation: cancellation, run: run)
+        }
+        readTask = task
+        let sleepUntilDeadline = deadlineSleep
+        let burstDuration = maximumBurstDuration
+        deadlineTask = Task { [weak self] in
+            do {
+                try await sleepUntilDeadline(burstDuration)
+            } catch {
+                return
+            }
+            guard let self else { return }
+            await self.deadlineReached(for: burstID)
+            await self.deadlineHandled()
+        }
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: { [weak self] in
+            cancellation.cancel()
+            Task { @MainActor in self?.cancelBurst(id: burstID) }
+        }
+        finishBurst(id: burstID)
+    }
+
+    func cancel() {
+        guard let activeBurstID else { return }
+        cancelBurst(id: activeBurstID)
+    }
+
+    private func runBurst(
+        id: UUID,
+        first: MaatHistoryRefreshRequest,
+        started: TimeInterval,
+        cancellation: MaatHistoryBurstCancellation,
+        run: @escaping Reader
+    ) async {
+        var request = first
+        var seenCursors = Set<String>()
+        if let cursor = request.cursor { seenCursors.insert(cursor) }
+        var reads = 0
+
+        while activeBurstID == id, state.isCurrent(request), !Task.isCancelled, !cancellation.isCancelled {
+            if monotonicNow() - started >= maximumBurstDuration {
+                pauseBurst(id: id, failure: .timedOut)
+                return
+            }
+            let read = await run(request.arguments)
+            reads += 1
+            guard activeBurstID == id, state.isCurrent(request), !Task.isCancelled,
+                  !cancellation.isCancelled else { return }
+            if monotonicNow() - started >= maximumBurstDuration {
+                pauseBurst(id: id, failure: .timedOut)
+                return
+            }
+
+            guard state.complete(read, for: request, cancelled: false, keepLoading: true,
+                                 seenCursors: seenCursors) else { return }
+            guard state.failure == nil,
+                  let history = state.projection?.history,
+                  history.scope == request.scope,
+                  history.coverage == "partial" else {
+                finishBurst(id: id)
+                return
+            }
+            guard let next = history.nextCursor, !next.isEmpty, seenCursors.insert(next).inserted else {
+                state.rejectContinuationForRestart()
+                finishBurst(id: id)
+                return
+            }
+            guard reads < maximumBurstReads else {
+                pauseBurst(id: id, failure: nil)
+                return
+            }
+            if monotonicNow() - started >= maximumBurstDuration {
+                pauseBurst(id: id, failure: .timedOut)
+                return
+            }
+            guard let continuation = state.begin(scope: request.scope, cursor: next) else {
+                finishBurst(id: id)
+                return
+            }
+            request = continuation
+        }
+        finishBurst(id: id)
+    }
+
+    private func pauseBurst(id: UUID, failure: MaatHistoryRefreshFailure?) {
+        guard activeBurstID == id else { return }
+        state.pauseContinuation(failure: failure)
+        finishBurst(id: id, cancelRead: true)
+    }
+
+    private func deadlineReached(for id: UUID) {
+        pauseBurst(id: id, failure: .timedOut)
+    }
+
+    private func cancelBurst(id: UUID) {
+        pauseBurst(id: id, failure: .cancelled)
+    }
+
+    private func cancelActiveBurst(failure: MaatHistoryRefreshFailure?) {
+        guard let activeBurstID else { return }
+        pauseBurst(id: activeBurstID, failure: failure)
+    }
+
+    private func finishBurst(id: UUID, cancelRead: Bool = false) {
+        guard activeBurstID == id else { return }
+        activeCancellation?.cancel()
+        activeBurstID = nil
+        activeCancellation = nil
+        deadlineTask?.cancel()
+        deadlineTask = nil
+        if cancelRead { readTask?.cancel() }
+        readTask = nil
     }
 }
 
