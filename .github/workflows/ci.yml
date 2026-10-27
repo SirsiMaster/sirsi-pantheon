@@ -253,7 +253,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-14]
+        os: [macos-15]
         go-version: ['1.25']
     steps:
       - uses: actions/checkout@v4
@@ -322,7 +322,7 @@ jobs:
   # exact-name check keeps main mergeable while branch protection is migrated.
   branch-protection-build:
     name: Build (self-hosted, macOS, ARM64, 1.25)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
