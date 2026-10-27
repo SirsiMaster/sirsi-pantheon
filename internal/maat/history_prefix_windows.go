@@ -3,13 +3,95 @@
 package maat
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 )
+
+// scanPendingHistoryLinks resolves one candidate before it enters the bounded
+// top-K, retaining only hashes and references until finalization.
+func scanPendingHistoryLinks(ctx context.Context, deadline time.Time, file *os.File, state *historyCursor, byteBudget int64, rowBudget int) (bool, int64, int, error) {
+	if state.Pending == nil {
+		return false, 0, 0, fmt.Errorf("maat decision history: invalid pending candidate")
+	}
+	if _, err := file.Seek(state.Offset, io.SeekStart); err != nil {
+		return false, 0, 0, fmt.Errorf("maat decision history: seek candidate links: %w", err)
+	}
+	return scanPendingHistoryLinksReader(ctx, deadline, bufio.NewReaderSize(file, 64*1024), state, byteBudget, rowBudget)
+}
+
+func finishPendingHistoryCandidate(ctx context.Context, deadline time.Time, file *os.File, state *historyCursor, query HistoryQuery) (bool, int64, int, error) {
+	if state.Pending == nil {
+		return false, 0, 0, fmt.Errorf("maat decision history: invalid pending candidate")
+	}
+	if err := ctx.Err(); err != nil {
+		return false, 0, 0, err
+	}
+	if time.Now().After(deadline) {
+		return false, 0, 0, context.DeadlineExceeded
+	}
+	decision, candidateBytes, err := readHistoryDecisionAtCount(file, state.Pending.Order.Offset)
+	if err != nil {
+		return false, candidateBytes, 1, err
+	}
+	rowsRead := 1
+	bytesRead := candidateBytes
+	matchState := HistoryMatchState{Resolved: state.PendingAccepted, Hidden: state.PendingReviewed}
+	if state.PendingAcceptance != nil {
+		if err := ctx.Err(); err != nil {
+			return false, bytesRead, rowsRead, err
+		}
+		if time.Now().After(deadline) {
+			return false, bytesRead, rowsRead, context.DeadlineExceeded
+		}
+		resolution, resolutionBytes, err := readHistoryDecisionAtCount(file, state.PendingAcceptance.Offset)
+		bytesRead += resolutionBytes
+		rowsRead++
+		if err != nil {
+			return false, bytesRead, rowsRead, err
+		}
+		if resolution.Kind != "diagnostic owner acceptance" || historyKeyHash(resolution.ResolutionFor) != state.Pending.EvidenceHash || resolution.Time != state.PendingAcceptance.Time {
+			return false, bytesRead, rowsRead, ErrHistorySnapshotChanged
+		}
+		matchState.Resolution = &resolution
+	}
+	if ref, kind := selectedHistoryRepair(state.PendingAcceptance, state.PendingRepairOutcome, state.PendingRepairAttempt); ref != nil {
+		repair, consumed, readErr := readHistoryRepairAtCount(ctx, deadline, file, ref, kind, state.Pending.EvidenceHash)
+		bytesRead += consumed
+		if consumed > 0 {
+			rowsRead++
+		}
+		if readErr != nil {
+			return false, bytesRead, rowsRead, readErr
+		}
+		if kind == "diagnostic verified repair" {
+			matchState.RepairOutcome = &repair
+		} else {
+			matchState.RepairAttempt = &repair
+		}
+	}
+	if decision.Time != state.Pending.Order.Time || historyKeyHash(decision.Evidence) != state.Pending.EvidenceHash || historyKeyHash(decision.ResolutionFor) != state.Pending.ResolutionHash || (decision.Kind == "diagnostic owner acceptance") != state.Pending.OwnerAcceptance {
+		return false, bytesRead, rowsRead, ErrHistorySnapshotChanged
+	}
+	if query.MatchState != nil && !query.MatchState(decision, matchState) {
+		return false, bytesRead, rowsRead, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return false, bytesRead, rowsRead, err
+	}
+	if time.Now().After(deadline) {
+		return false, bytesRead, rowsRead, context.DeadlineExceeded
+	}
+	// Candidate-finalization is atomic at one record plus its selected link;
+	// both bounded reads are included in the returned scan counters.
+	insertHistoryCandidate(state, *state.Pending, state.Limit+1)
+	return true, bytesRead, rowsRead, nil
+}
 
 func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (HistoryPage, error) {
 	return j.queryHistoryWindowsLegacy(query)

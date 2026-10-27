@@ -331,10 +331,6 @@ func cloneHistoryCursor(state *historyCursor) (*historyCursor, error) {
 	return &clone, nil
 }
 
-func historyPartialPage(page HistoryPage, state *historyCursor) (HistoryPage, error) {
-	return historyPartialPageWithCounters(page, state)
-}
-
 func historyPartialPageWithCounters(page HistoryPage, state *historyCursor) (HistoryPage, error) {
 	page.Integrity = cursorIntegrity(state)
 	page.MatchCount = state.Seen
@@ -364,10 +360,6 @@ func queryHistoryCapturedPhase(file *historyPrefixFile, state *historyCursor, qu
 		selectedCount, selectedBytes, selectedRows = 1, state.Pending.Order.Size, 1
 		if state.PendingAcceptance != nil {
 			selectedBytes += state.PendingAcceptance.Size
-			selectedRows++
-		}
-		if repair, _ := selectedHistoryRepair(state.PendingAcceptance, state.PendingRepairOutcome, state.PendingRepairAttempt); repair != nil {
-			selectedBytes += repair.Size
 			selectedRows++
 		}
 	case "batch-finalize":
