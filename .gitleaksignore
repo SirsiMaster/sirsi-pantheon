@@ -6,3 +6,6 @@
 # request ID in XCTest, not an authentication key. Exact historical finding
 # only; no whole-file, UUID-pattern, rule, future-value or commit exclusion.
 5cb42bf18cec186cddf587f3033f19e4335a2c91:macapp/Tests/SirsiMenubarTests/MaatDiagnosticCorrelationTests.swift:generic-api-key:7
+# Same independently byte-verified mock request ID after normal PR1224 squash.
+# Only this immutable commit/path/rule/line; no future value or broad exclusion.
+d4cc850deedc7672872859acf71fe4a91c97e009:macapp/Tests/SirsiMenubarTests/MaatDiagnosticCorrelationTests.swift:generic-api-key:7
