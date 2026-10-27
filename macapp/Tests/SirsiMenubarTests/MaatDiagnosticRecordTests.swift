@@ -62,7 +62,7 @@ import XCTest
     func testTypedPreCreationJournalRefusalRefreshesIntegrityInspectorWithoutRetry()async throws{
         let absent=try reply(["state":"uninitialized","journal_readiness":"ready"])
         let refusal=try reply(["status":"refused","stage":"before_store_creation","journal_readiness":"invalid",
-            "journal_integrity":["invalid_count":1,"count_is_lower_bound":true,"issues":[["line":5001,"digest":"sha256:"+String(repeating:"a",count:64),"reason":"requester is required"]]]],exit:1)
+            "journal_integrity":["invalid_count":1,"count_is_lower_bound":true,"issues":[["line":5001,"digest":"sha256:"+String(repeating:"a",count:64),"reason":"required field is missing"]]]],exit:1)
         var calls:[[String]]=[]
         var integrityRefreshes=0
         let model=MaatDiagnosticRecordModel(uid:501){args in

@@ -70,7 +70,7 @@ struct MaatPreparedPreflight:Decodable,Equatable {
     func accept(_ status:MaatFailureMemoryStatus){
         guard !busy else{return}
         generation=UUID();current=nil;inspection=status;summary=Self.summary(for:status)
-        if status.state=="incomplete",status.journalReadiness=="ready",!status.incompleteAttempt,!status.projectionDebt,status.receiptRecoveryError==nil,
+        if status.state=="incomplete",!status.incompleteAttempt,!status.projectionDebt,status.receiptRecoveryError==nil,
            let prepared=status.preparedPreflight,prepared.valid(storeUUID:status.storeUUID){
             current=prepared;retained=prepared
             if recovered==nil { message="Complete prepared historical receipt verified. Review exact recovery; no action or Casebook projection is authorized." }

@@ -92,7 +92,7 @@ import XCTest
     }
 
     func testStrictJournalIssueRoutesToExistingIntegrityCardWithoutCasebookLoad()async throws{
-        let status=Data(#"{"state":"uninitialized","journal_readiness":"invalid","journal_integrity":{"invalid_count":1,"count_is_lower_bound":true,"issues":[{"line":5001,"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","reason":"requester is required"}]}}"#.utf8)
+        let status=Data(#"{"state":"uninitialized","journal_readiness":"invalid","journal_integrity":{"invalid_count":1,"count_is_lower_bound":true,"issues":[{"line":5001,"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","reason":"required field is missing"}]}}"#.utf8)
         var diagnosticCalls:[[String]]=[]
         let diagnostic=MaatDiagnosticRecordModel(uid:501,localHost:{"fixture-mac"}){args in
             diagnosticCalls.append(args)

@@ -638,7 +638,7 @@ func TestMaatFirstUseStrictJournalRefusalIsTypedBeforeStoreCreation(t *testing.T
 		maatRepairConfirm, maatRepairDefaultStoreInspect, maatRepairDefaultStoreInitialize = oldConfirm, oldInspect, oldInitialize
 		newMaatDecisionJournal, maatJSON, JsonOutput = oldJournal, oldJSON, oldGlobalJSON
 	})
-	issue := maat.JournalIssue{Line: 5001, Digest: "sha256:" + strings.Repeat("a", 64), Reason: "requester is required"}
+	issue := maat.JournalIssue{Line: 5001, Digest: "sha256:" + strings.Repeat("a", 64), Reason: "required field is missing"}
 	journal := &livenessFixtureJournal{recentErr: &maat.JournalValidationError{Issue: issue}}
 	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return journal, nil }
 	maatRepairConfirm, maatJSON, JsonOutput = true, true, true

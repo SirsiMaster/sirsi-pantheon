@@ -70,6 +70,19 @@ final class MaatPreparedPreflightRecoveryTests:XCTestCase {
         XCTAssertNil(model.confirmation())
     }
 
+    @MainActor func testStrictJournalReadinessDoesNotBlockExactHistoricalReceiptReview()throws{
+        let (status,_,prepared)=try fixture()
+        for readiness in ["invalid","unavailable"] {
+            var fields=try XCTUnwrap(JSONSerialization.jsonObject(with:status) as? [String:Any])
+            fields["journal_readiness"]=readiness
+            let bytes=try JSONSerialization.data(withJSONObject:fields)
+            let model=MaatPreparedPreflightRecovery{_ in self.response(Data(),exit:1)}
+            model.accept(try JSONDecoder().decode(MaatFailureMemoryStatus.self,from:bytes))
+            XCTAssertEqual(model.current,prepared,"\(readiness) journal projection does not change exact historical custody")
+            XCTAssertEqual(model.confirmation()?.prepared,prepared,"\(readiness) journal projection must not gate exact historical receipt review")
+        }
+    }
+
     @MainActor func testMissingTruncatedAndUnrelatedDebtRemainUnavailable()async throws{
         let (status,_,prepared)=try fixture()
         var calls=0

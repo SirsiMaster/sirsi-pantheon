@@ -624,14 +624,36 @@ func makeJournalIssue(line int, raw, reason string) JournalIssue {
 }
 
 func journalIssueReason(err error) string {
-	reason := strings.TrimSpace(strings.TrimPrefix(err.Error(), "maat decision journal:"))
-	if reason == "" {
+	if err == nil {
 		return "record violates the Ma'at journal contract"
 	}
-	if len(reason) > 240 {
-		return reason[:240]
+	reason := strings.TrimSpace(strings.TrimPrefix(err.Error(), "maat decision journal:"))
+	switch {
+	case strings.Contains(reason, " is required"):
+		return "required field is missing"
+	case strings.HasPrefix(reason, "invalid time:"):
+		return "invalid time"
+	case reason == "resolution evidence exceeds bounded record size":
+		return reason
+	case reason == "incident links require retained receipt metadata":
+		return reason
+	case reason == "invalid or duplicate failure memory incident link":
+		return reason
+	case reason == "invalid failure-memory receipt reference":
+		return reason
+	case strings.HasPrefix(reason, "invalid System One verdict:"):
+		return "invalid System One verdict"
+	case reason == "System One verdict is valid only for system one screen":
+		return reason
+	case strings.HasPrefix(reason, "invalid System One calibration:"):
+		return "invalid System One calibration"
+	case reason == "System One calibration is valid only for system one calibration":
+		return reason
+	case reason == "screen and calibration records cannot coexist":
+		return reason
+	default:
+		return "record violates the Ma'at journal contract"
 	}
-	return reason
 }
 
 // RepairInvalidRecords preserves the original journal and rebuilds only the
