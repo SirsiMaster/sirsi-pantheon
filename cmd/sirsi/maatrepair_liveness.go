@@ -312,7 +312,11 @@ func runMaatLivenessWatchAction() error {
 func inspectMaatLivenessMemory() error {
 	status := maatRepairDefaultStoreInspect()
 	result := maatLivenessMemoryInspection{DefaultStoreStatus: status, JournalReadiness: "unknown"}
-	inspectMaatJournalReadiness(&result)
+	// Journal readiness is a prerequisite for first-use initialization, not
+	// authority for inspecting or recovering an exact historical receipt.
+	if status.State == maat.DefaultStoreUninitialized {
+		inspectMaatJournalReadiness(&result)
+	}
 	if status.State == maat.DefaultStoreReady {
 		store, err := maatRepairOpenDefaultStore()
 		if err != nil {
