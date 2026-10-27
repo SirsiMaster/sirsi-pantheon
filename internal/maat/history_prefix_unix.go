@@ -357,11 +357,7 @@ func queryHistoryCapturedPhase(file *historyPrefixFile, state *historyCursor, qu
 		if repair, _ := selectedHistoryRepair(state.PendingAcceptance, state.PendingRepairOutcome, state.PendingRepairAttempt); repair != nil {
 			refs = append(refs, repair)
 		}
-		selectedCount, selectedBytes, selectedRows = 1, state.Pending.Order.Size, 1
-		if state.PendingAcceptance != nil {
-			selectedBytes += state.PendingAcceptance.Size
-			selectedRows++
-		}
+		selectedCount = 1
 	case "batch-finalize":
 		for index := state.BatchIndex; index < len(state.Batch); index++ {
 			ref, link := state.Batch[index], state.BatchLinks[index]
