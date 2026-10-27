@@ -32,7 +32,7 @@ func TestLaneClaimBarrierOwnershipSettlement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := s.LaneClaimBarrier(ctx, LaneClaimBarrierRequest{Action: "acquire", Lane: "gemma-pantheon", Token: "0123456789abcdef0123456789abcdef"})
+	b, err := s.LaneClaimBarrier(ctx, LaneClaimBarrierRequest{Action: "acquire", Lane: "gemma-pantheon", Token: "0123456789abcdef0123456789abcdef"}) // gitleaks:allow -- fixed synthetic capability in isolated store fixture only
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,11 +280,11 @@ func TestLaneClaimBarrierSuspendedCannotRecover(t *testing.T) {
 		if err := s.UpsertThreads([]ThreadRecord{{ThreadID: "thread", Agent: "sirsi-software-admin", Host: "host", Status: status, LastSeenAt: s.clock().Format(time.RFC3339), Payload: []byte(`{}`)}}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.LaneClaimBarrier(barrierCtx(), LaneClaimBarrierRequest{Action: "acquire", Lane: "gemma-pantheon", Token: "0123456789abcdef0123456789abcdef"}); err != nil {
+		if _, err := s.LaneClaimBarrier(barrierCtx(), LaneClaimBarrierRequest{Action: "acquire", Lane: "gemma-pantheon", Token: "0123456789abcdef0123456789abcdef"}); err != nil { // gitleaks:allow -- fixed synthetic capability in isolated store fixture only
 			t.Fatal(err)
 		}
 		newer := context.WithValue(context.Background(), laneClaimBarrierActorKey{}, laneClaimBarrierActor{"sirsi-software-admin", "host", "new-thread"})
-		if _, err := s.LaneClaimBarrier(newer, LaneClaimBarrierRequest{Action: "recover", Lane: "gemma-pantheon", Token: "abcdef0123456789abcdef0123456789", PreviousThread: "thread"}); err == nil {
+		if _, err := s.LaneClaimBarrier(newer, LaneClaimBarrierRequest{Action: "recover", Lane: "gemma-pantheon", Token: "abcdef0123456789abcdef0123456789", PreviousThread: "thread"}); err == nil { // gitleaks:allow -- fixed synthetic capability in isolated store fixture only
 			t.Fatalf("recovered %s", status)
 		}
 	}
@@ -295,8 +295,8 @@ func TestLaneClaimBarrierPostgresControllerDeadlinePreservesPause(t *testing.T) 
 		t.Skip("requires an explicitly owned isolated PostgreSQL fixture; resetPostgres drops its router schema")
 	}
 	s := newTestStore(t)
-	s.db.SetMaxOpenConns(1) // Identify the same retained connection used by the controller.
-	const token = "0123456789abcdef0123456789abcdef"
+	s.db.SetMaxOpenConns(1)                          // Identify the same retained connection used by the controller.
+	const token = "0123456789abcdef0123456789abcdef" // gitleaks:allow -- fixed synthetic capability in isolated store fixture only
 	if _, err := s.LaneClaimBarrier(barrierCtx(), LaneClaimBarrierRequest{Action: "acquire", Lane: "gemma-pantheon", Token: token}); err != nil {
 		t.Fatal(err)
 	}

@@ -96,7 +96,7 @@ func TestResumeTaskClaimHonorsGemmaPauseWithoutBlockingInspectOrReplay(t *testin
 	otherReq := resumeBarrierApplyRequest(t, s, otherCtx, "fixture-other-lane", "other-task")
 
 	paused, err := s.LaneClaimBarrier(barrierCtx(), LaneClaimBarrierRequest{
-		Action: "acquire", Lane: "gemma-pantheon", Token: "0123456789abcdef0123456789abcdef",
+		Action: "acquire", Lane: "gemma-pantheon", Token: "0123456789abcdef0123456789abcdef", // gitleaks:allow -- fixed synthetic capability in isolated store fixture only
 	})
 	if err != nil || !paused.Paused {
 		t.Fatalf("acquire Gemma pause: %+v %v", paused, err)

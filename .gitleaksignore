@@ -9,3 +9,12 @@
 # Same independently byte-verified mock request ID after normal PR1224 squash.
 # Only this immutable commit/path/rule/line; no future value or broad exclusion.
 d4cc850deedc7672872859acf71fe4a91c97e009:macapp/Tests/SirsiMenubarTests/MaatDiagnosticCorrelationTests.swift:generic-api-key:7
+# Exact historical findings: fixed sequential-hex maintenance capabilities
+# used only against isolated test stores, never credentials or live authority.
+# The successor marks these exact fixture literals inline; runtime bytes are unchanged.
+# No production path, future value, whole-file, rule or commit exemption.
+fd09ede01bdb5ef6b1f89b296204d17f3bb9f5f0:internal/routerstore/taskresume_barrier_test.go:generic-api-key:99
+fd09ede01bdb5ef6b1f89b296204d17f3bb9f5f0:internal/routerstore/laneclaimbarrier_test.go:generic-api-key:35
+fd09ede01bdb5ef6b1f89b296204d17f3bb9f5f0:internal/routerstore/laneclaimbarrier_test.go:generic-api-key:283
+fd09ede01bdb5ef6b1f89b296204d17f3bb9f5f0:internal/routerstore/laneclaimbarrier_test.go:generic-api-key:287
+fd09ede01bdb5ef6b1f89b296204d17f3bb9f5f0:internal/routerstore/laneclaimbarrier_test.go:generic-api-key:299
