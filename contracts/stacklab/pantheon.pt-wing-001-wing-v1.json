@@ -40,13 +40,17 @@
       "contracts/stacklab/pantheon-release-artifact-recipe-v1.json",
       "docs/stacklab/pantheon-pt/canon/TRACEABILITY_MATRIX.md",
       "docs/RELEASE_SIGNING.md",
-      "scripts/verify-commercial-release-contract.sh"
+      "scripts/verify-commercial-release-contract.sh",
+      "docs/stacklab/pantheon-pt/canon/CERTIFICATION.md",
+      "docs/stacklab/pantheon-pt/canon/DIAGRAM_INDEX.md",
+      "https://github.com/SirsiMaster/sirsi-stacklab/blob/main/canon/signing/SIRSI_SIGNING.md",
+      "https://github.com/SirsiMaster/sirsi-stacklab/blob/main/canon/docs/engineering/MAAT_GUARD_STACKLAB_LOAD_FILTER_SELF_INTERFERENCE_20260916.md"
     ]
   },
   "mirrors": {
     "repository": "current",
-    "desktop": "current",
-    "workspace": "current"
+    "desktop": "stale",
+    "workspace": "stale"
   },
-  "next_action": "Publish this exact origin/main record to the SirsiMaster/sirsi-stacklab registry as a byte-identical pin, then use Ma'at and the release recipe to distinguish source qualification from the separately owner-provisioned Developer ID Installer and notarization route."
+  "next_action": "Complete the exact corrective release certification in docs/stacklab/pantheon-pt/canon/CERTIFICATION.md: integrate and qualify the composed source, use the established delegated signing/notary route, verify paired public assets/cask and selected installed/loaded lifecycle, independently review every applicable criterion, refresh existing reading mirrors, then read back this origin record and its byte-identical registry pin. Schema/origin identity alone does not certify the application."
 }

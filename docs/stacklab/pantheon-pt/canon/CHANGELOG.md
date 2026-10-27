@@ -1,5 +1,16 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-27 — Full-canon corrective certification
+
+- Expand native-product requirements, stories, design, security, runbook and
+  qualification/release/certification traceability within the corrective freeze.
+- Add all-deity/module source inventory and detailed process diagrams, owners,
+  dependencies and replacement boundaries; independent review determines coverage.
+- Preserve actual140 public/wing proof separately from remaining composed141,
+  installed and human-publication acceptance; no source-only certificate.
+- Replace stale credential-hold instructions with the established delegated route,
+  mark changed mirrors stale, and label July planning as historical.
+
 ## 2026-10-27 — v0.24.140 release candidate
 
 - Compose the exact normal merged fixes #1233, #1234, #1235 and #1236 from main `be62fe8aea4c9bd2390ca9bc3351e008c71876b4`. This entry prepares version and release notes; it does not publish, install or replace a loaded service.
