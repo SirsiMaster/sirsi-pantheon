@@ -950,7 +950,8 @@
       "consumer": {}
     },
     "ra": {
-      "worker_answers": true,
+      "worker_answers": false,
+      "attended": true,
       "capabilities": [
         "close:any"
       ],
@@ -971,7 +972,7 @@
       "type": "claude",
       "description": "Ra — fleet aggregator identity (owner 2026-09-02: 'register yourself as RA'). The interactive claude-home session acting as the Ra conduit: ADR-062 router-as-a-service owner, cross-host concurrency, aggregates Horus per-node reports.",
       "wake": {
-        "mechanism": "launchagent"
+        "mechanism": "session-message"
       },
       "workstream": "ra"
     },
