@@ -51,10 +51,14 @@ type NodeStatus struct {
 	ActiveTopics   []string            `json:"active_topics"`
 	CompletedCount int                 `json:"completed_count"`
 
-	// StrandedInbox: agents with open items but NO armed thread to watch them —
-	// work that sits silently until the agent is (re)armed (PR #2 strand
-	// visibility). Empty when every backlogged agent is armed.
+	// StrandedInbox: actionable agents with open items but NO armed thread to
+	// watch them (PR #2 strand visibility). Loop evidence outside this node's
+	// process scope is reported separately as UnverifiedInbox.
 	StrandedInbox []StrandedAgent `json:"stranded_inbox,omitempty"`
+	// UnverifiedInbox: pending lanes whose loop-monitor evidence belongs to a
+	// foreign or unidentified machine. They are not classified as armed or dead
+	// from this node's process table.
+	UnverifiedInbox []UnverifiedInboxAgent `json:"unverified_inbox,omitempty"`
 
 	// Work items
 	WorkItemSummary map[string]int `json:"work_item_summary"` // status → count
@@ -207,6 +211,65 @@ type WorkItemFailure struct {
 	Agent    string    `json:"agent"`
 	Error    string    `json:"error"`
 	FailedAt time.Time `json:"failed_at"`
+}
+
+// UnverifiedInboxAgent has pending work whose loop liveness cannot be decided
+// from this node because the thread's machine scope is foreign or unknown.
+type UnverifiedInboxAgent struct {
+	AgentID   string `json:"agent_id"`
+	OpenItems int    `json:"open_items"`
+	OSScope   string `json:"os_scope"`
+}
+
+// computeNodeStatusStranding projects local node-status summaries without
+// reopening the registry through AgentArmed. That global helper has different
+// authority and legacy identity assumptions; this projection may classify a
+// loop as dead only when its collector summary had local stable-ID scope.
+func computeNodeStatusStranding(pending map[string][]string, liveWake, noWake map[string]bool, threads []ThreadSummary) ([]StrandedAgent, []UnverifiedInboxAgent) {
+	var stranded []StrandedAgent
+	var unverified []UnverifiedInboxAgent
+	for agent, items := range pending {
+		if len(items) == 0 || agent == "user" || noWake[agent] || liveWake[agent] {
+			continue
+		}
+		armed := false
+		unverifiedScope := ""
+		for _, thread := range threads {
+			if thread.AgentID != agent {
+				continue
+			}
+			if thread.Armed {
+				armed = true
+				break
+			}
+			if requiresThreadIDLoop(thread.WatcherType) && thread.LoopState == "unknown" && thread.OSScope != threadOSScopeLocal {
+				if thread.OSScope == threadOSScopeUnknown || unverifiedScope == "" {
+					unverifiedScope = thread.OSScope
+				}
+			}
+		}
+		if armed {
+			continue
+		}
+		if unverifiedScope != "" {
+			unverified = append(unverified, UnverifiedInboxAgent{AgentID: agent, OpenItems: len(items), OSScope: unverifiedScope})
+			continue
+		}
+		stranded = append(stranded, StrandedAgent{AgentID: agent, OpenItems: len(items)})
+	}
+	sort.Slice(stranded, func(i, j int) bool {
+		if stranded[i].OpenItems != stranded[j].OpenItems {
+			return stranded[i].OpenItems > stranded[j].OpenItems
+		}
+		return stranded[i].AgentID < stranded[j].AgentID
+	})
+	sort.Slice(unverified, func(i, j int) bool {
+		if unverified[i].OpenItems != unverified[j].OpenItems {
+			return unverified[i].OpenItems > unverified[j].OpenItems
+		}
+		return unverified[i].AgentID < unverified[j].AgentID
+	})
+	return stranded, unverified
 }
 
 // LaunchctlChecker abstracts launchctl probing for testability.
@@ -666,7 +729,8 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	for a := range ns.PendingByAgent {
 		strandAgents = append(strandAgents, a)
 	}
-	ns.StrandedInbox = computeStranded(routerRoot, ns.PendingByAgent, liveWakeAgents(strandAgents, launchctlCheck), noWakeAgents(reg))
+	threads := append(append([]ThreadSummary(nil), ns.LiveThreads...), ns.StaleThreads...)
+	ns.StrandedInbox, ns.UnverifiedInbox = computeNodeStatusStranding(ns.PendingByAgent, liveWakeAgents(strandAgents, launchctlCheck), noWakeAgents(reg), threads)
 
 	return ns, nil
 }

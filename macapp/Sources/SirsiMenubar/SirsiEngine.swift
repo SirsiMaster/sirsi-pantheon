@@ -212,6 +212,27 @@ struct RBStranded: Decodable, Identifiable {
     }
 }
 
+// RBUnverifiedInbox mirrors unverified_inbox[]: pending work whose loop
+// liveness cannot be verified from this node's process scope.
+struct RBUnverifiedInbox: Decodable, Identifiable {
+    var id: String { agentId }
+    let agentId: String
+    let openItems: Int
+    let osScope: String
+    enum CodingKeys: String, CodingKey {
+        case agentId = "agent_id"
+        case openItems = "open_items"
+        case osScope = "os_scope"
+    }
+    var scopeLabel: String {
+        switch osScope {
+        case "remote": return "Remote machine · unverified here"
+        case "unknown": return "Machine scope unknown"
+        default: return "Scope unverified"
+        }
+    }
+}
+
 // RBOutbox mirrors one entry of node-status's outbox[] (ADR-069,
 // routerstore.SpoolAgentOutbox) — a relay host's held-for-retry queue depth
 // per agent. unreadable (with error set) means the outbox directory exists
@@ -417,6 +438,7 @@ struct RouterBoard: Decodable {
     let agentHealth: [RBAgentHealth]?
     let launchAgents: [RBLaunchAgent]?
     let strandedInbox: [RBStranded]?
+    let unverifiedInbox: [RBUnverifiedInbox]?
     // agent id → open item ids: the fabric's actual work map.
     let pendingByAgent: [String: [String]]?
     let ownerGated: [OwnerGated]?
@@ -436,6 +458,7 @@ struct RouterBoard: Decodable {
         case agentHealth = "agent_health"
         case launchAgents = "launch_agents"
         case strandedInbox = "stranded_inbox"
+        case unverifiedInbox = "unverified_inbox"
         case pendingByAgent = "pending_by_agent"
         case ownerGated = "owner_gated"
         case outbox
@@ -838,6 +861,9 @@ final class SirsiEngine: ObservableObject {
     }
     var routerStranded: [RBStranded] {
         (routerBoard?.strandedInbox ?? []).sorted { $0.openItems > $1.openItems }
+    }
+    var routerUnverifiedInbox: [RBUnverifiedInbox] {
+        (routerBoard?.unverifiedInbox ?? []).sorted { $0.openItems > $1.openItems }
     }
     // Observer privacy is separate from relay retry evidence. A service-owned
     // private directory is not a same-user repair candidate. Producer evidence

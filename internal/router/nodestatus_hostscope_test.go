@@ -30,6 +30,24 @@ func TestCollectNodeStatusScopesLocalOSAndWatcherProbes(t *testing.T) {
 		"thr-missing-machine":       makeThread("thr-missing-machine", "claude-legacy", "claude", "host-legacy", ""),
 		"thr-foreign-app-heartbeat": makeThread("thr-foreign-app-heartbeat", "codex-foreign", "codex", "host-foreign", "machine-foreign"),
 	}
+	statePath := filepath.Join(routerRoot, "state.json")
+	stateBytes, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state State
+	if err := json.Unmarshal(stateBytes, &state); err != nil {
+		t.Fatal(err)
+	}
+	state.Pending["claude-foreign"] = []string{"foreign-pending"}
+	state.Pending["claude-legacy"] = []string{"unknown-pending"}
+	stateBytes, err = json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, stateBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	registryBytes, err := json.MarshalIndent(&ThreadRegistry{Threads: threads}, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -85,6 +103,22 @@ func TestCollectNodeStatusScopesLocalOSAndWatcherProbes(t *testing.T) {
 		}
 		return nil
 	}
+	findUnverified := func(ns *NodeStatus, agent string) *UnverifiedInboxAgent {
+		for i := range ns.UnverifiedInbox {
+			if ns.UnverifiedInbox[i].AgentID == agent {
+				return &ns.UnverifiedInbox[i]
+			}
+		}
+		return nil
+	}
+	inStranded := func(ns *NodeStatus, agent string) bool {
+		for _, row := range ns.StrandedInbox {
+			if row.AgentID == agent {
+				return true
+			}
+		}
+		return false
+	}
 	assertRegistryUnchanged := func() {
 		t.Helper()
 		got, err := os.ReadFile(registryPath)
@@ -113,6 +147,12 @@ func TestCollectNodeStatusScopesLocalOSAndWatcherProbes(t *testing.T) {
 	if foreignHeartbeat == nil || foreignHeartbeat.OSScope != threadOSScopeRemote || foreignHeartbeat.OSState != PIDUnknown || foreignHeartbeat.LoopState != "na" || !foreignHeartbeat.Armed || foreignHeartbeat.Stale {
 		t.Fatalf("foreign fresh app heartbeat was not preserved with explicit scope: %+v", foreignHeartbeat)
 	}
+	if row := findUnverified(ns, "claude-foreign"); row == nil || row.OpenItems != 1 || row.OSScope != threadOSScopeRemote || inStranded(ns, "claude-foreign") {
+		t.Fatalf("foreign pending loop must remain explicitly unverified, not armed/dead-stranded: %+v stranded=%v", row, inStranded(ns, "claude-foreign"))
+	}
+	if row := findUnverified(ns, "claude-legacy"); row == nil || row.OpenItems != 1 || row.OSScope != threadOSScopeUnknown || inStranded(ns, "claude-legacy") {
+		t.Fatalf("unidentified pending loop must remain explicitly unverified, not armed/dead-stranded: %+v stranded=%v", row, inStranded(ns, "claude-legacy"))
+	}
 	if pidCalls[424242] != 1 || startCalls[424242] != 1 {
 		t.Fatalf("same PID probed %d times (start probe %d); want local row only", pidCalls[424242], startCalls[424242])
 	}
@@ -139,6 +179,12 @@ func TestCollectNodeStatusScopesLocalOSAndWatcherProbes(t *testing.T) {
 		row := find(unknownNS, id)
 		if row == nil || row.OSScope != threadOSScopeUnknown || row.OSState != PIDUnknown {
 			t.Fatalf("missing current machine ID did not force unknown scope for %s: %+v", id, row)
+		}
+	}
+	for _, agent := range []string{"claude-foreign", "claude-legacy"} {
+		row := findUnverified(unknownNS, agent)
+		if row == nil || row.OSScope != threadOSScopeUnknown || inStranded(unknownNS, agent) {
+			t.Fatalf("pending lane %s lost explicit unknown scope: %+v stranded=%v", agent, row, inStranded(unknownNS, agent))
 		}
 	}
 	if len(pidCalls) != 0 || len(startCalls) != 0 || len(watcherCalls) != 0 || len(watcherAgentCalls) != 0 {

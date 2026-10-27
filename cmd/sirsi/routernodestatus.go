@@ -136,6 +136,13 @@ func renderNodeStatus(ns *router.NodeStatus) {
 		}
 		fmt.Println()
 	}
+	if len(ns.UnverifiedInbox) > 0 {
+		fmt.Println("  ? Pending inboxes — remote or unknown process scope (not verified here):")
+		for _, row := range ns.UnverifiedInbox {
+			fmt.Printf("    %s: %d item(s) — scope %s; liveness unverified from this node\n", row.AgentID, row.OpenItems, row.OSScope)
+		}
+		fmt.Println()
+	}
 	if ns.OutboxHealthError != "" {
 		fmt.Printf("  ⚠ Spool outbox health unreadable: %s\n\n", ns.OutboxHealthError)
 	} else if len(ns.Outbox) > 0 {
