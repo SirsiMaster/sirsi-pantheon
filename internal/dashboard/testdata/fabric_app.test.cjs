@@ -11,17 +11,18 @@ function host(view='fleet',initial={}){
  let clock=at,dialog=null,tick,reply={fabric:board(),router:router(),...initial},elements={},listeners={},requests=[];
  class Element {
   constructor(){this.dataset={};this.handlers={};this.classList={add(){},remove(){},contains(){return false}};this.isConnected=true;this.hidden=false;this._html=''}
-  set innerHTML(s){this._html=s;this.buttons=[];this.taskButtons=[];this.pageButtons=[];for(const m of s.matchAll(/data-fabric-inspect="([^"]+)"/g)){const b=new Element();b.dataset.fabricInspect=m[1];this.buttons.push(b)}for(const m of s.matchAll(/data-fabric-task-agent="([^"]+)" data-fabric-task-id="([^"]+)"/g)){const b=new Element();b.dataset.fabricTaskAgent=m[1];b.dataset.fabricTaskId=m[2];this.taskButtons.push(b)}for(const m of s.matchAll(/data-fabric-task-page="([^"]+)"/g)){const b=new Element();b.dataset.fabricTaskPage=m[1];this.pageButtons.push(b)}this.receipt= s.includes('fabric-receipt') ? new Element():null}
+  set innerHTML(s){this._html=s;this.buttons=[];this.taskButtons=[];this.pageButtons=[];this.filterButtons=[];this.messageButtons=[];for(const m of s.matchAll(/data-fabric-filter="([^"]+)"/g)){const b=new Element();b.dataset.fabricFilter=m[1];this.filterButtons.push(b)}if(s.includes('data-fabric-messages'))this.messageButtons.push(new Element());for(const m of s.matchAll(/data-fabric-inspect="([^"]+)"/g)){const b=new Element();b.dataset.fabricInspect=m[1];this.buttons.push(b)}for(const m of s.matchAll(/data-fabric-task-agent="([^"]+)" data-fabric-task-id="([^"]+)"/g)){const b=new Element();b.dataset.fabricTaskAgent=m[1];b.dataset.fabricTaskId=m[2];this.taskButtons.push(b)}for(const m of s.matchAll(/data-fabric-task-page="([^"]+)"/g)){const b=new Element();b.dataset.fabricTaskPage=m[1];this.pageButtons.push(b)}this.receipt= s.includes('fabric-receipt') ? new Element():null}
   get innerHTML(){return this._html}
-  querySelectorAll(s){return s==='[data-fabric-inspect]'?this.buttons||[]:s==='[data-fabric-task-id]'?this.taskButtons||[]:s==='[data-fabric-task-page]'?this.pageButtons||[]:[]}
+  querySelectorAll(s){return s==='[data-fabric-filter]'?this.filterButtons||[]:s==='[data-fabric-messages]'?this.messageButtons||[]:s==='[data-fabric-inspect]'?this.buttons||[]:s==='[data-fabric-task-id]'?this.taskButtons||[]:s==='[data-fabric-task-page]'?this.pageButtons||[]:[]}
   querySelector(){return new Element()}
   addEventListener(k,f){this.handlers[k]=f}
   setAttribute(k,v){this[k]=v}
-  focus(){} showModal(){this.open=true} show(){this.open=true} close(){this.open=false} remove(){if(dialog===this)dialog=null}
+  focus(){this.focused=true} scrollIntoView(){this.scrolled=true} showModal(){this.open=true} show(){this.open=true} close(){this.open=false} remove(){if(dialog===this)dialog=null}
  }
  const doc={hidden:false,activeElement:null,
   querySelector(s){if(s==='.inspector'||s==='.inspector.persistent')return dialog;return elements[s]||(elements[s]=new Element())},
   querySelectorAll(s){return s==='.fabric-receipt'&&elements['#view']?.receipt?[elements['#view'].receipt]:[]},
+  getElementById(id){return elements['#'+id]||(elements['#'+id]=new Element())},
   createElement(){return new Element()},
   addEventListener(k,f){listeners[k]=f},
   body:{appendChild(d){dialog=d},classList:{add(){},remove(){}}}
@@ -39,6 +40,8 @@ function host(view='fleet',initial={}){
   clickRouter(){listeners.click({target:{closest(){return {dataset:{inspect:'own-lane'}}}}})},
   clickTask(){const b=elements['#view'].taskButtons[0];assert.ok(b,'actual full-board task button');b.handlers.click()},
   taskPage(value){const b=elements['#view'].pageButtons.find(x=>x.dataset.fabricTaskPage===value);assert.ok(b,'actual task page control');b.handlers.click()},
+  metric(value){const b=elements['#view'].filterButtons.find(x=>x.dataset.fabricFilter===value);assert.ok(b,'actual metric button');b.handlers.click()},
+  messages(){elements['#view'].messageButtons[0].handlers.click()},
   age(){clock+=31000;listeners.visibilitychange()}
  };
 }
@@ -55,6 +58,17 @@ function taskBoard(offset=0){
  b.tasks={state:'observed',offset,limit:64,total:65,snapshot:'a'.repeat(64),next_offset:offset===0?64:null,
   rows:Array.from({length:offset===0?64:1},(_,i)=>({agent:'own-lane',id:'task-'+(offset+i),subject:'Actual task '+(offset+i),status:'pending',liveness:'unknown',role:'gold',responsible:'owner',stage:'build',test_state:'untested',updated:'',blocker_recorded:false,text_limited:false,provenance:{source:'canonical-task-registry',created:'',commissioned_at:'',commissioned_by:'lead',charter_recorded:true,outline_recorded:false,result_recorded:false,public_links:[],withheld_links:1}}))};return b;
 }
+test('overview metric invokes actual selected endpoint and every blocked page remains accessible',async()=>{
+ const h=host('overview',{fabric:taskBoard()});await h.settle();
+ h.reply.fabric=url=>{const b=taskBoard(url.includes('tasks_offset=64')?64:0);b.tasks.filter='blocked';b.tasks.rows.forEach(row=>row.status='blocked');b.work.blocked=65;b.work.assigned_not_started=0;return b};
+ h.metric('blocked');await h.settle();assert.equal(h.requests.at(-1),'/api/fabric?tasks_filter=blocked');assert.match(h.elements['#view'].innerHTML,/Blocked tasks/);assert.equal(h.elements['#fabric-task-heading'].focused,true);assert.equal(h.elements['#fabric-task-heading'].scrolled,true);
+ h.taskPage('next');await h.settle();assert.equal(h.requests.at(-1),'/api/fabric?tasks_filter=blocked&tasks_offset=64&tasks_snapshot='+'a'.repeat(64));assert.match(h.elements['#view'].innerHTML,/Actual task 64/);
+ h.taskPage('first');await h.settle();assert.equal(h.requests.at(-1),'/api/fabric?tasks_filter=blocked');assert.match(h.elements['#view'].innerHTML,/Actual task 0/);
+});
+test('wrong selection and cursor errors retain labeled last-good tasks rather than replacing them',async()=>{
+ const h=host('fleet',{fabric:taskBoard()});await h.settle();h.metric('stalled');await h.settle();
+ assert.match(h.elements['#view'].innerHTML,/Invalid fabric projection or task selection/);assert.match(h.elements['#view'].innerHTML,/Retained Fabric observation/);assert.match(h.elements['#view'].innerHTML,/Open ledger tasks/);
+});
 test('actual full-board task click page conflict and explicit refresh remain bound to canonical rows',async()=>{
  const h=host('fleet',{fabric:taskBoard()});await h.settle();h.clickTask();
  assert.match(h.dialog.innerHTML,/Actual task 0/);assert.match(h.dialog.innerHTML,/canonical-task-registry/);assert.match(h.dialog.innerHTML,/<dt>Thread registration<\/dt><dd>Not registered/);
