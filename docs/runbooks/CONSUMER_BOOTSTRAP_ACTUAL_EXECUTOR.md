@@ -49,6 +49,16 @@ using a standalone control call. This is not an absent-prompt or login finding.
 The source correction changes only that lane's prompt and the diagnostic text;
 all decision-making code and the conservative allow/deny boundary are unchanged.
 
+Oct 27 Codex parity note: both CompassPoint prompts distinguish actual-session
+registration and router/task coordination, which use standalone installed CLI
+calls outside the compute wrapper, from Thoth/canon reads, which use standalone
+permitted source-read commands outside the wrapper. The Codex prompt reserves
+`~/.local/bin/sirsi-maat-run --register-executor` for payload execution. Its
+native cross-host command, proxy, host-pin, and public-key-authentication facts
+remain byte-identical; only “Local work” is narrowed to “Local payload work.”
+This is prompt/test/runbook/changelog source work only, with no classifier,
+admission, ancestry, fence, or service change.
+
 Keep the frozen139 release untouched. Publish this isolated successor normally,
 then use supported selected lifecycle adoption at a real child-free boundary,
 preserving unrelated sessions and existing holds. Observe a genuine original
