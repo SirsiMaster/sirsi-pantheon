@@ -690,8 +690,10 @@ flowchart LR
   REQSTORE --> READ[Requirement list readback]
   AUDITCMD[req audit with required evidence reference] -->|MarkRequirementAudit upsert| AUDITSTORE[(Lane audit marker and evidence)]
   AUDITSTORE --> ELIGIBILITY[Runnable enumeration knows audited-empty versus never-audited]
-  PRD[Selected repository PRD, plan and build facts] --> NEITH[net status or align assessment]
-  NEITH --> ALIGN[Alignment result or error]
+  BUILDLOG[Selected repository build-log presence, freshness and observations] --> NETSTATUS[net status assessment or no measurable score]
+  REPOCHECK[Selected repository vet, build, format and Thoth memory checks] --> NETALIGN[net align consistency assessment]
+  NETSTATUS --> ALIGN[Scoped result or error]
+  NETALIGN --> ALIGN
   WS --> WSLIST[workstream list or inventory readback]
   ADRSTORE --> READ
   WS --> READ

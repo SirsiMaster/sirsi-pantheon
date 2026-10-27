@@ -6,6 +6,68 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.141] — 2026-10-27
+
+- Make each Fabric task count open its exact, snapshot-bound full-ledger selection, including separate blocked and stalled views and completed-task pages; preserve the selected bucket through next-page and refresh, reject changed/mismatched cursors, and keep message counts linked to the distinct inbox stream.
+
+- Align lane headers and numeric columns, keep lane state/count inspectors keyboard-operable, and focus the selected task list after an explicit drill-down without moving focus during background refresh.
+
+- Classify legacy relay retirement only after an independent kernel absence check and complete system job-list absence when Darwin's PID identity read returns EIO or ESRCH; preserve live, reused, inaccessible and indeterminate states.
+
+- Parse complete Darwin system inventories with loaded-inactive PID zero and the native `-`/`(pe)` status forms, while refusing duplicate labels, unknown rows and incomplete inventories; a selected label always remains loaded regardless of PID or status.
+
+- Require a complete, parseable system inventory containing the selected job before recording a retirement request or stopping the original service; invalid, unavailable or absent-job observations leave the original untouched.
+
+- Admit only clean retained legacy sources at the audited 0.24.129 and 0.24.137 revisions to this existing startup-gated kernel-absence recovery profile; the modern drain route remains independent and old remote outcomes remain unknown, not drained.
+
+- Native Ma'at history browsing now continues validated partial reads in a bounded burst, retains the latest accepted cursor on pause or cancellation, and leaves older-page navigation explicit.
+
+- Treat a journal's retained parent directory identity independently of its link count, so creating the canonical mutation lock or another sibling does not invalidate a frozen history prefix. Keep the journal leaf's singly-linked regular-file requirement and all parent identity checks.
+
+- Gemma worker preserves the typed lane-claim barrier and exits cleanly between joined work turns, rather than continuing its idle poll loop. Canonical thread-close failures now propagate. This source step does not add a native lifecycle controller or qualify a live handoff.
+
+- Add a typed SSA-only native Gemma worker plan/apply/recover source route. A durable lane barrier, joined worker-owned pause acknowledgment, kernel PID absence, exact loaded image/program/plist identity and single-use start intent replace generic stop/drained assertions. Broker and model processes are outside the closed profile. Unknown outcomes retain private controller debt. Native qualification and deployment remain separate.
+
+- Reconcile Pantheon Stack Lab canon with current native-product requirements, all-deity/module source inventory, process diagrams, replacement boundaries and criterion-to-proof certification. Preserve verified release evidence separately from final composed and installed acceptance; use established signing and mark changed reading copies stale until refreshed.
+
+- Memory liveness and Doctor alerts now label observed counters with their actual
+  UTC sampling window and GiB units. Liveness sizing copy distinguishes measured
+  MLX allocation from a model-ID weight estimate and states the applicable
+  KV-cache and OS-headroom formula. Session-candidate copy no longer asserts
+  Claude-session causality or directs reaping. Both surfaces require fresh
+  readings, exact owner/custody, and current-demand confirmation before supported
+  resolution at the workload's own idle boundary. Classification thresholds,
+  sizing formulas, admission, and runtime actions are unchanged.
+
+- Refs: `internal/liveness/livenesswatch.go`,
+  `internal/liveness/livenesswatch_test.go`, `internal/guard/deathspiral.go`,
+  `internal/guard/deathspiral_test.go`.
+
+- Ma'at history prefix verification now rejects physical EOF before the anchored
+  boundary, even if the inode is restored before draining. A verification
+  deadline with no verified cursor progress returns an error instead of an
+  unchanged continuation. Windows keeps the prior bounded reader, including its
+  append and cancellation semantics; frozen-prefix verification remains
+  Unix-scoped.
+
+- Align the Codex CompassPoint consumer prompt with the Claude dispatcher-binding
+  contract. Keep actual-session registration and router/task coordination in
+  standalone installed CLI calls outside the compute wrapper, and state that
+  Thoth/canon reads use standalone permitted source-read commands outside it. Use
+  the existing registered-executor Ma’at wrapper only for payload execution. The
+  native cross-host command, proxy, host-pin, and public-key-authentication facts
+  remain byte-identical; only “Local work” is narrowed to “Local payload work.”
+  No admission or service behavior changed.
+
+- **ADR-079 step 1 (Ra first): Ra's lane is now the interactive session.** The `ra` registry entry gains `attended: true`, sets `worker_answers: false` and wakes by `session-message`, matching `mercury`. While Ra's attended session holds the inbox, `attendedSessionOwnsInbox` stops dispatch, so the wake loop stops starting headless `claude --print` workers that answered Ra's mail alongside the live session. Registry data only: no lane is parked or booted out, and every other lane is unchanged.
+
+- **ADR-079 (PROPOSED, rev 2): wake lanes are the interactive sessions.** This records the owner directive of 2026-10-26. It names the three defects observed on Ra's lane that let its wake loop start headless workers beside its live attended session:
+  - the attended probe needs a live watcher process (thread-, predecessor-, or agent-keyed), and none was running for Ra's lane — per-lane watcher retirement under ADR-065 is gated separately and not a fleet-wide fact, so this is Ra's observed case, not a claim about every Claude session;
+  - Ra's registry entry has no `attended` fence;
+  - the consumer prompt defines a resident loop rather than a one-pass job.
+
+- It also sets out a staged, Ra-first rollout with a pre-registered test, including a close-session negative fixture for the `ConsumerCapable`/`armed` path that D1–D3 do not by themselves resolve. This is design only: no code or registry change is included.
+
 ## [0.24.140] — 2026-10-27
 
 - Show clear Ma’at first-use readiness and a path to the existing journal-preservation repair. Verify its JSON receipt, preserve the original journal, and require a fresh inspection and separate initialization confirmation. Journal diagnostics avoid exposing invalid record contents; historical receipt recovery remains independent.

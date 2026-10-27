@@ -1,2 +1,0 @@
-### Changed
-- **ADR-079 step 1 (Ra first): Ra's lane is now the interactive session.** The `ra` registry entry gains `attended: true`, sets `worker_answers: false` and wakes by `session-message`, matching `mercury`. While Ra's attended session holds the inbox, `attendedSessionOwnsInbox` stops dispatch, so the wake loop stops starting headless `claude --print` workers that answered Ra's mail alongside the live session. Registry data only: no lane is parked or booted out, and every other lane is unchanged.
