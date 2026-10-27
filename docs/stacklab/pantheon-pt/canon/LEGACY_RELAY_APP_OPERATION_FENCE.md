@@ -1,5 +1,33 @@
 # Legacy relay app operation admission and resolution
 
+## Exact legacy source compatibility
+
+The source selector accepts only a clean build of the canonical main module
+at an explicitly audited full revision. Version strings, nearby revisions,
+missing or duplicate VCS settings, and dirty builds do not select a profile.
+
+| Retained release | Audited source revision |
+|---|---|
+| 0.24.121 | `22944b2458f377a9f3e5e10c63c3442cb3ea83c3` |
+| 0.24.129 | `0fd8463011ee2ebae12494895669b0e7b20b9ddf` |
+| 0.24.134 | `ba2a07bb464bbfd68808254a7d489769f122149b` |
+| 0.24.137 | `cb59d56f849235eb80f5e4b10514fc89467fb8af` |
+
+The audited 129 and 134 relay transport and publication-lock blobs are identical
+(`a9d00bd181fb74358c3293eb3b0b546d1fb764e9` and
+`7ac4f3f29277d18580e1d89aa41229c5905cb341`). Neither includes `servicedrain`.
+137's startup gate (`5d94d6de8c76789af2812cc4839f0f1c7a8f3211`) returns
+without opening a maintenance endpoint when no intent exists at startup. Its
+endpoint, when present, supports snapshot and one-way activation, not a live
+drain or active-to-held transition. An occupied endpoint therefore still
+refuses legacy maintenance; the source profile never overrides that check.
+
+All original PID/kernel/image/plist, retained signed-payload, replacement,
+publication-exclusion, retirement and custody checks remain mandatory. These
+profiles preserve **unknown old outcomes**, not certified drain: neither signal
+cancellation nor a publication lock joins old forwarding work. Source support
+does not activate maintenance, replay old requests or certify host adoption.
+
 This is the source contract for the existing legacy maintenance fallback, not
 a new service, actor permission, router store, or Studio producer-route gate.
 It implements Astra's bounded BR01 design of 2026-10-25, SHA256
