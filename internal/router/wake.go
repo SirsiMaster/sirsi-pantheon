@@ -1494,22 +1494,35 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 				lastError = "consumer configuration unavailable: " + configErr.Error()
 				log.Printf("wake-loop %s: WATCH-ONLY: %s", agentID, lastError)
 			}
+			var publicationErr error
 			if thr.AnswerRole != answerRole {
-				if err := setThreadAnswerRole(routerRoot, thr.ThreadID, answerRole); err != nil {
-					return fmt.Errorf("publish refreshed answer role: %w", err)
+				publicationErr = setThreadAnswerRole(routerRoot, thr.ThreadID, answerRole)
+				if publicationErr == nil {
+					thr.AnswerRole = answerRole
 				}
-				thr.AnswerRole = answerRole
 			}
-			if thr.ConsumerCapable != capable {
-				if err := setThreadConsumerCapable(routerRoot, thr.ThreadID, capable); err != nil {
-					return fmt.Errorf("publish refreshed consumer capability: %w", err)
+			if publicationErr == nil && thr.ConsumerCapable != capable {
+				publicationErr = setThreadConsumerCapable(routerRoot, thr.ThreadID, capable)
+				if publicationErr == nil {
+					thr.ConsumerCapable = capable
 				}
-				thr.ConsumerCapable = capable
 			}
 			lane.ConsumerDeclared = capable
-			if configErr != nil {
-				if _, err := Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{Status: ThreadStatusBlocked, LastError: &lastError, Lane: &lane, ExpectedPID: os.Getpid(), ExpectedStart: thr.StartTime}); err != nil {
-					return fmt.Errorf("publish invalid consumer configuration: %w", err)
+			if publicationErr == nil && configErr != nil {
+				_, publicationErr = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{Status: ThreadStatusBlocked, LastError: &lastError, Lane: &lane, ExpectedPID: os.Getpid(), ExpectedStart: thr.StartTime})
+			}
+			if publicationErr != nil {
+				// A temporary registry write barrier holds dispatch just like the
+				// ordinary heartbeat path; it must not kill an idle observer.
+				log.Printf("wake-loop %s: heartbeat FAILED; new dispatch held: %v", agentID, publicationErr)
+				if errors.Is(publicationErr, ErrHeartbeatThreadUnavailable) {
+					return fmt.Errorf("wake-loop %s lost its observer registration: %w", agentID, publicationErr)
+				}
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-tick.C:
+					continue
 				}
 			}
 		}
