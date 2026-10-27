@@ -54,6 +54,7 @@ type FabricTaskOrigin struct {
 }
 
 type FabricTaskPage struct {
+	Filter     string       `json:"filter,omitempty"`
 	State      string       `json:"state"`
 	Rows       []FabricTask `json:"rows"`
 	Offset     int          `json:"offset"`
@@ -112,7 +113,51 @@ func fabricPublicURL(raw string) string {
 // session. Continuations bind the ordered safe projection, not collection time;
 // changed data refuses rather than silently skipping/mixing records.
 func FabricTasksFrom(s Snapshot, offset int, expected string) (FabricTaskPage, error) {
-	page := FabricTaskPage{State: "observed", Rows: []FabricTask{}, Limit: FabricTaskPageSize, Offset: offset}
+	return FabricTasksFilteredFrom(s, offset, expected, "")
+}
+
+// ValidFabricTaskFilter is a closed read-only selection, never an expression,
+// store query or arbitrary field name supplied by a browser.
+func ValidFabricTaskFilter(filter string) bool {
+	switch filter {
+	case "", "open", "done", "in_progress", "assigned_not_started", "stalled", "blocked":
+		return true
+	}
+	return false
+}
+
+// Match exactly the canonical FabricWork buckets, including pending/stalled
+// overlap. A blocker reference alone is not the status=blocked headline.
+func fabricTaskMatches(task routerstore.Task, filter string) bool {
+	if filter == "done" {
+		return task.Status == "done"
+	}
+	if task.Status == "done" {
+		return false
+	}
+	switch filter {
+	case "", "open":
+		return true
+	case "blocked":
+		return task.Status == "blocked"
+	case "in_progress":
+		return task.Status == "in-progress" && task.Liveness != "stalled"
+	case "stalled":
+		return task.Status != "blocked" && task.Liveness == "stalled"
+	case "assigned_not_started":
+		return task.Status != "blocked" && task.Status != "in-progress"
+	}
+	return false
+}
+
+// FabricTasksFilteredFrom filters the complete captured authority before paging.
+// The selection is bound into its cursor; switching buckets cannot reuse a
+// cursor or silently filter only the currently displayed 64 rows.
+func FabricTasksFilteredFrom(s Snapshot, offset int, expected, filter string) (FabricTaskPage, error) {
+	page := FabricTaskPage{Filter: filter, State: "observed", Rows: []FabricTask{}, Limit: FabricTaskPageSize, Offset: offset}
+	if !ValidFabricTaskFilter(filter) {
+		return page, errors.New("invalid fabric task filter")
+	}
 	if offset < 0 || offset%FabricTaskPageSize != 0 {
 		return page, errors.New("invalid fabric task page offset")
 	}
@@ -120,7 +165,7 @@ func FabricTasksFrom(s Snapshot, offset int, expected string) (FabricTaskPage, e
 	seen := map[string]bool{}
 	for _, lane := range s.Agents {
 		for _, task := range lane.Tasks {
-			if task.Status == "done" {
+			if !fabricTaskMatches(task, filter) {
 				continue
 			}
 			if !fabricID(lane.AgentID) || !fabricID(task.TaskID) || task.Agent != "" && task.Agent != lane.AgentID {
@@ -148,7 +193,11 @@ func FabricTasksFrom(s Snapshot, offset int, expected string) (FabricTaskPage, e
 		}
 	}
 	h := sha256.New()
-	_, _ = h.Write([]byte("fabric-safe-task-page-v1\n"))
+	if filter == "" {
+		_, _ = h.Write([]byte("fabric-safe-task-page-v1\n"))
+	} else {
+		_, _ = h.Write([]byte("fabric-safe-task-filter-v1\n" + filter + "\n"))
+	}
 	for _, row := range rows {
 		if err := json.NewEncoder(h).Encode(row); err != nil {
 			return page, err
@@ -184,6 +233,10 @@ func fabricTask(agent string, task routerstore.Task) FabricTask {
 	if task.Status == "pending" || task.Status == "in-progress" || task.Status == "blocked" {
 		row.Status = task.Status
 		row.Role = brand.Gold.Name()
+	}
+	if task.Status == "done" {
+		row.Status = "done"
+		row.Role = brand.OK.Name()
 	}
 	if task.Liveness == "active" || task.Liveness == "stalled" {
 		row.Liveness = task.Liveness

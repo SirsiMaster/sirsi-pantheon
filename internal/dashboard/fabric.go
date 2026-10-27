@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -22,14 +23,23 @@ func (s *Server) apiFabric(w http.ResponseWriter, r *http.Request) {
 	if !fabricReadMethod(w, r) {
 		return
 	}
-	offset, snapshot, selected, err := fabricTaskSelection(r.URL.RawQuery)
+	offset, snapshot, filter, selected, err := fabricTaskQuery(r.URL.RawQuery)
 	if err != nil {
 		writeError(w, "invalid fabric task page selection", http.StatusBadRequest)
 		return
 	}
 	if s.cfg.FabricSource != nil {
 		var generation *ledger.FabricGeneration
-		if selected {
+		if filter != "" {
+			source, ok := s.cfg.FabricSource.(interface {
+				ReadTaskSelection(context.Context, int, string, string) (*ledger.FabricGeneration, error)
+			})
+			if !ok {
+				writeError(w, "filtered fabric task selection unavailable from this producer", http.StatusServiceUnavailable)
+				return
+			}
+			generation, err = source.ReadTaskSelection(r.Context(), offset, snapshot, filter)
+		} else if selected {
 			generation, err = s.cfg.FabricSource.ReadPage(r.Context(), offset, snapshot)
 		} else {
 			generation, err = s.cfg.FabricSource.Read(r.Context())
@@ -52,7 +62,7 @@ func (s *Server) apiFabric(w http.ResponseWriter, r *http.Request) {
 		}
 		board := view.Board
 		if selected {
-			page, err := ledger.FabricTasksFrom(view.Read.Snapshot, offset, snapshot)
+			page, err := ledger.FabricTasksFilteredFrom(view.Read.Snapshot, offset, snapshot, filter)
 			if err != nil {
 				status := http.StatusBadRequest
 				if errors.Is(err, ledger.ErrFabricTasksChanged) {
@@ -81,6 +91,26 @@ func (s *Server) apiFabric(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, board)
+}
+
+func fabricTaskQuery(raw string) (int, string, string, bool, error) {
+	if len(raw) > 320 {
+		return 0, "", "", false, errors.New("invalid query")
+	}
+	q, err := url.ParseQuery(raw)
+	if err != nil {
+		return 0, "", "", false, err
+	}
+	filter := ""
+	if values, present := q["tasks_filter"]; present {
+		if len(values) != 1 || values[0] == "" || !ledger.ValidFabricTaskFilter(values[0]) {
+			return 0, "", "", false, errors.New("invalid task filter")
+		}
+		filter = values[0]
+		delete(q, "tasks_filter")
+	}
+	offset, snapshot, selected, err := fabricTaskSelection(q.Encode())
+	return offset, snapshot, filter, selected || filter != "", err
 }
 
 func fabricTaskSelection(raw string) (int, string, bool, error) {

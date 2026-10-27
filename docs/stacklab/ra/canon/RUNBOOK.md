@@ -1,5 +1,19 @@
 # Production runbook — Ra / Horus
 
+## Task-metric drill-down verification
+
+For a release containing `FABRIC_METRIC_DRILLDOWNS_V1.md`, read the actual loaded
+gateway version first. Click blocked and stalled separately, verify each page
+total equals that captured headline, then reach the final page and open one
+task. Refresh from the first page within the same selection. A409 must retain
+the labeled prior observation and allow an explicit fresh query; never replay
+an old cursor under another filter. Test a completed-task selection and the
+separate pending-message route. Confirm numeric column/header alignment and
+keyboard focus in desktop/narrow layouts. Record actual gateway PID/start/image,
+release identity, query/row counts and result; a synthetic preview is not this
+installed proof. Use only the guarded selected gateway update below, preserving
+the root relay, Horus, other lanes and existing rollback artifacts.
+
 ## Selected web gateway update
 
 The exact user LaunchAgent `ai.sirsi.router.surface` is distinct from Horus and
