@@ -2097,6 +2097,36 @@ struct RaFabricView: View {
                         }
                     }
 
+                    if !engine.routerUnverifiedInbox.isEmpty {
+                        SectionLabel("REMOTE / UNKNOWN SCOPE — VERIFICATION PENDING")
+                        Text("These lanes have pending work, but this node cannot verify their loop liveness from its local process table. Refresh the observation to check for updated scope.")
+                            .sirsiFont(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        ForEach(engine.routerUnverifiedInbox) { row in
+                            HStack(spacing: 10) {
+                                Image(systemName: "questionmark.circle")
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 24)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(row.agentId).sirsiFont(13, weight: .medium)
+                                    Text("\(row.openItems) pending item\(row.openItems == 1 ? "" : "s") · \(row.scopeLabel)")
+                                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 10)
+                            .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
+                        }
+                        Button {
+                            Task { await engine.loadRouterBoard(force: true) }
+                        } label: {
+                            Label("Refresh scope observation", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(engine.routerLoading)
+                    }
+
                     // ── Inconclusive probes (plain info, never an alarm) ────
                     if !engine.routerDegraded.isEmpty {
                         SectionLabel("PROBE INCONCLUSIVE — INFORMATIONAL")
