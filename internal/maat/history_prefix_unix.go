@@ -286,7 +286,10 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 		if stopAfterPass {
 			break
 		}
-		if !passDone && (phase == "anchor" || phase == "scan" || phase == "links" || phase == "candidate-links" || phase == "batch-links") {
+		// A verified scan can end by switching into a qualification batch before
+		// reaching EOF. Continue that new phase in this request while its existing
+		// time and work budgets remain; only an unfinished phase should yield.
+		if !passDone && tentative.Phase == phase && (phase == "anchor" || phase == "scan" || phase == "links" || phase == "candidate-links" || phase == "batch-links") {
 			break
 		}
 		if workClock.expired() || remainingBytes <= 0 || remainingRows <= 0 {
