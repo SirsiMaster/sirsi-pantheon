@@ -30,8 +30,8 @@ func maintenancePrepare(s MaintenanceStatus) error {
 	return maintenancePrepareAt(root, s, 0, gid, nil)
 }
 
-// Native callers fix owner=0 and the independently resolved service gid. The
-// per-call beforeCommit seam interrupts private staging before any durable
+// Native callers fix owner=0 and the independently resolved named relay-group
+// GID. The per-call beforeCommit seam interrupts private staging before any durable
 // transaction authority exists. Public prepare publication is atomic and precedes
 // the private journal; committed preparation is always a complete startup hold.
 func maintenancePrepareAt(root *os.Root, s MaintenanceStatus, owner, gid int, afterName func() error) error {

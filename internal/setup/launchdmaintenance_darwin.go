@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/user"
 	"regexp"
 	"runtime/debug"
 	"strconv"
@@ -59,16 +58,7 @@ func maintenanceLegacySourceProfile(info *debug.BuildInfo) (string, error) {
 }
 
 func maintenanceRelayUser() (int, int, error) {
-	u, err := user.Lookup("_sirsipantheon")
-	if err != nil {
-		return 0, 0, err
-	}
-	uid, e1 := strconv.Atoi(u.Uid)
-	gid, e2 := strconv.Atoi(u.Gid)
-	if e1 != nil || e2 != nil || uid <= 0 || gid < 0 {
-		return 0, 0, errors.New("legacy maintenance: existing relay service account unavailable")
-	}
-	return uid, gid, nil
+	return servicedrain.MaintenanceRelayIdentity()
 }
 
 func maintenancePayload(path string) (string, error) {

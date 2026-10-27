@@ -29,6 +29,20 @@ func (i *MaintenanceStartupIntent) Close() error { return i.file.Close() }
 // native relay always supplies root and its already-validated service group.
 // This read-only retained-FD primitive is also used with owned fixture policy.
 func OpenMaintenanceStartupIntent(root *os.Root, owner, gid uint32) (*MaintenanceStartupIntent, error) {
+	return openMaintenanceStartupIntent(root, owner, func() (uint32, error) { return gid, nil })
+}
+
+func openMaintenanceStartupIntentForRelay(root *os.Root, owner uint32, identity func() (int, int, error)) (*MaintenanceStartupIntent, error) {
+	return openMaintenanceStartupIntent(root, owner, func() (uint32, error) {
+		_, gid, err := identity()
+		if err != nil {
+			return 0, err
+		}
+		return uint32(gid), nil
+	})
+}
+
+func openMaintenanceStartupIntent(root *os.Root, owner uint32, resolveGID func() (uint32, error)) (*MaintenanceStartupIntent, error) {
 	leaf := servicedrain.MaintenanceMarkerName
 	f, err := root.OpenFile(leaf, os.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW, 0)
 	if errors.Is(err, os.ErrNotExist) {
@@ -42,8 +56,12 @@ func OpenMaintenanceStartupIntent(root *os.Root, owner, gid uint32) (*Maintenanc
 		return nil, err
 	}
 	fail := func(err error) (*MaintenanceStartupIntent, error) { _ = f.Close(); return nil, err }
+	gid, err := resolveGID()
+	if err != nil {
+		return fail(err)
+	}
 	var st unix.Stat_t
-	if unix.Fstat(int(f.Fd()), &st) != nil || st.Uid != owner || st.Gid != gid || st.Mode&unix.S_IFMT != unix.S_IFREG || st.Mode&07777 != 0640 || st.Nlink != 1 || st.Size <= 0 || st.Size > 8192 || !MaintenanceMetadataNoACL(int(f.Fd())) {
+	if unix.Fstat(int(f.Fd()), &st) != nil || !maintenanceStartupIntentMetadataAllowed(st, owner, gid) || !MaintenanceMetadataNoACL(int(f.Fd())) {
 		return fail(errors.New("relay maintenance: occupied startup intent invalid/incomplete; stay closed"))
 	}
 	before, err := f.Stat()
@@ -84,7 +102,7 @@ func (i *MaintenanceStartupIntent) Verify(root *os.Root) error {
 		return err
 	}
 	var st unix.Stat_t
-	if unix.Fstat(int(i.file.Fd()), &st) != nil || st.Uid != i.owner || st.Gid != i.gid || st.Mode&07777 != 0640 || st.Nlink != 1 || !os.SameFile(i.before, current) || !os.SameFile(current, named) || i.before.Mode() != current.Mode() || i.before.Size() != current.Size() || !i.before.ModTime().Equal(current.ModTime()) {
+	if unix.Fstat(int(i.file.Fd()), &st) != nil || !maintenanceStartupIntentMetadataAllowed(st, i.owner, i.gid) || !os.SameFile(i.before, current) || !os.SameFile(current, named) || i.before.Mode() != current.Mode() || i.before.Size() != current.Size() || !i.before.ModTime().Equal(current.ModTime()) {
 		return errors.New("relay maintenance: retained startup intent changed")
 	}
 	dir, err := root.Open(".")
@@ -97,4 +115,8 @@ func (i *MaintenanceStartupIntent) Verify(root *os.Root) error {
 		return errors.New("relay maintenance: startup intent belongs to another root")
 	}
 	return nil
+}
+
+func maintenanceStartupIntentMetadataAllowed(st unix.Stat_t, owner, gid uint32) bool {
+	return st.Uid == owner && st.Gid == gid && st.Mode&unix.S_IFMT == unix.S_IFREG && st.Mode&07777 == 0640 && st.Nlink == 1 && st.Size > 0 && st.Size <= 8192
 }
