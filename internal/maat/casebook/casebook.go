@@ -153,6 +153,7 @@ type HistoryWindow struct {
 	TotalComplete            bool   `json:"total_complete"`
 	Total                    *int   `json:"total,omitempty"`
 	ScannedBytes             int64  `json:"scanned_bytes"`
+	VerificationBytes        int64  `json:"verification_bytes,omitempty"`
 	ScannedRecords           int    `json:"scanned_records"`
 }
 
@@ -323,7 +324,7 @@ func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (Histo
 		Coverage: page.Coverage, HasMore: page.HasMore,
 		CountScope:   "query",
 		HasMoreKnown: page.Coverage == maat.HistoryCoverageComplete && (page.HasMore || page.Integrity.InvalidCount == 0),
-		ScannedBytes: page.ScannedBytes, ScannedRecords: page.ScannedRecords,
+		ScannedBytes: page.ScannedBytes, VerificationBytes: page.VerificationBytes, ScannedRecords: page.ScannedRecords,
 	}
 	if page.AfterCursor {
 		window.CountScope = "after-cursor"

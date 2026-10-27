@@ -104,16 +104,18 @@ func TestMaatSystemOneRecipeIsComplete(t *testing.T) {
 			ID: "maat-history-linked-qualification-batches",
 			Source: []string{
 				"internal/maat/history_query.go", "internal/maat/history_query_batch.go",
+				"internal/maat/history_prefix_unix.go", "internal/maat/history_prefix_windows.go",
 				"internal/mcp/maat_reads.go", "internal/dashboard/maat_reads.go",
 				"internal/tui/command.go", "internal/tui/screen_activity.go",
 			},
 			Tests: []string{
-				"internal/maat/history_query_batch_test.go", "internal/mcp/maat_history_test.go",
+				"internal/maat/history_query_batch_test.go", "internal/maat/history_prefix_test.go", "internal/mcp/maat_history_test.go",
 				"internal/dashboard/maat_history_test.go", "internal/tui/maat_history_test.go", "internal/tui/console_test.go",
 			},
 			Outputs: []string{
 				"bounded reference batches sharing one canonical relationship pass per batch",
-				"unchanged per-call work budgets and no provisional cases; cursorv4 rejects stale schema",
+				"unchanged cumulative parser budgets and no provisional cases; cursorv5 binds a frozen prefix and rejects stale schema",
+				"separate verification_bytes reports complete prefix passes without charging scanned_bytes",
 			},
 			UpgradeRecipe: []string{
 				"keep at most48 candidate refs and the strict64KiB cursor encoder; reduce capacity for retained page metadata",

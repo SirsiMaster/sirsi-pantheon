@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -108,7 +109,7 @@ func TestMaatHistoryMCPFindsOlderMatchBeforeWindow(t *testing.T) {
 		t.Fatalf("query counts=%+v", view.History)
 	}
 }
-func TestMaatHistoryMCPPartialContinuationAndDrift(t *testing.T) {
+func TestMaatHistoryMCPPartialContinuationAndPlatformSnapshotScope(t *testing.T) {
 	journal := surfaceJournal(t, true)
 	old := openMaatCasebookJournal
 	t.Cleanup(func() { openMaatCasebookJournal = old })
@@ -154,12 +155,44 @@ func TestMaatHistoryMCPPartialContinuationAndDrift(t *testing.T) {
 	if !complete {
 		t.Fatal("bounded continuation did not finish within its structural work bound")
 	}
-	if err := journal.Append(maat.Decision{Time: "2026-10-25T00:00:00Z", Host: "inert", Kind: "allocation", Requester: "fixture", Assessed: "new", Determination: "deny", Why: "snapshot changed"}); err != nil {
+	if err := journal.Append(maat.Decision{Time: "2026-10-25T00:00:00Z", Host: "inert", Kind: "allocation", Requester: "fixture", Assessed: "new", Determination: "deny", Why: "retained-older-match", Evidence: "appended:target"}); err != nil {
 		t.Fatal(err)
 	}
-	result, err := handleMaatCasebook(map[string]interface{}{"query": "retained-older-match", "limit": float64(1), "cursor": first.History.NextCursor})
-	if err != nil || !result.IsError {
-		t.Fatalf("snapshot drift accepted: %+v %v", result, err)
+	continuedArgs := map[string]interface{}{"query": "retained-older-match", "limit": float64(1), "cursor": first.History.NextCursor}
+	if runtime.GOOS == "windows" {
+		result, err := handleMaatCasebook(continuedArgs)
+		if err != nil || !result.IsError {
+			t.Fatalf("legacy Windows append did not invalidate continuation: %+v %v", result, err)
+		}
+		return
+	}
+	readComplete := func(args map[string]interface{}) maatHistoryProjection {
+		var result maatHistoryProjection
+		scanned := 0
+		for n := 0; n < maxScannedRecords; n++ {
+			result = mcpHistory(t, args)
+			scanned += result.History.ScannedRecords
+			if scanned > maxScannedRecords {
+				t.Fatalf("continuation exceeded structural work bound: %d records", scanned)
+			}
+			if result.History.Coverage == "complete" {
+				return result
+			}
+			if len(result.Cases) != 0 || result.History.NextCursor == "" {
+				t.Fatalf("frozen/fresh continuation stalled or exposed provisional results: %+v", result.History)
+			}
+			args["cursor"] = result.History.NextCursor
+		}
+		t.Fatal("bounded history continuation did not finish within its structural work bound")
+		return maatHistoryProjection{}
+	}
+	frozen := readComplete(continuedArgs)
+	if frozen.History.Snapshot != first.History.Snapshot || len(frozen.Cases) != 1 || frozen.Cases[0].Evidence != "old:target" {
+		t.Fatalf("append changed the frozen MCP result: %+v", frozen)
+	}
+	fresh := readComplete(map[string]interface{}{"query": "retained-older-match", "limit": float64(1)})
+	if fresh.History.Snapshot == first.History.Snapshot || len(fresh.Cases) != 1 || fresh.Cases[0].Evidence != "appended:target" {
+		t.Fatalf("fresh MCP query did not see appended match: %+v", fresh)
 	}
 }
 func TestMaatHistoryMCPRejectsMalformedBeforeRead(t *testing.T) {
