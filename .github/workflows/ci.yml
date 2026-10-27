@@ -133,7 +133,8 @@ jobs:
 
   test:
     name: Test
-    runs-on: macos-14
+    # GitHub-hosted macOS 15 supports standard ARM64 runners: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -179,7 +180,7 @@ jobs:
       # Verified locally: identical ci-postgres.sh run against postgresql@14
       # fails this negative control; against postgresql@16 it passes
       # end-to-end (schema + role checks + the full routerstore suite).
-      # The hosted macos-14 image ships multiple Postgres versions via
+      # The hosted macos-15 image ships multiple Postgres versions via
       # Homebrew but does NOT link any onto PATH by default. Link 16
       # explicitly so initdb/pg_ctl/psql are on PATH for the next step —
       # required, not best-effort: a missing tool now fails ci-postgres.sh
