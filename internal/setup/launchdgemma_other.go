@@ -5,6 +5,7 @@ package setup
 import (
 	"context"
 	"errors"
+
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
