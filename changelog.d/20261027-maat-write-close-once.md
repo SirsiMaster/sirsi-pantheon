@@ -1,0 +1,1 @@
+Maat's create-only write helper now treats an explicit close attempt as consumed even when close reports an error, so deferred cleanup cannot close a potentially reused descriptor a second time. Refs: `internal/maat/memory.go`; `internal/maat/memory_create_or_verify_raw_test.go`.
