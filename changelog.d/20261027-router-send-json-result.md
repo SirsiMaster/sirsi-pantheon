@@ -1,1 +1,0 @@
-- `sirsi router send --json` emits one typed committed result (`id`, `from`, resolved `to`, `deduped`) without body text or recipient-verdict output. Post-commit output failures retain the committed ID and explicitly forbid retry; default human output is retained. Refs: `docs/ADR-062-ROUTER-SERVICE-RA-CONCURRENCY.md`.
