@@ -55,6 +55,7 @@ import SwiftUI
     @Published private(set) var memory: MaatFailureMemoryStatus?
     @Published private(set) var pending: [Pending] = []
     @Published private(set) var message: String?
+    @Published private(set) var journalIntegrityRefusal:MaatJournalIntegrity?
     @Published private(set) var deliveryUnknown = false
     private var generation = UUID()
     private var memoryBytes = Data()
@@ -128,6 +129,7 @@ import SwiftUI
     }
     func inspect() async {
         guard begin() else { return }; defer { busy = false }
+        journalIntegrityRefusal=nil
         memory = nil; memoryBytes = Data(); historyVerified = false
         discoveryComplete = false; discoveryRestartRequired = true
         guard let result = await read(Self.inspectArguments), result.exitStatus == 0,
@@ -199,7 +201,7 @@ import SwiftUI
                   !memoryBytes.isEmpty else { return nil }
             return Approval(action: action, generation: generation, context: memoryBytes)
         case .initialize:
-            guard memory?.state == "uninitialized", !deliveryUnknown,
+            guard memory?.state == "uninitialized", memory?.journalReadiness == "ready", journalIntegrityRefusal == nil, !deliveryUnknown,
                   memory?.incompleteAttempt == false, memory?.projectionDebt == false,
                   memory?.preparedPreflight == nil, memory?.receiptRecoveryError == nil else { return nil }
             return Approval(action: action, generation: generation, context: memoryBytes)
@@ -216,6 +218,7 @@ import SwiftUI
     @discardableResult func confirm(_ approval: Approval) async -> Bool {
         guard approval.generation == generation, self.approval(approval.action) == approval, begin() else { return false }
         defer { busy = false }
+        journalIntegrityRefusal=nil
         historyVerified = false; lastOperationRecorded = false
         // Consume consent before the first suspension, then recheck custody.
         guard let statusRead = await read(Self.inspectArguments), statusRead.exitStatus == 0,
@@ -228,7 +231,18 @@ import SwiftUI
                 message = "Memory changed after review. Inspect again; initialization was not submitted."; return false
             }
             let args = maatCasebookFailureMemoryArguments(.initialize)
-            guard let result = await read(args), result.exitStatus == 0,
+            guard let result = await read(args) else {
+                message = "Initialization result is unavailable. Inspect local memory before another action."
+                return false
+            }
+            if result.exitStatus != 0,
+               let refusal=try?JSONDecoder().decode(MaatFirstUseJournalRefusal.self,from:result.data),
+               refusal.status=="refused",refusal.stage=="before_store_creation",refusal.journalReadiness=="invalid" {
+                journalIntegrityRefusal=refusal.journalIntegrity
+                message="Initialization was refused before store creation because retained journal history needs preservation review. No failure-memory store was created; the original journal remains unchanged."
+                return false
+            }
+            guard result.exitStatus == 0,
                   let object = try? JSONSerialization.jsonObject(with: result.data) as? [String: Any],
                   object["status"] as? String == "initialized", object["imported_incidents"] as? Bool == false,
                   let uuid = object["store_uuid"] as? String,

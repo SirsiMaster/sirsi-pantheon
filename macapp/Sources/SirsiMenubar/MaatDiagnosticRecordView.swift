@@ -28,6 +28,8 @@ struct MaatDiagnosticRecordView: View {
             await model.inspect()
             if recorded { await refresh() }
             if initialized { await initializationRefresh() }
+        } else if model.journalIntegrityRefusal != nil {
+            await initializationRefresh()
         }
     }
     var body: some View {

@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -626,6 +628,92 @@ func TestMaatLivenessMemoryInitializationIsExplicitFirstUseAndJournaled(t *testi
 	}
 	if initializations != 1 || len(journal.decisions) != 1 || journal.decisions[0].Determination != "initialized" || !strings.Contains(journal.decisions[0].Why, "no incidents imported") {
 		t.Fatalf("initializations=%d journal=%#v", initializations, journal.decisions)
+	}
+}
+
+func TestMaatFirstUseStrictJournalRefusalIsTypedBeforeStoreCreation(t *testing.T) {
+	oldConfirm, oldInspect, oldInitialize := maatRepairConfirm, maatRepairDefaultStoreInspect, maatRepairDefaultStoreInitialize
+	oldJournal, oldJSON, oldGlobalJSON := newMaatDecisionJournal, maatJSON, JsonOutput
+	t.Cleanup(func() {
+		maatRepairConfirm, maatRepairDefaultStoreInspect, maatRepairDefaultStoreInitialize = oldConfirm, oldInspect, oldInitialize
+		newMaatDecisionJournal, maatJSON, JsonOutput = oldJournal, oldJSON, oldGlobalJSON
+	})
+	issue := maat.JournalIssue{Line: 5001, Digest: "sha256:" + strings.Repeat("a", 64), Reason: "requester is required"}
+	journal := &livenessFixtureJournal{recentErr: &maat.JournalValidationError{Issue: issue}}
+	newMaatDecisionJournal = func() (maat.DecisionJournal, error) { return journal, nil }
+	maatRepairConfirm, maatJSON, JsonOutput = true, true, true
+	maatRepairDefaultStoreInspect = func() maat.DefaultStoreStatus { return maat.DefaultStoreStatus{State: maat.DefaultStoreUninitialized} }
+	initializations := 0
+	maatRepairDefaultStoreInitialize = func() (string, error) { initializations++; return "fixture-store", nil }
+	capture := func(run func() error) ([]byte, error) {
+		old := os.Stdout
+		reader, writer, err := os.Pipe()
+		if err != nil {
+			return nil, err
+		}
+		os.Stdout = writer
+		runErr := run()
+		_ = writer.Close()
+		os.Stdout = old
+		data, readErr := io.ReadAll(reader)
+		_ = reader.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		return data, runErr
+	}
+	inspectionBytes, err := capture(inspectMaatLivenessMemory)
+	if err != nil {
+		t.Fatalf("inspection = %v", err)
+	}
+	var inspection maatLivenessMemoryInspection
+	if err := json.Unmarshal(inspectionBytes, &inspection); err != nil {
+		t.Fatalf("decode inspection: %v", err)
+	}
+	if inspection.State != maat.DefaultStoreUninitialized || inspection.JournalReadiness != "invalid" || inspection.JournalIntegrity == nil ||
+		!inspection.JournalIntegrity.CountIsLowerBound || len(inspection.JournalIntegrity.Issues) != 1 || inspection.JournalIntegrity.Issues[0] != issue {
+		t.Fatalf("inspection = %+v, want uninitialized plus typed strict journal issue", inspection)
+	}
+
+	refusalBytes, initErr := capture(initializeMaatLivenessMemory)
+	var validation *maat.JournalValidationError
+	if !errors.As(initErr, &validation) {
+		t.Fatalf("initialization error = %T %v, want typed refusal", initErr, initErr)
+	}
+	var refusal maatFirstUseJournalRefusal
+	if err := json.Unmarshal(refusalBytes, &refusal); err != nil {
+		t.Fatalf("decode structured refusal: %v", err)
+	}
+	if refusal.Status != "refused" || refusal.Stage != "before_store_creation" || refusal.JournalReadiness != "invalid" ||
+		refusal.JournalIntegrity == nil || !refusal.JournalIntegrity.CountIsLowerBound || len(refusal.JournalIntegrity.Issues) != 1 || refusal.JournalIntegrity.Issues[0] != issue {
+		t.Fatalf("refusal = %+v, want typed pre-creation refusal", refusal)
+	}
+	if initializations != 0 {
+		t.Fatalf("store initialization calls = %d, want zero", initializations)
+	}
+
+	journal.recentErr = errors.New("fixture journal transport unavailable")
+	unknownBytes, unknownErr := capture(inspectMaatLivenessMemory)
+	if unknownErr != nil {
+		t.Fatalf("unreadable inspection = %v", unknownErr)
+	}
+	var unknown maatLivenessMemoryInspection
+	if err := json.Unmarshal(unknownBytes, &unknown); err != nil {
+		t.Fatalf("decode unreadable inspection: %v", err)
+	}
+	if unknown.JournalReadiness != "unavailable" || unknown.JournalIntegrity != nil {
+		t.Fatalf("unreadable inspection = %+v, want unavailable without a typed invalid-row claim", unknown)
+	}
+	unknownRefusal, unknownInitErr := capture(initializeMaatLivenessMemory)
+	if unknownInitErr == nil || len(unknownRefusal) != 0 || initializations != 0 {
+		t.Fatalf("unreadable init: stdout=%q error=%v initialize_calls=%d", unknownRefusal, unknownInitErr, initializations)
+	}
+
+	journal.recentErr = nil
+	journal.failAt = 1
+	postInitBytes, postInitErr := capture(initializeMaatLivenessMemory)
+	if postInitErr == nil || len(postInitBytes) != 0 || initializations != 1 || !strings.Contains(postInitErr.Error(), "failure memory initialized but") {
+		t.Fatalf("post-init append error: stdout=%q error=%v initialize_calls=%d", postInitBytes, postInitErr, initializations)
 	}
 }
 

@@ -45,15 +45,43 @@ import XCTest
     func testFirstUseApprovalRejectsUnknownAndConflictingDebt()async throws{
         for fields:[String:Any] in [
             ["state":"unknown"],
-            ["state":"uninitialized","incomplete_attempt":true],
-            ["state":"uninitialized","projection_debt":true],
-            ["state":"uninitialized","receipt_recovery_error":"prepared-inspection-unavailable"]
+            ["state":"uninitialized","journal_readiness":"invalid"],
+            ["state":"uninitialized","journal_readiness":"unavailable"],
+            ["state":"uninitialized","journal_readiness":"unknown"],
+            ["state":"uninitialized"],
+            ["state":"uninitialized","journal_readiness":"ready","incomplete_attempt":true],
+            ["state":"uninitialized","journal_readiness":"ready","projection_debt":true],
+            ["state":"uninitialized","journal_readiness":"ready","receipt_recovery_error":"prepared-inspection-unavailable"]
         ] {
             let read=try reply(fields)
             let model=MaatDiagnosticRecordModel(uid:501){_ in read}
             await model.inspect()
             XCTAssertNil(model.approval(.initialize),"\(fields) must not authorize first-use initialization")
         }
+    }
+    func testTypedPreCreationJournalRefusalRefreshesIntegrityInspectorWithoutRetry()async throws{
+        let absent=try reply(["state":"uninitialized","journal_readiness":"ready"])
+        let refusal=try reply(["status":"refused","stage":"before_store_creation","journal_readiness":"invalid",
+            "journal_integrity":["invalid_count":1,"count_is_lower_bound":true,"issues":[["line":5001,"digest":"sha256:"+String(repeating:"a",count:64),"reason":"requester is required"]]]],exit:1)
+        var calls:[[String]]=[]
+        var integrityRefreshes=0
+        let model=MaatDiagnosticRecordModel(uid:501){args in
+            calls.append(args)
+            if args==MaatDiagnosticRecordModel.inspectArguments { return absent }
+            return refusal
+        }
+        let view=MaatDiagnosticRecordView(model:model,refresh:{},initializationRefresh:{integrityRefreshes+=1})
+        await view.inspect()
+        let approval=try XCTUnwrap(model.approval(.initialize))
+        await view.confirmed(approval)
+        XCTAssertEqual(calls,[MaatDiagnosticRecordModel.inspectArguments,MaatDiagnosticRecordModel.inspectArguments,
+                              maatCasebookFailureMemoryArguments(.initialize)])
+        XCTAssertEqual(model.journalIntegrityRefusal?.invalidCount,1)
+        XCTAssertTrue(model.journalIntegrityRefusal?.countIsLowerBound == true)
+        XCTAssertEqual(integrityRefreshes,1,"typed refusal routes to fresh top-level integrity inspection")
+        XCTAssertNil(model.approval(.initialize),"typed refusal requires fresh readiness inspection before any new consent")
+        XCTAssertNil(model.completed)
+        XCTAssertTrue(model.message?.contains("before store creation") == true)
     }
     func testVerifiedRecordPreservesExistingDecisionWireAndOnceConsent() async throws {
         let fixture = MaatDiagnosticCorrelationFixture()
@@ -245,7 +273,8 @@ import XCTest
     }
 
     func testActualConfirmedInitializationRetainsVerifiedReadbackIndependentlyOfReadiness() async throws {
-        let absent = try reply(["state":"uninitialized"]), status = try reply(ready), noDebt = try reply(empty)
+        var readyStatus=ready; readyStatus["journal_readiness"]="ready"
+        let absent = try reply(["state":"uninitialized","journal_readiness":"ready"]), status = try reply(readyStatus), noDebt = try reply(empty)
         let initialized = try reply(["status":"initialized","store_uuid":store,"imported_incidents":false])
         var exists = false, effects = 0
         let model = MaatDiagnosticRecordModel(uid:501) { args in

@@ -1,7 +1,10 @@
 package maat
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -231,6 +234,47 @@ func TestFileDecisionJournalRejectsMalformedRecord(t *testing.T) {
 	}
 	if _, err := (&FileDecisionJournal{Path: path}).Recent(10); err == nil {
 		t.Fatal("Recent accepted malformed JSONL")
+	}
+}
+
+func TestFileDecisionJournalStrictReadReportsFirstInvalidLateRowWithoutContents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	var contents bytes.Buffer
+	valid, err := json.Marshal(Decision{
+		Time: "2026-10-27T00:00:00Z", Host: "fixture", Kind: "reservation", Requester: "fixture",
+		Assessed: "fixture", Determination: "grant", Why: "valid retained row",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5000; i++ {
+		contents.Write(valid)
+		contents.WriteByte('\n')
+	}
+	invalid, err := json.Marshal(Decision{
+		Time: "2026-10-27T00:00:01Z", Host: "fixture", Kind: "reservation", Assessed: "fixture",
+		Determination: "refuse", Why: "PRIVATE fixture body must not appear in error",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents.Write(invalid)
+	contents.WriteByte('\n')
+	if err := os.WriteFile(path, contents.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = (&FileDecisionJournal{Path: path}).Recent(1)
+	var validation *JournalValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("strict Recent error = %T %v, want typed validation error", err, err)
+	}
+	wantDigest := sha256.Sum256(invalid)
+	if validation.Issue.Line != 5001 || validation.Issue.Digest != fmt.Sprintf("sha256:%x", wantDigest) || validation.Issue.Reason != "requester is required" {
+		t.Fatalf("strict issue = %+v, want line 5001, exact digest, and sanitized requester reason", validation.Issue)
+	}
+	if strings.Contains(err.Error(), "PRIVATE fixture body") {
+		t.Fatal("strict validation error exposed rejected journal contents")
 	}
 }
 

@@ -6,6 +6,7 @@ struct MaatWorkspaceRecoveryFrame: View {
     @ObservedObject var recovery: MaatPreparedPreflightRecovery
     @State private var diagnosticExpanded=false
     let content: AnyView
+    var engine:SirsiEngine? = nil
     var diagnostic: MaatDiagnosticRecordModel? = nil
     var diagnosticRefresh: () async -> Void = {}
 
@@ -15,7 +16,7 @@ struct MaatWorkspaceRecoveryFrame: View {
     }
 
     var localMemory: MaatWorkspaceMemoryEntry {
-        MaatWorkspaceMemoryEntry(model: recovery, diagnostic: diagnostic,
+        MaatWorkspaceMemoryEntry(model: recovery, engine:engine, diagnostic: diagnostic,
             reviewFirstUse: { await reviewFirstUseInitialization() })
     }
 
@@ -37,6 +38,7 @@ struct MaatWorkspaceRecoveryFrame: View {
 
 struct MaatWorkspaceMemoryEntry: View {
     @ObservedObject var model: MaatPreparedPreflightRecovery
+    var engine:SirsiEngine? = nil
     var diagnostic:MaatDiagnosticRecordModel? = nil
     var reviewFirstUse:()async->Void = {}
     let inspectTitle = "Inspect local memory"
@@ -47,6 +49,11 @@ struct MaatWorkspaceMemoryEntry: View {
 
     var recoveryView: MaatPreparedPreflightRecoveryView {
         MaatPreparedPreflightRecoveryView(model: model, refresh: { await inspect() })
+    }
+
+    var journalIntegrityCard:MaatJournalIntegrityCard? {
+        guard let engine,let integrity=model.inspection?.journalIntegrity,integrity.invalidCount>0 else{return nil}
+        return MaatJournalIntegrityCard(engine:engine,integrity:integrity,repairCompleted:{await inspect()})
     }
 
     var body: some View {
@@ -60,6 +67,7 @@ struct MaatWorkspaceMemoryEntry: View {
                     .disabled(model.busy)
             }
             Text(model.summary).sirsiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+            if let journalIntegrityCard { journalIntegrityCard }
             if model.canReviewFirstUseInitialization,diagnostic != nil {
                 Button("Review first-use initialization") { Task{await reviewFirstUse()} }
                     .buttonStyle(.bordered).disabled(model.busy || diagnostic?.busy == true)

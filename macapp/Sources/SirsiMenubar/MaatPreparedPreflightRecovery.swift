@@ -57,7 +57,7 @@ struct MaatPreparedPreflight:Decodable,Equatable {
     private let reader:Reader
     var canReviewFirstUseInitialization:Bool {
         guard let inspection else{return false}
-        return inspection.state=="uninitialized" && !inspection.incompleteAttempt && !inspection.projectionDebt &&
+        return inspection.state=="uninitialized" && inspection.journalReadiness=="ready" && !inspection.incompleteAttempt && !inspection.projectionDebt &&
             inspection.preparedPreflight==nil && inspection.receiptRecoveryError==nil
     }
     init(reader:Reader?=nil){self.reader=reader ?? {await SirsiEngine.runJSONRead(args:$0)}}
@@ -70,7 +70,7 @@ struct MaatPreparedPreflight:Decodable,Equatable {
     func accept(_ status:MaatFailureMemoryStatus){
         guard !busy else{return}
         generation=UUID();current=nil;inspection=status;summary=Self.summary(for:status)
-        if status.state=="incomplete",!status.incompleteAttempt,!status.projectionDebt,status.receiptRecoveryError==nil,
+        if status.state=="incomplete",status.journalReadiness=="ready",!status.incompleteAttempt,!status.projectionDebt,status.receiptRecoveryError==nil,
            let prepared=status.preparedPreflight,prepared.valid(storeUUID:status.storeUUID){
             current=prepared;retained=prepared
             if recovered==nil { message="Complete prepared historical receipt verified. Review exact recovery; no action or Casebook projection is authorized." }
@@ -83,15 +83,22 @@ struct MaatPreparedPreflight:Decodable,Equatable {
         let projection=status.projectionDebt ? "present" : "none"
         let debt="Incomplete attempt: \(attempt) · projection debt: \(projection)."
         let receiptError=status.receiptRecoveryError.map{" Receipt recovery error: \($0)."} ?? ""
+        let journalStatus:String
+        switch status.journalReadiness {
+        case "ready": journalStatus="Strict journal readiness: ready."
+        case "invalid": journalStatus="Strict journal readiness: invalid; at least one record is rejected."
+        case "unavailable": journalStatus="Strict journal readiness: unavailable."
+        default: journalStatus="Strict journal readiness: unknown."
+        }
         switch status.state {
         case "uninitialized":
-            return "Local failure memory: not created. \(debt) No health, journal-integrity or empty-history claim is available.\(receiptError)"
+            return "Local failure memory: not created. \(debt) \(journalStatus) No health or empty-history claim is available.\(receiptError)"
         case "ready":
-            return "Local failure memory: ready. \(debt) Readiness is not a health, journal-integrity or empty-history claim.\(receiptError)"
+            return "Local failure memory: ready. \(debt) \(journalStatus) Readiness is not a health or empty-history claim.\(receiptError)"
         case "incomplete":
-            return "Local failure memory: incomplete. \(debt) Only an exact verified prepared receipt can be reviewed; no health, journal-integrity or empty-history claim is available.\(receiptError)"
+            return "Local failure memory: incomplete. \(debt) \(journalStatus) Only an exact verified prepared receipt can be reviewed; no health or empty-history claim is available.\(receiptError)"
         default:
-            return "Local failure memory state is unknown (\(status.state)). \(debt) No approval is available.\(receiptError)"
+            return "Local failure memory state is unknown (\(status.state)). \(debt) \(journalStatus) No approval is available.\(receiptError)"
         }
     }
     func inspect()async {

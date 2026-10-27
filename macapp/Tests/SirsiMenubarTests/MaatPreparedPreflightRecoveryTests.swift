@@ -14,7 +14,7 @@ final class MaatPreparedPreflightRecoveryTests:XCTestCase {
         let targetJSON=try JSONSerialization.data(withJSONObject:target)
         let prepared:[String:Any]=["schema":"sirsi.maat.prepared-preflight-receipt.v1","target":target,"target_json":String(decoding:targetJSON,as:UTF8.self),"read_json":String(decoding:read,as:UTF8.self)]
         let object=try JSONSerialization.data(withJSONObject:prepared)
-        let status=try JSONSerialization.data(withJSONObject:["state":"incomplete","store_uuid":uuid,"detail":"prepared receipt","incomplete_attempt":false,"projection_debt":false,"prepared_preflight":prepared])
+        let status=try JSONSerialization.data(withJSONObject:["state":"incomplete","journal_readiness":"ready","store_uuid":uuid,"detail":"prepared receipt","incomplete_attempt":false,"projection_debt":false,"prepared_preflight":prepared])
         return(status,read,try JSONDecoder().decode(MaatPreparedPreflight.self,from:object))
     }
     private func response(_ data:Data,exit:Int32=0)->SirsiEngine.JSONCommandRead{
@@ -93,7 +93,7 @@ final class MaatPreparedPreflightRecoveryTests:XCTestCase {
             ("unknown",false,false,"unknown")
         ]
         for (state,attempt,debt,summaryPart) in samples {
-            let fields:[String:Any]=["state":state,"store_uuid":state == "ready" ? uuid as Any : NSNull(),
+            let fields:[String:Any]=["state":state,"journal_readiness":"ready","store_uuid":state == "ready" ? uuid as Any : NSNull(),
                 "incomplete_attempt":attempt,"projection_debt":debt]
             let bytes=try JSONSerialization.data(withJSONObject:fields)
             model.accept(try JSONDecoder().decode(MaatFailureMemoryStatus.self,from:bytes))
@@ -104,7 +104,7 @@ final class MaatPreparedPreflightRecoveryTests:XCTestCase {
             XCTAssertNil(model.confirmation(),"\(state) must not authorize prepared recovery")
             XCTAssertEqual(model.canReviewFirstUseInitialization,state == "uninitialized")
         }
-        let conflicting=try JSONSerialization.data(withJSONObject:["state":"uninitialized","projection_debt":true])
+        let conflicting=try JSONSerialization.data(withJSONObject:["state":"uninitialized","journal_readiness":"ready","projection_debt":true])
         model.accept(try JSONDecoder().decode(MaatFailureMemoryStatus.self,from:conflicting))
         XCTAssertNil(model.confirmation())
         XCTAssertFalse(model.canReviewFirstUseInitialization)
@@ -115,8 +115,8 @@ final class MaatPreparedPreflightRecoveryTests:XCTestCase {
     @MainActor func testFreshInspectInvalidatesOldApprovalAndKeepsHistoricalMessage()async throws{
         let (status,_,prepared)=try fixture()
         let replies:[Data?]=[
-            try JSONSerialization.data(withJSONObject:["state":"uninitialized"]),
-            try JSONSerialization.data(withJSONObject:["state":"ready","store_uuid":uuid]),
+            try JSONSerialization.data(withJSONObject:["state":"uninitialized","journal_readiness":"ready"]),
+            try JSONSerialization.data(withJSONObject:["state":"ready","journal_readiness":"ready","store_uuid":uuid]),
             nil
         ]
         for reply in replies {

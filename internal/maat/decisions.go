@@ -167,12 +167,26 @@ type JournalIssue struct {
 	Reason string `json:"reason"`
 }
 
+// JournalValidationError identifies the first strict-read record rejected by
+// the journal contract without retaining or exposing its decision contents.
+type JournalValidationError struct {
+	Issue JournalIssue
+}
+
+func (e *JournalValidationError) Error() string {
+	if e == nil {
+		return "maat decision journal: invalid record"
+	}
+	return fmt.Sprintf("maat decision journal: invalid record at line %d: %s", e.Issue.Line, e.Issue.Reason)
+}
+
 // JournalIntegrity accompanies the tolerant Casebook projection.  The strict
 // journal API remains the policy read path; this shape exists only so a legacy
 // or damaged display record cannot make every healthy Ma'at case invisible.
 type JournalIntegrity struct {
-	InvalidCount int            `json:"invalid_count"`
-	Issues       []JournalIssue `json:"issues,omitempty"`
+	InvalidCount      int            `json:"invalid_count"`
+	CountIsLowerBound bool           `json:"count_is_lower_bound,omitempty"`
+	Issues            []JournalIssue `json:"issues,omitempty"`
 }
 
 // JournalRepairReceipt names the retained original and the verified active
@@ -570,14 +584,14 @@ func (j *FileDecisionJournal) readRecent(limit int, tolerateInvalid bool) ([]Dec
 		var decision Decision
 		if err := json.Unmarshal([]byte(line), &decision); err != nil {
 			if !tolerateInvalid {
-				return nil, JournalIntegrity{}, fmt.Errorf("maat decision journal: malformed record: %w", err)
+				return nil, JournalIntegrity{}, &JournalValidationError{Issue: makeJournalIssue(lineNumber, raw, "malformed JSON record")}
 			}
 			integrity.addIssue(lineNumber, raw, "malformed JSON record")
 			continue
 		}
 		if err := validateDecision(decision); err != nil {
 			if !tolerateInvalid {
-				return nil, JournalIntegrity{}, err
+				return nil, JournalIntegrity{}, &JournalValidationError{Issue: makeJournalIssue(lineNumber, raw, journalIssueReason(err))}
 			}
 			integrity.addIssue(lineNumber, raw, journalIssueReason(err))
 			continue
@@ -599,10 +613,14 @@ func (integrity *JournalIntegrity) addIssue(line int, raw, reason string) {
 	if len(integrity.Issues) >= maxRetainedJournalIssues {
 		return
 	}
+	integrity.Issues = append(integrity.Issues, makeJournalIssue(line, raw, reason))
+}
+
+func makeJournalIssue(line int, raw, reason string) JournalIssue {
 	digest := sha256.Sum256([]byte(raw))
-	integrity.Issues = append(integrity.Issues, JournalIssue{
+	return JournalIssue{
 		Line: line, Digest: fmt.Sprintf("sha256:%x", digest), Reason: reason,
-	})
+	}
 }
 
 func journalIssueReason(err error) string {

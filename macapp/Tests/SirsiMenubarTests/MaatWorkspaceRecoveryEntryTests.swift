@@ -36,8 +36,8 @@ import XCTest
         let read = try JSONSerialization.data(withJSONObject: ["schema":"sirsi.maat.failure-memory-receipt-read.v1","receipt_sha256":sha,"receipt":receipt,"store_binding":binding,"read_at_utc":"2026-10-25T00:00:00Z","freshness":"historical","registry_relation":"unverifiable","action_authorized":false])
         let targetJSON = try JSONSerialization.data(withJSONObject: target)
         let prepared: [String:Any] = ["schema":"sirsi.maat.prepared-preflight-receipt.v1","target":target,"target_json":String(decoding:targetJSON,as:UTF8.self),"read_json":String(decoding:read,as:UTF8.self)]
-        return (try JSONSerialization.data(withJSONObject: ["state":"incomplete","store_uuid":uuid,"prepared_preflight":prepared]),
-                read, try JSONSerialization.data(withJSONObject: ["state":"ready","store_uuid":uuid]))
+        return (try JSONSerialization.data(withJSONObject: ["state":"incomplete","journal_readiness":"ready","store_uuid":uuid,"prepared_preflight":prepared]),
+                read, try JSONSerialization.data(withJSONObject: ["state":"ready","journal_readiness":"ready","store_uuid":uuid]))
     }
 
     func testActualWorkspaceRootEntryInspectsEmptyAndUnavailableCasebook() async throws {
@@ -62,7 +62,7 @@ import XCTest
     }
 
     func testActualRootFirstUseReviewUsesSameDiagnosticModelAndFreshReadOnlyInspection()async throws{
-        let uninitialized=Data(#"{"state":"uninitialized","incomplete_attempt":false,"projection_debt":false}"#.utf8)
+        let uninitialized=Data(#"{"state":"uninitialized","journal_readiness":"ready","incomplete_attempt":false,"projection_debt":false}"#.utf8)
         var diagnosticCalls:[[String]]=[]
         let diagnostic=MaatDiagnosticRecordModel(uid:501,localHost:{"fixture-mac"}){args in
             diagnosticCalls.append(args)
@@ -89,6 +89,27 @@ import XCTest
         XCTAssertNotNil(diagnostic.approval(.initialize),"fresh inspect exposes existing consent review only")
         XCTAssertFalse(diagnosticCalls.contains(maatCasebookFailureMemoryArguments(.initialize)))
         XCTAssertNil(root.localMemory.model.confirmation())
+    }
+
+    func testStrictJournalIssueRoutesToExistingIntegrityCardWithoutCasebookLoad()async throws{
+        let status=Data(#"{"state":"uninitialized","journal_readiness":"invalid","journal_integrity":{"invalid_count":1,"count_is_lower_bound":true,"issues":[{"line":5001,"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","reason":"requester is required"}]}}"#.utf8)
+        var diagnosticCalls:[[String]]=[]
+        let diagnostic=MaatDiagnosticRecordModel(uid:501,localHost:{"fixture-mac"}){args in
+            diagnosticCalls.append(args)
+            return .init(data:status,exitStatus:0,timedOut:false,launchError:nil)
+        }
+        let recovery=MaatPreparedPreflightRecovery{_ in .init(data:status,exitStatus:0,timedOut:false,launchError:nil)}
+        let operations=MaatCaseOperationStore(preparedPreflightRecovery:recovery,diagnosticRecord:diagnostic)
+        let engine=SirsiEngine(maatCaseOperations:operations)
+        let root=try frame(engine:engine,casebook:nil)
+        await root.localMemory.inspect()
+        let card=try XCTUnwrap(root.localMemory.journalIntegrityCard)
+        XCTAssertTrue(card.integrity.countIsLowerBound)
+        XCTAssertEqual(card.integrity.invalidCount,1)
+        XCTAssertEqual(card.integrity.issues.first?.line,5001)
+        XCTAssertFalse(recovery.canReviewFirstUseInitialization)
+        await root.reviewFirstUseInitialization()
+        XCTAssertTrue(diagnosticCalls.isEmpty,"invalid strict journal routes to preservation review, not initialization consent")
     }
 
     func testActualRootConfirmationCallbackRecoversOnceThenRefreshesSameInspector() async throws {

@@ -1,3 +1,3 @@
-The Ma'at workspace now reports the latest local failure-memory inspection even when the store is not created, and distinguishes readiness from health or empty-history claims. First-use review opens the existing diagnostic disclosure and performs a fresh read before its existing confirmation flow; conflicting debt and unknown states cannot authorize initialization. Verified initialization refreshes the workspace memory inspector.
+The Ma'at workspace now reports typed strict-journal readiness during first-use inspection. A rejected row blocks initialization before store creation and routes to the existing confirmed preservation repair, including from the workspace when Casebook history is unavailable. The first invalid row is shown as a lower-bound finding; the repair receipt displays the preserved original path and digest. First-use consent remains separate and requires a fresh inspection after repair.
 
 Refs: docs/ADR-004-MAAT-QA-GOVERNANCE.md
