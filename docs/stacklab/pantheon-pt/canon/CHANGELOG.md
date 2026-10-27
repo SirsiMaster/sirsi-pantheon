@@ -2,6 +2,8 @@
 
 ## 2026-10-27 — v0.24.141 release candidate
 
+- Pulse deity-count correction uses the selected canonical roster, not six legacy filenames; bounded regular-file parsing preserves offline metrics and existing schema.
+
 - Make each Fabric task count open its exact, snapshot-bound full-ledger selection, including separate blocked and stalled views and completed-task pages; preserve the selected bucket through next-page and refresh, reject changed/mismatched cursors, and keep message counts linked to the distinct inbox stream.
 - Align lane headers and numeric columns, keep lane state/count inspectors keyboard-operable, and focus the selected task list after an explicit drill-down without moving focus during background refresh.
 - Classify legacy relay retirement only after an independent kernel absence check and complete system job-list absence when Darwin's PID identity read returns EIO or ESRCH; preserve live, reused, inaccessible and indeterminate states.

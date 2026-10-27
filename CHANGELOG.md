@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.141] — 2026-10-27
 
+- **Correct canonical deity metrics** — Ma’at Pulse counts literal canonical roster declarations in the selected source, including inline Isis, with bounded non-blocking input handling. This count does not claim runtime registration or availability.
+
 - Make each Fabric task count open its exact, snapshot-bound full-ledger selection, including separate blocked and stalled views and completed-task pages; preserve the selected bucket through next-page and refresh, reject changed/mismatched cursors, and keep message counts linked to the distinct inbox stream.
 
 - Align lane headers and numeric columns, keep lane state/count inspectors keyboard-operable, and focus the selected task list after an explicit drill-down without moving focus during background refresh.

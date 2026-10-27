@@ -25,7 +25,7 @@
 //	  ├─ measureCoverage()  → parses coverprofile
 //	  ├─ countSourceLines() → find + wc -l (excludes vendor/test)
 //	  ├─ measureBinary()    → stat the built binary
-//	  └─ countDeities()     → counts cmd/sirsi/*.go subcommands
+//	  └─ countDeities()     → counts declarations in the selected source deity roster
 //
 // All system calls are injectable (Rule A16) for testing (Rule A21).
 package maat
@@ -33,6 +33,10 @@ package maat
 import (
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -334,22 +338,110 @@ func parseTotalCoverage(output string) float64 {
 
 // ── Counters ────────────────────────────────────────────────────────
 
-// countDeities counts the deity subcommands registered in cmd/sirsi/.
+// countDeities counts unique literal keys in the selected repository's canonical
+// source Roster declaration, not registered commands or runtime availability.
+// Missing, unreadable, oversized, or invalid rosters yield zero.
 func countDeities(root string) int {
-	deityFiles := []string{
-		"anubis.go", "maat.go", "thoth.go", "hapi.go", "seba.go", "seshat.go",
+	f, err := openPulseRosterFile(filepath.Join(root, "internal", "deity", "registry.go"))
+	if err != nil {
+		return 0
 	}
-	count := 0
-	for _, f := range deityFiles {
-		path := filepath.Join(root, "cmd", "sirsi", f)
-		if _, err := os.Stat(path); err == nil {
-			count++
+	defer f.Close()
+	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
+		return 0
+	}
+	const maxRosterBytes = 256 * 1024
+	data, err := io.ReadAll(io.LimitReader(f, maxRosterBytes+1))
+	if err != nil || len(data) > maxRosterBytes {
+		return 0
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), "registry.go", data, 0)
+	if err != nil || file.Name.Name != "deity" {
+		return 0
+	}
+	var roster *ast.CompositeLit
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.VAR {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			value := spec.(*ast.ValueSpec)
+			for _, name := range value.Names {
+				if name.Name != "Roster" {
+					continue
+				}
+				if roster != nil || len(value.Names) != 1 || len(value.Values) != 1 {
+					return 0
+				}
+				roster, ok = value.Values[0].(*ast.CompositeLit)
+				if !ok {
+					return 0
+				}
+			}
 		}
 	}
-	return count
+	if roster == nil {
+		return 0
+	}
+	array, ok := roster.Type.(*ast.ArrayType)
+	if !ok || array.Len != nil {
+		return 0
+	}
+	element, ok := array.Elt.(*ast.Ident)
+	if !ok || element.Name != "Info" {
+		return 0
+	}
+	keys := make(map[string]bool)
+	for _, expr := range roster.Elts {
+		entry, ok := expr.(*ast.CompositeLit)
+		if !ok || len(entry.Elts) == 0 {
+			return 0
+		}
+		if entry.Type != nil {
+			typ, ok := entry.Type.(*ast.Ident)
+			if !ok || typ.Name != "Info" {
+				return 0
+			}
+		}
+		var keyExpr ast.Expr
+		if _, keyed := entry.Elts[0].(*ast.KeyValueExpr); keyed {
+			for _, field := range entry.Elts {
+				pair, ok := field.(*ast.KeyValueExpr)
+				if !ok {
+					return 0
+				}
+				name, ok := pair.Key.(*ast.Ident)
+				if !ok {
+					return 0
+				}
+				if name.Name == "Key" {
+					if keyExpr != nil {
+						return 0
+					}
+					keyExpr = pair.Value
+				}
+			}
+		} else {
+			if len(entry.Elts) != 4 {
+				return 0
+			}
+			keyExpr = entry.Elts[0]
+		}
+		literal, ok := keyExpr.(*ast.BasicLit)
+		if !ok || literal.Kind != token.STRING {
+			return 0
+		}
+		key, err := strconv.Unquote(literal.Value)
+		if err != nil || strings.TrimSpace(key) == "" || keys[key] {
+			return 0
+		}
+		keys[key] = true
+	}
+	return len(keys)
 }
 
-// countModules counts the internal Go packages.
+// countModules counts immediate subdirectories of internal/, without inspecting Go files.
 func countModules(root string) int {
 	internalDir := filepath.Join(root, "internal")
 	entries, err := os.ReadDir(internalDir)
