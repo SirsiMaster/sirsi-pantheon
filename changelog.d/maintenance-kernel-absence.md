@@ -1,0 +1,3 @@
+- Classify legacy relay retirement only after an independent kernel absence check and complete system job-list absence when Darwin's PID identity read returns EIO or ESRCH; preserve live, reused, inaccessible and indeterminate states.
+- Parse complete Darwin system inventories with loaded-inactive PID zero and the native `-`/`(pe)` status forms, while refusing duplicate labels, unknown rows and incomplete inventories; a selected label always remains loaded regardless of PID or status.
+- Require a complete, parseable system inventory containing the selected job before recording a retirement request or stopping the original service; invalid, unavailable or absent-job observations leave the original untouched.
