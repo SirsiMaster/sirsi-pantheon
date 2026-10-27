@@ -50,6 +50,28 @@ class ShellWhitespaceTests(unittest.TestCase):
     def test_empty_input_refused(self):
         self.assertIsNotNone(self.denied(' \n\t'))
 
+    def test_worker_bootstrap_diagnostic_names_actual_executor_not_controller(self):
+        reason = self.denied('python3 workload.py')
+        self.assertIn('--register-executor', reason)
+        self.assertIn("job's actual local runtime", reason)
+        self.assertIn('standalone canonical CLI', reason)
+        self.assertNotIn('--thread <own-thread>', reason)
+
+    def test_actual_compasspoint_envelope_still_refused_atomic_read_allowed(self):
+        self.assertIsNotNone(self.denied('which sirsi 2>/dev/null; echo "---"; sirsi router pull claude-m5-compasspoint 2>&1 | head -100'))
+        self.assertIsNone(self.denied(str(gate.CLI) + ' router pull claude-m5-compasspoint'))
+        self.assertIsNone(self.denied(self.front))
+
+    def test_compasspoint_prompt_scopes_owner_task_and_dispatcher_identity(self):
+        import json
+        root = Path(__file__).resolve().parents[2]
+        registry = json.loads((root / '.agents/idea-router/agents.json').read_text())
+        prompt = registry['agents']['claude-m5-compasspoint']['consumer']['prompt']
+        for expected in ['existing instruction', 'standalone', '--register-executor', 'dispatcher binding', 'already-authorized']:
+            self.assertIn(expected, prompt)
+        self.assertNotIn('your worker thread is {{thread}}', prompt)
+        self.assertIn('No account/security changes', prompt)
+
     def test_exact_compasspoint_null_stderr_source_read(self):
         command = 'cat /Users/thekryptodragon/Development/compasspoint/.thoth/memory.yaml 2>/dev/null | head -150'
         self.assertIsNone(self.denied(command))
