@@ -682,23 +682,24 @@ proposals. Source implements a create-only local proposal queue and a separate
 source-catalog registration/resolution path. The native surface exposes a
 Stack Lab review route, but there is no proposal status mutation or promotion
 command: a reviewer must assess the exact proposal and use the existing RA-02
-governed catalog subflow to register it. Resolution of a
-catalog entry separately requires a real regression guard. Proposal creation
-does not edit the canonical catalog.
+catalog subflow to register an open catalog entry. `Register` records no fix
+or guard. `Resolve` is a later, separate operation that requires a fix record
+and a real regression guard. Proposal creation does not edit the canonical
+catalog.
 
 ```mermaid
 flowchart TD
   AUTHOR[Owner records recurring issue] --> PROPOSAL[Create private proposal]
   PROPOSAL --> VALIDATE[Validate identity, fields and evidence]
-  VALIDATE -->|invalid| HOLD[Keep rejected or private]
+  VALIDATE -->|invalid| HOLD[Refuse creation, no proposal write]
   VALIDATE -->|valid| QUEUE[(Private proposal queue)]
   REVIEWER[Reviewer inspects proposal] --> QUEUE
   QUEUE --> REVIEW[Visible Stack Lab review route]
   REVIEW -->|not selected for promotion| PRIVATE[Proposal remains local and proposed]
   REVIEW -->|selected for catalog registration| HANDOFF[Explicit reviewer handoff to RA-02]
-  HANDOFF --> PROMOTE[RA-02 governed catalog registration subflow]
-  PROMOTE --> CATALOG[(Canonical known-failure catalog)]
-  CATALOG --> GUARD[Later resolve requires real regression guard]
+  HANDOFF --> REGISTER[RA-02 Register subflow]
+  REGISTER --> CATALOG[(Open catalog entry, no fix or guard)]
+  CATALOG --> GUARD[Separate Resolve requires fix fields and real regression guard]
 ```
 
 ```mermaid
@@ -717,13 +718,12 @@ flowchart LR
 stateDiagram-v2
   [*] --> Draft
   Draft --> Queued: valid private proposal retained
-  Draft --> Rejected: malformed or unsafe proposal
+  Draft --> Refused: malformed or unsafe input, no proposal write
   Queued --> ReviewRoute: reviewer opens visible Stack Lab route
   ReviewRoute --> Queued: not promoted, proposal remains proposed
   ReviewRoute --> Handoff: reviewer explicitly hands off to RA-02
-  Handoff --> Promoted: governed registration succeeds
-  Promoted --> GuardRequired: later resolution requires a real regression guard
-  GuardRequired --> Resolved: guard exists and catalog resolution succeeds
+  Handoff --> OpenCatalog: Register succeeds with status open, no fix or guard
+  OpenCatalog --> Resolved: separate Resolve has fix fields and real regression guard
   Resolved --> [*]
 ```
 
@@ -733,18 +733,23 @@ sequenceDiagram
   participant CLI as Known-failure CLI
   participant Queue as Private proposal queue
   participant Reviewer
-  participant Catalog as Canonical catalog
+  participant Native as Ma'at proposal review surface
+  participant Catalog as Canonical catalog via RA-02
   Author->>CLI: register recurring issue
   CLI->>Queue: validate and retain private proposal
   Queue-->>CLI: proposal identity and status
-  Reviewer->>CLI: review exact proposal
-  CLI->>Queue: read proposal and validate disposition
-  Queue-->>CLI: proposal evidence
-  opt promotion approved and regression guard exists
-    CLI->>Catalog: apply governed catalog promotion
-    Catalog-->>CLI: promoted record or refusal
+  Reviewer->>Native: open visible Stack Lab review route
+  Native->>CLI: read proposals
+  CLI->>Queue: read create-only local proposal records
+  Queue-->>Native: proposal evidence with proposed status
+  opt reviewer selects proposal for catalog registration
+    Reviewer->>Catalog: Register open entry through RA-02
+    Catalog-->>Reviewer: open entry, no fix or guard
   end
-  CLI-->>Reviewer: retained review or promotion result
+  opt fix and regression test are later available
+    Reviewer->>Catalog: Resolve with fix fields and real guard
+    Catalog-->>Reviewer: resolved entry or refusal
+  end
 ```
 
 **Evidence references.** Sources: `internal/maat/knownfail/proposal.go`,
@@ -760,8 +765,9 @@ Tests: `internal/maat/knownfail/proposal_test.go`,
 an incomplete review leaves the proposal in its proposed state. The native
 surface exposes a Stack Lab review route but no proposal status mutation or
 direct promotion operation; the reviewer must carry the reviewed proposal into
-RA-02. Registration and resolution are distinct catalog changes. The private
-queue is not the canonical known-failure catalog.
+RA-02. Catalog registration creates an open entry without a fix or guard. Only
+the later resolve operation requires fixed-in/text fields and a real regression
+guard. The private queue is not the canonical known-failure catalog.
 
 <a id="pt-p49"></a>
 ## PT-P49 — Resource capacity reservations and executor cleanup
@@ -771,13 +777,13 @@ resource grant against current reservations, and retains a bounded heartbeat
 lease before admission. Core and memory amounts are advisory to the scheduler;
 the selected caller/executor must honor those grants. If memory capacity has no
 explicit receipt or configuration, it remains unknown rather than being
-invented. A reservation can be renewed or extended only through its current
-identity; release ends its claim. Cede is a separate voluntary request and
-does not itself mutate the reservation. Conflict and defer are explicit
-results. Executor admission and cleanup are separate: an admitted job is
-released after the owned job group is stopped and direct children are reaped;
-unknown cleanup remains held for reconciliation instead of freeing capacity by
-assumption.
+invented. Reservation heartbeat expiry and explicit release are ledger
+transitions keyed to reservation state and identity; neither inspects child
+process cleanup. The separate admitted-executor workflow owns its child group
+and cleanup debt, and may request reservation release after its own cleanup
+policy. That executor policy is not a ledger guarantee. Cede is a separate
+voluntary request and does not itself mutate a reservation. Conflict, queue,
+floor grant, and defer remain explicit scheduler outcomes.
 
 ```mermaid
 flowchart TD
@@ -789,12 +795,15 @@ flowchart TD
   QUEUE -->|prior holder ends and admission rechecked| RESERVE
   RESERVE --> ADMIT[Admit selected executor]
   ADMIT --> RUN[Run within grant and lease]
-  RUN --> TERM{Terminal state and cleanup known?}
-  TERM -->|yes| RELEASE[Release or cede reservation]
-  TERM -->|no| HOLD[Retain reservation and cleanup debt]
-  HOLD --> RECOVER[Inspect owned executor and reconcile]
-  RECOVER -->|verified cleanup| RELEASE
-  RECOVER -->|unknown| HOLD
+  RUN --> END[Executor reaches terminal result]
+  END --> CLEAN[Executor applies its own child-group cleanup policy]
+  CLEAN -->|verified| CLEAN_OK[No executor cleanup debt]
+  CLEAN -->|unknown| CLEAN_DEBT[Retain executor cleanup debt]
+  CLIENT[Reservation owner] -->|explicit release by current reservation ID| RELEASE[Ledger marks reservation released]
+  STORE[(Reservation ledger)] -->|heartbeat TTL expires| EXPIRED[Ledger projects reservation expired]
+  RELEASE --> STORE
+  CLIENT -->|renew or extend by current reservation ID| CHANGE[Mutate exact reservation]
+  CHANGE --> STORE
   RUN --> RENEW[Heartbeat renewal or explicit extension]
   RENEW --> RUN
   CEDE[Separate holder/requester cede request and response] -->|pending cede can cap future grant to floor| CONFLICT
@@ -810,32 +819,31 @@ flowchart LR
   STORE --> ADMISSION[Selected admission controller]
   ADMISSION --> EXEC[Selected executor]
   EXEC --> JOB[Owned job group]
-  JOB --> CLEANUP[Stop and reap owned children]
-  CLEANUP --> STORE
+  JOB --> CLEANUP[Executor stops and reaps its owned children]
+  CLEANUP --> DEBT[Executor cleanup result or local debt]
+  ADMISSION -->|may request explicit release after its own policy| SCHED
+  CLIENT[Reservation owner] -->|may request explicit release by reservation ID| SCHED
+  STORE -->|heartbeat TTL expiry independent of child state| EXPIRED[Expired reservation]
+  SCHED -->|explicit release by reservation ID| STORE
   SCHED -->|conflict or defer| USER[Caller]
 ```
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Unreserved
-  Unreserved --> Deferred: capacity unavailable and no queue requested
-  Unreserved --> Queued: caller requests waiting behind live holder
-  Unreserved --> Reserved: bounded grant retained
-  Queued --> Reserved: holder ends and admission is rechecked
-  Reserved --> Running: executor admission succeeds
-  Running --> Renewed: valid heartbeat renewal
-  Renewed --> Running
-  Running --> Extended: explicit extension rechecks grant
-  Extended --> Running
-  Running --> CedePending: cede request recorded separately
-  CedePending --> Running: holder responds with grant, counter, or decline
-  Running --> CleanupPending: job ending or lease boundary reached
-  CleanupPending --> Released: owned cleanup verified
-  CleanupPending --> HeldUnknown: stop/reap outcome uncertain
-  HeldUnknown --> Released: reconciliation verifies cleanup
-  HeldUnknown --> HeldUnknown: unknown executor remains
-  Reserved --> Released: explicit release or cede before execution
-  Deferred --> Unreserved: fresh request after capacity change
+  [*] --> ReservationActive
+  ReservationActive --> ReservationExpired: heartbeat TTL expires
+  ReservationActive --> ReservationReleased: explicit release by reservation ID
+  ReservationActive --> ReservationRenewed: valid heartbeat renewal
+  ReservationRenewed --> ReservationActive
+  ReservationActive --> ReservationExtended: explicit extend rechecks grant
+  ReservationExtended --> ReservationActive
+  [*] --> ExecutorPrepared
+  ExecutorPrepared --> ExecutorRunning: admission client starts owned job
+  ExecutorRunning --> ExecutorStopping: job ends or is cancelled
+  ExecutorStopping --> ExecutorClean: child-group cleanup verified
+  ExecutorStopping --> ExecutorCleanupDebt: child-group cleanup uncertain
+  ExecutorClean --> ExecutorDone
+  ExecutorCleanupDebt --> ExecutorReconciled: executor-specific inspection resolves debt
 ```
 
 ```mermaid
@@ -854,8 +862,18 @@ sequenceDiagram
   Executor-->>Admission: terminal result or uncertainty
   Admission->>Executor: stop owned process group and reap direct child
   Executor-->>Admission: cleanup result or uncertainty
-  Admission->>Store: release only after verified cleanup
-  Store-->>Client: released, deferred, or held status
+  Note over Scheduler,Store: heartbeat TTL expiry and Release are reservation-ledger transitions, and neither checks child cleanup
+  opt reservation owner releases by ID, independently of executor cleanup
+    Client->>Scheduler: explicit release with current reservation ID
+    Scheduler->>Store: mark that reservation released
+    Store-->>Client: released status or refusal
+  end
+  opt admission client chooses to request release after its own cleanup policy
+    Admission->>Scheduler: explicit release request with current reservation ID
+    Scheduler->>Store: mark that reservation released
+    Store-->>Scheduler: released status or refusal
+  end
+  Store-->>Client: reservation status, independent of executor cleanup state
 ```
 
 **Evidence references.** Sources: `internal/maat/schedule/capacity.go`,
@@ -870,10 +888,14 @@ Tests: `internal/maat/schedule/reservation_test.go`,
 `internal/routerstore/maatcpufloororder_test.go`, and
 `scripts/maat/test_release_admission.py`.
 
-**Recovery and boundary.** Renew, extend, release, and cede require the current
-reservation identity. Unknown executor cleanup remains reserved/held. The
-capacity planner does not itself start inference; the recipe keeps SNE
-admission as the execution authority.
+**Recovery and boundary.** Reservation expiry is projected from its heartbeat
+and TTL; explicit release updates the exact reservation independently of child
+cleanup. Renew and extend require the current reservation identity. The
+admitted-executor supervisor has its own cleanup debt and reconciliation path;
+it may defer its release request under that path, but the ledger does not
+enforce that relationship. Cede remains a separate ledger. The capacity
+planner does not itself start inference; the recipe keeps SNE admission as the
+execution authority.
 
 <a id="pt-p50"></a>
 ## PT-P50 — Finite delegated pod authority and dormant service recipe

@@ -2,7 +2,7 @@
 
 **Process IDs:** PT-P52–PT-P56 and PT-P68–PT-P84  
 **Reviewed source pin:** `e26e324be107ab541ec8d4d1400392e1ee55fc26`  
-**Implementation label:** Source-described at this pin. Runtime, installed-host and production observations are **UNKNOWN** unless a linked existing receipt says otherwise. These diagrams do not promote source or tests to qualification or certification.
+**Implementation label:** Source-described at this pin. Fidelity corrections in this revision were checked against candidate source `3779e90b1f226527723491fe8eadc929890b98e3`. Runtime, installed-host and production observations are **UNKNOWN** unless a linked existing receipt says otherwise. These diagrams do not promote source or tests to qualification or certification.
 
 This sidecar adds 22 process groups to the Pantheon PT census. Together with PT-P01–PT-P40 and the concurrent PT-P41–PT-P51 and PT-P57–PT-P67 owners, the target whole-wing denominator is 84. This file covers its assigned 22/22 IDs. It makes no claim that the concurrent groups or the whole-wing census are complete.
 
@@ -15,7 +15,7 @@ The diagrams name source-supported branches. Unsupported or unverified behavior 
 | Process | Owner and mapping | Source and existing evidence anchor | Source state and next action |
 |---|---|---|---|
 | PT-P52 Stack Lab doctor, origin/pin/roster/catalog and Ma’at handoff | Pantheon PT, Stack Lab contract owners, Ma’at preflight owner. PT-REQ-05,08,10,11. PT-US-05,08,10. | `cmd/sirsi/stacklabcmd.go`, `internal/stacklab/doctor.go`, `internal/stacklab/catalog.go`, `StackLabView.swift`, `StackLabCatalogView.swift`, `internal/maat/releasepreflight.go`; `internal/stacklab/doctor_test.go`, `catalog_test.go`, native Stack Lab contract/accessibility fixtures; recipes `native-stacklab-surface-recipe-v1.json`, `pantheon-native-workspace-v1.json`, `maat-system-one-recipe-v1.json`, `pantheon-release-artifact-recipe-v1.json`. | Read-only source path and typed handoff. Next: independently qualify installed origin/pin and selected-project handoff, retaining unknown on unavailable reads. |
-| PT-P53 Apollo plan and admitted installed native chat | Apollo owns inference/profile/telemetry; Ma’at owns admission; Pantheon owns UI projection. PT-REQ-05,07,08,09,10. PT-US-05,08,09. | `internal/apollo/catalog.go`, `telemetry.go`, `cmd/sirsi/apollo.go`, `apollo_native.go`, `ApolloRunPlannerView.swift`; `internal/apollo/catalog_test.go`, `telemetry_test.go`, `cmd/sirsi/apollo_native_test.go`; `apollo-sne-telemetry-v1.json`, native workspace and Ma’at system-one recipes. | Plan is non-executing. Native chat is source-described and profile/admission-bound. Next: separate signed installed-profile and authorized run/teardown receipt. No general cluster is inferred. |
+| PT-P53 Apollo plan, separate telemetry read and admitted native chat | Apollo owns plan and inference; SNE owns session telemetry; Ma’at owns native chat admission; Pantheon owns projection. PT-REQ-05,07,08,09,10. PT-US-05,08,09. | `cmd/sirsi/apollo.go`, `internal/apollo/catalog.go`, `internal/apollo/telemetry.go`, `cmd/sirsi/apollo_native.go`, `ApolloRunPlannerView.swift`; catalog, telemetry and native chat fixtures; `apollo-sne-telemetry-v1.json`, native workspace and Ma’at system-one recipes. | `apollo plan` collects local hardware/provider route and validates a resource plan without inference. `apollo telemetry` separately reads the SNE session file. Native chat is separate and admitted. Next: qualify installed profile, admission, actual telemetry freshness and chat run/teardown as separate receipts. No cluster or runtime pass is inferred. |
 | PT-P54 Ask and model-routing | Pantheon model-router owner, provider owners, Ma’at privacy/evidence owner. PT-REQ-01,06,07,09. PT-US-01,06,07,09. | `cmd/sirsi/ask.go`, `internal/modelrouter/router.go`, `stream.go`, `decision_record.go`, `internal/provider`; `internal/modelrouter/*_test.go`, `cmd/sirsi/ask_requirements_test.go`; `model-router-v1-recipe-v1.json`. | Source-described policy and redacted decision journal. Next: current-head composed route/stream qualification and actual routed-request evidence. No prompt/output journal is claimed. |
 | PT-P55 Human/shared Gemma lifecycle | Pantheon broker/worker integration; Ra owns router item and lease authority; Apollo owns qualified model. PT-REQ-01,07,09. PT-US-01,06,09. | Lifecycle source at `e3e457e2d95576d63cb0149dbe0e34aad5785928`: `internal/setup/launchdgemma.go`, `internal/setup/launchdgemma_darwin.go`, `cmd/sirsi/gemma_worker.go`, `internal/routerstore/lease.go`; adjacent shared, serve, quarantine and orphan-reap sources; tests `internal/setup/launchdgemma_test.go`, `internal/setup/launchdgemma_native_darwin_test.go`, `cmd/sirsi/gemma_worker_test.go` are separate component evidence; Ra-Horus fabric and Apollo telemetry recipes. | Source describes durable lane acquire-intent, idle barrier, joined worker and lease maintainer pause, child-registration closure, PID/kernel-child absence checks, replacement identity readback and guarded restart. Next: independently qualify installed lifecycle, broker/service and native receipt. Source tests are not qualification receipts and were not run here. No live GPU or model run in this task. |
 | PT-P56 Mercury producer contract and consumers | Mercury owns producer/schema; Pantheon CLI, web, MCP and native components own their projections. PT-REQ-05,07,08,10. PT-US-05,08,09. | `internal/mercury/{dashboard-v1.schema.json,reader.go,presentation.go,scene.go}`, `cmd/sirsi/mercury.go`, `internal/mcp/mercury.go`, `internal/dashboard/mercury.go`, `MercuryMonitor.swift`, `MercuryWorkspaceRefresh.swift`; reader, MCP, dashboard and native Mercury fixtures; `mercury-consumer-recipe-v1.json`, `pantheon-native-workspace-v1.json`, `apollo-sne-telemetry-v1.json`. | Reader/consumer source is present; producer runtime unknown. Next: pin producer schema and qualify fresh/stale/error parity across actual installed consumers. |
@@ -23,17 +23,17 @@ The diagrams name source-supported branches. Unsupported or unverified behavior 
 | PT-P69 Hapi live resource guard and swap hygiene | Hapi/guard owner, with Gemma broker and OS process owners retaining their authority. PT-REQ-05,07,09. PT-US-05,06,09. | `cmd/sirsi/hapi.go`, `internal/guard/hapi.go`, `hapi_daemon.go`, `relieve.go`, `internal/reaper`, `internal/swaphygiene`; Hapi, relieve, reaper and swap-hygiene fixtures. | Warn-only by default; governed processes can be suspended/resumed and at emergency killed. Kill is not reversible. Next: live pressure/host qualification and operation-specific recovery proof. |
 | PT-P70 Isis diagnosis and bounded repair | Isis owns diagnosis contract; guard/platform adapters own each network, LaunchServices and Spotlight control. PT-REQ-05,06,09. PT-US-05,06,07. | `cmd/sirsi/main.go`, `internal/isis`, `internal/guard/{doctor.go,network.go,spotlightmarkers.go}`, `internal/autoheal`, `internal/brain/spotlight.go`; Isis, network, Spotlight-marker and remediation fixtures. | Source contains distinct diagnostics and supported repairs. Next: host-specific preflight, selected consent, postcheck and retained recovery per adapter. No host repair was run. |
 | PT-P71 Horus code context and Vault | Horus owns code graph/context; Vault owns local content/index store; RTK owns output filtering. PT-REQ-05,06,08,09. PT-US-05,07,08. | `internal/horus`, `internal/vault`, `internal/rtk`, `cmd/sirsi/vault.go`, `cmd/sirsi/horus.go`; Horus parser/watcher and Vault store/index/search/prune fixtures; Ma’at system-one recipe where shared local reads apply. | Independent local read/store/index paths are source-described. Next: qualify bounded local traversal, data retention and cross-surface filter parity. No code indexing was run. |
-| PT-P72 Thoth init, sync, compact, status and continuation | Thoth owns continuity file formats and journal; repo owns its source files. PT-REQ-02,09,11. PT-US-02,10. | `internal/thoth/{init.go,sync.go,compact.go,journal.go,router_snapshot.go}`, `cmd/sirsi/thoth.go`, `thoth_status.go`, `internal/seshat/adapter_thoth.go`; Thoth init/sync/compact/status fixtures. | Source-described local continuation. Next: qualify idempotent sync and bounded continuation on a selected repo with before/after file identity. Model memory is not canonical evidence. |
-| PT-P73 Workstream lifecycle and Neith alignment | Workstream owner and Neith goal-weaving owner; target repo owns PRD, ADR and evidence. PT-REQ-04,08,11. PT-US-04,08,10. | `internal/workstream`, `cmd/sirsi/workstream.go`, `internal/work`, `internal/neith`, `internal/prd`; workstream and Neith loom fixtures. | CRUD/launch and source alignment are distinct paths. Next: qualify exact target repo, owner authority and evidence links. No automatic satisfy/waive authority is inferred. |
-| PT-P74 Osiris risk and checkpoint | Osiris owns risk/checkpoint source; Git owns commit state. PT-REQ-02,04,09. PT-US-02,04. | `internal/osiris/{osiris.go,checkpoint.go}`, `cmd/sirsi/osiris.go`; `internal/osiris/osiris_test.go`, checkpoint fixtures. | Risk is observational; checkpoint is an explicit Git mutation. Next: qualify retained dirty-work identity and checkpoint/restore boundary on actual selected worktrees. No checkpoint was created. |
-| PT-P75 Seba discovery, topology, fleet, profile and compute | Seba owns local topology/hardware projections; Scarab/network owner controls fleet discovery; Vitals/Insight own their schemas. PT-REQ-05,07,09,10. PT-US-05,08,09. | `cmd/sirsi/seba.go`, `internal/seba`, `internal/vitals`, `internal/insight`, `internal/scarab`; Seba and hardware/profile fixtures. | Local observation is source-described. Fleet discovery requires explicit targets/confirmation. Next: host-specific source/freshness and explicit benchmark evidence. No network scan or benchmark was run. |
+| PT-P72 Thoth init, sync, compact, status and continuation | Thoth owns continuity file formats and journal; repo owns its source files. PT-REQ-02,09,11. PT-US-02,10. | `internal/thoth/{init.go,sync.go,compact.go,journal.go,router_snapshot.go}`, `cmd/sirsi/thoth.go`, `thoth_status.go`, `internal/seshat/adapter_thoth.go`; Thoth init/sync/compact/status fixtures. | `init --yes` overwrites memory and journal and later writes can fail after earlier replacements. Next: qualify the exact write sequence and partial-failure handling. Model memory is not canonical evidence. |
+| PT-P73 Workstream lifecycle and Neith alignment | Workstream owner and Neith goal-weaving owner; target repo owns PRD, ADR and evidence. PT-REQ-04,08,11. PT-US-04,08,10. | `internal/workstream`, `cmd/sirsi/workstream.go`, `cmd/sirsi/reqcmd.go`, `cmd/sirsi/adrcmd.go`, `internal/work`, `internal/neith`, `internal/prd`; workstream and Neith loom fixtures. | CRUD/launch and source alignment are distinct paths. Next: qualify exact target repo, owner authority and evidence links. No automatic satisfy/waive authority is inferred. |
+| PT-P74 Osiris risk and checkpoint | Osiris owns risk/checkpoint source; Git owns commit state. PT-REQ-02,04,09. PT-US-02,04. | `internal/osiris/{osiris.go,checkpoint.go}`, `cmd/sirsi/osiris.go`; `internal/osiris/osiris_test.go`, checkpoint fixtures. | Checkpoint directly stages all changes and commits without confirmation or second status verification, including dirtiest linked worktree selection for bare repos. Next: review exact selected tree and resulting index/commit state. No checkpoint was invoked. |
+| PT-P75 Seba discovery, topology, fleet, profile and compute | Seba owns local topology/hardware projections; Scarab/network owner controls fleet discovery; Vitals/Insight own their schemas. PT-REQ-05,07,09,10. PT-US-05,08,09. | `cmd/sirsi/seba.go`, `cmd/sirsi/remediate.go`, `internal/seba`, `internal/vitals`, `internal/insight`, `internal/scarab`; Seba and hardware/profile fixtures. | Fleet defaults to local-subnet ARP plus ping discovery and ignores the parsed `--confirm-network` flag. Profile and HTML commands write files. `seba compute --tokenize` is tokenization, not the separate Go benchmarks. No network scan, profile write, HTML render or benchmark was run. |
 | PT-P76 Brain roles and Conduit | Brain owns provider/role policy; Ra owns task dispatch; Conduit owns installed tick scheduling. PT-REQ-01,04,07,09. PT-US-01,04,09. | `internal/brain`, `cmd/sirsi/braincmd.go`, `cmd/sirsi/conduitarm.go`, `conduittick.go`, `internal/horus/conduit.go`; brain config/controlplane and conduit fixtures. | Autonomous operation defaults off; an armed scheduler is distinct from one explicit tick. Next: qualify provider resolution, grant, task mutation and disarm/readback on the supported host. No tick was run. |
-| PT-P77 Desktop custody and authenticated recovery | Desktop custody owner, Ra/router custody authority, desktoprecovery gateway owner, host operator. PT-REQ-04,05,09. PT-US-02,04,05. | `internal/desktopcustody`, `cmd/sirsi/desktopsleep.go`, `internal/desktoprecovery`, `cmd/sirsi/recovery.go`; custody return/budget/controller tests and gateway auth/replay tests. | Finite sleep and bounded authenticated recovery are separate. Next: actual host enrollment, expiry/replay refusal and independently authenticated return qualification. No sleep or recovery session occurred. |
+| PT-P77 Desktop custody and authenticated recovery | Desktop custody owner, Ra/router custody authority, desktoprecovery gateway owner, host operator. PT-REQ-04,05,09. PT-US-02,04,05. | `internal/desktopcustody`, `cmd/sirsi/desktopsleep.go`, `internal/desktoprecovery`, `cmd/sirsi/recovery.go`; custody return/budget/controller tests and gateway auth/replay tests. | Sleep custody and the authenticated RFB remote-desktop gateway are separate. Next: qualify external Serve placement, capability/session admission and observed return. No sleep or recovery session occurred. |
 | PT-P78 Seshat compatibility import/export | Ma’at owns canonical knowledge; Seshat owns compatibility adapters and explicit export only. PT-REQ-06,08,09. PT-US-07,08. | `cmd/sirsi/seshat.go`, `internal/seshat`, `internal/maat/knowledge`; Seshat adapter and Ma’at knowledge fixtures. | Local Claude ingestion delegates to Ma’at. Chrome profile ingestion, unsupported adapters, prune and bidirectional sync refuse. Next: qualify one explicitly configured local source and one separately selected export target. No new user authority is added. |
 | PT-P79 Mail poison and sender census | Ma’at/Anubis hygiene; mailbox account owner retains OAuth consent. PT-REQ-05,06,09. PT-US-05,06,07. | `cmd/sirsi/mailopscmd.go`, `internal/mailops/{auth.go,authflow.go,gmail.go,mailops.go,receipt.go}`; `internal/mailops/mailops_test.go`. | Poison scan defaults dry-run. Apply only archives by removing INBOX label and records a local receipt. Sender census is read-only. OAuth scopes exclude send and delete-all. Next: explicit mailbox consent and reviewed archive outcome if ever operated. |
-| PT-P80 First-run setup and install lifecycle | Pantheon setup owner; selected surface/dependency installers and macOS package owner retain their own writes. PT-REQ-03,04,05,10. PT-US-03,04,05. | `cmd/sirsi/setup.go`, `internal/setup`, `internal/runner`, `cmd/sirsi/main.go`, native app entry/lifecycle sources; setup, installer and runner fixtures; native workspace and release artifact recipes. | Setup status and selected installers are source-described. Next: signed installed-host install/refresh/uninstall readback and per-surface single-instance evidence. No installer was invoked. |
-| PT-P81 Activity and Stele event custody | Oplog owns destructive-operation readback; Stele owns hash-chained event log; Ma’at owns consent/decision records; native surfaces own presentation. PT-REQ-02,05,06,09. PT-US-02,05,06,10. | `cmd/sirsi/activitycmd.go`, `internal/oplog`, `internal/stele`, native activity and Ma’at views; oplog and Stele append/read/verify fixtures; Ma’at system-one recipe. | Oplog and Stele are distinct stores. Next: qualify capture-to-postcheck correlation and native consent-once presentation. Unknown outcome stays unknown. |
-| PT-P82 Web, TUI and MCP surface protocols | Dashboard, TUI and MCP owners; Ra owns the router-MCP subsystem only. PT-REQ-01,05,08,09. PT-US-01,05,08. | `internal/dashboard/{actions.go,runner.go,server.go,events.go}`, `internal/tui`, `internal/mcp/{server.go,tools.go,resources.go}`, `cmd/sirsi/main.go`; dashboard confirmation/runner, TUI and MCP fixtures; Ra-Horus and native surface recipes. | Independent protocol paths are source-described. PT-P04 is only the router shared-core MCP process. Next: qualify authorization/confirmation, SSE cancellation, TUI health and tool/resource admission per surface. |
+| PT-P80 First-run setup and install lifecycle | Pantheon setup owner; selected surface/dependency installers and macOS package owner retain their own writes. PT-REQ-03,04,05,10. PT-US-03,04,05. | `cmd/sirsi/setup.go`, `internal/setup`, `internal/runner`, `cmd/sirsi/main.go`, `macapp/Sources/SirsiMenubar/MenubarInstanceLease.swift`, `macapp/Sources/SirsiMenubar/AppDelegate.swift`; setup, installer and runner fixtures; native workspace and release artifact recipes. | Native source has a per-user descriptor-held instance lease and peer handoff. Installed-host lease and installer receipts remain separate qualification evidence. No installer was invoked. |
+| PT-P81 Activity and Stele event custody | Oplog owns destructive-operation readback; Stele owns hash-chained event log; Ma’at owns consent/decision records; native surfaces own presentation. PT-REQ-02,05,06,09. PT-US-02,05,06,10. | `cmd/sirsi/activitycmd.go`, `cmd/sirsi/notifications.go`, `cmd/sirsi/maatresolution.go`, `internal/notify`, `internal/oplog`, `internal/stele`, `internal/tui/screen_activity.go`, `internal/tui/screen_health.go`, native activity and Ma’at views; oplog and Stele append/read/verify fixtures; Ma’at system-one recipe. | Oplog and Stele are distinct stores. Next: qualify capture-to-postcheck correlation and native consent-once presentation. Unknown outcome stays unknown. |
+| PT-P82 Web, TUI and MCP surface protocols | Dashboard, TUI and MCP owners; Ra owns the router-MCP subsystem only. PT-REQ-01,05,08,09. PT-US-01,05,08. | `internal/dashboard/{actions.go,runner.go,server.go,events.go}`, `internal/tui`, `internal/mcp/{server.go,tools.go,resources.go}`, `cmd/sirsi/main.go`; dashboard confirmation/runner, TUI and MCP fixtures; Ra-Horus and native surface recipes. | Dashboard confirmation/SSE, TUI runner and named MCP handlers are separate. No global MCP authentication gate is asserted. PT-P04 is only router A2A. Next: qualify each surface and handler independently. |
 | PT-P83 Qualification, pre-push and review bind | Source owner writes controls; finite Ma’at runner owns admitted execution; independent reviewer owns result binding. PT-REQ-03,08,11. PT-US-03,08,10. | `.github/workflows/ci.yml`, `scripts/maat/admitted-run.py`, `scripts/maat/apollo-bounded-qualification.sh`, `scripts/verify-*`, private execution wrapper; script contract and qualification fixtures. | Source only. No CI, private SDK, hardware executor, native bootstrap or model run was invoked. Next: review exact source pin, causal controls, execution limits and immutable result binding before an authorized run. |
 | PT-P84 Canon publication and completion debt | Main owns the 13-criterion certification record; SSA publication custodian owns external mirrors; Pantheon owns source pin and completion validator. PT-REQ-02,03,11. PT-US-02,03,10. | PT `CERTIFICATION.md`, `DIAGRAM_INDEX.md`, `DEITY_AND_MODULE_MAP.md`, origin/pin sources, `internal/canon`, `internal/completionproof`, existing mirror/publication records and `RELEASE_SIGNING.md`. | Repository evidence and source pins are inspectable; external origin/mirror readback and current completion decision remain separate evidence. Next: Main reconciles each criterion, origin/pin, three-home mirrors and retained completion debt. This diagram asserts no pass. |
 
@@ -101,51 +101,52 @@ flowchart LR
 The second source above is the router wing registry, not the local catalog. A failed or unavailable origin, registry, peer or schema read stays Unknown. The native handoff chooses a selected project and delegates to Ma’at. It does not execute recipe strings or publish a release. Recovery is a fresh read of that exact project and authority source. Sequence crosses CLI/native, registry and Ma’at, so the handoff order is shown in the logical view.
 
 <a id="pt-p53"></a>
-## PT-P53 — Apollo machine planning and admitted installed native chat
+## PT-P53 — Apollo capacity plan, separate telemetry read and admitted native chat
 
-**Owner:** Apollo owns models, machine estate and inference. Ma’at owns run admission. Pantheon owns native presentation. Planning and inference execution are separate paths. The implemented local plan does not create a cluster or claim one exists.
+**Owner:** Apollo owns the local capacity plan and native inference. SNE owns session telemetry. Ma’at owns native chat admission. These are distinct command paths. The local planner does not create a cluster or claim one exists.
 
 **Logical view**
 
 ```mermaid
 flowchart TD
-  U[Operator opens Apollo workspace] --> CAT[Read configured machine, engine and chip estate catalog]
-  CAT --> TEL[Read SNE-owned telemetry through declared telemetry contract]
-  TEL --> CAP[Project measured capacity and freshness]
-  CAP --> PLAN[Validate selected machine, engine, model and request]
-  PLAN --> READY{Plan supported by current source and capacity?}
-  READY -->|no or unknown| HOLD[Keep plan unadmitted and show specific missing input]
-  READY -->|yes| PREP[Compose profile-bound native chat request]
-  PREP --> PROFILE[Load installed Apollo profile and validate principal]
-  PROFILE --> ADMIT[Ma’at authority admits exact prepared request]
-  ADMIT -->|deny or stale| REF[Refuse before inference]
-  ADMIT -->|admit| RUN[Run installed native Apollo backend]
-  RUN --> MET[Persist bounded run metrics]
-  MET --> REL[Release admission and rank reservation]
-  RUN -->|error or cancel| JOIN[Join run and release admission]
-  JOIN --> REC[Retain failure and require fresh review]
+  OP[Operator runs apollo plan] --> COLLECT[Collect local hardware, configured SNE route and chip estates]
+  COLLECT --> BUILD[Validate selected machine, engine and resource envelope]
+  BUILD --> PLAN[Return non-executing plan]
+  OP -->|separate apollo telemetry command| READ[Read bounded SNE-owned session telemetry]
+  READ --> TELEMETRY[Return active, awaiting-session or read error]
+  CHAT[Operator separately runs apollo chat] --> PROFILE[Load installed native profile]
+  PROFILE --> PREP[Prepare exact profile-bound chat request]
+  PREP --> ADMIT[Ma’at admission for this request]
+  ADMIT -->|denied or unavailable| REFUSE[Do not begin native inference]
+  ADMIT -->|admitted| RUN[Run installed native Apollo backend]
+  RUN --> RESULT[Return actual chat result and metrics]
+  RUN -->|failure or cancellation| FAIL[Return observed failure or cancellation]
+  CLUSTER[Cluster command] -->|sourced refusal path| REFUSECLUSTER[Return unsupported cluster response]
 ```
 
 **Data and boundary view**
 
 ```mermaid
 flowchart LR
-  MACH[(Configured SNE machine catalog)] --> PLAN[Apollo catalog and planner]
-  ENG[(Engine, model and chip estate declarations)] --> PLAN
-  TEL[(Telemetry files with identity, schema, freshness and capacity)] --> PLAN
-  PLAN -->|typed plan only| UI[CLI or native planner]
-  PROF[(Installed native profile)] -->|profile ID and bounded context/output limits| EXEC[Native chat path]
-  PRINCIPAL[Current authenticated principal] --> ADMIT[Ma’at admission]
-  EXEC --> ADMIT
-  ADMIT -->|exact prepared plan and short-lived reservation| BACKEND[Installed native backend]
-  BACKEND -->|answer and bounded metrics| UI
-  BACKEND -->|run identity and measurements| METRICS[(Private local run metrics)]
-  ADMIT -->|release on joined completion or error| CAPACITY[(Reservation state)]
-  CLUSTER[Optional authenticated cluster commands] -. separate capability path, not implied by local plan .-> UI
-  GPU[Live GPU execution] -. not observed in this documentation task .-> BACKEND
+  HW[Local Seba hardware detection] --> COLLECT[Apollo catalog collector]
+  CONF[(Configured local provider route)] --> COLLECT
+  ESTATES[Detected local chip estates] --> COLLECT
+  COLLECT --> BUILD[apollo plan catalog validation]
+  BUILD --> VIEW[Plan JSON output]
+  TELEFILE[(SNE session telemetry file)] -->|separate command only| TREAD[apollo telemetry bounded reader]
+  TREAD --> TELEOUT[Telemetry JSON output]
+  PROFILE[(Installed Apollo profile)] --> CHAT[apollo chat entry]
+  PRINCIPAL[Current macOS user principal] --> ADMIT[Ma’at admission]
+  CHAT --> REQUEST[Prepared chat request]
+  REQUEST --> ADMIT
+  ADMIT -->|exact admitted request| BACKEND[Native Apollo executor]
+  BACKEND --> RESULT[Chat output and actual run metrics]
+  CLUSTER[Cluster capability commands] -->|explicit unsupported response| REFUSAL[Refusal result]
+  PLAN[Plan output] -. no inference, reservation or telemetry read implied .-> VIEW
+  LIVE[Live model run] -. not observed in this documentation task .-> BACKEND
 ```
 
-The diagram keeps machine telemetry separate from run authority. A local plan is not an installed profile, admitted request or measured benchmark. Errors and cancellation join the source run and release held admission where the implementation confirms release; otherwise report unresolved debt, never a successful teardown. Existing `internal/apollo` and `cmd/sirsi/apollo_native` fixtures are source evidence only. Runtime and installation remain Unknown.
+At the reviewed source, `apollo plan` calls `internal/apollo.Collect` and `BuildPlanForMachine`. It does not call the separate `apollo telemetry` reader. Telemetry reads the SNE session file only through its own command. `apollo chat` is a separate profile-bound Ma’at-admitted execution path. Cluster commands keep their explicit refusal path. No telemetry read, profile execution, chat or cluster request was made here.
 
 <a id="pt-p54"></a>
 ## PT-P54 — Ask, model route and redacted decision journal
@@ -269,7 +270,34 @@ flowchart LR
 
 The cooperative pause path is: lane barrier blocks new claims, the worker finishes the current synchronous turn and lease maintainer, the actual worker closes its registration and reads canonical `closed`, then writes its identity-bound acknowledgment. The controller separately requires zero active tasks/items, exact acknowledgment or the narrowly recognized legacy140 retirement path, kernel PID absence, a complete kernel child inventory, unchanged plist/program identities and the replacement CDHash. It persists intent before releasing the barrier and before a single launchd start. Recovery reads retained debt and exact installed state. Unknown release/start outcomes are never replayed. Legacy140 retirement is recorded as retirement, never mislabeled as a cooperative pause acknowledgment.
 
-Worker/serve/quarantine/reap remain separate source branches: `shared` submit/resume is idempotent; normal worker answer publication uses a lease; `serve` owns broker status/start/stop/readiness; quarantine holds automatic liveness restoration; orphan reap classifies exact broker identities before action. Their tests and lifecycle receipts are component evidence, not a live broker, GPU or installed native qualification. The new joined-lifecycle tests are named in `internal/setup/launchdgemma_test.go`, `launchdgemma_native_darwin_test.go` and `cmd/sirsi/gemma_worker_test.go`; not run here.
+**Service and orphan lifecycle view**
+
+```mermaid
+flowchart TD
+  OP[Operator runs gemma serve command] --> ACTION{start, status, stop, quarantine or restore}
+  ACTION -->|status| STATUS[Read quarantine marker or local service readiness]
+  ACTION -->|start| INSTALLED{Native broker installed and not quarantined?}
+  INSTALLED -->|no| REFUSE[Return unavailable or quarantined error]
+  INSTALLED -->|yes| KICK[launchctl kickstart fixed label]
+  KICK --> READY[Poll local readiness]
+  ACTION -->|stop| STOP[Signal PID from local broker pid file]
+  STOP --> NOTE[launchd may restore service]
+  ACTION -->|quarantine| MOVE[Move broker plist to quarantine]
+  MOVE --> DISABLE[Disable and bootout launchd label]
+  DISABLE --> CHECK{Still loaded after bounded wait?}
+  CHECK -->|yes| DEBT[Return error with plist quarantined]
+  CHECK -->|no| CLEAR[Remove pid and port files]
+  ACTION -->|restore| ENABLE[Enable label and restore plist]
+  ENABLE --> BOOT[Bootstrap launchd job]
+  BOOT --> READY
+  READY -->|failure| REQUARANTINE[Quarantine again]
+  ORPHAN[Operator invokes orphan reap] --> ID[Classify exact broker process identities]
+  ID -->|canonical identity uncertain| REFUSE
+  ID -->|confirmed orphan| REAP[Apply selected orphan reap]
+  ID -->|canonical broker| KEEP[Preserve canonical broker]
+```
+
+`serve` start, status, stop, quarantine, restore and orphan reap are distinct commands. Restore readiness failure re-quarantines the broker. Quarantine checks launchd loaded state and may return an error while the plist remains quarantined. The orphan-reap path refuses to guess when canonical identity is missing. Component tests do not constitute installed lifecycle or live service receipts.
 
 <a id="pt-p56"></a>
 ## PT-P56 — Mercury producer schema and consumer read models
@@ -321,50 +349,53 @@ A consumer failure is an error or Unknown, never fabricated zero-valued health. 
 
 ```mermaid
 flowchart TD
-  OP[Operator selects root and command] --> CMD{Scan, ghosts, duplicates or purge}
-  CMD -->|scan| RULES[Run read-only registered scan rules]
-  CMD -->|ghosts| APPS[Enumerate installed apps and residual paths]
-  CMD -->|duplicates| HASH[Group eligible files by stable content identity]
-  CMD -->|purge| BUILD[Enumerate project build-artifact candidates]
-  RULES --> FIND[Return typed findings without mutation]
-  APPS --> FIND
-  HASH --> FIND
-  BUILD --> FIND
-  FIND --> POLICY[Scales evaluates finding and protection policy]
-  POLICY --> PREVIEW[Display exact selected paths and proposed action]
-  PREVIEW --> CONFIRM{Explicit selected apply and confirmation?}
-  CONFIRM -->|no| STOP[Return dry-run result]
-  CONFIRM -->|yes| RECHECK[Recheck path identity, type and protected scope]
-  RECHECK -->|changed, protected or unreadable| REFUSE[Skip or refuse with reason]
-  RECHECK -->|stable and allowed| EFFECT[Apply only selected cleanup operation]
-  EFFECT --> VERIFY[Read back effect and retain operation evidence]
-  VERIFY --> PARTIAL{Every selected effect completed and verified?}
-  PARTIAL -->|no| OPEN[Return partial or unknown without blind replay]
-  PARTIAL -->|yes| DONE[Return completed selected-operation report]
+  OP[Operator selects storage operation] --> CMD{Scan, ghosts, duplicates, purge, clean or reclaim snapshots}
+  CMD -->|scan| SCAN[Read scan rules and filesystem metadata]
+  CMD -->|ghosts| GHOST[Enumerate apps and residual paths]
+  CMD -->|duplicates| DUP[Group eligible files by content identity]
+  CMD -->|purge| PURGE[Enumerate build artifact candidates]
+  SCAN --> FIND[Present findings]
+  GHOST --> FIND
+  DUP --> FIND
+  PURGE --> FIND
+  FIND --> JUDGE[Apply Scales policy and protected path rules]
+  JUDGE --> PREVIEW[Present selected candidates and command]
+  PREVIEW -->|sirsi clean default| DRY[Return preview and offer a later fresh scan]
+  PREVIEW -->|explicit confirm| CLEAN[Clean selected scan-derived candidates]
+  CLEAN --> TRASH[Cleaner uses Trash for this clean path]
+  TRASH --> REPORT[Report actual cleaned, skipped and freed results]
+  REPORT --> NEXT[Offer a new scan as a next command]
+  NEXT -. no automatic rescan .-> SCAN
+  CMD -->|reclaim snapshots| SNAP[Read local APFS snapshots and free space]
+  SNAP --> SNAPCONF{Explicit --confirm?}
+  SNAPCONF -->|no| SNAPPLAN[Show preview and confirmation command]
+  SNAPCONF -->|yes| ADMIN[Request macOS administrator authorization]
+  ADMIN --> THIN[Run tmutil thinning for local snapshots]
+  THIN --> SNAPREAD[Read free space and snapshots remaining]
+  SNAPREAD --> SNAPOUT[Report measured before and after values]
 ```
 
 **Data and custody view**
 
 ```mermaid
 flowchart LR
-  FS[(User-selected filesystem roots)] -->|bounded metadata and rule-specific reads| SCAN[Jakal and Ka scanners]
-  APPS[(Installed app inventory)] --> GHOST[Ghost residual scanner]
-  FS --> DUP[Duplicate candidate scanner]
-  FS --> PURGE[Build-artifact scanner]
-  SCAN --> FINDINGS[Typed candidate and evidence records]
-  GHOST --> FINDINGS
-  DUP --> FINDINGS
-  PURGE --> FINDINGS
-  FINDINGS --> POLICY[Scales rules and hard protected-path policy]
-  POLICY --> PREVIEW[Exact candidate list and dry-run report]
-  PREVIEW -->|selected IDs plus confirmation| CLEAN[Cleaner or selected trash adapter]
-  CLEAN -->|bounded selected path effect| FS
-  CLEAN --> OPL[(Operation log and retained effect result)]
-  FINDINGS -. scan phase has no write authority .-> FS
-  POLICY -. protected paths cannot be overridden .-> CLEAN
+  ROOTS[(Selected filesystem roots)] --> SCANNERS[Jakal, Ka, ghost and build scanners]
+  SCANNERS --> FINDINGS[Typed candidates and source paths]
+  FINDINGS --> POLICY[Scales judgment and hard protected path checks]
+  POLICY -->|selected clean confirmation| CLEAN[Anubis clean and cleaner]
+  CLEAN -->|UseTrash true| TRASH[(macOS Trash destination)]
+  CLEAN -->|actual item results| REPORT[Clean report]
+  REPORT -->|suggested command only| OP[Operator may start a fresh scan]
+  OP -. no automatic scan invocation .-> SCANNERS
+  SNAP[Local APFS snapshot inventory] --> PREVIEW[Snapshot preview]
+  PREVIEW -->|explicit --confirm| AUTH[macOS admin authorization]
+  AUTH --> TMUTIL[tmutil thinlocalsnapshots]
+  TMUTIL --> SNAPRESULT[Free space before and after plus remaining count]
+  SNAPRESULT --> REPORT
+  EXTERNAL[External or network backups] -. not targeted by local thinning command .-> TMUTIL
 ```
 
-Scan and judgment are read-only. Cleanup is a later selected action; confirmation does not bypass protected-path or identity rechecks. Trash-first behavior applies only to the specific ghost-clean path that implements it. Purge and other deletion paths retain their own command contracts. Failure after some effects returns partial/unknown with the actual completed items; recovery inspects current state before any new consent. No storage scan or purge was run.
+The ordinary `sirsi clean` path configures `UseTrash: true`. Its result offers a fresh `sirsi scan` as a next command. It does not run that scan automatically. Snapshot reclamation is a separate `reclaim-snapshots --confirm` path using macOS authorization and `tmutil thinlocalsnapshots`, followed by observed free-space and remaining-snapshot values. No scan, clean or thinning command was run.
 
 <a id="pt-p69"></a>
 ## PT-P69 — Hapi live guard, manual relief, reaper and swap hygiene
@@ -375,51 +406,53 @@ Scan and judgment are read-only. Cleanup is a later selected action; confirmatio
 
 ```mermaid
 flowchart TD
-  START[Operator requests hapi status or watch] --> SAMPLE[Sample free memory and process footprint]
-  SAMPLE --> TIER[Classify OK, warn, critical or emergency]
-  TIER --> GOV{Target explicitly registered as governed compute?}
-  GOV -->|no| WARN[Report and recommend only]
-  GOV -->|yes and warn| NAME[Name target without signal]
-  GOV -->|yes and critical| PAUSE[Suspend exact governed PID reversibly]
-  PAUSE --> CLEAR{Pressure clears?}
-  CLEAR -->|yes| RESUME[Resume only process Hapi paused]
-  CLEAR -->|no and emergency| KILL[Kill exact governed target as last resort]
-  WARN --> MANUAL{Operator selects separate relieve or reap action?}
-  NAME --> MANUAL
-  MANUAL -->|no| END[Return observation]
-  MANUAL -->|yes| PREFLIGHT[Capture target, protected set and before evidence]
-  PREFLIGHT --> CONSENT{Explicit operation and current identity valid?}
-  CONSENT -->|no| REFUSE[Refuse with target unchanged]
-  CONSENT -->|yes| ACTION[Run the named relieve or reap step]
-  ACTION --> POST[Observe target and pressure again]
-  POST --> SWAP[Swap hygiene may reconcile only its owned swap state]
-  KILL --> POST
-  RESUME --> POST
+  OP[Operator invokes Hapi or guard command] --> SAMPLE[Sample memory and process state]
+  SAMPLE --> TIER[Classify observed pressure]
+  TIER --> WATCH{Watch governance enabled?}
+  WATCH -->|no| REPORT[Report alert or recommendation]
+  WATCH -->|yes| PID{PID in governed registry and not protected?}
+  PID -->|no| REPORT
+  PID -->|yes and critical| PAUSE[Suspend registered PID]
+  PAUSE --> CLEAR{Later sample shows pressure cleared?}
+  CLEAR -->|yes| RESUME[Resume only PID Hapi recorded as paused]
+  CLEAR -->|no and emergency| KILL[Kill governed target at emergency]
+  OP -->|hapi protect PID| PROTECT[Add PID to governed registry]
+  OP -->|hapi release PID| RELEASE[Remove PID from governed registry]
+  OP -->|relieve| RELIEVE[Find eligible high CPU process and lower priority]
+  RELIEVE --> EFFECT[renice and background QoS effect]
+  EFFECT --> LIMIT[No Hapi command restores prior priority]
+  OP -->|reaper or swap hygiene| OTHER[Run that separate named subsystem]
+  REPORT --> OUT[Return status]
+  RESUME --> OUT
+  KILL --> OUT
+  PROTECT --> OUT
+  RELEASE --> OUT
+  LIMIT --> OUT
+  OTHER --> OUT
 ```
 
 **Data and authority view**
 
 ```mermaid
 flowchart LR
-  VM[vm_stat and total RAM source] --> SAMPLE[Hapi memory sample]
-  PS[Process list and measured footprint] --> SAMPLE
-  REG[(Private governed PID registry)] --> GATE[Governance and protected-process gate]
-  SAMPLE --> CLASS[Pressure tier]
-  CLASS --> GATE
-  GATE -->|governed exact PID only| SIGNAL[SIGSTOP, SIGCONT or emergency kill]
-  GATE -->|all other processes| REPORT[Names and recommendation only]
-  SIGNAL --> STELE[(Stele intervention event)]
-  RELIEVE[Explicit relieve target and confirmation] --> RELIEF[Bounded process/resource relief]
-  REAPER[Explicit stale process reap selection] --> REAP[Exact identity recheck before effect]
-  SWAP[Swap hygiene policy and measured before state] --> SWAPHY[Owned swap reconcile operation]
-  SIGNAL --> READ[Fresh postcheck]
-  RELIEF --> READ
-  REAP --> READ
-  SWAPHY --> READ
-  READ --> OPL[(Retained operation evidence)]
+  VM[Memory and pressure sources] --> HAPI[Hapi sampler and tier]
+  PS[Process inventory] --> HAPI
+  HAPI --> REG[(Governed PID registry)]
+  REG -->|registered exact eligible PID| SIGNAL[Suspend, Hapi-owned resume or emergency kill]
+  HAPI -->|not registered or protected| REPORT[Alert and recommendation only]
+  OP[Explicit hapi protect or release command] --> REG
+  RELIEVE[Explicit relieve request] --> FIND[Select highest eligible CPU candidate]
+  FIND -->|renice +10 and background QoS| PROC[Selected live process]
+  PROC --> EXIT[Priority resets on process exit]
+  PROC -. no source command for restoring original priority .-> OP
+  SWAP[Separate swap hygiene measurement and policy] --> SWAPOUT[Swap hygiene result]
+  REAPER[Separate reaper selection and logic] --> REAPOUT[Reaper result]
+  SIGNAL --> REPORT
+  SWAPOUT --> REPORT
+  REAPOUT --> REPORT
 ```
 
-Hapi watch is warn-only unless the operator selects `--govern`. Only registered Pantheon-governed PIDs can receive automatic suspend/kill actions. Suspend is reversible and Hapi resumes only what it paused after pressure clears. Kill has no undo path. Manual relief/reaper effects need their own confirmation and target readback. Unknown sampler or target identity means no action. Swap hygiene is a separate owner-scoped operation, not a generic Hapi repair. No live guard or resource action was run.
+The CLI also exposes `hapi protect <pid>` and `hapi release <pid>` registry mutations. `relieve` lowers one eligible process with renice and background QoS, and its source has no command that restores the process to its prior priority. The guard package notes priority returns when the process exits. Hapi registered-process signaling, user-triggered relieve, reaping and swap hygiene are distinct paths. No live action was run.
 
 <a id="pt-p70"></a>
 ## PT-P70 — Isis diagnosis, network and supported repairs
@@ -533,42 +566,52 @@ The code graph, Vault text store, Vault code index and RTK presentation filter a
 
 ```mermaid
 flowchart TD
-  U[Operator selects repository and Thoth operation] --> OP{init, sync, compact or status}
-  OP -->|init| DETECT[Detect project metadata and bounded source architecture]
-  DETECT --> PREVIEW[Build .thoth scaffold and IDE rule plan]
-  PREVIEW --> WRITE[Create only missing selected project memory files]
-  OP -->|sync| READ[Read selected source metadata and git history]
-  READ --> UPDATE[Refresh declared memory summary and journal]
-  OP -->|compact| CAPTURE[Capture session decisions and continuity facts]
-  CAPTURE --> ROUTER[Add router snapshot when repo router exists]
-  ROUTER --> BOUND[Apply configured age and retention bounds]
-  BOUND --> APPEND[Write continuation journal entry]
-  OP -->|status| STAT[Read current memory files and journal counts]
-  WRITE --> VERIFY[Read back expected file identities]
-  UPDATE --> VERIFY
-  APPEND --> VERIFY
-  STAT --> REPORT[Return status and continuation location]
-  VERIFY --> REPORT
-  VERIFY -->|failure or unsafe target| OPEN[Leave state as found and report incomplete]
+  OP[Operator invokes Thoth operation in selected repo] --> MODE{init, sync, compact or status}
+  MODE -->|init| STAT[Check whether memory.yaml exists]
+  STAT -->|exists without --yes| REFUSE[Return already-exists error]
+  STAT -->|absent or --yes| DETECT[Detect project and scan source metadata]
+  DETECT --> MKDIR[Create artifacts directory]
+  MKDIR --> MEM[Write memory.yaml with os.WriteFile]
+  MEM --> JOURNAL[Write journal.md with os.WriteFile]
+  JOURNAL --> README[Write artifacts README with os.WriteFile]
+  README --> IDE[Inject IDE rules and create session workflow]
+  MODE -->|sync| SYNC[Read source and git history then write selected summary files]
+  MODE -->|compact| COMPACT[Write bounded continuation and router snapshot when available]
+  MODE -->|status| READ[Read and report existing status]
+  MEM -->|write error| PARTIAL[Return error after earlier files may already be replaced]
+  JOURNAL -->|write error| PARTIAL
+  README -->|write error| PARTIAL
+  IDE --> DONE[Print created summary]
+  SYNC --> DONE
+  COMPACT --> DONE
+  READ --> DONE
+  PARTIAL --> DEBT[Caller must inspect current files before retry]
 ```
 
 **Data and continuation view**
 
 ```mermaid
 flowchart LR
-  REPO[(Selected repo source, metadata and git history)] --> INIT[Thoth init detector]
-  REPO --> SYNC[Thoth sync reader]
-  SESSION[Current session decisions and next actions] --> COMPACT[Thoth compact input]
-  ROUTER[(Repo router state and pending item IDs)] --> COMPACT
-  INIT -->|scaffold only| FILES[(Selected .thoth files)]
-  SYNC -->|memory and journal refresh| FILES
-  COMPACT -->|bounded continuation, not model memory| FILES
-  FILES --> STATUS[Thoth status projection]
-  FILES --> CONT[Next session reads continuation]
-  CANON[(PRD, ADR, source and evidence)] -. remain authoritative .-> CONT
+  REPO[(Selected repository)] --> INIT[Thoth init]
+  INIT -->|existing memory and no --yes| STOP[Refusal]
+  INIT -->|absent or --yes| DETECT[Project detection and source scan]
+  DETECT --> ART[Create .thoth/artifacts directory]
+  ART --> MEM[(Overwrite-capable memory.yaml write)]
+  MEM --> JOURNAL[(Overwrite-capable journal.md write)]
+  JOURNAL --> README[(Overwrite-capable artifacts README write)]
+  README --> IDE[IDE rule injection and session workflow]
+  REPO --> SYNC[Thoth sync read and update]
+  SESSION[Session input] --> COMPACT[Thoth compact]
+  ROUTER[(Optional router snapshot)] --> COMPACT
+  SYNC --> MEM
+  COMPACT --> JOURNAL
+  FILES[(Current files after any step)] --> STATUS[Thoth status]
+  MEM -. partial failure does not roll back previous writes .-> FILES
+  JOURNAL -. partial failure does not roll back previous writes .-> FILES
+  CANON[(Repository source, ADRs and PRD)] -. remain the authority .-> STATUS
 ```
 
-Init, sync and compact are explicit write operations on the selected repository. Status is a read. A continuation is a navigation aid, not proof that the described work exists. If a source read or write fails, report the incomplete path and do not replace the repository's canon. Recovery rereads the exact journal tail and resumes from verified files. Tests in `internal/thoth` and `cmd/sirsi/thoth*` are references only.
+Without `--yes`, init refuses when `.thoth/memory.yaml` already exists. With `--yes`, it proceeds and `os.WriteFile` overwrites `memory.yaml`, then `journal.md`, then the artifacts README. A later write failure can leave earlier files already replaced. The source does not make this sequence transactional or roll it back. Sync, compact and status are separate command paths. Inspect all affected files after a partial error before retrying.
 
 <a id="pt-p73"></a>
 ## PT-P73 — Workstream lifecycle and Neith alignment
@@ -579,50 +622,51 @@ Init, sync and compact are explicit write operations on the selected repository.
 
 ```mermaid
 flowchart TD
-  U[Operator opens workstream manager] --> ACTION{List, add, rename, activate, retire, delete, inventory or launch}
-  ACTION -->|list| LOAD[Load local workstream store]
-  ACTION -->|add| ADD[Validate name and selected directory]
-  ACTION -->|rename| REN[Validate exact existing entry and new name]
-  ACTION -->|retire| RET[Mark selected entry inactive]
-  ACTION -->|activate| ACT[Restore selected retired entry]
-  ACTION -->|delete| DEL[Explicitly remove selected local entry]
-  ACTION -->|inventory| SCAN[Inspect installed AI tools, IDEs and repositories]
-  ACTION -->|launch| PICK[Resolve selected workstream and installed launcher]
-  PICK --> START[Start selected assistant in selected repo]
-  LOAD --> VIEW[Display exact local state]
-  ADD --> SAVE[Write local store]
-  REN --> SAVE
-  RET --> SAVE
-  ACT --> SAVE
-  DEL --> SAVE
-  SCAN --> CACHE[Return installed-tool and repo inventory]
-  ACTION -->|Neith alignment| CANON[Read target repo requirements, plan, stories and ADRs]
-  CANON --> EVID[Read linked source and evidence summaries]
-  EVID --> DRIFT[Report aligned, missing or drifted scope]
-  DRIFT --> OWNER[Repo owner decides satisfy, waive or revise with evidence]
-  START --> VIEW
-  SAVE --> VIEW
+  OP[Operator chooses workstream or canon command] --> WS{Workstream list, add, rename, activate, retire, delete, inventory or launch}
+  WS -->|mutations| STORE[Write selected workstream registry]
+  WS -->|launch| LAUNCH[Start selected installed assistant in selected repo]
+  OP --> REQ{req add, evidence, satisfy, waive, audit or list}
+  REQ -->|add or evidence| REQWRITE[Write requirement or evidence references]
+  REQ -->|satisfy| CHECK{All required evidence references present?}
+  CHECK -->|no| REFUSE[Return refusal]
+  CHECK -->|yes| SAT[Write satisfied status]
+  REQ -->|waive| WREQ[Require reason and terminal owner decision, then write waiver]
+  OP --> ADR{adr claim, publish, list or audit}
+  ADR -->|claim| ALLOC[Transactionally allocate next ADR number]
+  ALLOC --> DOC[Owner writes ADR document separately]
+  DOC -->|adr publish path| PUB[Write published identifier and path to store]
+  REQ -->|list or audit| READ[Read registry and evidence state]
+  STORE --> OUT[Return command outcome]
+  LAUNCH --> OUT
+  REQWRITE --> OUT
+  SAT --> OUT
+  WREQ --> OUT
+  PUB --> OUT
+  READ --> OUT
 ```
 
 **Data and ownership view**
 
 ```mermaid
 flowchart LR
-  CONFIG[(User workstream configuration)] --> CRUD[Add, rename, activate, retire and delete]
-  CRUD --> CONFIG
-  HOME[Local installed tool inventory] --> INVENTORY[Workstream inventory]
-  REPOS[Discovered or explicitly assigned repo paths] --> INVENTORY
-  CONFIG --> SELECT[Selected active workstream]
-  SELECT --> RESOLVE[Resolve allowed executable and IDE]
-  RESOLVE --> SESSION[Child assistant with selected repo cwd]
-  REPO[(Target repo PRD, plan, stories, ADR and source)] --> NEITH[Neith scope and drift assessment]
-  EVID[(Target repo traceability and receipts)] --> NEITH
-  NEITH -->|findings only| OWNER[Repository owner and reviewer]
-  OWNER -. sole evidence acceptance authority .-> EVID
-  OWNER -. ADR required for explicit waiver .-> REPO
+  WS[(Workstream configuration)] <--> CRUD[Workstream add, rename, activate, retire and delete]
+  WS --> LAUNCH[Selected launcher and repository]
+  REQCMD[req command] --> REQSTORE[(Router requirement store)]
+  REQCMD --> EV[(Commit, tests, security, design, deployment and production references)]
+  EV --> REQSTORE
+  REQSTORE --> SAT[Requirement satisfy only after evidence completeness check]
+  OWNER[Terminal owner decision plus reason] --> WAIVE[Requirement waiver mutation]
+  WAIVE --> REQSTORE
+  ADRCMD[adr claim command] -->|serialized allocation| ADRSTORE[(Router identifier store)]
+  ADRSTORE --> DOC[Owner authors ADR file]
+  DOC --> ADRPUB[adr publish path mutation]
+  ADRPUB --> ADRSTORE
+  REQSTORE --> READ[Requirement list and audit readback]
+  ADRSTORE --> READ
+  WS --> READ
 ```
 
-CRUD and launch are workstream functions. Neith reads the selected repository's planning canon and reports drift. This source does not give Neith permission to satisfy or waive requirements, nor does assistant launch prove work completion. Recovery rereads the exact local store or target repo after a failed operation. Never infer a launched session from a configured launcher. Existing workstream and Neith tests are not executed.
+`req add`, `req evidence`, `req satisfy` and `req waive` mutate the router requirement store. Satisfy requires the evidence references and waiver requires a reason plus terminal owner decision. `adr claim` allocates a number transactionally, authoring the file is separate, and `adr publish` records the path. These are distinct from workstream CRUD and Neith assessment. A failed mutation must be resolved by reading the store and repository state, not by assuming rollback.
 
 <a id="pt-p74"></a>
 ## PT-P74 — Osiris risk assessment and checkpoint
@@ -633,40 +677,49 @@ CRUD and launch are workstream functions. Neith reads the selected repository's 
 
 ```mermaid
 flowchart TD
-  U[Operator selects repository and risk or checkpoint] --> ROOT[Resolve exact Git root]
-  ROOT --> STATUS[Read status, staged changes and worktree count]
-  STATUS --> AGE[Read latest commit and elapsed work interval]
-  AGE --> STAT[Read bounded diff statistics]
-  STAT --> RISK[Classify retained-work risk]
-  RISK -->|risk or status| REPORT[Return report without mutation]
-  RISK -->|checkpoint explicitly selected| ASK[Confirm checkpoint write]
-  ASK -->|declined| REPORT
-  ASK -->|confirmed| VERIFY[Recheck same repo and current worktree state]
-  VERIFY --> COMMIT[Create exact Git checkpoint]
-  COMMIT --> READBACK[Read new commit and remaining dirty status]
-  READBACK -->|matches| DONE[Report checkpoint identity and residual changes]
-  READBACK -->|failed or changed| OPEN[Report unresolved state without reset or replay]
+  OP[Operator invokes osiris risk, status or checkpoint] --> PATH[Use supplied path or current directory]
+  PATH --> BARE{Checkpoint target is bare repository?}
+  BARE -->|yes| CHOOSE[Choose dirtiest linked worktree]
+  BARE -->|no| TARGET[Use selected worktree]
+  CHOOSE --> TARGET
+  TARGET --> CHECK[Check worktree and read porcelain status]
+  CHECK -->|clean| NOOP[Return clean no-op]
+  CHECK -->|dirty| ADD[git add -A stages all changes]
+  ADD --> COMMIT[git commit checkpoint without confirmation]
+  COMMIT -->|success| HASH[Read short HEAD hash and report]
+  COMMIT -->|error| ERROR[Return commit error, index or tree may have changed]
+  PATH -->|risk or status command| ASSESS[Read Git status, diff and commit age]
+  ASSESS --> REPORT[Return risk report without mutation]
+  HASH --> OUT[Command outcome]
+  NOOP --> OUT
+  ERROR --> OUT
+  REPORT --> OUT
 ```
 
 **Data view**
 
 ```mermaid
 flowchart LR
-  REPO[(Selected Git repository)] --> STATUS[git status and worktree inspection]
-  REPO --> LOG[latest commit and elapsed time]
-  REPO --> DIFF[diff stat]
-  STATUS --> CP[Osiris checkpoint assessment]
-  LOG --> CP
-  DIFF --> CP
-  CP -->|risk report only| OUT[CLI or native status projection]
-  CP -->|confirmed checkpoint request| INDEX[Selected Git index and worktree]
-  INDEX --> COMMIT[(Git commit object)]
-  COMMIT --> VERIFY[Commit and residual-status readback]
-  VERIFY --> OUT
-  BACKUP[No independent snapshot store in this path] -. checkpoint is Git history only .-> OUT
+  ARG[CLI path or current directory] --> GIT[Git repository discovery]
+  GIT -->|risk or status| ASSESS[Read status, diff statistics and last commit]
+  ASSESS --> REPORT[Risk projection]
+  GIT -->|checkpoint on bare repo| LINKED[Enumerate linked worktrees and select dirtiest]
+  GIT -->|checkpoint on worktree| WT[Use selected worktree]
+  LINKED --> WT
+  WT --> STATUS[Read porcelain status]
+  STATUS -->|clean| NOOP[Successful no-op]
+  STATUS -->|dirty| INDEX[git add -A]
+  INDEX --> COMMIT[(Local Git commit)]
+  COMMIT -->|success| HASH[Read short HEAD hash]
+  COMMIT -->|failure| PARTIAL[Error with possible staged or committed side effects]
+  REPORT --> OUT[CLI output]
+  NOOP --> OUT
+  HASH --> OUT
+  PARTIAL --> OUT
+  REMOTE[Remote push] -. checkpoint code does not push .-> COMMIT
 ```
 
-Risk assessment does not mutate. Checkpoint is an explicit durable Git commit and is not an automatic restore point for arbitrary uncommitted work after the checkpoint. A failed commit requires fresh status inspection. No Git checkpoint was created in this task.
+`osiris checkpoint` calls `CommitCheckpoint` directly. It chooses the dirtiest linked worktree for a bare repo, reads status, stages all changes with `git add -A`, then commits without a confirmation prompt or a second status revalidation. It reads the short HEAD hash on commit success but does not verify residual dirty state. A staging or commit error can leave changed index state. This path does not push. No checkpoint was invoked.
 
 <a id="pt-p75"></a>
 ## PT-P75 — Seba discovery, topology book, fleet, profile and compute
@@ -677,53 +730,56 @@ Risk assessment does not mutate. Checkpoint is an explicit durable Git commit an
 
 ```mermaid
 flowchart TD
-  U[Operator selects Seba operation] --> OP{scan, diagram, book, hardware, profile, compute or fleet}
-  OP -->|scan| LOCAL[Observe local host, processes, interfaces and services]
-  OP -->|diagram| TOPO[Project observed nodes and edges]
-  OP -->|book| DISC[Enumerate selected project roots and metadata]
-  OP -->|hardware| HW[Read CPU, RAM, GPU and accelerator descriptors]
-  OP -->|profile| PROF[Collect selected host profile fields]
-  OP -->|compute| COMP[Prepare explicit tokenizer or compute request]
-  COMP --> BENCH{Benchmark explicitly selected?}
-  BENCH -->|no| RUN[Run only the requested supported computation]
-  BENCH -->|yes| WARM[Apply declared warmup and finite sample count]
-  WARM --> MEASURE[Record exact host, workload, units and sample count]
-  OP -->|fleet| TARGET{Explicit network targets and confirmation supplied?}
-  TARGET -->|no| REFUSE[Refuse network discovery]
-  TARGET -->|yes| SCAN[Scan only selected target range]
-  LOCAL --> OBS[Return observed source and freshness]
-  TOPO --> OBS
-  DISC --> OBS
-  HW --> OBS
-  PROF --> OBS
-  RUN --> OBS
-  MEASURE --> OBS
-  SCAN --> OBS
+  OP[Operator invokes Seba command] --> CMD{scan, diagram, book, hardware, profile, compute or fleet}
+  CMD -->|scan| OBS[Read selected host descriptors and containers]
+  OBS -->|--format html| HTML[Write .pantheon/infra-map.html]
+  CMD -->|diagram| DIAG[Generate selected Mermaid diagrams]
+  DIAG -->|--html| DHTML[Write .pantheon/diagrams.html and docs/seba.html]
+  CMD -->|book| BOOK[Enumerate projects and write registry]
+  CMD -->|hardware| HW[Observe hardware descriptors]
+  CMD -->|profile| PROF[Collect profile and write JSON report]
+  CMD -->|compute --tokenize text| TOKEN[Call guard.Tokenize on supplied text]
+  CMD -->|compute without text| USAGE[Print usage hint and do no computation]
+  CMD -->|fleet containers| CONTAINERS[Audit Docker containers]
+  CMD -->|fleet default| DISCOVER[Call Scarab Discover]
+  FLAG[--confirm-network flag] -. parsed but not checked by runSebaFleet .-> DISCOVER
+  DISCOVER --> SUBNET[Detect active local IPv4 subnet]
+  SUBNET --> ARP[Read ARP cache]
+  ARP --> PING[Parallel ping sweep of detected subnet]
+  PING --> RESULT[Merge observed hosts and report]
+  OBS --> RESULT
+  HTML --> RESULT
+  DHTML --> RESULT
+  BOOK --> RESULT
+  HW --> RESULT
+  PROF --> RESULT
+  TOKEN --> RESULT
+  USAGE --> RESULT
+  CONTAINERS --> RESULT
 ```
 
 **Data and trust view**
 
 ```mermaid
 flowchart LR
-  HOST[Local OS and hardware sources] --> SCAN[Seba local scanners]
-  SCAN --> GRAPH[Typed topology graph]
-  GRAPH --> DIAG[Diagram projection]
-  SCAN --> BOOK[(Selected project Pantheon Book records)]
-  HW[CPU, memory, accelerator probes] --> PROFILE[Hardware and machine profile]
-  PROFILE --> VITALS[Vitals and Insight projections]
-  REQUEST[Explicit compute request] --> COMPUTE[Supported local compute path]
-  COMPUTE --> RESULT[Typed result with host and workload identity]
-  TARGETS[Explicit network target range and opt-in] --> FLEET[Scarab fleet scanner]
-  FLEET --> REMOTE[Remote topology observations with source identity]
-  GRAPH --> OUTPUT[CLI and native views]
-  BOOK --> OUTPUT
-  VITALS --> OUTPUT
-  RESULT --> OUTPUT
-  REMOTE --> OUTPUT
-  CLAIM[Unmeasured performance or unobserved hardware] -. stays unknown .-> OUTPUT
+  HOST[Host descriptors, process and container sources] --> OBS[Local scan and hardware observation]
+  OBS --> GRAPH[Typed graph or report]
+  GRAPH -->|html option| FILE1[(.pantheon/infra-map.html)]
+  DIAG[Mermaid diagram generator] -->|html option| FILE2[(.pantheon/diagrams.html and docs/seba.html)]
+  CWD[Current directory project entries] --> BOOK[Project registry generator]
+  BOOK --> FILE3[(Selected registry output)]
+  PROFILE[Host profile collector] --> FILE4[(JSON profile report)]
+  TEXT[Explicit tokenization text] --> COMPUTE[guard.Tokenize]
+  COMPUTE --> RESULT[Token count, accelerator label and elapsed time]
+  FLEET[seba fleet default path] --> DISCOVER[Scarab Discover]
+  DISCOVER --> SUBNET[Automatically selected active local subnet]
+  SUBNET --> PING[ARP read and parallel ping sweep]
+  FLEETFLAG[confirm-network flag value] -. not read by runSebaFleet .-> DISCOVER
+  PING --> HOSTS[Discovered host list]
+  BENCH[Go benchmark entry points] -. separate benchmark surface, not seba compute .-> RESULT
 ```
 
-Local observation, project book, hardware profile, compute and network fleet are separate source paths. Fleet scan never defaults to whole-network discovery. A benchmark result without workload identity, sample count and units is not a measurement claim. Probe failure remains unavailable/unknown. No fleet scan or explicit benchmark was run.
+`seba fleet` currently calls `scarab.Discover()` on its default path, which detects an active local subnet, reads ARP and runs a parallel ping sweep. The parsed `--confirm-network` flag is not consulted by `runSebaFleet`. Profile and HTML outputs are filesystem writes, distinct from observation. `seba compute --tokenize` calls `guard.Tokenize`; benchmark entry points elsewhere are not this command. No fleet scan, profile write, HTML render or benchmark was run.
 
 <a id="pt-p76"></a>
 ## PT-P76 — Brain role configuration and Conduit tick lifecycle
@@ -734,52 +790,57 @@ Local observation, project book, hardware profile, compute and network fleet are
 
 ```mermaid
 flowchart TD
-  OP[Operator selects brain or conduit command] --> MODE{Brain inspect, route, use or doctor, or Conduit arm, tick, disarm}
-  MODE -->|brain inspect| READ[Read role configuration and provider inventory]
-  MODE -->|brain route| RESOLVE[Resolve one declared role without loading model]
-  MODE -->|brain use| CHANGE[Validate role and selected provider]
-  CHANGE --> SAVE[Persist role mapping for next read]
-  MODE -->|brain doctor| CHECK[Inspect config, registry, wake and RAM invariants]
-  MODE -->|conduit arm| ARM[Write fixed scheduler definition after explicit command]
-  ARM --> LOAD[Load selected scheduler]
-  MODE -->|conduit tick| AUTH[Read runnable queues and existing grants]
-  AUTH --> ADMIT{Task has current authority and target is runnable?}
-  ADMIT -->|no| OBS[Retain no-op or refused tick outcome]
-  ADMIT -->|yes| DISPATCH[Dispatch bounded exact authorized work]
-  DISPATCH --> RETURN[Wait for acknowledged store mutation or explicit failure]
-  RETURN --> JOURNAL[Retain tick result and next wake condition]
-  MODE -->|conduit disarm| STOP[Unload only the selected scheduler]
-  READ --> REPORT[Return status]
-  RESOLVE --> REPORT
-  CHECK --> REPORT
-  SAVE --> REPORT
-  LOAD --> REPORT
-  STOP --> REPORT
-  OBS --> REPORT
-  JOURNAL --> REPORT
+  OP[Operator runs autonomous on, off, status or run] --> CMD{Selected command}
+  CMD -->|on| SETON[Persist autonomous mode ON]
+  SETON --> PASS[Immediately run one bounded autoheal pass]
+  PASS --> REPORT[Report applied, proposed or failed findings]
+  CMD -->|off| SETOFF[Persist autonomous mode OFF]
+  CMD -->|status| STATUS[Read persisted mode]
+  CMD -->|run| APPROVED[Run one approved-fix pass regardless of switch]
+  APPROVED --> PASSREPORT[Report outcomes, leave persisted switch unchanged]
+  OP2[Operator or launchd invokes conduit tick] --> TICK[Read queue and current mode]
+  TICK -->|mode ON| EXEC[Plan and dispatch actionable items]
+  TICK -->|mode OFF| HOLD[Hold items as proposals]
+  OP2 -->|conduit arm| ARM[Write and bootstrap short-lived launchd trigger]
+  ARM --> TICK
+  OP2 -->|conduit status| CSTATUS[Read plist and launchd loaded state]
+  OP2 -->|conduit disarm| DISARM[Bootout and remove plist]
+  SETOFF --> TICK
+  SETON --> TICK
+  REPORT --> OUT[Command outcome]
+  PASSREPORT --> OUT
+  STATUS --> OUT
+  EXEC --> OUT
+  HOLD --> OUT
+  CSTATUS --> OUT
+  DISARM --> OUT
 ```
 
 **Data and authority view**
 
 ```mermaid
 flowchart LR
-  CFG[(Private Brain role configuration)] --> ROLE[Role to provider map]
-  ROLE -->|read-only route| PROVIDER[Provider resolver]
-  ROLE -->|explicit use write| CFG
-  PROVIDERS[Installed provider capabilities] --> PROVIDER
-  PROVIDER --> REPORT[Route and health report]
-  QUEUE[(Ra task ledger and inbox)] --> GATE[Conduit authorization gate]
-  GRANTS[(Current role grant and task identity)] --> GATE
-  GATE -->|authorized exact item| DISPATCH[Existing Router dispatch API]
-  DISPATCH --> QUEUE
-  DISPATCH --> ACK[Observed durable acknowledgment]
-  ARM[Explicit arm request] --> PLIST[Fixed local scheduler definition]
-  PLIST --> TICK[Conduit invocation]
-  TICK --> JOURNAL[(Local tick outcome and continuation)]
-  MODEL[Provider inference] -. not performed by route/status/doctor .-> PROVIDER
+  MODE[(~/.sirsi/brain.yaml autonomous switch)] --> ON[autonomous on persists ON]
+  ON --> IMMEDIATE[Immediately invokes one autoheal pass]
+  OFF[autonomous off persists OFF] --> MODE
+  STATUS[autonomous status reads persisted switch] --> MODE
+  RUN[autonomous run] --> APPROVED[One approved fix pass even while switch is OFF]
+  RUN --> MODE
+  IMMEDIATE --> AUTOHEAL[Doctor findings and bounded remediation execution]
+  APPROVED --> AUTOHEAL
+  AUTOHEAL --> STELE[(Applied remediation events)]
+  AUTOHEAL --> OUTCOME[Applied, proposed or failed outcomes]
+  MODE --> TICK[conduit tick reads switch]
+  QUEUE[(Router queue)] --> TICK
+  TICK -->|ON| DISPATCH[Plan and dispatch actionable work]
+  TICK -->|OFF| PROPOSAL[Hold work as proposal]
+  ARM[conduit arm writes and bootstraps LaunchAgent plist] --> SCHED[(Selected scheduler state)]
+  DISARM[conduit disarm bootouts job and removes plist] --> SCHED
+  STATUS2[conduit status reads plist and launchctl state] --> SCHED
+  SCHED -->|interval or inbox change| TICK
 ```
 
-`brain route`, `status` and dry-run `test` are observational. `brain use` changes role configuration. Autonomous dispatch defaults off. `conduit tick` is a bounded invocation that dispatches only already-authorized work; a process/heartbeat alone is not a completed task. `arm` and `disarm` affect the selected scheduler, not provider roles. Unknown queue or acknowledgment state does not trigger duplicate dispatch. No provider or conduit tick was run.
+`brain route`, `status` and dry-run `test` are observational. `brain use` changes role configuration. Autonomous mode defaults off. `autonomous on` persists ON and immediately runs one autoheal pass. `autonomous run` executes one approved-fix pass even while the switch remains OFF. Conduit ticks dispatch actionable work only when the persisted switch is ON. `arm` and `disarm` affect the selected scheduler, not provider roles. No provider, autoheal pass or conduit tick was run.
 
 
 <a id="pt-p77"></a>
@@ -791,49 +852,49 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  CALL[CLI requests desktop sleep custody] --> AUTH{Exact local admission valid?}
-  AUTH -->|no| DENY[Refuse before starting a session]
-  AUTH -->|yes| PLAN[Create finite session and record admission]
-  PLAN --> PRE[Record bounded pre-sleep inventory]
-  PRE --> SLEEP[Request the selected sleep operation]
-  SLEEP --> WAKE[Observe wake and return event]
-  WAKE --> POST[Collect bounded return facts]
-  POST --> CLOSE[Close session and retain result]
-  REMOTE[Recovery client connects] --> SERVE{Loopback service behind authenticated Tailscale Serve?}
-  SERVE -->|no| REJECT[Reject unauthenticated or nonlocal request]
-  SERVE -->|yes| CAP{Node and short-lived capability match allowlist?}
-  CAP -->|no| REJECT
-  CAP -->|yes| REPLAY{Capability already admitted through expiry?}
-  REPLAY -->|yes| REJECT
-  REPLAY -->|no| ADMIT[Persist admission and expiry]
-  ADMIT --> SESSION[Open bounded recovery session]
-  SESSION --> FACTS[Return only authorized recovery facts]
-  FACTS --> DISCONNECT[Disconnect or expire]
-  DISCONNECT --> CLEAN[Close session and clear transient state]
+  CALL[Desktop sleep custody request] --> ADMIT[Validate exact local request and record finite session]
+  ADMIT --> PRE[Record bounded pre-sleep facts]
+  PRE --> SLEEP[Request sleep]
+  SLEEP --> WAKE[Observe return event and gather selected facts]
+  WAKE --> CLOSE[Close custody session and report outcome]
+  CLIENT[Browser recovery client] --> EDGE[External Tailscale Serve placement and authentication]
+  EDGE --> LOOP[Forward request to loopback recovery gateway]
+  LOOP --> CAP{Capability valid for selected node and scope?}
+  CAP -->|no| REFUSE[Refuse session]
+  CAP -->|yes| REPLAY{Capability already consumed or expired?}
+  REPLAY -->|yes| REFUSE
+  REPLAY -->|no| ADMIT[Consume capability and create separate session admission]
+  ADMIT --> SESSION[Create node-bound expiring browser session]
+  SESSION --> COOKIE[Set session cookie for browser websocket]
+  COOKIE --> RFB[RFB proxy to selected node address]
+  RFB -->|browser to node bytes| NODE[Remote framebuffer service]
+  NODE -->|node to browser bytes| RFB
+  RFB -->|disconnect or expiry| END[Close active session and remove session entry]
+  ADMIT --> SAVE[Persist capability consumption and expiry]
 ```
 
 **Data and trust view**
 
 ```mermaid
 flowchart LR
-  OP[Local operator request] --> CUSTODY[Desktop custody controller]
-  CUSTODY --> ADMISSION[(Exact admission record)]
-  OS[Sleep and wake notifications] --> EVENT[Bounded lifecycle event]
-  INVENTORY[Selected local inventory] --> PRE[(Pre-sleep facts)]
-  EVENT --> RETURN[(Return facts and outcome)]
-  ADMISSION --> CUSTODY
-  PRE --> RESULT[Local session result]
-  RETURN --> RESULT
-  CLIENT[Remote recovery client] --> TS[Tailscale Serve authentication]
-  TS --> LOOP[Loopback recovery endpoint]
-  LOOP --> CAP[Short-lived exact-node capability check]
-  CAP --> REPLAYDB[(Admission replay and expiry ledger)]
-  CAP --> SESSION[Bounded recovery response]
-  SESSION --> CLEANUP[Disconnect and expiry cleanup]
-  CONFIG[Screen Sharing, Tailscale or launchd configuration] -. not configured by these paths .-> LOOP
+  OP[Desktop custody CLI] --> CUSTODY[Finite sleep custody controller]
+  CUSTODY --> CFACTS[(Pre-sleep and return facts)]
+  CLIENT[Browser] --> TS[Tailscale Serve external placement and authentication]
+  TS --> LOOP[Loopback recovery gateway]
+  LOOP --> ADMISSION[Validate recovery capability]
+  ADMISSION --> SESSION[(Distinct node-bound expiring session record)]
+  SESSION --> COOKIE[Browser session cookie]
+  COOKIE --> WS[Authenticated websocket handshake and origin check]
+  WS --> PROXY[RFB byte proxy]
+  PROXY -->|browser input bytes| RFB[TCP RFB endpoint on selected node]
+  RFB -->|framebuffer bytes| PROXY
+  SESSION -->|expiry or disconnect| CLOSE[Delete session record and close proxy]
+  CAP[Capability replay and expiry state] --> ADMISSION
+  TS -. deployed outside the loopback gateway code .-> LOOP
+  CFACTS -. separate from remote desktop stream .-> OP
 ```
 
-The source paths are `internal/desktopcustody`, `cmd/sirsi/desktopsleep.go`, `internal/desktoprecovery` and `cmd/sirsi/recovery.go`. This describes source behavior. No host sleep, remote session, permissions change or recovery admission was exercised. Unknown return state is retained as unknown rather than synthesized as a successful wake.
+The recovery gateway uses external Tailscale Serve placement to reach its loopback endpoint, then separately validates a capability and creates a node-bound expiring browser session. The websocket proxies opaque RFB bytes in both directions between browser and the selected node TCP endpoint. This is remote desktop data, not an authorized-facts-only response. Disconnect or expiry closes the proxy and removes the session entry. Desktop sleep custody is a separate local process. No recovery or sleep session was run.
 
 <a id="pt-p78"></a>
 ## PT-P78 — Seshat compatibility export and refusal boundaries
@@ -938,101 +999,114 @@ The source is `cmd/sirsi/mailopscmd.go` and `internal/mailops`. The apply path a
 
 ```mermaid
 flowchart TD
-  OP[Operator starts setup or quickstart] --> PREFLIGHT[Read setup mode and selected surfaces]
-  PREFLIGHT --> JSON{JSON inspection mode?}
-  JSON -->|yes| PLAN[Return setup plan without applying]
-  JSON -->|no| SURFACE[Select CLI, TUI or IDE surfaces]
-  SURFACE --> DEPS[Check and prepare declared dependencies]
-  DEPS --> FDA[Explain required Full Disk Access permission]
-  FDA --> ROUTER[Register selected AI CLI and Horus router integration]
-  ROUTER --> APP[Install selected menubar app component where configured]
-  APP --> DONE[Return setup result and unresolved steps]
-  OP --> LIFE{Install, refresh, update or uninstall app?}
-  LIFE -->|install| INSTALL[Use the sourced app install path]
-  LIFE -->|refresh or update| REFRESH[Use the sourced refresh or updater path]
-  LIFE -->|uninstall| REMOVE[Use the sourced removal path]
-  INSTALL --> APPRESULT[Report observed lifecycle outcome]
-  REFRESH --> APPRESULT
-  REMOVE --> APPRESULT
-  UNKNOWN[Single-instance guarantee or unobserved host state] -. retain unknown .-> DONE
+  OP[Operator starts native app] --> LEASE{Acquire per-user open-file instance lease?}
+  LEASE -->|failed| PEER[Find first matching running peer]
+  PEER -->|found| ACTIVATE[Activate peer windows]
+  ACTIVATE --> EXIT[Terminate new process]
+  PEER -->|none| EXIT
+  LEASE -->|acquired| ENUM[Enumerate matching app and legacy executable peers]
+  ENUM --> AGE[Retire older peers and legacy Go peer]
+  AGE --> TERM[Request polite terminate]
+  TERM --> WAIT[Wait up to three seconds]
+  WAIT -->|still running| FORCE[Force terminate peer]
+  WAIT -->|terminated| START[Build app window and menu bar item]
+  FORCE --> START
+  OP2[Operator runs setup or lifecycle command] --> SETUP[Run selected setup or installer path]
+  SETUP --> DONE[Return command outcome]
+  START --> DONE
 ```
 
 **Data and trust view**
 
 ```mermaid
 flowchart LR
-  SELECT[Operator surface selection] --> PLAN[Setup plan]
-  HOST[Host dependency probes] --> PLAN
-  PLAN -->|inspection only| OUTPUT[Plan output]
-  PLAN -->|explicit apply| SETUP[Setup executor]
-  SETUP --> SURFACES[Selected CLI, TUI and IDE registrations]
-  SETUP --> FDA[Permission instructions and user grant boundary]
-  SETUP --> ROUTER[Selected AI CLI and Horus registration]
-  SETUP --> MENUBAR[Configured menubar app installation]
-  APP[Managed app lifecycle command] --> INSTALLER[Install, refresh or remove path]
-  UPDATER[Updater source] --> INSTALLER
-  INSTALLER --> STATE[Observed app lifecycle state]
-  SURFACES --> OUTPUT
-  FDA --> OUTPUT
-  ROUTER --> OUTPUT
-  MENUBAR --> OUTPUT
-  STATE --> OUTPUT
-  CONSENT[User permission decision] --> FDA
-  SINGLE[Single-instance runtime evidence] -. unknown until qualified .-> STATE
+  APP[Native app launch] --> LOCK[Acquire per-user menubar.instance.lock with nonblocking flock]
+  LOCK -->|acquired| ENUM[Enumerate bundle ID and executable name peers]
+  ENUM -->|older or legacy peer| TERM[Request peer terminate]
+  TERM -->|after three seconds still live| FORCE[Force terminate peer]
+  ENUM -->|no retired peer remains| ACTIVE[Activate normal app window and menu bar surface]
+  LOCK -->|unavailable or contended| PEER[Activate first matching peer when present]
+  PEER --> EXIT[Terminate new process]
+  LOCKFILE[(Open descriptor-held lock)] --> LIFETIME[Lock lives through app lifetime]
+  LIFETIME -->|normal exit or crash| RELEASE[OS releases descriptor lock]
+  SETUP[Separate setup and install commands] --> RESULT[Selected installer outcome]
+  ACTIVE --> RESULT
+  EXIT --> RESULT
 ```
 
-Relevant sources include `cmd/sirsi/setup.go`, `internal/setup`, `internal/runner`, the native app lifecycle and updater. Setup JSON inspection is non-mutating. Permission granting is not performed by setup. Do not infer single-instance enforcement or successful managed install from source wiring alone. No setup, install, update or uninstall was run.
+The native app source implements a per-user descriptor-held flock. A process that cannot acquire it activates a matching peer if present and exits. A lease holder enumerates matching bundle or executable peers, asks older or legacy peers to terminate, then force-terminates after three seconds if needed before building the surface. This is source-described lifecycle control. Installed-app behavior and qualification receipts are separate and remain unknown here.
 
 <a id="pt-p81"></a>
 ## PT-P81 — Activity, Stele and native consent classification
 
-**Owner:** Oplog owns local operation history. Stele owns its separate append-only hash chain and reader offset. Native classification owns the local user consent decision and one-time capture boundary.
+**Owner:** Oplog owns destructive operation history. Notifications own persistent surfaced outcomes. Stele owns its separate append-only hash chain and reader offset. Ma’at owns confirmed owner-resolution records. Native classification owns its local consent and capture flow.
 
 **Logical view**
 
 ```mermaid
 flowchart TD
-  OP[Operator requests activity or Stele view] --> READ{Activity, Stele stream or native classification?}
-  READ -->|activity| OREAD[Read last N typed operation records newest first]
-  READ -->|Stele| SREAD[Read append-only chain from stored offset]
-  READ -->|classification| CLASS[Classify selected native content]
-  CLASS --> CONSENT{Consent already recorded for this capture?}
-  CONSENT -->|no| ASK[Ask once for this exact capture]
-  ASK -->|declined| STOP[Retain declined outcome and stop]
-  ASK -->|approved| CAPTURE[Capture the selected content once]
+  OP[Operator or surface action completes] --> OUTCOME[Produce actual command or action outcome]
+  OUTCOME --> HISTORY[Record notification when wired caller has notification store]
+  HISTORY --> DB[(Persistent notification history)]
+  OP -->|notifications command| READ[Read recent, filtered or all history]
+  OP -->|notifications clear| CLEAR[Delete all history rows]
+  CLEAR --> DB
+  DB --> READ
+  OP -->|activity command| OREAD[Read typed operation log records]
+  OP -->|Stele command| SREAD[Read separate append-only chain]
+  CONTENT[Selected native content] --> CLASS[Native classification flow]
+  CLASS --> CONSENT{Consent recorded for this exact capture?}
+  CONSENT -->|no| ASK[Ask user for this capture]
+  ASK -->|declined| DECLINE[Retain declined outcome and stop]
+  ASK -->|approved| CAPTURE[Capture this selection once]
   CONSENT -->|yes| CAPTURE
-  CAPTURE --> POST[Run bounded post-capture checks]
-  POST --> RESULT[Record known, failed or unknown outcome]
-  UNKNOWN[Postcheck unavailable] --> RESULT
-  WRITE[Destructive cleanup or purge] --> LOG[Append operation record]
-  OPT[Oplog opt-out environment flag] -->|enabled| NOLOG[Oplog append skipped]
-  OREAD --> VIEW[Display typed records]
+  CAPTURE --> CLASSIFIED[Classification result]
+  OP -->|selected guidance finding| REVIEW[Review exact retained observation]
+  REVIEW -->|sirsi maat record-resolution --confirm| CASEBOOK[Write owner-resolution evidence to Ma’at journal]
+  CASEBOOK --> INSPECT[Inspect Ma’at Casebook]
+  INSPECT -->|separate explicit owner conclusion| ACCEPT[Record acceptance with evidence and confirmation]
+  OP -->|system fix| FIX[Execute selected remediation]
+  FIX --> POST[Separate system postcheck]
+  DB --> VIEW[History view]
+  OREAD --> VIEW
   SREAD --> VIEW
-  RESULT --> VIEW
-  LOG --> OREAD
+  CLASSIFIED --> VIEW
+  DECLINE --> VIEW
+  CASEBOOK --> VIEW
+  ACCEPT --> VIEW
+  POST --> VIEW
 ```
 
 **Data and audit view**
 
 ```mermaid
 flowchart LR
-  ACTION[Local operation] --> OPLOG[(operations.log typed records)]
-  OPTOUT[SIRSI_NO_OPLOG=1] -. disables oplog append .-> OPLOG
-  ACTION -->|separate append-only path| STELE[(Stele hash chain)]
-  OFFSET[(Stele reader offset)] --> STREAM[Stele continuation reader]
-  STELE --> STREAM
-  CONTENT[Selected native content] --> CLASS[Native classifier]
-  CONSENT[(Immutable decision for this capture)] --> CLASS
-  CLASS -->|approved once| CAPTURE[Single capture operation]
-  CAPTURE --> CHECK[Postcheck]
-  CHECK --> CLASSIFIED[Classification outcome]
-  OPLOG --> ACTIVITY[Activity CLI view]
-  STREAM --> STELEVIEW[Stele stream view]
-  CLASSIFIED --> NATIVEVIEW[Native activity view]
-  RAW[Unbounded prompt or free-text capture] -. outside typed operation read contract .-> ACTIVITY
+  COMMAND[Real operation or command outcome] -->|where caller is wired| NOTIFY[Notification recorder]
+  NOTIFY --> DB[(notifications.db)]
+  READ[notifications recent, source, severity or all] --> DB
+  CLEAR[notifications clear] -->|delete all notification rows| DB
+  OPLOG[(operations.log typed operation records)] --> ACTCMD[activity command]
+  STELE[(Separate append-only hash chain)] --> STELEVIEW[Stele reader]
+  NATIVE[Selected native content] --> CONSENT[Exact capture consent]
+  CONSENT -->|approved for this capture| CAPTURE[Capture selected content once]
+  CAPTURE --> NATIVEVIEW[Native classification outcome and activity presentation]
+  HEALTH[Selected diagnostic finding in Health screen] -->|second confirmation invokes maat record-resolution --confirm| MAAT[Ma’at owner-resolution journal path]
+  MAAT -->|inspect then separately accept with evidence and confirmation| ACCEPT[Owner acceptance record]
+  FIX[Selected remediation] --> POST[System postcheck result]
+  DB --> VIEW[Surface history view]
+  ACTCMD --> VIEW
+  OPLOG --> SCREEN[Activity screen reads oplog and Casebook separately]
+  MAAT --> SCREEN
+  SCREEN --> VIEW
+  STELEVIEW --> VIEW
+  NATIVEVIEW --> VIEW
+  MAAT --> VIEW
+  ACCEPT --> VIEW
+  POST --> VIEW
+  REVIEW[Ma’at evidence review] -. not the same operation as system remediation postcheck .-> VIEW
 ```
 
-`cmd/sirsi/activitycmd.go`, `internal/oplog`, `internal/stele` and native classification sources describe separate records and flows. Oplog and Stele must not be conflated. The native consent/capture flow needs its installed-component receipt; this diagram is not that receipt. Runtime consent behavior and postcheck outcomes are unknown here.
+`sirsi notifications` reads recent, filtered or full notification history and `notifications clear` deletes the stored rows. Notification history is separate from the typed operation log and Stele chain. The TUI Activity screen reads the operation log and Ma’at Casebook separately. In Health, a selected guidance finding requires a second confirmation before `sirsi maat record-resolution --confirm` records the exact diagnostic owner-review decision. Casebook inspection and owner acceptance are subsequent distinct steps. Neither review nor acceptance repairs the system. A system fix and its postcheck are another path. Native installed-capture and actual confirmation receipts remain separate evidence.
 
 <a id="pt-p82"></a>
 ## PT-P82 — Web, TUI, MCP and runner surface protocols
@@ -1043,50 +1117,58 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  CALL[Surface request] --> SURFACE{Web, TUI or MCP?}
-  SURFACE -->|web| TOKEN[Validate dashboard action token]
-  TOKEN --> CONFIRM{Required action confirmation present?}
-  CONFIRM -->|no| REFUSE[Reject action]
-  CONFIRM -->|yes| RUNNER[Submit one bounded runner action]
-  SURFACE -->|TUI| TUI[TUI command and health check]
-  TUI --> TCONFIRM{Interactive confirmation required?}
-  TCONFIRM -->|no| REFUSE
-  TCONFIRM -->|yes| RUNNER
-  SURFACE -->|MCP| MCPCHECK[Authenticate and validate named tool or resource]
-  MCPCHECK -->|invalid| REFUSE
-  MCPCHECK -->|valid| MCPROUTE[Dispatch only admitted MCP operation]
-  MCPROUTE -->|Router A2A operation| ROUTER[Shared Router A2A core]
-  MCPROUTE -->|other tool or resource| MCPLOCAL[Named MCP handler]
-  RUNNER --> EVENT[SSE action events and final result]
-  ROUTER --> RESULT[Typed operation result]
-  MCPLOCAL --> RESULT
-  REFUSE --> RESULT
-  EVENT --> RESULT
+  CALL[Surface request] --> SURFACE{Web, TUI or MCP}
+  SURFACE -->|web| WEB[Dashboard typed action registry]
+  WEB --> DESTRUCTIVE{Action spec marks destructive?}
+  DESTRUCTIVE -->|yes, no token| PREP[Prepare action and return confirmation token]
+  PREP -->|valid supplied token| COMMIT[Validate token, target, parameters and action hash]
+  DESTRUCTIVE -->|no| DIRECT[Run registered action without confirm token]
+  COMMIT --> RUN[Dashboard runner starts one command]
+  DIRECT --> RUN
+  SURFACE -->|TUI| TUI[TUI screen chooses its own CLI runner command]
+  TUI --> NEED{Selected verb requires confirmation?}
+  NEED -->|yes| CONFIRM[Screen-specific confirmation interaction]
+  NEED -->|no| DIRECTTUI[Dispatch through TUI runner]
+  CONFIRM --> DIRECTTUI
+  DIRECTTUI --> RESULTTUI[Render screen result and error state]
+  SURFACE -->|MCP| MCP[MCP server routes named tool or resource]
+  MCP --> HANDLER[Selected handler applies its own checks and authority]
+  HANDLER -->|router MCP tool| ROUTER[Router A2A implementation and its registration and lease gates]
+  HANDLER -->|other handler| LOCAL[Handler-specific operation]
+  RUN --> EVENTS[Dashboard event buffer and SSE]
+  EVENTS --> RESULT[Dashboard action result]
+  RESULTTUI --> RESULT
+  ROUTER --> RESULT
+  LOCAL --> RESULT
 ```
 
 **Data and protocol view**
 
 ```mermaid
 flowchart LR
-  WEB[Dashboard request] --> TOKEN[Action token and confirmation fields]
-  TOKEN --> ACTIONS[Dashboard action handler]
-  ACTIONS --> RUNNER[Runner action queue]
-  RUNNER --> EVENTS[SSE event stream]
-  TUI[TUI input] --> CONFIRM[Visible confirmation and health gate]
+  WEB[Web action request] --> REG[Dashboard action registry]
+  REG -->|destructive spec| CONFIRM[Dashboard confirm token prepare and validate]
+  REG -->|non-destructive spec| RUNNER[Dashboard-only runner]
   CONFIRM --> RUNNER
-  MCPCLIENT[MCP client] --> AUTH[Tool or resource authentication]
-  AUTH --> MCPREG[Named MCP tool and resource registry]
-  MCPREG --> HANDLER[Selected handler]
-  HANDLER -->|Router A2A only| ROUTER[Shared Router A2A core]
-  HANDLER -->|all other MCP operations| MCPDATA[Selected handler data]
-  RUNNER --> EVENTS
-  RUNNER --> STATE[Action result state]
-  MCPDATA --> STATE
-  ROUTER --> STATE
-  RESOURCE[Read-only MCP resource] --> MCPREG
+  RUNNER --> CHILD[CLI child process]
+  CHILD --> BUFFER[Dashboard event buffer]
+  BUFFER --> SSE[Dashboard SSE stream]
+  TUI[TUI key and screen state] --> TUIRUNNER[Independent TUI runner seam]
+  TUIRUNNER --> CLIRUN[Selected CLI command]
+  TUIRUNNER -. no dashboard SSE dependency .-> SSE
+  TOOL[MCP named tool request] --> HANDLER[Registered MCP handler]
+  RESOURCE[MCP named resource request] --> RESOURCEHANDLER[Selected resource handler]
+  HANDLER -->|router tool only| ROUTER[Router A2A registration, lease and operation gates]
+  HANDLER -->|other named tool| LOCAL[Tool-specific validation and authority]
+  RESOURCEHANDLER --> DATA[Resource-specific read path]
+  ROUTER --> RESULT[Protocol result]
+  LOCAL --> RESULT
+  DATA --> RESULT
+  CLIRUN --> RESULT
+  SSE --> RESULT
 ```
 
-Sources are `internal/dashboard/actions.go`, runner and server/events, `internal/tui` and `internal/mcp`. Web confirmation/token checks, TUI interaction and MCP tool/resource admission are distinct. The exact operation state is the runner’s returned outcome. No surface action was executed in this documentation task.
+Dashboard actions use a dashboard registry and runner with an event buffer exposed through SSE. The TUI uses its own screen/CLI runner and only prompts for verbs whose screen contract requires confirmation. MCP dispatches named tools and resources to their handlers. There is no source-wide MCP authentication gate in this diagram: each handler or subsystem supplies its own authority checks. The Router A2A handler has its own registration and lease gates. No surface action was executed here.
 
 <a id="pt-p83"></a>
 ## PT-P83 — Qualification pre-push CI and finite private executor boundary

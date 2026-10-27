@@ -2,7 +2,7 @@
 
 Process-to-diagram coverage is maintained separately in
 [`DIAGRAM_INDEX.md`](DIAGRAM_INDEX.md), with source Mermaid in the linked
-`DIAGRAMS_*.md` files. Process IDs (`PT-P01`–`PT-P40`) link each row in the
+`DIAGRAMS_*.md` files. Process IDs (`PT-P01`–`PT-P84`) link each row in the
 component catalog to its requirements, stories, owner, source state and known
 evidence. Diagram presence is not verification evidence and does not change any
 row's qualification, release or certification state.
@@ -42,11 +42,11 @@ row's qualification, release or certification state.
 
 ## Diagram-linked process coverage
 
-The audited component catalog contains 40 indexed processes: the prior 28 plus
+The earlier partial audit contained40 processes: the original28 plus
 eight command-level Ma’at knowledge workflows and four local Stack Lab
 workflows found in `cmd/sirsi/maatknowledge.go` and
 `cmd/sirsi/stacklablocal.go`. The prior 28-row set was incomplete and is not a
-whole-canon denominator. Diagram mapping is 40/40 indexed rows with logical/data/state/recovery
+whole-canon denominator. The full census below supersedes that denominator:84 groups now have logical/data views, with applicable lifecycle/sequence/recovery
 views; sequence diagrams are included for cross-actor/store/API flows.
 This is structural documentation coverage only and does not alter any
 qualification, release or certification state. The newly added source diagrams
@@ -66,7 +66,7 @@ are in `DIAGRAMS_MAAT_STACKLAB_LOCAL.md`.
   explicitly mapped on each local preference/catalog process.
 
 Main owns the certification matrix and completion record. This matrix does not
-assert a whole-wing pass; preserve Main's separate 12-criterion status,
+assert a whole-wing pass; preserve Main's separate13-criterion status,
 including the actual public `v0.24.140` readback and still-pending `v0.24.141`
 evidence.
 
