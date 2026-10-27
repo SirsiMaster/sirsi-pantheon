@@ -1,6 +1,6 @@
 # Pantheon deity and module replacement map
 
-Source snapshot: `3d67b0c3068ed3250ab353ec5d6832c5ce63f1b0` (composed v0.24.141 candidate).
+Source snapshot: `6da4692c77f528caacc281375f37409ff8266fe4` (composed v0.24.141 candidate).
 Owner: Pantheon source maintainer. Identity/domain authority:
 `docs/DEITY_REGISTRY.md`; source-level display metadata is
 `internal/deity/registry.go`. Neither a name nor a source directory proves that
@@ -26,7 +26,7 @@ every associated user workflow is complete.
 ## Exact module inventory
 
 [`MODULE_INVENTORY.json`](MODULE_INVENTORY.json) enumerates **101** tracked Go
-packages/Swift targets, **856** source files and **848** test files at the named
+packages/Swift targets, **858** source files and **849** test files at the named
 snapshot, with file SHA256 values and direct local Go import literals. Nine
 supporting sets enumerate **222** scripts, contracts, configurations, hooks,
 extensions, web assets, workflows and brand files. Tests are named, not claimed

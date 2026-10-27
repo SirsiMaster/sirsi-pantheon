@@ -57,6 +57,12 @@ flowchart LR
   TEST[Coverage command output] --> PARSE[Parse and evaluate]
   CACHE[(Coverage cache)] --> COV[CoverageAssessor]
   HOST[Configured local probes] --> PULSE[Pulse]
+  ROSTER[Selected source canonical Roster literal] --> RREAD[Bounded regular-file read and source AST]
+  RREAD -->|valid literal| RCOUNT[Unique declared keys]
+  RREAD -->|missing or unsupported| RZERO[Zero counter with no separate availability field]
+  RCOUNT --> PULSE
+  RZERO --> PULSE
+  DIRS[Immediate internal directories] --> PULSE
   EVID[Proof and platform inputs] --> CHECK[Proof / Platform]
   CANON --> OUT[Assessment records]
   PIPE --> OUT
@@ -104,7 +110,12 @@ sequenceDiagram
 `internal/maat/proof.go`, `internal/maat/platform.go`.
 Tests: `internal/maat/maat_test.go`, `canon_test.go`, `coverage_test.go`,
 `coverage_fastmode_test.go`, `pipeline_test.go`, `pipeline_sprint_test.go`,
-`pulse_test.go`, `proof_test.go`, `platform_test.go`.
+`pulse_test.go`, `pulse_open_unix_test.go`, `proof_test.go`, `platform_test.go`.
+The source counter also uses `pulse_open_unix.go` / `pulse_open_other.go`.
+The deity counter describes selected-source roster declarations, not registered
+commands or live availability; its existing integer field cannot distinguish
+unavailable from a genuine zero. The modules counter counts immediate internal
+directories rather than all nested Go packages or Swift targets.
 
 **Recovery and boundary.** Re-run the selected assessment against its source
 when data is absent or stale. A cache failure does not create a live result;

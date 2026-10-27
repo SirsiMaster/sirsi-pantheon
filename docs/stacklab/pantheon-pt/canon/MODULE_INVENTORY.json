@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "3d67b0c3068ed3250ab353ec5d6832c5ce63f1b0",
-  "source_tree": "00d52079022f61edfe932310c29172ea53c017ff",
+  "source_commit": "6da4692c77f528caacc281375f37409ff8266fe4",
+  "source_tree": "8b8d3489a207e2c9c5493d1cd741b9d71f7561b3",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -3553,7 +3553,15 @@
         },
         {
           "path": "internal/maat/pulse.go",
-          "sha256": "57f52a3f5f717decb01b3705d5ae1b340073307c654ba457e1194ab1457d555a"
+          "sha256": "481b44fcd6d340880b9c4b355d95347be88853de9f4900abd54c6802c506a779"
+        },
+        {
+          "path": "internal/maat/pulse_open_other.go",
+          "sha256": "205cbaca7ea128140b4c74b87d714509ad5fb90c0b7e4088dc9c7f50ec8593fb"
+        },
+        {
+          "path": "internal/maat/pulse_open_unix.go",
+          "sha256": "daf6e72c16b3a5f1e59272a670904f04ce07d768ab5b4fa677f748aff9f90822"
         },
         {
           "path": "internal/maat/releasepreflight.go",
@@ -3730,8 +3738,12 @@
           "sha256": "6ab47e9cfdacaa1b920e2d7abe867e5da520857aa311e1e22f9cac0649ca1752"
         },
         {
+          "path": "internal/maat/pulse_open_unix_test.go",
+          "sha256": "503cae8b5a15a096f5db6dc794eda38244ce627c15f7a5eb26444914ab90573b"
+        },
+        {
           "path": "internal/maat/pulse_test.go",
-          "sha256": "ca855de46e5a79c2fa560b80165a02fbcdff0fb9907f9bb6fd664d34f529b5df"
+          "sha256": "074f08e610207752d66d4c37cda213226dbc677be2cf9024435323267b970462"
         },
         {
           "path": "internal/maat/releasepreflight_test.go",

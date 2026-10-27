@@ -159,7 +159,7 @@ status or certify any criterion.
 ## Corrective141 composition crosswalk
 
 The accepted finite census is retained at f676/normal merge24b4e50b. The fresh
-module inventory binds composed source3d67b0c3; it does not silently repin older
+module inventory binds composed source6da4692c; it does not silently repin older
 process review evidence. Joined-worker behavior remains in PT-P55. Legacy
 129/137 profiles extend the existing selected maintenance flow, preserving
 unknown outcomes. The corrected consumer bootstrap separates coordination from
@@ -173,3 +173,11 @@ build-log observations from actual vet/build/format/Thoth-memory checks.
 These are bounded corrections within existing process groups; no new process
 authority or runtime certificate is inferred. Final composed review and actual
 installed proof remain in CERTIFICATION.
+
+Pulse in PT-P41 now counts literal canonical roster declarations from the
+selected repository, including Isis without requiring a fictitious `isis.go`.
+Its regular-file read is bounded and nonblocking on Unix; invalid or unsupported
+input yields the existing zero counter without a separate availability field.
+This is source metadata, not command registration or runtime readiness. The
+`modules` Pulse field retains its immediate-internal-directory meaning; the
+full package/target denominator is MODULE_INVENTORY.
