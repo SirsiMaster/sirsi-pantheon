@@ -548,17 +548,39 @@ func maintenanceDisabledIntent(raw []byte) error {
 // A successful complete native list plus kernel absence establishes retirement.
 // Failed launchctl print or elapsed time never does.
 func maintenanceRetirement(ctx context.Context, p MaintenancePlan) (string, error) {
-	start, err := servicedrain.MaintenanceStart(p.Original.PID)
+	return maintenanceRetirementWith(ctx, p, servicedrain.MaintenanceStart,
+		func(pid int) error { return unix.Kill(pid, 0) }, maintenanceJobListed)
+}
+
+func maintenanceRetirementWith(ctx context.Context, p MaintenancePlan,
+	startIdentity func(int) (string, error), exists func(int) error,
+	jobListed func(context.Context) (bool, error),
+) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "outcome_unknown", err
+	}
+	if p.Original.PID <= 0 {
+		return "outcome_unknown", errors.New("legacy maintenance: positive original PID required")
+	}
+	start, err := startIdentity(p.Original.PID)
 	if err == nil {
 		if start == p.KernelStart {
 			return "original_alive", nil
 		}
 		return "pid_reused_or_changed", errors.New("legacy maintenance: original PID identity changed")
 	}
-	if !errors.Is(err, unix.ESRCH) {
+	// Darwin may report EIO when kern.proc.pid returns an empty result. Neither
+	// EIO nor an identity-reader ESRCH alone establishes process absence.
+	if !errors.Is(err, unix.ESRCH) && !errors.Is(err, unix.EIO) {
 		return "outcome_unknown", err
 	}
-	listed, err := maintenanceJobListed(ctx)
+	if probeErr := exists(p.Original.PID); !errors.Is(probeErr, unix.ESRCH) {
+		if probeErr == nil {
+			probeErr = errors.New("legacy maintenance: selected PID remains present but its start identity is unavailable")
+		}
+		return "outcome_unknown", errors.Join(err, probeErr)
+	}
+	listed, err := jobListed(ctx)
 	if err != nil {
 		return "outcome_unknown", err
 	}
