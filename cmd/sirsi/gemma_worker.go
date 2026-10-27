@@ -69,7 +69,7 @@ func (w nativeGemmaWorker) runOnce(ctx context.Context) (bool, error) {
 	} else {
 		lease, err = w.store.ClaimNext(gemmaWorkerAgent, w.leaseTTL)
 	}
-	if errors.Is(err, routerstore.ErrNoWork) {
+	if errors.Is(err, routerstore.ErrNoWork) || errors.Is(err, routerstore.ErrLanePaused) {
 		return false, nil
 	}
 	if err != nil {

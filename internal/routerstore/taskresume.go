@@ -182,6 +182,16 @@ func (s *SQLiteStore) ResumeTaskClaim(ctx context.Context, req TaskResumeRequest
 		if err := taskEvidencePrincipal(ctx, tx, a, s.clock(), pg); err != nil {
 			return err
 		}
+		var barrier laneClaimBarrierState
+		if req.Action == "claim" {
+			// Acquire the shared lane lock before locking the task row. Inspect
+			// remains read-only; claim replay below remains valid while paused.
+			var err error
+			barrier, err = s.lockLaneClaimsContextTx(ctx, tx, req.Agent)
+			if err != nil {
+				return err
+			}
+		}
 		before, err := taskResumeRead(ctx, tx, req.Agent, req.TaskID, pg)
 		if err != nil {
 			return err
@@ -221,6 +231,9 @@ func (s *SQLiteStore) ResumeTaskClaim(ctx context.Context, req TaskResumeRequest
 		attempts, err = taskResumeEligible(before, now)
 		if err != nil {
 			return err
+		}
+		if barrier.Digest != "" {
+			return ErrLanePaused
 		}
 		token, err := newToken()
 		if err != nil {
