@@ -26,10 +26,12 @@ func TestMaintenanceLegacySourceProfilesAndDigestBinding(t *testing.T) {
 		maintenanceLegacySource137,
 	}
 	for _, revision := range profiles {
-		got, err := maintenanceLegacySourceProfile(maintenanceProfileBuildInfo(revision, "false", "github.com/SirsiMaster/sirsi-pantheon"))
-		if err != nil || got != revision {
-			t.Fatalf("profile %q selected as %q, error %v", revision, got, err)
-		}
+		t.Run(revision, func(t *testing.T) {
+			got, err := maintenanceLegacySourceProfile(maintenanceProfileBuildInfo(revision, "false", "github.com/SirsiMaster/sirsi-pantheon"))
+			if err != nil || got != revision {
+				t.Fatalf("profile %q selected as %q, error %v", revision, got, err)
+			}
+		})
 	}
 
 	for _, revision := range []string{maintenanceLegacySource129, maintenanceLegacySource137} {
@@ -72,6 +74,8 @@ func TestMaintenanceLegacySourceProfilesAndDigestBinding(t *testing.T) {
 	}{
 		{name: "nil build info"},
 		{name: "wrong main module", info: maintenanceProfileBuildInfo("22944b2458f377a9f3e5e10c63c3442cb3ea83c3", "false", "example.invalid/other")},
+		{name: "wrong main module 129", info: maintenanceProfileBuildInfo(maintenanceLegacySource129, "false", "example.invalid/other")},
+		{name: "wrong main module 137", info: maintenanceProfileBuildInfo(maintenanceLegacySource137, "false", "example.invalid/other")},
 		{name: "unknown revision", info: maintenanceProfileBuildInfo("unknown-revision", "false", "github.com/SirsiMaster/sirsi-pantheon")},
 		{name: "clean unknown revision with valid commit shape", info: maintenanceProfileBuildInfo("7f17065c0cd934009eb271526efc0405f346190d", "false", "github.com/SirsiMaster/sirsi-pantheon")},
 		{name: "version label 129", info: maintenanceProfileBuildInfo("v0.24.129", "false", "github.com/SirsiMaster/sirsi-pantheon")},
