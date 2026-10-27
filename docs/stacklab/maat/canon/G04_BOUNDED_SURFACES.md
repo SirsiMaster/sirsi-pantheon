@@ -198,3 +198,21 @@ refusal, cancellation, cursor-version refusal and a private 23,563,095-byte
 prefix fixture. These fixtures are not run/performance evidence. Main owns
 normal/race qualification, focused interleaving/rollback negatives and actual
 performance measurements.
+
+### Qualification recorded 2026-10-27
+
+Engine source `6191ba73` passed 46 focused normal and 46 race cases across the
+core, casebook, MCP, HTTP and CLI producer. Four compiled negative controls
+failed their intended assertions. A private 23,563,095-byte synthetic journal
+required 190 calls for two first-page completions in 5,105.7 ms total, with
+51.94 ms p95 and 57.61 ms maximum per call. This is a measured fixture result,
+not a cold-cache, Windows, installed-UI or comparative product benchmark.
+
+Native source `a39dcd54` passed 150 selected tests, with zero failures and three
+explicit skips; actual Go-artifact interoperation and external accessibility
+proof remain separate. A compiled private one-read mutation failed all eight
+intended continuation assertions without hanging. Native browsing follows only
+validated advancing partial cursors, for at most 128 reads or eight seconds per
+burst. Cancel and bounded pause retain accepted progress; older pages remain
+explicit. Source and raw-log hashes are bound by Main qualification receipt
+`3d7e8a1f56700955fc8383699159705c95b5e9ce350ebe7151569ab01158d6ac`.
