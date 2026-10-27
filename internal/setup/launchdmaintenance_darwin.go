@@ -275,6 +275,11 @@ func (b nativeServiceBackend) maintenanceOperations() maintenanceOperations {
 			return routerstore.WithSpoolQuiescence(ctx, rootRelayPhysicalSpool, op)
 		},
 		revalidate: func(ctx context.Context, p MaintenancePlan, original bool) error {
+			if original {
+				if err := maintenancePreRetirementInventory(ctx, native.read); err != nil {
+					return err
+				}
+			}
 			if err := maintenanceEnabled(ctx); err != nil {
 				return err
 			}
@@ -592,6 +597,20 @@ func maintenanceRetirementWith(ctx context.Context, p MaintenancePlan,
 
 func maintenanceJobListed(ctx context.Context) (bool, error) {
 	return maintenanceJobListedWith(ctx, rootRelayRead)
+}
+
+func maintenancePreRetirementInventory(ctx context.Context, read func(context.Context, []byte, string, ...string) ([]byte, error)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	listed, err := maintenanceJobListedWith(ctx, read)
+	if err != nil {
+		return fmt.Errorf("legacy maintenance: pre-retirement system inventory refused; no retirement: %w", err)
+	}
+	if !listed {
+		return errors.New("legacy maintenance: selected job absent from pre-retirement system inventory; no retirement")
+	}
+	return ctx.Err()
 }
 
 func maintenanceJobListedWith(ctx context.Context, read func(context.Context, []byte, string, ...string) ([]byte, error)) (bool, error) {
