@@ -636,6 +636,7 @@ func maintenanceSystemJobListed(raw []byte) (bool, error) {
 		return false, errors.New("legacy maintenance: native system job enumeration unknown")
 	}
 	found, services, inside, closed := false, false, false, false
+	seenLabels := make(map[string]bool)
 	depth := 1
 	for _, line := range lines[1 : len(lines)-1] {
 		line = strings.TrimSpace(line)
@@ -662,13 +663,19 @@ func maintenanceSystemJobListed(raw []byte) (bool, error) {
 			return false, errors.New("legacy maintenance: incomplete system job enumeration")
 		}
 		if fields[0] != "-" {
-			if pid, err := strconv.Atoi(fields[0]); err != nil || pid <= 0 {
+			if pid, err := strconv.Atoi(fields[0]); err != nil || pid < 0 {
 				return false, errors.New("legacy maintenance: malformed job PID")
 			}
 		}
-		if _, err := strconv.Atoi(fields[1]); err != nil {
-			return false, errors.New("legacy maintenance: malformed job status")
+		if fields[1] != "-" && fields[1] != "(pe)" {
+			if _, err := strconv.Atoi(fields[1]); err != nil {
+				return false, errors.New("legacy maintenance: malformed job status")
+			}
 		}
+		if seenLabels[fields[2]] {
+			return false, errors.New("legacy maintenance: ambiguous system job label")
+		}
+		seenLabels[fields[2]] = true
 		if fields[2] == rootRelayLabel {
 			if found {
 				return false, errors.New("legacy maintenance: ambiguous selected job")
