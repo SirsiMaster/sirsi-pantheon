@@ -114,7 +114,7 @@ func TestProbeSessionLeak_Threshold(t *testing.T) {
 	if !f.Fixable || f.Title == "" {
 		t.Errorf("alert must be a routable fixable finding, got %+v", f)
 	}
-	for _, want := range []string{"Session candidate sample window UTC:", "candidate sessions", "does not prove a leak or cause", "exact workload owner/custody and current demand", "own idle boundary"} {
+	for _, want := range []string{"session candidate sample window utc:", "candidate sessions", "does not prove a leak or cause", "exact workload owner/custody and current demand", "own idle boundary"} {
 		if !strings.Contains(strings.ToLower(f.Body), want) {
 			t.Errorf("candidate alert body must contain %q, got %q", want, f.Body)
 		}

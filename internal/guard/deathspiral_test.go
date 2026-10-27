@@ -94,7 +94,7 @@ func TestMemoryDeathSpiralCopyHasUTCWindowAndCustodyBoundary(t *testing.T) {
 	f := spiralFinding(t, spiralMock("31.80", 25231, 26624, 11000, 244))
 	for _, want := range []string{
 		"Sample window UTC:", "may not describe current state when the finding is read",
-		"swap 95% (24.64 GiB used)", "available 0.17 GiB (vm_stat free plus inactive)", "MLX model size not sampled",
+		"swap 95% (24.64 GiB used, sysctl vm.swapusage)", "available 0.17 GiB (vm_stat free plus inactive)", "MLX model size not sampled",
 		"Memory death spiral threshold met in this sample", "Cause and process ownership are unknown",
 		"Refresh readings, confirm the exact workload owner/custody and current demand, then use its supported resolution at its own idle boundary",
 	} {
