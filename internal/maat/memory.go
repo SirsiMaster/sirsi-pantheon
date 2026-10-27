@@ -971,6 +971,12 @@ func (s *Store) unlock() {
 // records. Every governed evidence, incident, and transition leaf goes through
 // Store.createOrVerify so an intent survives a crash before the leaf exists.
 func createOrVerifyRaw(parentFD int, name string, expected []byte) error {
+	return createOrVerifyRawWithClose(parentFD, name, expected, unix.Close)
+}
+
+// createOrVerifyRawWithClose keeps close behavior injectable per call so a
+// close error can be tested without a process-global hook.
+func createOrVerifyRawWithClose(parentFD int, name string, expected []byte, closeFD func(int) error) error {
 	fd, err := unix.Openat(parentFD, name, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
 	if errors.Is(err, unix.EEXIST) {
 		actual, readErr := readExact(parentFD, name)
@@ -985,10 +991,11 @@ func createOrVerifyRaw(parentFD int, name string, expected []byte) error {
 	if err != nil {
 		return err
 	}
-	closed := false
+	closeAttempted := false
 	defer func() {
-		if !closed {
-			_ = unix.Close(fd)
+		if !closeAttempted {
+			closeAttempted = true
+			_ = closeFD(fd)
 		}
 	}()
 	var stat unix.Stat_t
@@ -1011,10 +1018,10 @@ func createOrVerifyRaw(parentFD int, name string, expected []byte) error {
 	if err := unix.Fsync(fd); err != nil {
 		return err
 	}
-	if err := unix.Close(fd); err != nil {
+	closeAttempted = true
+	if err := closeFD(fd); err != nil {
 		return err
 	}
-	closed = true
 	if err := unix.Fsync(parentFD); err != nil {
 		return err
 	}
