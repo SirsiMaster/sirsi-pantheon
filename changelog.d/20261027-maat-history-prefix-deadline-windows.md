@@ -1,6 +1,6 @@
-Ma'at history prefix verification now establishes its anchor before query
-work, returns only resumable verified cursors when the remaining request
-budget is insufficient, and keeps the response snapshot bound to that prefix.
-Unix leaf opens are nonblocking before type checks. Windows retains the prior
-bounded history reader and cursor format; frozen-prefix verification remains
+Ma'at history prefix verification now rejects physical EOF before the anchored
+boundary, even if the inode is restored before draining. A verification
+deadline with no verified cursor progress returns an error instead of an
+unchanged continuation. Windows keeps the prior bounded reader, including its
+append and cancellation semantics; frozen-prefix verification remains
 Unix-scoped.

@@ -4,6 +4,7 @@ package maat
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -94,6 +95,121 @@ func TestHistoryFrozenPrefixAllowsBetweenPhaseAppendsAndFreshQuerySeesThem(t *te
 	fresh := drainPrefixQuery(t, journal, HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "fresh-prefix", Limit: 20}, false)
 	if len(fresh.Candidates) < 2 {
 		t.Fatalf("fresh query did not observe appended records: %+v", fresh.Candidates)
+	}
+}
+
+type historyTruncateRestoreReader struct {
+	file      *os.File
+	original  []byte
+	firstSize int
+	delivered int
+	truncated bool
+	observed  bool
+}
+
+func (reader *historyTruncateRestoreReader) Read(buffer []byte) (int, error) {
+	if !reader.truncated {
+		remaining := reader.firstSize - reader.delivered
+		if len(buffer) > remaining {
+			buffer = buffer[:remaining]
+		}
+		n, err := reader.file.Read(buffer)
+		reader.delivered += n
+		if reader.delivered == reader.firstSize {
+			reader.truncated = true
+		}
+		return n, err
+	}
+	offset, err := reader.file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, err
+	}
+	if err := reader.file.Truncate(0); err != nil {
+		return 0, err
+	}
+	n, readErr := reader.file.Read(buffer) // Observe physical EOF at the old offset.
+	reader.observed = errors.Is(readErr, io.EOF)
+	if _, err := reader.file.Seek(0, io.SeekStart); err != nil {
+		return 0, err
+	}
+	if _, err := reader.file.Write(reader.original); err != nil {
+		return 0, err
+	}
+	if err := reader.file.Sync(); err != nil {
+		return 0, err
+	}
+	if _, err := reader.file.Seek(offset, io.SeekStart); err != nil {
+		return 0, err
+	}
+	reader.truncated = false
+	return n, readErr
+}
+
+func TestHistoryPrefixPassRejectsTransientPhysicalEOFBeforeFrozenBoundary(t *testing.T) {
+	first, err := json.Marshal(historyFixtureScreen(t, "2026-10-27T12:00:00Z", "eof:parsed-before-truncate"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := json.Marshal(historyFixtureScreen(t, "2026-10-27T12:01:00Z", "eof:restored-tail"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first = append(first, '\n')
+	tail := append(second, '\n')
+	original := append(append([]byte(nil), first...), tail...)
+	file, err := os.OpenFile(filepath.Join(t.TempDir(), "journal.jsonl"), os.O_CREATE|os.O_RDWR|os.O_EXCL, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if _, err := file.Write(original); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	source := &historyTruncateRestoreReader{file: file, original: original, firstSize: len(first)}
+	ctx := context.Background()
+	state := &historyCursor{Version: historyCursorVersion, QueryKey: "transient-eof", Phase: "scan", Limit: 5}
+	var done bool
+	digest, passErr := historyPrefixPassReader(source, int64(len(original)), ctx, time.Now().Add(time.Second), func(reader *bufio.Reader) error {
+		var scanErr error
+		done, _, _, scanErr = scanHistoryChunkReader(ctx, time.Now().Add(time.Second), reader, state, int64(len(original)), 20, HistoryScopeSystemOne, "", nil, nil, nil)
+		return scanErr
+	})
+	var cursor string
+	if passErr == nil && done {
+		cursor, err = encodeHistoryCursor(state)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := io.ReadAll(file)
+	if err != nil || !bytes.Equal(restored, original) {
+		t.Fatalf("fixture failed to restore original bytes before pass drain: equal=%v err=%v", bytes.Equal(restored, original), err)
+	}
+	if !errors.Is(passErr, ErrHistorySnapshotChanged) || done || digest != "" || cursor != "" || !source.observed {
+		t.Fatalf("transient EOF accepted incomplete query: done=%v digest=%q cursor=%q observed=%v err=%v", done, digest, cursor, source.observed, passErr)
+	}
+}
+
+func TestHistoryVerificationDeadlineRefusesZeroProgressCursor(t *testing.T) {
+	state := &historyCursor{Version: historyCursorVersion, Snapshot: "prefix", PrefixBytes: 10, PrefixSHA: digestBytes([]byte("prefix")), QueryKey: "deadline", Phase: "scan", Limit: 5}
+	previous, err := encodeHistoryCursor(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cursor, err := historyCursorAfterDeadline(state, previous); cursor != "" || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("zero-progress deadline returned cursor=%q err=%v", cursor, err)
+	}
+	progressed := *state
+	progressed.Offset = 1
+	cursor, err := historyCursorAfterDeadline(&progressed, previous)
+	if err != nil || cursor == "" {
+		t.Fatalf("verified progress was not resumable after deadline: cursor=%q err=%v", cursor, err)
 	}
 }
 

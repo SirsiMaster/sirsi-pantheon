@@ -98,11 +98,16 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 	if err != nil {
 		return HistoryPage{}, err
 	}
+	initialCursor, err := encodeHistoryCursor(working)
+	if err != nil {
+		return HistoryPage{}, err
+	}
 	page := HistoryPage{Coverage: HistoryCoveragePartial, Snapshot: snapshot, Candidates: []HistoryCandidate{}, Links: HistoryLinks{Acceptances: []Decision{}, ReviewedResolutionFor: []string{}}, AfterCursor: working.After != nil}
 	workClock := &historyWorkClock{started: time.Now(), budget: query.TimeBudget}
 	workCtx := context.WithValue(ctx, historyWorkClockKey{}, workClock)
 	workDeadline := overallDeadline
 	remainingBytes, remainingRows := query.ByteBudget, query.RowBudget
+	deadlineExpired := false
 	for {
 		if err := ctx.Err(); err != nil {
 			return HistoryPage{}, err
@@ -111,6 +116,7 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 			if working.Phase == "anchor" {
 				return HistoryPage{}, context.DeadlineExceeded
 			}
+			deadlineExpired = true
 			break
 		}
 		if working.Phase != "anchor" && (workClock.expired() || remainingBytes <= 0 || remainingRows <= 0) {
@@ -175,6 +181,7 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 			})
 			if passErr != nil {
 				if errors.Is(passErr, context.DeadlineExceeded) && ctx.Err() == nil {
+					deadlineExpired = true
 					break
 				}
 				return HistoryPage{}, passErr
@@ -248,7 +255,11 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 			phasePage = HistoryPage{Coverage: HistoryCoveragePartial, Snapshot: snapshot, Candidates: []HistoryCandidate{}, Links: HistoryLinks{Acceptances: []Decision{}, ReviewedResolutionFor: []string{}}, AfterCursor: tentative.After != nil}
 			capturedPage, captureErr := queryHistoryCapturedPhase(file, tentative, phaseQuery, phasePage, workCtx, workDeadline, overallDeadline, page.ScannedBytes > 0 || page.ScannedRecords > 0)
 			if captureErr != nil {
-				if errors.Is(captureErr, errHistoryWorkBudget) || errors.Is(captureErr, context.DeadlineExceeded) && ctx.Err() == nil {
+				if errors.Is(captureErr, errHistoryWorkBudget) {
+					break
+				}
+				if errors.Is(captureErr, context.DeadlineExceeded) && ctx.Err() == nil {
+					deadlineExpired = true
 					break
 				}
 				return HistoryPage{}, captureErr
@@ -282,12 +293,27 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 			break
 		}
 	}
-	page.Cursor, err = encodeHistoryCursor(working)
+	if deadlineExpired {
+		page.Cursor, err = historyCursorAfterDeadline(working, initialCursor)
+	} else {
+		page.Cursor, err = encodeHistoryCursor(working)
+	}
 	if err != nil {
 		return HistoryPage{}, err
 	}
 	page.Integrity, page.MatchCount, page.EvidenceMatches = cursorIntegrity(working), working.Seen, working.EvidenceSeen
 	return page, nil
+}
+
+func historyCursorAfterDeadline(state *historyCursor, previous string) (string, error) {
+	cursor, err := encodeHistoryCursor(state)
+	if err != nil {
+		return "", err
+	}
+	if cursor == previous {
+		return "", context.DeadlineExceeded
+	}
+	return cursor, nil
 }
 
 func cloneHistoryCursor(state *historyCursor) (*historyCursor, error) {
@@ -730,54 +756,6 @@ func (r historyHashingReader) Read(buffer []byte) (int, error) {
 	return n, err
 }
 
-type historyWorkClockKey struct{}
-
-type historyWorkClock struct {
-	started    time.Time
-	budget     time.Duration
-	excluded   time.Duration
-	pausedAt   time.Time
-	pauseDepth int
-}
-
-func (clock *historyWorkClock) expired() bool {
-	if clock == nil {
-		return false
-	}
-	elapsed := time.Since(clock.started) - clock.excluded
-	if !clock.pausedAt.IsZero() {
-		elapsed -= time.Since(clock.pausedAt)
-	}
-	return elapsed >= clock.budget
-}
-
-func (clock *historyWorkClock) pause() {
-	if clock == nil {
-		return
-	}
-	if clock.pauseDepth == 0 {
-		clock.pausedAt = time.Now()
-	}
-	clock.pauseDepth++
-}
-
-func (clock *historyWorkClock) resume() {
-	if clock != nil && clock.pauseDepth > 0 {
-		clock.pauseDepth--
-	}
-	if clock != nil && clock.pauseDepth == 0 && !clock.pausedAt.IsZero() {
-		clock.excluded += time.Since(clock.pausedAt)
-		clock.pausedAt = time.Time{}
-	}
-}
-
-func historyWorkExpired(ctx context.Context, fallback time.Time) bool {
-	if clock, ok := ctx.Value(historyWorkClockKey{}).(*historyWorkClock); ok {
-		return clock.expired()
-	}
-	return !time.Now().Before(fallback)
-}
-
 func (r historyDeadlineReader) Read(buffer []byte) (int, error) {
 	if err := r.ctx.Err(); err != nil {
 		return 0, err
@@ -806,14 +784,59 @@ func historyPrefixPass(file *historyPrefixFile, size int64, expected string, ctx
 	if _, err := file.file.Seek(0, io.SeekStart); err != nil {
 		return "", fmt.Errorf("maat decision history: rewind retained descriptor: %w", err)
 	}
+	digest, err := historyPrefixPassReader(file.file, size, ctx, deadline, consume)
+	if err != nil {
+		return "", err
+	}
+	if err := file.verify(size); err != nil {
+		return "", err
+	}
+	if expected != "" && digest != expected {
+		return "", ErrHistorySnapshotChanged
+	}
+	return digest, nil
+}
+
+type historyExactPrefixReader struct {
+	reader       io.Reader
+	remaining    int64
+	prematureEOF bool
+}
+
+func (reader *historyExactPrefixReader) Read(buffer []byte) (int, error) {
+	if reader.prematureEOF {
+		return 0, ErrHistorySnapshotChanged
+	}
+	if reader.remaining == 0 {
+		return 0, io.EOF
+	}
+	if int64(len(buffer)) > reader.remaining {
+		buffer = buffer[:reader.remaining]
+	}
+	n, err := reader.reader.Read(buffer)
+	reader.remaining -= int64(n)
+	if err == io.EOF && reader.remaining > 0 {
+		reader.prematureEOF = true
+		return n, ErrHistorySnapshotChanged
+	}
+	return n, err
+}
+
+func historyPrefixPassReader(source io.Reader, size int64, ctx context.Context, deadline time.Time, consume func(*bufio.Reader) error) (string, error) {
+	if source == nil || size < 0 {
+		return "", ErrHistorySnapshotChanged
+	}
 	hasher := sha256.New()
 	clock, _ := ctx.Value(historyWorkClockKey{}).(*historyWorkClock)
-	limited := io.LimitReader(historyDeadlineReader{ctx: ctx, deadline: deadline, reader: file.file, clock: clock}, size)
-	reader := bufio.NewReaderSize(historyHashingReader{reader: limited, hash: hasher, clock: clock}, 64*1024)
+	exact := &historyExactPrefixReader{reader: historyDeadlineReader{ctx: ctx, deadline: deadline, reader: source, clock: clock}, remaining: size}
+	reader := bufio.NewReaderSize(historyHashingReader{reader: exact, hash: hasher, clock: clock}, 64*1024)
 	if consume != nil {
 		if err := consume(reader); err != nil {
 			return "", err
 		}
+	}
+	if exact.prematureEOF {
+		return "", ErrHistorySnapshotChanged
 	}
 	if clock != nil {
 		clock.pause()
@@ -825,18 +848,14 @@ func historyPrefixPass(file *historyPrefixFile, size int64, expected string, ctx
 	if drainErr != nil {
 		return "", drainErr
 	}
+	if exact.prematureEOF || exact.remaining != 0 {
+		return "", ErrHistorySnapshotChanged
+	}
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	if !time.Now().Before(deadline) {
 		return "", context.DeadlineExceeded
 	}
-	if err := file.verify(size); err != nil {
-		return "", err
-	}
-	digest := "sha256:" + hex.EncodeToString(hasher.Sum(nil))
-	if expected != "" && digest != expected {
-		return "", ErrHistorySnapshotChanged
-	}
-	return digest, nil
+	return "sha256:" + hex.EncodeToString(hasher.Sum(nil)), nil
 }

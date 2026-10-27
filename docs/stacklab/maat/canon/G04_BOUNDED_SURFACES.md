@@ -169,9 +169,12 @@ row and parser-work budgets, and the overall two-second ceiling. The existing
 verification is separately reported as `verification_bytes` and never charged
 to `scanned_bytes`/the 4–8 MiB parser byte budget. The two-second overall
 verification deadline is capped by any earlier caller deadline. An interrupted
-unverified pass cannot publish its tentative phase; the caller receives only
-the last fully verified cursor, while cancellation/deadline/mismatch errors
-remain errors.
+unverified pass cannot publish its tentative phase. A request with prior
+verified progress can return that cursor; a verification deadline with no
+progress returns a timeout instead of a successful unchanged cursor. Caller
+cancellation and digest mismatch remain errors. Physical EOF before the
+anchored boundary is latched as snapshot change, even if the retained inode is
+restored before the pass drains.
 
 Backward link, candidate-finalization and materialization phases run in a new
 forward pass when cumulative request budget remains. The 48-reference batch,
@@ -184,8 +187,9 @@ change. A prefix that cannot be fully verified within the two-second deadline
 does not advance.
 
 The strict retained-parent and frozen-prefix reader is currently Unix-scoped.
-Windows retains the prior bounded snapshot reader and its history-read behavior;
-this change makes no Windows frozen-prefix or strict no-follow guarantee.
+Windows retains the prior bounded snapshot reader, including its append
+invalidation and cancellation continuation behavior; this change makes no
+Windows frozen-prefix or strict no-follow guarantee.
 
 Authored source-only adversarial coverage includes append-between-phase and
 older-page behavior, a fresh query after append, same-inode prefix mutation

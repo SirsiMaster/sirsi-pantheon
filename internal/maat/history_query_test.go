@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -111,7 +112,7 @@ func TestQueryHistoryScopesBeforePageLimitAndFindsOldSystemOne(t *testing.T) {
 	}
 }
 
-func TestQueryHistoryUsesStablePhysicalTieAndRejectsSnapshotDrift(t *testing.T) {
+func TestQueryHistoryUsesStablePhysicalTieAndPlatformSnapshotScope(t *testing.T) {
 	journal := &FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
 	at := "2026-10-24T12:00:00Z"
 	appendHistoryFixtures(t, journal,
@@ -134,8 +135,19 @@ func TestQueryHistoryUsesStablePhysicalTieAndRejectsSnapshotDrift(t *testing.T) 
 		t.Fatalf("second equal-time page = %+v", second)
 	}
 	appendHistoryFixtures(t, journal, historyFixtureScreen(t, "2026-10-25T00:00:00Z", "screen:appended"))
-	if _, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "stable", Limit: 2, Cursor: first.NextPageCursor}); !errors.Is(err, ErrHistorySnapshotChanged) {
-		t.Fatalf("stale continuation error = %v, want snapshot drift", err)
+	continued, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "stable", Limit: 2, Cursor: first.NextPageCursor})
+	if runtime.GOOS == "windows" {
+		if !errors.Is(err, ErrHistorySnapshotChanged) {
+			t.Fatalf("legacy Windows continuation error = %v, want snapshot drift", err)
+		}
+		return
+	}
+	if err != nil || len(continued.Candidates) != 1 || continued.Candidates[0].Decision.Evidence != "screen:third" {
+		t.Fatalf("frozen older page changed after append: %+v / %v", continued, err)
+	}
+	fresh, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "stable-fresh", Limit: 2})
+	if err != nil || len(fresh.Candidates) != 2 || fresh.Candidates[0].Decision.Evidence != "screen:appended" {
+		t.Fatalf("fresh query did not see appended row: %+v / %v", fresh, err)
 	}
 }
 
@@ -195,7 +207,11 @@ func TestQueryHistoryCancellationDuringVerifiedPassReturnsNoCursorOrProvisionalC
 		Scope: HistoryScopeSystemOne, QueryKey: "materialize-cancel", Limit: 2, Context: ctx,
 		Match: match,
 	})
-	if !errors.Is(err, context.Canceled) || first.Cursor != "" || len(first.Candidates) != 0 {
+	if runtime.GOOS == "windows" {
+		if err != nil || first.Cursor == "" || len(first.Candidates) != 0 {
+			t.Fatalf("legacy Windows cancellation did not return an empty continuation: %+v / %v", first, err)
+		}
+	} else if !errors.Is(err, context.Canceled) || first.Cursor != "" || len(first.Candidates) != 0 {
 		t.Fatalf("canceled pass returned progress or provisional cases: %+v / %v", first, err)
 	}
 	complete, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "materialize-cancel", Limit: 2})
@@ -411,7 +427,11 @@ func TestQueryHistoryCanceledScanReturnsNoProvisionalResultsAndCanResume(t *test
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	partial, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "cancel", Limit: 5, Context: ctx})
-	if !errors.Is(err, context.Canceled) || partial.Cursor != "" || len(partial.Candidates) != 0 {
+	if runtime.GOOS == "windows" {
+		if err != nil || partial.Cursor == "" || len(partial.Candidates) != 0 {
+			t.Fatalf("legacy Windows canceled scan did not return an empty continuation: %+v / %v", partial, err)
+		}
+	} else if !errors.Is(err, context.Canceled) || partial.Cursor != "" || len(partial.Candidates) != 0 {
 		t.Fatalf("canceled scan returned progress: %+v / %v", partial, err)
 	}
 	complete, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "cancel", Limit: 5, Context: context.Background()})

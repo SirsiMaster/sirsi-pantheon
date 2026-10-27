@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -108,7 +109,11 @@ func TestHistoryQualificationBatchCursorCancelAndMalformedState(t *testing.T) {
 	query.Context = ctx
 	query.Cursor = first.Cursor
 	paused, err := j.QueryHistory(query)
-	if !errors.Is(err, context.Canceled) || paused.Cursor != "" || len(paused.Candidates) != 0 {
+	if runtime.GOOS == "windows" {
+		if err != nil || paused.Cursor == "" || len(paused.Candidates) != 0 {
+			t.Fatalf("legacy Windows canceled read did not return an empty continuation=%+v %v", paused, err)
+		}
+	} else if !errors.Is(err, context.Canceled) || paused.Cursor != "" || len(paused.Candidates) != 0 {
 		t.Fatalf("canceled read returned progress=%+v %v", paused, err)
 	}
 	query.Context = context.Background()
