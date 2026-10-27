@@ -1,5 +1,12 @@
 # Traceability matrix — Pantheon PT
 
+Process-to-diagram coverage is maintained separately in
+[`DIAGRAM_INDEX.md`](DIAGRAM_INDEX.md), with source Mermaid in the linked
+`DIAGRAMS_*.md` files. Process IDs (`PT-P01`–`PT-P40`) link each row in the
+component catalog to its requirements, stories, owner, source state and known
+evidence. Diagram presence is not verification evidence and does not change any
+row's qualification, release or certification state.
+
 | Requirement | Source | Verification/evidence | State |
 |---|---|---|---|
 | Existing legacy client configuration has a supported selected route to the single signed router engine | `routermcpconfig*`, `setuproutermcp_darwin*`; recipe `router-mcp-selected-config-migration` | Authored pure strict-schema/byte-span, owned filesystem backup/stage/drift/debt and actual Cobra flag-routing fixtures, plus existing Horus publication regression selector | SOURCE ONLY, no execution or real config read/write. Independent review/qualification and selected installed client consumption/apply/reconnect/caller proof pending; no generic MCP replacement or full delivery claim. |
@@ -32,3 +39,33 @@
 | No public partial release or published-asset overwrite | `scripts/publish-release-assets.py`, `RELEASE_PUBLICATION.md`, release-artifact recipe | authored fake-gh partial/idempotent/mismatch/unknown-outcome controls; paired size/SHA256 remote readback | Corrective source only; tests unrun, no successor publication claim. Existing signed132 custody is independent. |
 | Release-source preflight follows the current delegated route without diagnosing owner credentials | `internal/maat/releasepreflight.go`, release-artifact recipe | released130 signing-input pins plus corrective workflow pin; mode/identity/delegation/notary/verification removal fixtures; actual Casebook NextAction projection | Corrective source only until qualified. Literal source indicators are not shell execution/semantic proof. Public local certificate readiness and actual signing/notary/publication receipts remain independent. |
 | Install/upgrade/rollback/uninstall | cask lifecycle plan | installed-host evidence | OPEN |
+
+## Diagram-linked process coverage
+
+The audited component catalog contains 40 indexed processes: the prior 28 plus
+eight command-level Ma’at knowledge workflows and four local Stack Lab
+workflows found in `cmd/sirsi/maatknowledge.go` and
+`cmd/sirsi/stacklablocal.go`. The prior 28-row set was incomplete and is not a
+whole-canon denominator. Diagram mapping is 40/40 indexed rows with logical/data/state/recovery
+views; sequence diagrams are included for cross-actor/store/API flows.
+This is structural documentation coverage only and does not alter any
+qualification, release or certification state. The newly added source diagrams
+are in `DIAGRAMS_MAAT_STACKLAB_LOCAL.md`.
+
+- MCP migration/shared core: PT-P03–PT-P04.
+- Evidence custody/completion proof: PT-P05 and PT-P07.
+- Horus/root relay/legacy maintenance/pressure: PT-P06, PT-P08–PT-P10.
+- Native runtime and hygiene: PT-P11–PT-P20 and PT-P28.
+- Package, cask, publication, source observation and installed lifecycle:
+  PT-P21–PT-P26.
+- Exact-item worker lifecycle: PT-P27; the index links existing Ra/Apollo
+  diagrams where those owned subflows apply.
+- Ma’at archive search, ingestion, rebuild, detail/history/status, owner
+  resolution and projection reconciliation: PT-P29–PT-P36.
+- Local Stack Lab inspect/enable/disable/catalog: PT-P37–PT-P40; PT-US-04 is
+  explicitly mapped on each local preference/catalog process.
+
+Main owns the certification matrix and completion record. This matrix does not
+assert a whole-wing pass; preserve Main's separate 12-criterion status,
+including the actual public `v0.24.140` readback and still-pending `v0.24.141`
+evidence.

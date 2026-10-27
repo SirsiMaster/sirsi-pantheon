@@ -8,8 +8,10 @@ request may finish one bounded record with at most two dependencies when an
 injected budget is smaller than that atomic bundle. No whole page receives that
 allowance. `history_query_test.go` asserts retained reference and work bounds;
 `MaatOperationStateTests.swift` exercises cancellation, continuation generations
-and the same empty-state reducer used by both native loaders. These are authored
-source fixtures pending Main's execution.
+and the same empty-state reducer used by both native loaders. G04 source qualification and explicit residuals are now recorded in
+[G04_BOUNDED_SURFACES.md](G04_BOUNDED_SURFACES.md): PR1240 merged as e26, with
+focused engine/native evidence. Historical authored-only statements below do not
+override that scoped result; other memory/repair rows remain separately scoped.
 
 | Component | Source surface | Write boundary | Evidence / next action |
 |---|---|---|---|

@@ -1,8 +1,12 @@
 # G04 — bounded history and archive read surfaces
 
-Source candidate only. Main owns compilation, runtime, causal negatives and
-independent review. The original Ma’at scope is unchanged. This correction does
-not close G01/G02 learning or the other original-scope audit gaps.
+Current source status (2026-10-27): normal merged PR1240 at
+`e26e324be107ab541ec8d4d1400392e1ee55fc26` includes the independently reviewed
+G04 engine/native corrections. Focused engine normal/race and causal controls,
+and native focused tests/control were executed; see the qualification addendum
+below. This supersedes the old authored-only status, not the original scope.
+G01/G02 learning, skipped interop/accessibility and installed141 acceptance stay
+separate; no whole-Ma'at or JEV-relative performance claim is made.
 
 Base: Mercury `5f907f5761a23bc9ad3fecd2158decfea9f1a613`. Mercury's G1–G5
 collectors, native views and browser assets remain inherited, without replacing
@@ -216,3 +220,25 @@ validated advancing partial cursors, for at most 128 reads or eight seconds per
 burst. Cancel and bounded pause retain accepted progress; older pages remain
 explicit. Source and raw-log hashes are bound by Main qualification receipt
 `3d7e8a1f56700955fc8383699159705c95b5e9ce350ebe7151569ab01158d6ac`.
+
+
+## 2026-10-27 source qualification and remaining acceptance
+
+- Engine source6191: 46 focused normal and46 race results, four compiled causal
+  controls. Receipt SHA256 `34536c093e3f34c809f7e15d19f6a472e1b89b0d51ab79e4a0fa713f8c971c96`.
+- Native sourcea39:153 selected results,150 pass and3 explicit skips, zero fail;
+  compiled one-read mutation fails the intended assertions. Receipt SHA256
+  `3d7e8a1f56700955fc8383699159705c95b5e9ce350ebe7151569ab01158d6ac`.
+- Main/independent review verified the normal merged composition preserves the
+  accepted G04 source and the separate selected relay fixes. Final141 whole
+  composition CI/package/install and actual producer-to-Swift/accessibility proof
+  are not supplied by these component receipts.
+- Private2012-row workload measured parser/verification separately. It does not
+  prove cold-cache behavior, real-journal UI latency or superiority to JEV.
+
+Exact retained local receipts are under the qualification machine's
+`~/.sirsi/evidence/pantheon-freeze-corrective-20261023.1rud4wmz/` as
+`Main-6191ba73-g04-qualified-engine-and-performance-20261027.json` and
+`Main-a39dcd54-g04-native-qualified-20261027.json`. Hashes, not that machine,
+identify evidence. Full product acceptance is composed in the PT wing's
+`CERTIFICATION.md`; these receipts do not close unrelated original tasks.
