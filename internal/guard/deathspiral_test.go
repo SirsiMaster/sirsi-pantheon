@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
@@ -55,8 +56,8 @@ func spiralFinding(t *testing.T, m *platform.Mock) DiagnosticFinding {
 	return r.Findings[0]
 }
 
-// TestMemoryDeathSpiral pins the 2026-07-16 incident contract: load 31.8 /
-// swap 95% / 244 leaked sessions must be Critical (live → forces RED), never
+// TestMemoryDeathSpiral pins the 2026-07-16 trigger contract: load 31.8 /
+// swap 95% / observed process fan-out must be Critical (live → forces RED), never
 // a 6-point deduction.
 func TestMemoryDeathSpiral(t *testing.T) {
 	cases := []struct {
@@ -65,14 +66,14 @@ func TestMemoryDeathSpiral(t *testing.T) {
 		want DiagnosticSeverity
 		msg  string
 	}{
-		{"the incident: swap 95% + load 2x cores + leak → Critical",
+		{"incident signals: swap 95% + load 2x cores + fan-out → Critical",
 			spiralMock("31.80", 25231, 26624, 11000, 244), SeverityCritical, "death spiral"},
-		{"swap 95% + free < 512MB, load modest → Critical",
+		{"swap 95% + available < 512 MiB, load modest → Critical",
 			spiralMock("10.0", 25231, 26624, 20000, 5), SeverityCritical, "death spiral"},
-		{"swap 85%, load modest, no leak → Warn",
-			spiralMock("10.0", 22630, 26624, 500000, 5), SeverityWarn, "Swap 85%"},
-		{"session leak alone (244 children) → Warn naming the parent",
-			spiralMock("5.0", 2000, 26624, 500000, 244), SeverityWarn, "Claude has 244 child processes"},
+		{"swap 85%, load modest, no fan-out → Warn",
+			spiralMock("10.0", 22630, 26624, 500000, 5), SeverityWarn, "Swap 85% in use"},
+		{"observed process fan-out alone → Warn naming the observed parent",
+			spiralMock("5.0", 2000, 26624, 500000, 244), SeverityWarn, "Observed process fan-out: parent Claude has 244 direct child processes"},
 		{"healthy machine → OK",
 			spiralMock("5.0", 2000, 26624, 500000, 5), SeverityOK, "headroom normal"},
 	}
@@ -86,6 +87,38 @@ func TestMemoryDeathSpiral(t *testing.T) {
 				t.Errorf("message %q does not contain %q", f.Message, c.msg)
 			}
 		})
+	}
+}
+
+func TestMemoryDeathSpiralCopyHasUTCWindowAndCustodyBoundary(t *testing.T) {
+	f := spiralFinding(t, spiralMock("31.80", 25231, 26624, 11000, 244))
+	for _, want := range []string{
+		"Sample window UTC:", "may not describe current state when the finding is read",
+		"swap 95% (24.64 GiB used)", "available 0.17 GiB (vm_stat free plus inactive)", "MLX model size not sampled",
+		"Memory death spiral threshold met in this sample", "Cause and process ownership are unknown",
+		"Refresh readings, confirm the exact workload owner/custody and current demand, then use its supported resolution at its own idle boundary",
+	} {
+		if !strings.Contains(f.Detail, want) && !strings.Contains(f.Message, want) {
+			t.Errorf("memory finding copy missing %q; message=%q detail=%q", want, f.Message, f.Detail)
+		}
+	}
+	for _, unwanted := range []string{"Claude", "restart", "sirsi ", "--stop", "reap-sessions", "purge --"} {
+		if strings.Contains(f.Message, unwanted) {
+			t.Errorf("memory finding must not infer a Claude cause or issue a process command: %q", f.Message)
+		}
+	}
+	window := strings.SplitN(f.Detail, "Sample window UTC: ", 2)
+	if len(window) != 2 {
+		t.Fatalf("detail lacks a sample window: %q", f.Detail)
+	}
+	bounds := strings.SplitN(strings.SplitN(window[1], ";", 2)[0], " through ", 2)
+	if len(bounds) != 2 {
+		t.Fatalf("sample window lacks both bounds: %q", f.Detail)
+	}
+	start, startErr := time.Parse(time.RFC3339Nano, bounds[0])
+	finish, finishErr := time.Parse(time.RFC3339Nano, bounds[1])
+	if startErr != nil || finishErr != nil || finish.Before(start) {
+		t.Fatalf("sample window is not a valid ordered UTC bracket: %q (start err %v, finish err %v)", f.Detail, startErr, finishErr)
 	}
 }
 
@@ -121,8 +154,11 @@ func TestMemoryDeathSpiralStillFlagsRealFanOutBesideSimulator(t *testing.T) {
 	if f.Severity != SeverityWarn {
 		t.Fatalf("severity = %d (%s), want Warn for Claude fan-out", f.Severity, f.Message)
 	}
-	if !strings.Contains(f.Message, "Claude has 244 child processes") {
-		t.Fatalf("message %q should name the real fan-out parent", f.Message)
+	if !strings.Contains(f.Message, "Observed process fan-out: parent Claude has 244 direct child processes") {
+		t.Fatalf("message %q should report the observed fan-out", f.Message)
+	}
+	if strings.Contains(strings.ToLower(f.Message), "leak") || strings.Contains(f.Message, "restart") {
+		t.Fatalf("message %q must not infer a leak or direct a restart", f.Message)
 	}
 }
 
