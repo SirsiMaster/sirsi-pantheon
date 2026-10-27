@@ -7,15 +7,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
-	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
+	"golang.org/x/sys/unix"
 )
 
 const gemmaNativeProgram = "/Applications/Pantheon.app/Contents/MacOS/sirsi"

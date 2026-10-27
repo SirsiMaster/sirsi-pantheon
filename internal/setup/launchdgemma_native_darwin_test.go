@@ -4,10 +4,11 @@ package setup
 
 import (
 	"errors"
-	"golang.org/x/sys/unix"
 	"os"
 	"os/exec"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestGemmaNativeKernelChildrenDoesNotCreateObserverChild(t *testing.T) {

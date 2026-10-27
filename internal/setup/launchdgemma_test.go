@@ -3,10 +3,11 @@ package setup
 import (
 	"context"
 	"errors"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 func gemmaLifecycleFixture() (gemmaWorkerOperations, GemmaWorkerPlan, *gemmaWorkerDebt, *[]string) {

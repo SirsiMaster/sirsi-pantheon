@@ -8,8 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 const GemmaNativeWorkerLabel = "ai.sirsi.gemma-worker.native"
