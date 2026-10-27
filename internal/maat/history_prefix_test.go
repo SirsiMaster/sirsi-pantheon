@@ -257,7 +257,7 @@ func TestHistoryOlderPageRemainsFrozenWhileFreshQuerySeesAppendedResolution(t *t
 }
 
 func TestHistoryPrefixRetainedIdentityRejectsReplacementHardlinkAndTruncation(t *testing.T) {
-	for _, mutation := range []string{"replacement", "hardlink", "truncation", "symlink", "parent-replacement"} {
+	for _, mutation := range []string{"replacement", "hardlink", "truncation", "symlink", "mode-change", "parent-replacement", "parent-mode-change"} {
 		t.Run(mutation, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "private")
 			if err := os.Mkdir(root, 0700); err != nil {
@@ -284,6 +284,10 @@ func TestHistoryPrefixRetainedIdentityRejectsReplacementHardlinkAndTruncation(t 
 				if err := os.Link(path, path+".link"); err != nil {
 					t.Fatal(err)
 				}
+			case "mode-change":
+				if err := os.Chmod(path, 0640); err != nil {
+					t.Fatal(err)
+				}
 			case "truncation":
 				if err := os.Truncate(path, size-1); err != nil {
 					t.Fatal(err)
@@ -303,6 +307,10 @@ func TestHistoryPrefixRetainedIdentityRejectsReplacementHardlinkAndTruncation(t 
 					t.Fatal(err)
 				}
 				if err := os.WriteFile(path, []byte("prefix"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "parent-mode-change":
+				if err := os.Chmod(root, 0750); err != nil {
 					t.Fatal(err)
 				}
 			}

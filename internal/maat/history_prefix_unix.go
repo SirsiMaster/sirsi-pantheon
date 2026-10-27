@@ -37,8 +37,11 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 	if query.Limit > maxHistoryPageSize {
 		return HistoryPage{}, fmt.Errorf("maat decision history: page size exceeds %d", maxHistoryPageSize)
 	}
-	if strings.TrimSpace(query.QueryKey) == "" || len(query.QueryKey) > 1024 {
-		return HistoryPage{}, fmt.Errorf("maat decision history: query identity is required or exceeds its bound")
+	if strings.TrimSpace(query.QueryKey) == "" {
+		return HistoryPage{}, fmt.Errorf("maat decision history: query identity is required")
+	}
+	if len(query.QueryKey) > 1024 {
+		return HistoryPage{}, fmt.Errorf("maat decision history: query identity exceeds its bound")
 	}
 	if query.ByteBudget <= 0 {
 		query.ByteBudget = defaultHistoryByteBudget
