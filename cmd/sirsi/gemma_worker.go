@@ -16,6 +16,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/reason"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/spf13/cobra"
 )
 
@@ -394,7 +395,11 @@ func runGemmaWorkerWith(cmd *cobra.Command, runtime gemmaWorkerRuntime) (result 
 	if err != nil {
 		return err
 	}
+	closed := false
 	defer func() {
+		if closed {
+			return
+		}
 		if _, err := router.CloseThread(routerRoot, t.ThreadID); err != nil {
 			result = errors.Join(result, fmt.Errorf("Gemma worker thread close failed: %w", err))
 		}
@@ -406,10 +411,25 @@ func runGemmaWorkerWith(cmd *cobra.Command, runtime gemmaWorkerRuntime) (result 
 			return err
 		},
 	}
-	return runGemmaWorkerLoop(cmd.Context(), w, gemmaWorkerOnce, func() error {
+	loopErr := runGemmaWorkerLoop(cmd.Context(), w, gemmaWorkerOnce, func() error {
 		_, err := router.Heartbeat(routerRoot, t.ThreadID, router.HeartbeatUpdate{Status: router.ThreadStatusActive})
 		return err
 	}, func(err error) { fmt.Fprintln(cmd.ErrOrStderr(), err) })
+	if errors.Is(loopErr, routerstore.ErrLanePaused) {
+		if _, err := router.CloseThread(routerRoot, t.ThreadID); err != nil {
+			return err
+		}
+		closed = true
+		record, err := f.Store().GetThreadRecord(t.ThreadID)
+		if err != nil {
+			return err
+		}
+		if record.ThreadID != t.ThreadID || record.Agent != gemmaWorkerAgent || record.Status != "closed" {
+			return fmt.Errorf("Gemma lifecycle: canonical closed worker readback mismatch")
+		}
+		return setup.WriteGemmaWorkerPauseAck(cmd.Context(), t.ThreadID, router.MachineID())
+	}
+	return loopErr
 }
 
 // The lane barrier is observed only between synchronous runOnce calls. runOnce
@@ -425,7 +445,7 @@ func runGemmaWorkerLoop(ctx context.Context, w nativeGemmaWorker, once bool, hea
 		}
 		worked, err := w.runOnce(ctx)
 		if errors.Is(err, routerstore.ErrLanePaused) {
-			return nil // authoritative claim barrier, not ErrNoWork or auth outage
+			return routerstore.ErrLanePaused // caller closes registration, reads it back, then writes joined acknowledgment
 		}
 		if err != nil {
 			var broker *gemmaInferenceError

@@ -401,7 +401,7 @@ func TestGemmaWorkerLoopPauseAfterJoinedResult(t *testing.T) {
 		s.claimErr = fmt.Errorf("remote: %w", routerstore.ErrLanePaused)
 		return "A complete retained draft.", nil
 	})
-	if err := runGemmaWorkerLoop(context.Background(), w, false, func() error { return nil }, func(error) {}); err != nil {
+	if err := runGemmaWorkerLoop(context.Background(), w, false, func() error { return nil }, func(error) {}); !errors.Is(err, routerstore.ErrLanePaused) {
 		t.Fatal(err)
 	}
 	if generated != 1 || r.calls != 1 || s.claimNextCalls != 2 || s.failed != "" {
