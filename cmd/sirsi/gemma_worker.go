@@ -69,7 +69,7 @@ func (w nativeGemmaWorker) runOnce(ctx context.Context) (bool, error) {
 	} else {
 		lease, err = w.store.ClaimNext(gemmaWorkerAgent, w.leaseTTL)
 	}
-	if errors.Is(err, routerstore.ErrNoWork) || errors.Is(err, routerstore.ErrLanePaused) {
+	if errors.Is(err, routerstore.ErrNoWork) {
 		return false, nil
 	}
 	if err != nil {
@@ -304,7 +304,7 @@ func runGemmaWorker(cmd *cobra.Command, _ []string) error {
 	})
 }
 
-func runGemmaWorkerWith(cmd *cobra.Command, runtime gemmaWorkerRuntime) error {
+func runGemmaWorkerWith(cmd *cobra.Command, runtime gemmaWorkerRuntime) (result error) {
 	if gemmaWorkerVersion {
 		fmt.Fprintln(cmd.OutOrStdout(), "sirsi-gemma-worker native")
 		return nil
@@ -396,7 +396,7 @@ func runGemmaWorkerWith(cmd *cobra.Command, runtime gemmaWorkerRuntime) error {
 	}
 	defer func() {
 		if _, err := router.CloseThread(routerRoot, t.ThreadID); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Gemma worker thread close failed: %v\n", err)
+			result = errors.Join(result, fmt.Errorf("Gemma worker thread close failed: %w", err))
 		}
 	}()
 	defer f.Close()
@@ -406,26 +406,42 @@ func runGemmaWorkerWith(cmd *cobra.Command, runtime gemmaWorkerRuntime) error {
 			return err
 		},
 	}
+	return runGemmaWorkerLoop(cmd.Context(), w, gemmaWorkerOnce, func() error {
+		_, err := router.Heartbeat(routerRoot, t.ThreadID, router.HeartbeatUpdate{Status: router.ThreadStatusActive})
+		return err
+	}, func(err error) { fmt.Fprintln(cmd.ErrOrStderr(), err) })
+}
+
+// The lane barrier is observed only between synchronous runOnce calls. runOnce
+// joins inference and its lease maintainer before returning; a pause is never
+// inferred from lease expiry or an empty queue. A clean return lets the observed
+// SuccessfulExit=false LaunchAgent remain stopped, without bootout or a signal.
+// Thread close errors propagate above: clean exit is not a durable pause receipt
+// when the canonical registration could not be closed.
+func runGemmaWorkerLoop(ctx context.Context, w nativeGemmaWorker, once bool, heartbeat func() error, report func(error)) error {
 	for {
-		if _, err := router.Heartbeat(routerRoot, t.ThreadID, router.HeartbeatUpdate{Status: router.ThreadStatusActive}); err != nil {
+		if err := heartbeat(); err != nil {
 			return fmt.Errorf("Gemma worker heartbeat: %w", err)
 		}
-		worked, err := w.runOnce(cmd.Context())
+		worked, err := w.runOnce(ctx)
+		if errors.Is(err, routerstore.ErrLanePaused) {
+			return nil // authoritative claim barrier, not ErrNoWork or auth outage
+		}
 		if err != nil {
 			var broker *gemmaInferenceError
-			if !gemmaWorkerOnce && errors.As(err, &broker) {
-				fmt.Fprintln(cmd.ErrOrStderr(), err)
+			if !once && errors.As(err, &broker) {
+				report(err)
 				continue
 			}
 			return err
 		}
-		if gemmaWorkerOnce {
+		if once {
 			return nil
 		}
 		if !worked {
 			select {
-			case <-cmd.Context().Done():
-				return cmd.Context().Err()
+			case <-ctx.Done():
+				return ctx.Err()
 			case <-time.After(30 * time.Second):
 			}
 		}
