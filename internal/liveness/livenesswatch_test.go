@@ -114,10 +114,23 @@ func TestProbeSessionLeak_Threshold(t *testing.T) {
 	if !f.Fixable || f.Title == "" {
 		t.Errorf("alert must be a routable fixable finding, got %+v", f)
 	}
-	for _, want := range []string{"snapshot at watch run", "candidate sessions", "does not prove a leak or cause", "exact workload owner/custody and current demand", "own idle boundary"} {
+	for _, want := range []string{"Session candidate sample window UTC:", "candidate sessions", "does not prove a leak or cause", "exact workload owner/custody and current demand", "own idle boundary"} {
 		if !strings.Contains(strings.ToLower(f.Body), want) {
 			t.Errorf("candidate alert body must contain %q, got %q", want, f.Body)
 		}
+	}
+	window := strings.SplitN(f.Body, "Session candidate sample window UTC: ", 2)
+	if len(window) != 2 {
+		t.Fatalf("candidate alert lacks its sample window: %q", f.Body)
+	}
+	bounds := strings.SplitN(strings.SplitN(window[1], ". ", 2)[0], " through ", 2)
+	if len(bounds) != 2 {
+		t.Fatalf("candidate sample window lacks both UTC bounds: %q", f.Body)
+	}
+	start, startErr := time.Parse(time.RFC3339Nano, bounds[0])
+	finish, finishErr := time.Parse(time.RFC3339Nano, bounds[1])
+	if startErr != nil || finishErr != nil || finish.Before(start) {
+		t.Fatalf("candidate sample window is not a valid ordered UTC bracket: %q (start err %v, finish err %v)", f.Body, startErr, finishErr)
 	}
 	for _, unwanted := range []string{"reap-sessions", "--apply", "drive the swap", "restart"} {
 		if strings.Contains(f.Body, unwanted) {
@@ -687,13 +700,16 @@ func TestRightSizeAdvice_HealthEndpointUsed(t *testing.T) {
 	if !strings.Contains(got, "37") && !strings.Contains(got, "~37") {
 		t.Errorf("advice does not reflect /health size (~37 GB): %q", got)
 	}
-	for _, want := range []string{"measured MLX /health mlx_active_bytes", "37.00 GiB active allocation", "includes KV cache and transient pages", "37.00 GiB + 4 GiB OS headroom = 41.00 GiB", "available memory is 9.68 GiB", "exact workload owner/custody and current demand"} {
+	for _, want := range []string{"Configured model ID gemma-4-12B-it-8bit", "measured MLX /health mlx_active_bytes", "37.00 GiB active allocation", "includes KV cache and transient pages", "37.00 GiB + 4 GiB OS headroom = 41.00 GiB", "available memory is 9.68 GiB", "exact workload owner/custody and current demand"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("measured sizing context missing %q: %q", want, got)
 		}
 	}
 	if strings.Contains(got, "1.4 ×") || strings.Contains(got, "sirsi gemma serve") {
 		t.Errorf("measured path must retain its MLX+4 GiB formula and give no command: %q", got)
+	}
+	if strings.Contains(got, "Current model ") {
+		t.Errorf("configured model ID must not imply running-model truth: %q", got)
 	}
 }
 

@@ -789,7 +789,7 @@ func rightSizeAdvice(home string, availableGB float64) string {
 			modelGB, modelGB, kvScale*modelGB+4)
 	}
 	snapshot := fmt.Sprintf(
-		"Sizing snapshot: available memory is %.2f GiB (free plus inactive). Current model %s: %s. "+
+		"Sizing snapshot: available memory is %.2f GiB (free plus inactive). Configured model ID %s: %s. "+
 			"This point-in-time sizing is not current truth; cause is unknown. Refresh readings, confirm the exact workload owner/custody and current demand, then use its supported resolution at its own idle boundary.",
 		availableGB, label, provenance)
 
@@ -852,11 +852,14 @@ func setSessionLeakCount(fn func() (int, int)) {
 // a leak, assign causation, or reap sessions; action requires fresh exact-owner
 // and custody confirmation outside this alert.
 func probeSessionLeak() Finding {
+	sampleStartedAt := time.Now().UTC()
 	n, mb := getSessionLeakCount()()
+	sampleFinishedAt := time.Now().UTC()
 	f := Finding{Check: "session-leak", Fixable: true,
 		Title: "liveness-watch: Claude Desktop session candidates observed",
-		Body: fmt.Sprintf("Snapshot at watch run: %d Claude Desktop task-runner candidate sessions (~%d MB estimated reclaimable). "+
-			"Candidate count does not prove a leak or cause. Refresh readings, confirm the exact workload owner/custody and current demand, then use its supported resolution at its own idle boundary.", n, mb)}
+		Body: fmt.Sprintf("Session candidate sample window UTC: %s through %s. %d Claude Desktop task-runner candidate sessions (~%d MB estimated reclaimable). "+
+			"Candidate count does not prove a leak or cause. Refresh readings, confirm the exact workload owner/custody and current demand, then use its supported resolution at its own idle boundary.",
+			sampleStartedAt.Format(time.RFC3339Nano), sampleFinishedAt.Format(time.RFC3339Nano), n, mb)}
 	if n < sessionLeakThreshold {
 		f.OK = true
 		f.Detail = fmt.Sprintf("%d candidates observed (below %d threshold)", n, sessionLeakThreshold)
