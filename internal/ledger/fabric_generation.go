@@ -105,6 +105,15 @@ func (p *FabricGenerationProducer) ReadPage(ctx context.Context, offset int, sna
 	return p.readGeneration(ctx, func(read FabricRead) error { _, err := FabricTasksFrom(read.Snapshot, offset, snapshot); return err })
 }
 
+// ReadTaskSelection validates before committing a new transition baseline, just
+// like unfiltered ReadPage. Rejected filtered cursors cannot swallow activity.
+func (p *FabricGenerationProducer) ReadTaskSelection(ctx context.Context, offset int, snapshot, filter string) (*FabricGeneration, error) {
+	return p.readGeneration(ctx, func(read FabricRead) error {
+		_, err := FabricTasksFilteredFrom(read.Snapshot, offset, snapshot, filter)
+		return err
+	})
+}
+
 func (p *FabricGenerationProducer) readGeneration(ctx context.Context, validate func(FabricRead) error) (*FabricGeneration, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

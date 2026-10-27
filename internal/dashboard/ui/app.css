@@ -190,6 +190,14 @@ button,.btn,.sort,.lane-select{min-width:44px;min-height:44px}
 .queue-total{font:inherit;letter-spacing:inherit;color:var(--gold);background:none;border:0;padding:0;text-align:left;cursor:pointer;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:8px}
 .queue-total:hover{color:var(--ink)}
 .queue-total:focus-visible{outline:2px solid var(--gold);outline-offset:8px}
+.fabric-metric{font:inherit;font-variant-numeric:tabular-nums;color:inherit;background:transparent;border:0;border-radius:4px;padding:4px 0;cursor:pointer;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:6px}
+.fabric-metric:hover{color:var(--gold)}
+.fabric-metric:focus-visible{outline:2px solid var(--gold);outline-offset:4px}
+.fabric-lane-table th:first-child{width:40%}
+.fabric-lane-table th:nth-child(2){width:45%}
+.fabric-lane-table th:nth-child(3){width:15%}
+.fabric-lane-table th.num,.fabric-lane-table td.num,.fabric-lane-table td.num .lane-select{text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:640px){.fabric-lane-table td.num,.fabric-lane-table td.num .lane-select{text-align:left}}
 .message-body{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.65}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
 .toolbar [aria-pressed="true"]{color:var(--gold);border-color:var(--gold)}

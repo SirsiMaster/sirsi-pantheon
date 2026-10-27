@@ -31,7 +31,7 @@ function load(){
  var fleet=loadFleet();
  state.loading=Promise.allSettled([router,host,fleet]).finally(function(){state.loading=null});return state.loading;
 }
-function loadFleet(taskPage){var selected=taskPage===undefined?state.fabricTaskPage:taskPage,url='/api/fabric',generation=(state.fabricReadGeneration||0)+1;state.fabricReadGeneration=generation;state.fabricTaskPage=selected||null;if(selected)url+='?tasks_offset='+encodeURIComponent(selected.offset)+'&tasks_snapshot='+encodeURIComponent(selected.snapshot);return get(url).then(function(f){if(generation!==state.fabricReadGeneration)return;if(!PantheonFabric.valid(f))throw new Error('Invalid fabric projection');state.fleet=f;state.fleetErr=null}).catch(function(e){if(generation===state.fabricReadGeneration)state.fleetErr=e.message}).then(function(){if(generation===state.fabricReadGeneration&&(state.view==='fleet'||state.view==='overview'||state.view==='host'))render()})}
+function loadFleet(taskPage,focusTasks){var selected=taskPage===undefined?state.fabricTaskPage:taskPage,url='/api/fabric',query=[],generation=(state.fabricReadGeneration||0)+1;state.fabricReadGeneration=generation;state.fabricTaskPage=selected||null;if(selected&&selected.filter)query.push('tasks_filter='+encodeURIComponent(selected.filter));if(selected&&selected.offset){query.push('tasks_offset='+encodeURIComponent(selected.offset));query.push('tasks_snapshot='+encodeURIComponent(selected.snapshot))}if(query.length)url+='?'+query.join('&');return get(url).then(function(f){if(generation!==state.fabricReadGeneration)return;if(!PantheonFabric.valid(f)||selected&&selected.filter&&(!PantheonFabric.taskPage(f)||f.tasks.filter!==selected.filter))throw new Error('Invalid fabric projection or task selection');state.fleet=f;state.fleetErr=null}).catch(function(e){if(generation===state.fabricReadGeneration)state.fleetErr=e.message}).then(function(){if(generation===state.fabricReadGeneration&&(state.view==='fleet'||state.view==='overview'||state.view==='host')){render();if(focusTasks&&!state.fleetErr&&state.view==='fleet'){var heading=document.getElementById('fabric-task-heading');if(heading){heading.focus({preventScroll:true});if(heading.scrollIntoView)heading.scrollIntoView({block:'start'})}}}})}
 function setLive(t,cls){$('#live-t').textContent=t;$('#live .dot').className='dot'+(cls?' '+cls:'')}
 
 function nav(){
@@ -99,7 +99,8 @@ function vFailures(d){
 }
 function fabricReceipt(){return PantheonFabric.receipt(state.fleet,state.fleetErr,Date.now(),esc)}
 function fabricHeadlines(){return fabricReceipt()+PantheonFabric.headlines(state.fleet,esc)}
-function bindFabricLanes(el){PantheonFabric.bindLaneInspectors(el,state.fleet,fabricInspector);PantheonFabric.bindTaskInspectors(el,state.fleet,fabricTaskInspector,function(page){loadFleet(page)})}
+function bindFabricHeadlines(el){PantheonFabric.bindHeadlineControls(el,state.fleet,function(filter){go('fleet');loadFleet({filter:filter},true)},function(){state.recipient='*';go('queue')})}
+function bindFabricLanes(el){PantheonFabric.bindLaneInspectors(el,state.fleet,fabricInspector);PantheonFabric.bindTaskInspectors(el,state.fleet,fabricTaskInspector,function(page){loadFleet(page,true)});bindFabricHeadlines(el)}
 function ageFabric(){document.querySelectorAll('.fabric-receipt').forEach(function(node){var f=PantheonFabric.freshness(state.fleet,state.fleetErr,Date.now());node.textContent=f.text;node.dataset.fabricState=f.state})}
 function vFleet(){
  if(state.fleetErr&&!state.fleet)return '<div class="card err-card"><h2>Fabric unavailable</h2>'+esc(state.fleetErr)+'</div>';
@@ -142,9 +143,10 @@ function render(){
  if(stopMercury){stopMercury();stopMercury=null}
  if(state.view==='fleet'){el.innerHTML=(state.fleetErr?'<p class="stale-banner">Fleet refresh failed · '+esc(state.fleetErr)+'</p>':'')+vFleet();bindFabricLanes(el);return}
  if(state.view==='host'){el.innerHTML=vHost(state.data||{});return}
- if(!state.data){el.innerHTML=(state.view==='overview'?fabricHeadlines():'')+(state.err?'<div class="card err-card"><h2>Router unavailable</h2>'+esc(state.err)+'</div>':skeleton());return}
+ if(!state.data){el.innerHTML=(state.view==='overview'?fabricHeadlines():'')+(state.err?'<div class="card err-card"><h2>Router unavailable</h2>'+esc(state.err)+'</div>':skeleton());if(state.view==='overview')bindFabricHeadlines(el);return}
  var opened=Array.from(el.querySelectorAll('details[open]')).map(function(x){return x.dataset.release});el.innerHTML=(state.err?'<p class="stale-banner">Retained snapshot · '+esc(state.data.generated_at||'time unknown')+' · '+esc(state.err)+'</p>':'')+(state.view==='overview'?fabricHeadlines():'')+RENDER[state.view](state.data);el.querySelectorAll('details').forEach(function(x){x.open=opened.includes(x.dataset.release)});
  if(state.view==='lanes')bindLanes();
+ if(state.view==='overview')bindFabricHeadlines(el);
  if(key){var replacement=document.getElementById(key);if(replacement){replacement.focus({preventScroll:true});if(start!=null&&replacement.setSelectionRange)replacement.setSelectionRange(start,end)}}
  window.scrollTo(0,scroll);
 }

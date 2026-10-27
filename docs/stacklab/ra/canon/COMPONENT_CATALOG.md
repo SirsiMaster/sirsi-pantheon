@@ -1,5 +1,17 @@
 # Component catalog — Ra / Horus
 
+## Selected-task metric query
+
+`internal/ledger/fabric_tasks.go` supplies complete, safe, filter-bound task
+pages. `FabricGenerationProducer.ReadTaskSelection` validates continuation
+before transition history advances; the dashboard handler exposes only the
+closed query. The production web renderer/app use these pages for native metric
+buttons and captured task inspectors; no renderer independently scans or sums
+raw tasks. Recipe: [Fabric metric drill-downs](FABRIC_METRIC_DRILLDOWNS_V1.md).
+Local normal/race, actual Go-to-JS wire, causal control and bounded browser
+fixtures qualify the candidate only. Protected release and installed gateway
+readback remain pending. No new worker, store, credential or action authority.
+
 | Component | Source surface | Boundary | Release evidence/state |
 |---|---|---|---|
 | Explicit native quiet request | `scripts/maat/admitted-run.py`, `scripts/maat/test_admitted_run.py` | fresh destination-native owned full-share quiet grant; never loaded relabel or CPU-floor model permission | source successor; tests, install, CI payload admission and physical sample qualification not inferred |

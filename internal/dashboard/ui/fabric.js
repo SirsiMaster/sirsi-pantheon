@@ -24,23 +24,28 @@ function receipt(b,error,now,e){var f=freshness(b,error,now);return '<p role="st
 function roleClass(role){return 'fabric-role-'+(['ok','gold','warn','ink2','dim'].includes(role)?role:'dim')}
 function headlineRole(b,key){return roleClass(b.presentation&&b.presentation.headlines&&b.presentation.headlines[key])}
 function publicLink(l){try{var u=new URL(l.url);return ['canon','repo','pr','owner-instruction','evidence'].includes(l.kind)&&u.protocol==='https:'&&u.host==='github.com'&&!u.username&&!u.password&&!u.search&&!u.hash}catch(_){return false}}
+var taskFilters={'':'Open ledger tasks',open:'Open ledger tasks',done:'Completed tasks',in_progress:'In-progress tasks',assigned_not_started:'Assigned tasks — not started',stalled:'Stalled tasks',blocked:'Blocked tasks'};
+function taskCount(b,filter){return Object.prototype.hasOwnProperty.call(taskFilters,filter)?b.work[filter||'open']:null}
+function matchesFilter(t,filter){if(filter==='done')return t.status==='done';if(t.status==='done')return false;switch(filter){case '':case 'open':return true;case 'blocked':return t.status==='blocked';case 'in_progress':return t.status==='in-progress'&&t.liveness!=='stalled';case 'stalled':return t.status!=='blocked'&&t.liveness==='stalled';case 'assigned_not_started':return t.status!=='blocked'&&t.status!=='in-progress';default:return false}}
 function taskPage(b){
  var p=valid(b)&&b.tasks;
- if(!p||p.state!=='observed'||!Array.isArray(p.rows)||p.rows.length>64||p.limit!==64||!Object.prototype.hasOwnProperty.call(p,'next_offset')||!Number.isSafeInteger(p.total)||p.total<0||p.total!==b.work.open||!Number.isSafeInteger(p.offset)||p.offset<0||p.offset%64||!(/^[0-9a-f]{64}$/).test(p.snapshot)||p.offset+p.rows.length>p.total)return null;
+ if(!p||p.filter!=null&&typeof p.filter!=='string'||p.state!=='observed'||!Array.isArray(p.rows)||p.rows.length>64||p.limit!==64||!Object.prototype.hasOwnProperty.call(p,'next_offset')||!Number.isSafeInteger(p.total)||p.total<0||p.total!==taskCount(b,p.filter||'')||!Number.isSafeInteger(p.offset)||p.offset<0||p.offset%64||!(/^[0-9a-f]{64}$/).test(p.snapshot)||p.offset+p.rows.length>p.total)return null;
  if(p.next_offset==null){if(p.offset+p.rows.length!==p.total)return null}
  else if(!Number.isSafeInteger(p.next_offset)||p.next_offset!==p.offset+p.rows.length||p.next_offset>=p.total||p.rows.length!==64)return null;
  if(p.total>0&&!p.rows.length||p.offset>0&&p.offset>=p.total)return null;
  var seen=new Set();
  if(!p.rows.every(function(t){var key=t&&t.agent+'\0'+t.id;if(!t||typeof t.agent!=='string'||!t.agent||typeof t.id!=='string'||!t.id||!['subject','status','liveness','role','responsible','stage','test_state','updated'].every(function(k){return typeof t[k]==='string'})||typeof t.blocker_recorded!=='boolean'||typeof t.text_limited!=='boolean'||!t.provenance||t.provenance.source!=='canonical-task-registry'||!Array.isArray(t.provenance.public_links)||t.provenance.public_links.length>8||!t.provenance.public_links.every(publicLink)||!['created','commissioned_at','commissioned_by'].every(function(k){return typeof t.provenance[k]==='string'})||!['charter_recorded','outline_recorded','result_recorded'].every(function(k){return typeof t.provenance[k]==='boolean'})||!Number.isSafeInteger(t.provenance.withheld_links)||t.provenance.withheld_links<0||seen.has(key))return false;seen.add(key);return true}))return null;
+ if(!p.rows.every(function(t){return matchesFilter(t,p.filter||'')}))return null;
  return p;
 }
 function taskList(b,e){
- var p=taskPage(b),h='<h2>Open ledger tasks</h2>';
+ var p=taskPage(b),h='<h2 id="fabric-task-heading" tabindex="-1">'+(p?taskFilters[p.filter||'']:'Ledger tasks')+'</h2>';
  if(!p)return h+'<p role="status">Task rows unavailable — not an empty task list. Refresh Fabric to retry.</p>';
  h+='<p>Showing '+(p.rows.length?p.offset+1:0)+'–'+(p.offset+p.rows.length)+' of '+p.total+' task rows. Page bound to this canonical observation.</p>';
  h+='<button class="btn" data-fabric-task-page="first">Refresh task list from first page</button>';
+ if(p.filter&&p.filter!=='open')h+=' <button class="btn" data-fabric-filter="open">Show all open tasks</button>';
  if(p.next_offset!=null)h+=' <button class="btn" data-fabric-task-page="next">Next task page</button>';
- if(!p.rows.length)return h+'<p>No open ledger tasks in this observation. Inbox messages are a separate stream.</p>';
+ if(!p.rows.length)return h+'<p>'+(p.filter&&p.filter!=='open'?'No tasks match this selection in this observation.':'No open ledger tasks in this observation.')+' Inbox messages are a separate stream.</p>';
  return h+'<table class="table responsive-table"><thead><tr><th>Task</th><th>Agent</th><th>Status</th></tr></thead><tbody>'+p.rows.map(function(t){
   return '<tr><td data-label="Task"><button class="lane-select" data-fabric-task-agent="'+e(t.agent)+'" data-fabric-task-id="'+e(t.id)+'">'+e(t.subject||'Subject not supplied')+'</button><div class="sub">'+e(t.id)+'</div></td><td data-label="Agent">'+e(t.agent)+'</td><td data-label="Status" class="'+roleClass(t.role)+'">'+e(t.status)+' · '+e(t.liveness)+'</td></tr>';
  }).join('')+'</tbody></table>';
@@ -58,7 +63,12 @@ function taskDetail(b,agent,id,e){
 }
 function bindTaskInspectors(element,b,inspect,page){
  element.querySelectorAll('[data-fabric-task-id]').forEach(function(button){button.addEventListener('click',function(){inspect(b,button.dataset.fabricTaskAgent,button.dataset.fabricTaskId)})});
- element.querySelectorAll('[data-fabric-task-page]').forEach(function(button){button.addEventListener('click',function(){var p=taskPage(b);if(button.dataset.fabricTaskPage==='first')page(null);else if(p&&p.next_offset!=null)page({offset:p.next_offset,snapshot:p.snapshot})})});
+ element.querySelectorAll('[data-fabric-task-page]').forEach(function(button){button.addEventListener('click',function(){var p=taskPage(b);if(button.dataset.fabricTaskPage==='first')page(p&&p.filter?{filter:p.filter}:null);else if(p&&p.next_offset!=null){var next={offset:p.next_offset,snapshot:p.snapshot};if(p.filter)next.filter=p.filter;page(next)}})});
+}
+function bindHeadlineControls(element,b,select,queue){
+ if(!valid(b))return;
+ element.querySelectorAll('[data-fabric-filter]').forEach(function(button){button.addEventListener('click',function(){var filter=button.dataset.fabricFilter;if(Object.prototype.hasOwnProperty.call(taskFilters,filter))select(filter)})});
+ element.querySelectorAll('[data-fabric-messages]').forEach(function(button){button.addEventListener('click',queue)});
 }
 function laneDetail(b,agent,e){
  var lane=valid(b)&&b.lanes.find(function(l){return l.agent===agent});
@@ -78,11 +88,12 @@ function bindLaneInspectors(element,b,inspect){
 function headlines(b,e){
  if(!valid(b))return '<p role="status">Fabric unavailable — no task or message counts observed.</p>';
  var w=b.work;
+ function metric(filter,value,label){return '<button type="button" class="fabric-metric" data-fabric-filter="'+filter+'" aria-label="Show '+value+' '+label+'">'+value+'</button>'}
  return '<section aria-label="Canonical fabric tasks and messages"><div class="grid g4">'+
- '<div class="card kpi '+headlineRole(b,'completed')+'"><h2>Completed / in flight</h2><div class="v">'+w.done+' / '+w.open+'</div><div class="l">Tasks · '+w.total+' total</div></div>'+
- '<div class="card kpi '+headlineRole(b,'progress')+'"><h2>In progress / assigned</h2><div class="v">'+w.in_progress+' / '+w.assigned_not_started+'</div><div class="l">Tasks</div></div>'+
- '<div class="card kpi '+headlineRole(b,'stalled')+'"><h2>Stalled / blocked</h2><div class="v">'+w.stalled+' / '+w.blocked+'</div><div class="l">Tasks</div></div>'+
- '<div class="card kpi '+headlineRole(b,'messages')+'"><h2>Messages pending</h2><div class="v">'+b.messages.open+'</div><div class="l">Inbox messages · '+b.messages.stranded+' stranded</div></div></div>'+
+ '<div class="card kpi '+headlineRole(b,'completed')+'"><h2>Completed / in flight</h2><div class="v" aria-label="'+w.done+' / '+w.open+' tasks">'+metric('done',w.done,'completed tasks')+' / '+metric('open',w.open,'open tasks')+'</div><div class="l">Tasks · '+w.total+' total</div></div>'+
+ '<div class="card kpi '+headlineRole(b,'progress')+'"><h2>In progress / assigned</h2><div class="v">'+metric('in_progress',w.in_progress,'in-progress tasks')+' / '+metric('assigned_not_started',w.assigned_not_started,'assigned tasks not started')+'</div><div class="l">Tasks</div></div>'+
+ '<div class="card kpi '+headlineRole(b,'stalled')+'"><h2>Stalled / blocked</h2><div class="v">'+metric('stalled',w.stalled,'stalled tasks')+' / '+metric('blocked',w.blocked,'blocked tasks')+'</div><div class="l">Tasks</div></div>'+
+ '<div class="card kpi '+headlineRole(b,'messages')+'"><h2>Messages pending</h2><div class="v"><button type="button" class="fabric-metric" data-fabric-messages aria-label="Show '+b.messages.open+' pending inbox messages">'+b.messages.open+'</button></div><div class="l">Inbox messages · '+b.messages.stranded+' stranded</div></div></div>'+
  '<p class="sub">Fabric observation '+e(b.generated_at)+' · '+e(b.build)+'</p></section>';
 }
 function render(b,e){
@@ -91,7 +102,7 @@ function render(b,e){
  function fact(value,unit){return value==null?'Unavailable':e(value)+(unit||'')}
  h+='<h2>Needs attention</h2>'+(!b.runtime_available?'<p role="status">Runtime classification unavailable.</p>':'')+
  (v.issues.length?'<ul>'+v.issues.map(function(x){return '<li>'+e(x)+'</li>'}).join('')+'</ul>':'<p>No issue entries supplied; absence is not a host-health verdict.</p>');
- h+='<h2>Lanes — supervised runtime</h2><table class="table"><thead><tr><th>Agent</th><th>State</th><th>Open tasks</th></tr></thead><tbody>'+b.lanes.map(function(l){return '<tr><td><button class="lane-select" data-fabric-inspect="'+e(l.agent)+'">'+e(l.agent)+'</button></td><td class="'+roleClass(l.role)+'">'+e(l.state_label)+'</td><td>'+l.open+'</td></tr>'}).join('')+'</tbody></table>';
+ h+='<h2>Lanes — supervised runtime</h2><table class="table responsive-table fabric-lane-table"><thead><tr><th>Agent</th><th>State</th><th class="num">Open tasks</th></tr></thead><tbody>'+b.lanes.map(function(l){return '<tr><td data-label="Agent"><button class="lane-select" data-fabric-inspect="'+e(l.agent)+'">'+e(l.agent)+'</button></td><td data-label="State"><button class="lane-select" data-fabric-inspect="'+e(l.agent)+'"><span class="'+roleClass(l.role)+'">'+e(l.state_label)+'</span></button></td><td data-label="Open tasks" class="num"><button class="lane-select" data-fabric-inspect="'+e(l.agent)+'" aria-label="Inspect '+e(l.agent)+' with '+l.open+' open tasks">'+l.open+'</button></td></tr>'}).join('')+'</tbody></table>';
  h+=taskList(b,e);
  h+='<h2>Host health — separate from work</h2><p>RAM availability complement: '+fact(v.ram_pct,'%')+' · Swap: '+fact(v.swap,' bytes')+' · Capacity: '+fact(v.total_ram,' bytes')+' · CPU cores: '+fact(v.cpu_cores)+'</p><p>Repository dirty: '+(v.git_dirty==null?'Unavailable':e(String(v.git_dirty)))+' · Engine: '+e(v.engine)+' · '+e(v.engine_state)+' (session observation, not readiness proof)</p>';
  h+='<h2>Observed task transitions</h2>';
@@ -100,6 +111,6 @@ function render(b,e){
  else h+='<ul>'+b.activity.map(function(a){return '<li>'+e(a.at)+' · '+e(a.agent)+' · '+e(a.task_id)+' · '+e(a.from)+' → '+e(a.to)+'</li>'}).join('')+'</ul>';
  return h;
 }
-var api={valid:valid,headlines:headlines,render:render,freshness:freshness,receipt:receipt,laneDetail:laneDetail,bindLaneInspectors:bindLaneInspectors,taskPage:taskPage,taskDetail:taskDetail,bindTaskInspectors:bindTaskInspectors,roleClass:roleClass};
+var api={valid:valid,headlines:headlines,render:render,freshness:freshness,receipt:receipt,laneDetail:laneDetail,bindLaneInspectors:bindLaneInspectors,taskPage:taskPage,taskDetail:taskDetail,bindTaskInspectors:bindTaskInspectors,bindHeadlineControls:bindHeadlineControls,roleClass:roleClass};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.PantheonFabric=api;
 })(typeof window!=='undefined'?window:globalThis);
