@@ -26,7 +26,7 @@ func (rl *Relay) awaitMaintenanceStartup(ctx context.Context) (io.Closer, error)
 		return nil, err
 	}
 	defer root.Close()
-	intent, err := OpenMaintenanceStartupIntent(root, 0, uint32(os.Getgid()))
+	intent, err := openMaintenanceStartupIntentForRelay(root, 0, servicedrain.MaintenanceRelayIdentity)
 	if err != nil {
 		return nil, err
 	}
