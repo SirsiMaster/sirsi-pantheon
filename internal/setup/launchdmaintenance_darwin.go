@@ -275,6 +275,11 @@ func (b nativeServiceBackend) maintenanceOperations() maintenanceOperations {
 			return routerstore.WithSpoolQuiescence(ctx, rootRelayPhysicalSpool, op)
 		},
 		revalidate: func(ctx context.Context, p MaintenancePlan, original bool) error {
+			if original {
+				if err := maintenancePreRetirementInventory(ctx, native.read); err != nil {
+					return err
+				}
+			}
 			if err := maintenanceEnabled(ctx); err != nil {
 				return err
 			}
@@ -548,17 +553,39 @@ func maintenanceDisabledIntent(raw []byte) error {
 // A successful complete native list plus kernel absence establishes retirement.
 // Failed launchctl print or elapsed time never does.
 func maintenanceRetirement(ctx context.Context, p MaintenancePlan) (string, error) {
-	start, err := servicedrain.MaintenanceStart(p.Original.PID)
+	return maintenanceRetirementWith(ctx, p, servicedrain.MaintenanceStart,
+		func(pid int) error { return unix.Kill(pid, 0) }, maintenanceJobListed)
+}
+
+func maintenanceRetirementWith(ctx context.Context, p MaintenancePlan,
+	startIdentity func(int) (string, error), exists func(int) error,
+	jobListed func(context.Context) (bool, error),
+) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "outcome_unknown", err
+	}
+	if p.Original.PID <= 0 {
+		return "outcome_unknown", errors.New("legacy maintenance: positive original PID required")
+	}
+	start, err := startIdentity(p.Original.PID)
 	if err == nil {
 		if start == p.KernelStart {
 			return "original_alive", nil
 		}
 		return "pid_reused_or_changed", errors.New("legacy maintenance: original PID identity changed")
 	}
-	if !errors.Is(err, unix.ESRCH) {
+	// Darwin may report EIO when kern.proc.pid returns an empty result. Neither
+	// EIO nor an identity-reader ESRCH alone establishes process absence.
+	if !errors.Is(err, unix.ESRCH) && !errors.Is(err, unix.EIO) {
 		return "outcome_unknown", err
 	}
-	listed, err := maintenanceJobListed(ctx)
+	if probeErr := exists(p.Original.PID); !errors.Is(probeErr, unix.ESRCH) {
+		if probeErr == nil {
+			probeErr = errors.New("legacy maintenance: selected PID remains present but its start identity is unavailable")
+		}
+		return "outcome_unknown", errors.Join(err, probeErr)
+	}
+	listed, err := jobListed(ctx)
 	if err != nil {
 		return "outcome_unknown", err
 	}
@@ -570,6 +597,20 @@ func maintenanceRetirement(ctx context.Context, p MaintenancePlan) (string, erro
 
 func maintenanceJobListed(ctx context.Context) (bool, error) {
 	return maintenanceJobListedWith(ctx, rootRelayRead)
+}
+
+func maintenancePreRetirementInventory(ctx context.Context, read func(context.Context, []byte, string, ...string) ([]byte, error)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	listed, err := maintenanceJobListedWith(ctx, read)
+	if err != nil {
+		return fmt.Errorf("legacy maintenance: pre-retirement system inventory refused; no retirement: %w", err)
+	}
+	if !listed {
+		return errors.New("legacy maintenance: selected job absent from pre-retirement system inventory; no retirement")
+	}
+	return ctx.Err()
 }
 
 func maintenanceJobListedWith(ctx context.Context, read func(context.Context, []byte, string, ...string) ([]byte, error)) (bool, error) {
@@ -614,6 +655,7 @@ func maintenanceSystemJobListed(raw []byte) (bool, error) {
 		return false, errors.New("legacy maintenance: native system job enumeration unknown")
 	}
 	found, services, inside, closed := false, false, false, false
+	seenLabels := make(map[string]bool)
 	depth := 1
 	for _, line := range lines[1 : len(lines)-1] {
 		line = strings.TrimSpace(line)
@@ -640,13 +682,19 @@ func maintenanceSystemJobListed(raw []byte) (bool, error) {
 			return false, errors.New("legacy maintenance: incomplete system job enumeration")
 		}
 		if fields[0] != "-" {
-			if pid, err := strconv.Atoi(fields[0]); err != nil || pid <= 0 {
+			if pid, err := strconv.Atoi(fields[0]); err != nil || pid < 0 {
 				return false, errors.New("legacy maintenance: malformed job PID")
 			}
 		}
-		if _, err := strconv.Atoi(fields[1]); err != nil {
-			return false, errors.New("legacy maintenance: malformed job status")
+		if fields[1] != "-" && fields[1] != "(pe)" {
+			if _, err := strconv.Atoi(fields[1]); err != nil {
+				return false, errors.New("legacy maintenance: malformed job status")
+			}
 		}
+		if seenLabels[fields[2]] {
+			return false, errors.New("legacy maintenance: ambiguous system job label")
+		}
+		seenLabels[fields[2]] = true
 		if fields[2] == rootRelayLabel {
 			if found {
 				return false, errors.New("legacy maintenance: ambiguous selected job")
