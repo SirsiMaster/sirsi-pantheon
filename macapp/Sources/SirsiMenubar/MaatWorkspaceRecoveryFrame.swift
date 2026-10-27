@@ -4,16 +4,25 @@ import SwiftUI
 // Reading memory needs neither a retained case nor a successful history load.
 struct MaatWorkspaceRecoveryFrame: View {
     @ObservedObject var recovery: MaatPreparedPreflightRecovery
+    @State private var diagnosticExpanded=false
     let content: AnyView
     var diagnostic: MaatDiagnosticRecordModel? = nil
     var diagnosticRefresh: () async -> Void = {}
 
     var localDiagnostics: MaatDiagnosticRecordView? {
-        diagnostic.map { MaatDiagnosticRecordView(model: $0, refresh: diagnosticRefresh) }
+        diagnostic.map { MaatDiagnosticRecordView(model: $0, refresh: diagnosticRefresh,
+            expanded: $diagnosticExpanded, initializationRefresh: { await recovery.inspect() }) }
     }
 
     var localMemory: MaatWorkspaceMemoryEntry {
-        MaatWorkspaceMemoryEntry(model: recovery)
+        MaatWorkspaceMemoryEntry(model: recovery, diagnostic: diagnostic,
+            reviewFirstUse: { await reviewFirstUseInitialization() })
+    }
+
+    func reviewFirstUseInitialization() async {
+        guard recovery.canReviewFirstUseInitialization, let diagnostic else{return}
+        diagnosticExpanded=true
+        await diagnostic.inspect()
     }
 
     var body: some View {
@@ -28,6 +37,8 @@ struct MaatWorkspaceRecoveryFrame: View {
 
 struct MaatWorkspaceMemoryEntry: View {
     @ObservedObject var model: MaatPreparedPreflightRecovery
+    var diagnostic:MaatDiagnosticRecordModel? = nil
+    var reviewFirstUse:()async->Void = {}
     let inspectTitle = "Inspect local memory"
 
     func inspect() async {
@@ -47,6 +58,11 @@ struct MaatWorkspaceMemoryEntry: View {
                 Button(inspectTitle) { Task { await inspect() } }
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
+            }
+            Text(model.summary).sirsiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+            if model.canReviewFirstUseInitialization,diagnostic != nil {
+                Button("Review first-use initialization") { Task{await reviewFirstUse()} }
+                    .buttonStyle(.bordered).disabled(model.busy || diagnostic?.busy == true)
             }
             recoveryView
         }

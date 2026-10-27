@@ -43,6 +43,11 @@ final class MaatPreparedPreflightRecoveryTests:XCTestCase {
         XCTAssertEqual(model.recovered?.receipt.evaluated_at_utc,"2026-10-24T00:00:00Z")
         XCTAssertEqual(model.recovered?.action_authorized,false)
         XCTAssertTrue(model.message?.contains("fresh normal assessment") == true)
+        let historicalSuccess=model.message
+        let absent=try JSONSerialization.data(withJSONObject:["state":"uninitialized"])
+        model.accept(try JSONDecoder().decode(MaatFailureMemoryStatus.self,from:absent))
+        XCTAssertEqual(model.message,historicalSuccess)
+        XCTAssertNil(model.confirmation())
         XCTAssertFalse(model.busy)
         XCTAssertNil(model.confirmation())
         let repeated=await model.recover(approval)
@@ -77,6 +82,68 @@ final class MaatPreparedPreflightRecoveryTests:XCTestCase {
             XCTAssertEqual(model.retained,prepared)
         }
         XCTAssertEqual(calls,0)
+    }
+
+    @MainActor func testInspectionSummaryKeepsTypedStateAndBlocksConflictingDebt()throws{
+        let (status,_,prepared)=try fixture()
+        let model=MaatPreparedPreflightRecovery{_ in self.response(status)}
+        let samples:[(String,Bool,Bool,String)]=[
+            ("uninitialized",false,false,"not created"),
+            ("ready",true,true,"ready"),
+            ("unknown",false,false,"unknown")
+        ]
+        for (state,attempt,debt,summaryPart) in samples {
+            let fields:[String:Any]=["state":state,"store_uuid":state == "ready" ? uuid as Any : NSNull(),
+                "incomplete_attempt":attempt,"projection_debt":debt]
+            let bytes=try JSONSerialization.data(withJSONObject:fields)
+            model.accept(try JSONDecoder().decode(MaatFailureMemoryStatus.self,from:bytes))
+            XCTAssertEqual(model.inspection?.state,state)
+            XCTAssertTrue(model.summary.localizedCaseInsensitiveContains(summaryPart))
+            XCTAssertTrue(model.summary.contains(attempt ? "present" : "none"))
+            XCTAssertTrue(model.summary.contains(debt ? "present" : "none"))
+            XCTAssertNil(model.confirmation(),"\(state) must not authorize prepared recovery")
+            XCTAssertEqual(model.canReviewFirstUseInitialization,state == "uninitialized")
+        }
+        let conflicting=try JSONSerialization.data(withJSONObject:["state":"uninitialized","projection_debt":true])
+        model.accept(try JSONDecoder().decode(MaatFailureMemoryStatus.self,from:conflicting))
+        XCTAssertNil(model.confirmation())
+        XCTAssertFalse(model.canReviewFirstUseInitialization)
+        model.accept(try JSONDecoder().decode(MaatFailureMemoryStatus.self,from:status))
+        XCTAssertEqual(model.current,prepared)
+    }
+
+    @MainActor func testFreshInspectInvalidatesOldApprovalAndKeepsHistoricalMessage()async throws{
+        let (status,_,prepared)=try fixture()
+        let replies:[Data?]=[
+            try JSONSerialization.data(withJSONObject:["state":"uninitialized"]),
+            try JSONSerialization.data(withJSONObject:["state":"ready","store_uuid":uuid]),
+            nil
+        ]
+        for reply in replies {
+            var calls=0
+            let model=MaatPreparedPreflightRecovery{_ in
+                calls+=1
+                return self.response(reply ?? Data(),exit:reply == nil ? 1 : 0)
+            }
+            model.accept(try JSONDecoder().decode(MaatFailureMemoryStatus.self,from:status))
+            let old=try XCTUnwrap(model.confirmation())
+            let historicalMessage=try XCTUnwrap(model.message)
+            await model.inspect()
+            XCTAssertNil(model.confirmation())
+            XCTAssertNil(model.current)
+            let replayed=await model.recover(old)
+            XCTAssertFalse(replayed)
+            XCTAssertEqual(calls,1)
+            XCTAssertEqual(model.message,historicalMessage)
+            XCTAssertEqual(model.retained,prepared)
+            if let reply {
+                let latest=try JSONDecoder().decode(MaatFailureMemoryStatus.self,from:reply)
+                XCTAssertEqual(model.inspection?.state,latest.state)
+            } else {
+                XCTAssertNil(model.inspection)
+                XCTAssertTrue(model.summary.localizedCaseInsensitiveContains("failed"))
+            }
+        }
     }
 
     @MainActor func testFailedOrMismatchedRecoveryRetainsDetailAndConsumesConsent()async throws{

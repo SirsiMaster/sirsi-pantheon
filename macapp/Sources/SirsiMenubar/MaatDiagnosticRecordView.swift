@@ -5,6 +5,9 @@ import SwiftUI
 struct MaatDiagnosticRecordView: View {
     @ObservedObject var model: MaatDiagnosticRecordModel
     let refresh: () async -> Void
+    var expanded:Binding<Bool>? = nil
+    var initializationRefresh:()async->Void = {}
+    @State private var localExpanded=false
     @State private var approval: MaatDiagnosticRecordModel.Approval?
     @State private var confirming = false
     let observeTitle = "Observe locally"
@@ -20,12 +23,15 @@ struct MaatDiagnosticRecordView: View {
     func confirmed(_ value: MaatDiagnosticRecordModel.Approval) async {
         if await model.confirm(value) {
             let recorded = model.lastOperationRecorded
+            let initialized:Bool
+            if case .some(.initialized(_,_,_)) = model.completed { initialized=true } else { initialized=false }
             await model.inspect()
             if recorded { await refresh() }
+            if initialized { await initializationRefresh() }
         }
     }
     var body: some View {
-        DisclosureGroup("Local observation and record recovery") {
+        DisclosureGroup("Local observation and record recovery",isExpanded:expanded ?? $localExpanded) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Observe without recording, or inspect local memory before a separately confirmed record. No service repair or software installation is performed.")
                     .sirsiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

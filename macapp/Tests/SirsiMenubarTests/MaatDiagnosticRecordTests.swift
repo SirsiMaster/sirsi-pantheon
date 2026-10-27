@@ -42,6 +42,19 @@ import XCTest
         fixture.initialized = true; let result = await model.confirm(approval)
         XCTAssertFalse(result); XCTAssertFalse(fixture.calls.contains{$0.contains("--initialize-failure-memory")})
     }
+    func testFirstUseApprovalRejectsUnknownAndConflictingDebt()async throws{
+        for fields:[String:Any] in [
+            ["state":"unknown"],
+            ["state":"uninitialized","incomplete_attempt":true],
+            ["state":"uninitialized","projection_debt":true],
+            ["state":"uninitialized","receipt_recovery_error":"prepared-inspection-unavailable"]
+        ] {
+            let read=try reply(fields)
+            let model=MaatDiagnosticRecordModel(uid:501){_ in read}
+            await model.inspect()
+            XCTAssertNil(model.approval(.initialize),"\(fields) must not authorize first-use initialization")
+        }
+    }
     func testVerifiedRecordPreservesExistingDecisionWireAndOnceConsent() async throws {
         let fixture = MaatDiagnosticCorrelationFixture()
         let model = fixture.model()
@@ -241,10 +254,12 @@ import XCTest
             XCTAssertEqual(args, maatCasebookFailureMemoryArguments(.initialize))
             effects += 1; exists = true; return initialized
         }
-        let view = MaatDiagnosticRecordView(model:model, refresh:{})
+        var initializedRefreshes=0
+        let view = MaatDiagnosticRecordView(model:model, refresh:{},initializationRefresh:{initializedRefreshes+=1})
         await view.inspect(); let approval = try XCTUnwrap(model.approval(.initialize))
         await view.confirmed(approval)
         XCTAssertEqual(model.completed, .initialized(store:store, readbackState:"ready", importedIncidents:false))
+        XCTAssertEqual(initializedRefreshes,1,"verified initialization refreshes the top memory inspector")
         XCTAssertTrue(view.completedDetails.contains("Store: " + store))
         XCTAssertTrue(view.completedDetails.contains("Readback: ready"))
         XCTAssertNil(model.recorded); XCTAssertNil(model.observation)

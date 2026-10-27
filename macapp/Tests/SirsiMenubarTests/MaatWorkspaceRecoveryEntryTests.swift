@@ -61,6 +61,36 @@ import XCTest
         }
     }
 
+    func testActualRootFirstUseReviewUsesSameDiagnosticModelAndFreshReadOnlyInspection()async throws{
+        let uninitialized=Data(#"{"state":"uninitialized","incomplete_attempt":false,"projection_debt":false}"#.utf8)
+        var diagnosticCalls:[[String]]=[]
+        let diagnostic=MaatDiagnosticRecordModel(uid:501,localHost:{"fixture-mac"}){args in
+            diagnosticCalls.append(args)
+            return .init(data:uninitialized,exitStatus:0,timedOut:false,launchError:nil)
+        }
+        var recoveryCalls:[[String]]=[]
+        let recovery=MaatPreparedPreflightRecovery{args in
+            recoveryCalls.append(args)
+            return .init(data:uninitialized,exitStatus:0,timedOut:false,launchError:nil)
+        }
+        let operations=MaatCaseOperationStore(preparedPreflightRecovery:recovery,diagnosticRecord:diagnostic)
+        let engine=SirsiEngine(maatCaseOperations:operations)
+        let root=try frame(engine:engine,casebook:nil)
+        XCTAssertTrue(root.localDiagnostics?.model === diagnostic)
+        XCTAssertTrue(diagnosticCalls.isEmpty)
+        XCTAssertTrue(recoveryCalls.isEmpty,"mount performs no inspection or mutation")
+        await root.localMemory.inspect()
+        XCTAssertTrue(recovery.canReviewFirstUseInitialization)
+        XCTAssertTrue(root.localMemory.model.summary.contains("not created"))
+        await root.reviewFirstUseInitialization()
+        XCTAssertTrue(root.localDiagnostics?.model === diagnostic)
+        XCTAssertEqual(diagnosticCalls,[MaatDiagnosticRecordModel.inspectArguments])
+        XCTAssertEqual(recoveryCalls,[MaatDiagnosticRecordModel.inspectArguments])
+        XCTAssertNotNil(diagnostic.approval(.initialize),"fresh inspect exposes existing consent review only")
+        XCTAssertFalse(diagnosticCalls.contains(maatCasebookFailureMemoryArguments(.initialize)))
+        XCTAssertNil(root.localMemory.model.confirmation())
+    }
+
     func testActualRootConfirmationCallbackRecoversOnceThenRefreshesSameInspector() async throws {
         let wire = try wire()
         var calls: [[String]] = []

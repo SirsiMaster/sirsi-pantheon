@@ -199,7 +199,9 @@ import SwiftUI
                   !memoryBytes.isEmpty else { return nil }
             return Approval(action: action, generation: generation, context: memoryBytes)
         case .initialize:
-            guard memory?.state == "uninitialized", !deliveryUnknown else { return nil }
+            guard memory?.state == "uninitialized", !deliveryUnknown,
+                  memory?.incompleteAttempt == false, memory?.projectionDebt == false,
+                  memory?.preparedPreflight == nil, memory?.receiptRecoveryError == nil else { return nil }
             return Approval(action: action, generation: generation, context: memoryBytes)
         case .resolveRequest(let id):
             guard MaatDiagnosticWire.uuid(id), let store = memory?.storeUUID, memory?.state == "ready",
