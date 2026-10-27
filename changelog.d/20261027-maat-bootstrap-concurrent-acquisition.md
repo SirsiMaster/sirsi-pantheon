@@ -1,3 +1,0 @@
-### Fixed
-
-- Ma’at default-store bootstrap now uses exclusive lock creation and one bounded, identity-checked acquisition of an existing lock after a competing creation is observed. Both readers and initializers verify named-lock identity after flock before accessing the store. Deterministic fixtures cover failed-create appearance, unsafe leaves, replacement, disappearance, and refusal without creating again. The intermittent CI ENOENT's underlying kernel cause remains unproven; no existing store is reset or adopted. Refs: PR #1225 `TestDefaultStoreConcurrentInitializationCommitsExactlyOnce`; `internal/maat/memory_bootstrap_race_test.go`.

@@ -12,7 +12,16 @@ Lint, full Test including PostgreSQL/behavioral steps, required ARM64 Build,
 binding-hold and gitleaks. Canon and the additional native build also passed.
 It was normally squash-merged as `d4cc850deedc7672872859acf71fe4a91c97e009`.
 This release preparation assembles its retained fragments into versioned notes,
-updates VERSION and records this sequence; product bytes are not reimplemented.
+updates VERSION and records this sequence. PR1225's initial CI40424028874 then
+failed the concurrent default-store initializer with Openat ENOENT. Its metadata
+did not alter the failing source. Exact correction cb68c2cdf9406547b51cd706853569a47e0804ce
+uses exclusive creation and one no-create, retained-identity acquisition after
+an existing lock appears, and validates the named lock after flock. No error
+predicate is relaxed, retry loop or store reset added. SSA's actual native
+2912d8e739d146f4bca8361878392b8f passed focused normal, race and thirty original
+concurrent-initialization repetitions; its exact grant was released. Retain the
+failed CI and unknown kernel cause. New composed-head protected CI remains
+required before merge or signing.
 
 Post-merge Secrets Scan40421025681 rediscovered the previously reviewed XCTest
 mock request UUID under the new squash identity. Its line7 bytes independently

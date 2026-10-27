@@ -2,6 +2,7 @@
 
 ## 2026-10-26 — v0.24.138 release candidate
 
+- Ma’at bootstrap uses exclusive creation and one identity-checked existing-lock acquisition after concurrent appearance, then post-flock name validation. Deterministic refusal controls and the unchanged concurrent initializer pass focused normal/race and thirty repetitions. Kernel ENOENT cause remains unproven; no store is reset or adopted.
 - `sirsi router task why` on an unknown task now reports "not found" instead of an HTTP 500.
 - Canonicalize owned Ma’at test fixture roots on macOS before using them as HOME. Production no-follow path checks remain unchanged. A deterministic aliased-TMPDIR regression and the original failed cases pass in normal and race modes; restoring the old helper fails the regression.
 - Ask the atomic Ma’at scheduler for an explicit loaded request when the current lookup is not that caller’s valid admission, even when the caller uses its existing registered thread rather than a new executor. A foreign bounded CPU row no longer prevents the request from reaching the scheduler. Scheduler refusals, insufficient shares and foreign grants still prevent child execution; only the caller’s new grant is released.
