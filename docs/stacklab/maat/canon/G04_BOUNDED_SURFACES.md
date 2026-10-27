@@ -94,7 +94,7 @@ This is bounded amortization, not a linear-complexity or empirical performance
 claim: full relationship passes still repeat across batches. No new database,
 policy owner or persisted authority/index is introduced. The batch reference
 arrays and selected links are bounded; the strict cursor encoder remains the
-final64KiB bound. Cursor version4 binds the new phases; older cursors require a
+final64KiB bound. Cursor version5 binds the frozen prefix and new phases; older cursors require a
 fresh query. MCP/GET transport syntax recognizes the new version and phases.
 
 Authored `TestHistoryQualificationSharesLinkPassBeforeWindow` checks a fixed
@@ -148,3 +148,71 @@ not a cursor or permission failure. Core/HTTP/MCP/Cobra shared-fixture regressio
 now require literal punctuation, operator words and complete-empty no-match;
 malformed punctuation-only text must refuse before private readers and show
 static actionable guidance. Source-only until Main's native/browser execution.
+
+## G04 frozen-prefix continuation
+
+The file-journal history cursor binds a fixed byte length `N`, SHA-256 of
+`[0,N)`, the resolved parent descriptor, the no-follow journal leaf descriptor,
+and their owner/group/mode/link/object identities. Appends beyond `N` remain
+outside that query and do not invalidate it; a fresh query anchors the longer
+file. Truncation, a changed prefix, a replaced leaf/parent, symlink or hard-link
+substitution, and metadata-authority changes refuse continuation. The strict
+mutation readers and their snapshot/repair contracts remain unchanged.
+
+Each pass is a forward stream from byte zero through the same hash tee used by
+the bounded phase parser or selected-record capture. Results and cursor state
+stay tentative until the full anchored prefix digest and final retained/named
+identities verify. A request may run multiple verified phase passes for a small
+query, but all passes share the caller context, the original cumulative byte,
+row and parser-work budgets, and the overall two-second ceiling. The existing
+300 ms default and two-second maximum are parser-work budgets; full-prefix
+verification is separately reported as `verification_bytes` and never charged
+to `scanned_bytes`/the 4–8 MiB parser byte budget. The two-second overall
+verification deadline is capped by any earlier caller deadline. An interrupted
+unverified pass cannot publish its tentative phase. A request with prior
+verified progress can return that cursor; a verification deadline with no
+progress returns a timeout instead of a successful unchanged cursor. Caller
+cancellation and digest mismatch remain errors. Physical EOF before the
+anchored boundary is latched as snapshot change, even if the retained inode is
+restored before the pass drains.
+
+Backward link, candidate-finalization and materialization phases run in a new
+forward pass when cumulative request budget remains. The 48-reference batch,
+record/page/cursor bounds and atomic materialization allowance remain in force.
+The cost is explicitly O(K × H) for K complete prefix passes over H anchored
+bytes, plus the initial anchor; `verification_bytes` reports the actual sum.
+This is not a linear-time or empirical performance claim, and there is no
+arbitrary journal-size cutoff, cache, second database, lock, write or auth
+change. A prefix that cannot be fully verified within the two-second deadline
+does not advance.
+
+The strict retained-parent and frozen-prefix reader is currently Unix-scoped.
+Windows retains the prior bounded snapshot reader, including its append
+invalidation and cancellation continuation behavior; this change makes no
+Windows frozen-prefix or strict no-follow guarantee.
+
+Authored source-only adversarial coverage includes append-between-phase and
+older-page behavior, a fresh query after append, same-inode prefix mutation
+with restored mtime, same-UID leaf replacement, symlink/hard-link/truncation
+refusal, cancellation, cursor-version refusal and a private 23,563,095-byte
+prefix fixture. These fixtures are not run/performance evidence. Main owns
+normal/race qualification, focused interleaving/rollback negatives and actual
+performance measurements.
+
+### Qualification recorded 2026-10-27
+
+Engine source `6191ba73` passed 46 focused normal and 46 race cases across the
+core, casebook, MCP, HTTP and CLI producer. Four compiled negative controls
+failed their intended assertions. A private 23,563,095-byte synthetic journal
+required 190 calls for two first-page completions in 5,105.7 ms total, with
+51.94 ms p95 and 57.61 ms maximum per call. This is a measured fixture result,
+not a cold-cache, Windows, installed-UI or comparative product benchmark.
+
+Native source `a39dcd54` passed 150 selected tests, with zero failures and three
+explicit skips; actual Go-artifact interoperation and external accessibility
+proof remain separate. A compiled private one-read mutation failed all eight
+intended continuation assertions without hanging. Native browsing follows only
+validated advancing partial cursors, for at most 128 reads or eight seconds per
+burst. Cancel and bounded pause retain accepted progress; older pages remain
+explicit. Source and raw-log hashes are bound by Main qualification receipt
+`3d7e8a1f56700955fc8383699159705c95b5e9ce350ebe7151569ab01158d6ac`.
