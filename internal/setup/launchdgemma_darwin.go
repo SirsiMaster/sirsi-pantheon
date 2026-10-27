@@ -184,10 +184,15 @@ func inspectGemmaNative(ctx context.Context, thread, machine string) (GemmaWorke
 		return p, e
 	}
 	k, e := unix.SysctlKinfoProc("kern.proc.pid", pid)
-	if e != nil || k == nil || k.Proc.P_ppid != 1 {
+	if e != nil || k == nil || k.Eproc.Ppid != 1 {
 		return p, errors.New("Gemma lifecycle: selected parent mismatch")
 	}
-	cd, e := maintenanceSignedImage(gemmaNativeProgram, pid)
+	loaded, e := maintenanceLoadedImageIdentity(pid, servicedrain.MaintenanceStart, maintenanceKernelCDHash)
+	cd := loaded.CDHash
+	if e != nil {
+		return p, e
+	}
+	replacement, e := maintenanceSignedImage(gemmaNativeProgram, 0)
 	if e != nil {
 		return p, e
 	}
@@ -205,7 +210,7 @@ func inspectGemmaNative(ctx context.Context, thread, machine string) (GemmaWorke
 	if again, e := serviceFileHash(plist); e != nil || again != hash {
 		return p, errors.New("Gemma lifecycle: plist substituted")
 	}
-	p = GemmaWorkerPlan{Instance: ServiceInstance{Label: GemmaNativeWorkerLabel, Target: target, Plist: plist, PlistSHA256: hash, Program: gemmaNativeProgram, ProgramSHA256: programHash, PID: pid, Started: strings.TrimSpace(string(started))}, Thread: thread, Machine: machine, KernelStart: start, CDHash: cd, Parent: 1}
+	p = GemmaWorkerPlan{Instance: ServiceInstance{Label: GemmaNativeWorkerLabel, Target: target, Plist: plist, PlistSHA256: hash, Program: gemmaNativeProgram, ProgramSHA256: programHash, PID: pid, Started: strings.TrimSpace(string(started))}, Thread: thread, Machine: machine, KernelStart: start, CDHash: cd, ReplacementCDHash: replacement, Parent: 1}
 	p.Digest = gemmaPlanDigest(p)
 	return p, nil
 }
@@ -219,11 +224,7 @@ func WriteGemmaWorkerPauseAck(ctx context.Context, thread, machine string) error
 	if p.Instance.PID != os.Getpid() {
 		return errors.New("Gemma lifecycle: acknowledgment must be written by actual selected worker")
 	}
-	snapshot, e := serviceRead(ctx, "/bin/ps", "-axo", "pid=,ppid=")
-	if e != nil {
-		return e
-	}
-	if e = rootRelayChildrenClear(snapshot, os.Getpid()); e != nil {
+	if e = gemmaKernelChildrenClear(os.Getpid()); e != nil {
 		return e
 	}
 	dir, e := gemmaPrivateDir()
@@ -244,11 +245,13 @@ func NativeGemmaWorkerLifecycle(ctx context.Context, action, thread, owner, mach
 	if e := authorize(ctx, GemmaNativeWorkerLabel); e != nil {
 		return p, e
 	}
-	if action == "plan" {
+	if action == "plan" || action == "plan140" {
 		p, e := inspectGemmaNative(ctx, thread, machine)
 		if e != nil {
 			return p, e
 		}
+		p.Legacy140 = action == "plan140"
+		p.Digest = gemmaPlanDigest(p)
 		return p, validateGemmaWorkerPlan(p)
 	}
 	dir, e := gemmaPrivateDir()
@@ -264,9 +267,8 @@ func NativeGemmaWorkerLifecycle(ctx context.Context, action, thread, owner, mach
 		}
 		return a, e
 	}, joined: func(p GemmaWorkerPlan) error {
-		_, e := servicedrain.MaintenanceStart(p.Instance.PID)
-		if !errors.Is(e, unix.ESRCH) {
-			return errors.New("selected PID not proven absent (including reuse or probe outage)")
+		if e := gemmaKernelAbsent(p.Instance.PID); e != nil {
+			return e
 		}
 		h, e := serviceFileHash(p.Instance.Plist)
 		if e != nil || h != p.Instance.PlistSHA256 {
@@ -277,12 +279,30 @@ func NativeGemmaWorkerLifecycle(ctx context.Context, action, thread, owner, mach
 			return errors.New("program changed before restart")
 		}
 		cd, e := maintenanceSignedImage(p.Instance.Program, 0)
-		if e != nil || cd != p.CDHash {
+		if e != nil || cd != p.ReplacementCDHash {
 			return errors.New("installed signed image changed before restart")
 		}
 		return nil
 	}, start: func(c context.Context) error {
 		_, e := serviceRead(c, "/bin/launchctl", "kickstart", "gui/501/"+GemmaNativeWorkerLabel)
+		return e
+	}, legacyRetire: func(c context.Context, p GemmaWorkerPlan) error {
+		current, e := inspectGemmaNative(c, p.Thread, machine)
+		if e != nil {
+			return e
+		}
+		current.Legacy140 = true
+		current.Digest = gemmaPlanDigest(current)
+		if current != p {
+			return errors.New("legacy140 selected instance changed; no bootout")
+		}
+		if e = gemmaKernelChildrenClear(p.Instance.PID); e != nil {
+			return e
+		}
+		_, e = serviceRead(c, "/bin/launchctl", "bootout", "gui/501/"+GemmaNativeWorkerLabel)
+		return e
+	}, startLegacy: func(c context.Context) error {
+		_, e := serviceRead(c, "/bin/launchctl", "bootstrap", "gui/501", "/Users/thekryptodragon/Library/LaunchAgents/"+GemmaNativeWorkerLabel+".plist")
 		return e
 	}, wait: func(c context.Context) error {
 		select {
@@ -306,4 +326,52 @@ func NativeGemmaWorkerLifecycle(ctx context.Context, action, thread, owner, mach
 		}
 	})
 	return p, e
+}
+
+// Qualified PR1239 predicate: an EIO/ESRCH identity error is NEVER absence by
+// itself. Require independent kill(0)==ESRCH, then a complete kernel inventory.
+// The latter additionally excludes both PID reuse and a concurrent observer.
+func gemmaKernelAbsent(pid int) error {
+	if pid <= 1 {
+		return errors.New("invalid selected worker PID")
+	}
+	_, e := servicedrain.MaintenanceStart(pid)
+	if !errors.Is(e, unix.ESRCH) && !errors.Is(e, unix.EIO) {
+		if e == nil {
+			return errors.New("selected worker still alive or PID reused")
+		}
+		return e
+	}
+	if e = unix.Kill(pid, 0); !errors.Is(e, unix.ESRCH) {
+		return errors.New("selected worker absence not independently established")
+	}
+	all, e := unix.SysctlKinfoProcSlice("kern.proc.all", 0)
+	if e != nil || len(all) == 0 {
+		return errors.New("complete native kernel process inventory unavailable")
+	}
+	for _, k := range all {
+		if int(k.Proc.P_pid) == pid {
+			return errors.New("selected PID present in complete kernel inventory")
+		}
+	}
+	return nil
+}
+func gemmaKernelChildrenClear(pid int) error {
+	all, e := unix.SysctlKinfoProcSlice("kern.proc.all", 0)
+	if e != nil || len(all) == 0 {
+		return errors.New("native kernel children unknown")
+	}
+	found := false
+	for _, k := range all {
+		if int(k.Proc.P_pid) == pid {
+			found = true
+		}
+		if int(k.Eproc.Ppid) == pid {
+			return errors.New("selected worker has actual child; no pause acknowledgment or retirement")
+		}
+	}
+	if !found {
+		return errors.New("selected worker absent from kernel child inventory")
+	}
+	return nil
 }

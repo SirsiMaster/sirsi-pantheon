@@ -11,7 +11,7 @@ import (
 
 func gemmaLifecycleFixture() (gemmaWorkerOperations, GemmaWorkerPlan, *gemmaWorkerDebt, *[]string) {
 	now := time.Now()
-	p := GemmaWorkerPlan{Instance: ServiceInstance{Label: GemmaNativeWorkerLabel, Target: "gui/501/" + GemmaNativeWorkerLabel, Plist: "/owned/worker.plist", PlistSHA256: strings.Repeat("a", 64), Program: "/owned/sirsi", ProgramSHA256: strings.Repeat("b", 64), PID: 70069, Started: "old"}, Thread: "worker", Machine: "native", KernelStart: "1.000001", CDHash: strings.Repeat("c", 40), Parent: 1}
+	p := GemmaWorkerPlan{Instance: ServiceInstance{Label: GemmaNativeWorkerLabel, Target: "gui/501/" + GemmaNativeWorkerLabel, Plist: "/owned/worker.plist", PlistSHA256: strings.Repeat("a", 64), Program: "/owned/sirsi", ProgramSHA256: strings.Repeat("b", 64), PID: 70069, Started: "old"}, Thread: "worker", Machine: "native", KernelStart: "1.000001", CDHash: strings.Repeat("c", 40), ReplacementCDHash: strings.Repeat("c", 40), Parent: 1}
 	p.Digest = gemmaPlanDigest(p)
 	debt := &gemmaWorkerDebt{}
 	events := &[]string{}
@@ -132,5 +132,87 @@ func TestGemmaLifecycleSaveFailureBeforeRelease(t *testing.T) {
 		if x == "release" || x == "start" {
 			t.Fatal(x)
 		}
+	}
+}
+
+func TestGemmaLifecycleLegacy140IsRetirementNotPauseAck(t *testing.T) {
+	d, p, s, ev := gemmaLifecycleFixture()
+	p.Legacy140 = true
+	p.CDHash = "c9fa4a594cab29a4a95c2180c0ca64e5dcd0de59"
+	p.Digest = gemmaPlanDigest(p)
+	inspect := d.inspect
+	d.inspect = func(c context.Context, t string) (GemmaWorkerPlan, error) {
+		q, e := inspect(c, t)
+		if q.KernelStart == p.KernelStart {
+			return p, e
+		}
+		return q, e
+	}
+	d.ack = func(string) (GemmaWorkerPauseAck, error) {
+		return GemmaWorkerPauseAck{}, errors.New("old140 cannot ack")
+	}
+	d.legacyRetire = func(context.Context, GemmaWorkerPlan) error { *ev = append(*ev, "legacy-retire"); return nil }
+	d.startLegacy = d.start
+	if e := applyGemmaWorker(context.Background(), d, p, "ssa"); e != nil {
+		t.Fatal(e)
+	}
+	if s.Phase != "done" || !strings.Contains(s.OldOutcome, "no cooperative pause acknowledgment") {
+		t.Fatal(s.Phase, s.OldOutcome)
+	}
+	order := strings.Join(*ev, ",")
+	if !strings.Contains(order, "save:legacy-retire-intent,legacy-retire,joined") {
+		t.Fatal(order)
+	}
+}
+func TestGemmaLifecycleLegacy140UnknownRetirementNeverReplayed(t *testing.T) {
+	d, p, s, ev := gemmaLifecycleFixture()
+	p.Legacy140 = true
+	p.CDHash = "c9fa4a594cab29a4a95c2180c0ca64e5dcd0de59"
+	p.Digest = gemmaPlanDigest(p)
+	d.inspect = func(context.Context, string) (GemmaWorkerPlan, error) { return p, nil }
+	d.legacyRetire = func(context.Context, GemmaWorkerPlan) error {
+		*ev = append(*ev, "legacy-retire")
+		return errors.New("lost reply")
+	}
+	d.startLegacy = d.start
+	d.joined = func(GemmaWorkerPlan) error { return errors.New("old instance remains or absence unknown") }
+	if applyGemmaWorker(context.Background(), d, p, "ssa") == nil {
+		t.Fatal("unknown retirement accepted")
+	}
+	_ = recoverGemmaWorker(context.Background(), d, "ssa")
+	n := 0
+	for _, x := range *ev {
+		if x == "legacy-retire" {
+			n++
+		}
+		if x == "release" || x == "start" {
+			t.Fatal("unknown old outcome released barrier", x)
+		}
+	}
+	if n != 1 || !s.LegacyRetirementIssued {
+		t.Fatal(n, s.Phase)
+	}
+}
+func TestGemmaLifecycleReplacementDiskDiffersFromOldLoaded(t *testing.T) {
+	d, p, _, _ := gemmaLifecycleFixture()
+	p.CDHash = strings.Repeat("d", 40)
+	p.Digest = gemmaPlanDigest(p)
+	inspected := false
+	d.inspect = func(context.Context, string) (GemmaWorkerPlan, error) {
+		if !inspected {
+			inspected = true
+			return p, nil
+		}
+		q := p
+		q.CDHash = p.ReplacementCDHash
+		q.KernelStart = "replacement"
+		q.Digest = gemmaPlanDigest(q)
+		return q, nil
+	}
+	d.ack = func(string) (GemmaWorkerPauseAck, error) {
+		return GemmaWorkerPauseAck{Plan: p, At: time.Now().Add(time.Second)}, nil
+	}
+	if e := applyGemmaWorker(context.Background(), d, p, "ssa"); e != nil {
+		t.Fatal(e)
 	}
 }

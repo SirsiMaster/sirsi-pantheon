@@ -17,13 +17,15 @@ const GemmaNativeWorkerLabel = "ai.sirsi.gemma-worker.native"
 // GemmaWorkerPlan selects one observed native instance, never an arbitrary PID.
 // These are public pins; the barrier capability lives only in the private debt.
 type GemmaWorkerPlan struct {
-	Instance    ServiceInstance `json:"instance"`
-	Thread      string          `json:"thread"`
-	Machine     string          `json:"machine"`
-	KernelStart string          `json:"kernel_start"`
-	CDHash      string          `json:"cdhash"`
-	Parent      int             `json:"parent"`
-	Digest      string          `json:"digest"`
+	Instance          ServiceInstance `json:"instance"`
+	Thread            string          `json:"thread"`
+	Machine           string          `json:"machine"`
+	KernelStart       string          `json:"kernel_start"`
+	CDHash            string          `json:"cdhash"`
+	ReplacementCDHash string          `json:"replacement_cdhash"`
+	Legacy140         bool            `json:"legacy140"`
+	Parent            int             `json:"parent"`
+	Digest            string          `json:"digest"`
 }
 
 func gemmaPlanDigest(p GemmaWorkerPlan) string {
@@ -33,11 +35,14 @@ func gemmaPlanDigest(p GemmaWorkerPlan) string {
 	return hex.EncodeToString(h[:])
 }
 func validateGemmaWorkerPlan(p GemmaWorkerPlan) error {
-	if validateServiceInstance(p.Instance) != nil || p.Instance.Label != GemmaNativeWorkerLabel || p.Parent != 1 || p.Thread == "" || p.Machine == "" || p.KernelStart == "" || len(p.CDHash) != 40 || p.Digest != gemmaPlanDigest(p) {
+	if validateServiceInstance(p.Instance) != nil || p.Instance.Label != GemmaNativeWorkerLabel || p.Parent != 1 || p.Thread == "" || p.Machine == "" || p.KernelStart == "" || len(p.CDHash) != 40 || len(p.ReplacementCDHash) != 40 || p.Digest != gemmaPlanDigest(p) {
 		return errors.New("Gemma lifecycle: incomplete exact native worker plan")
 	}
 	if _, e := hex.DecodeString(p.CDHash); e != nil {
 		return e
+	}
+	if p.Legacy140 && p.CDHash != "c9fa4a594cab29a4a95c2180c0ca64e5dcd0de59" {
+		return errors.New("Gemma lifecycle: only independently identified PUBLIC140 legacy image supported")
 	}
 	return nil
 }
@@ -50,26 +55,30 @@ type GemmaWorkerPauseAck struct {
 	At   time.Time       `json:"at"`
 }
 type gemmaWorkerDebt struct {
-	Plan           GemmaWorkerPlan
-	OwnerThread    string
-	PreviousThread string
-	Capability     string // private 0600 durable controller record ONLY
-	Began          time.Time
-	Phase          string
+	Plan                   GemmaWorkerPlan
+	OwnerThread            string
+	PreviousThread         string
+	Capability             string // private 0600 durable controller record ONLY
+	Began                  time.Time
+	Phase                  string
+	LegacyRetirementIssued bool
+	OldOutcome             string
 }
 
 // All native operations are closed over the fixed worker profile by the Darwin
 // adapter. Tests inject inert operations; callers cannot supply commands/labels.
 type gemmaWorkerOperations struct {
-	inspect func(context.Context, string) (GemmaWorkerPlan, error)
-	barrier func(context.Context, routerstore.LaneClaimBarrierRequest) (routerstore.LaneClaimBarrierResult, error)
-	ack     func(string) (GemmaWorkerPauseAck, error)
-	joined  func(GemmaWorkerPlan) error
-	save    func(gemmaWorkerDebt) error
-	load    func() (gemmaWorkerDebt, error)
-	start   func(context.Context) error
-	wait    func(context.Context) error
-	now     func() time.Time
+	inspect      func(context.Context, string) (GemmaWorkerPlan, error)
+	barrier      func(context.Context, routerstore.LaneClaimBarrierRequest) (routerstore.LaneClaimBarrierResult, error)
+	ack          func(string) (GemmaWorkerPauseAck, error)
+	joined       func(GemmaWorkerPlan) error
+	save         func(gemmaWorkerDebt) error
+	load         func() (gemmaWorkerDebt, error)
+	start        func(context.Context) error
+	wait         func(context.Context) error
+	now          func() time.Time
+	legacyRetire func(context.Context, GemmaWorkerPlan) error
+	startLegacy  func(context.Context) error
 }
 
 func gemmaWorkerAdvance(d gemmaWorkerOperations, s *gemmaWorkerDebt, phase string) error {
@@ -181,7 +190,7 @@ func recoverGemmaWorker(ctx context.Context, d gemmaWorkerOperations, owner stri
 }
 func sameGemmaArtifacts(a, b GemmaWorkerPlan) bool {
 	x, y := a.Instance, b.Instance
-	return x.Label == y.Label && x.Target == y.Target && x.Plist == y.Plist && x.Program == y.Program && x.PlistSHA256 == y.PlistSHA256 && x.ProgramSHA256 == y.ProgramSHA256 && a.CDHash == b.CDHash && a.Machine == b.Machine && b.Parent == 1
+	return x.Label == y.Label && x.Target == y.Target && x.Plist == y.Plist && x.Program == y.Program && x.PlistSHA256 == y.PlistSHA256 && x.ProgramSHA256 == y.ProgramSHA256 && a.ReplacementCDHash == b.CDHash && a.ReplacementCDHash == b.ReplacementCDHash && a.Machine == b.Machine && b.Parent == 1
 }
 func continueGemmaWorker(ctx context.Context, d gemmaWorkerOperations, s *gemmaWorkerDebt) error {
 	for {
@@ -190,8 +199,25 @@ func continueGemmaWorker(ctx context.Context, d gemmaWorkerOperations, s *gemmaW
 			return errors.New("Gemma lifecycle: authoritative barrier status unavailable; debt retained")
 		}
 		if b.ActiveItems == 0 && b.ActiveTasks == 0 {
-			ack, e := d.ack(s.Plan.Thread)
-			if e == nil && ack.Plan == s.Plan && !ack.At.Before(s.Began) {
+			ack, ackErr := d.ack(s.Plan.Thread)
+			eligible := ackErr == nil && ack.Plan == s.Plan && !ack.At.Before(s.Began)
+			if s.Plan.Legacy140 {
+				if s.Plan.CDHash != "c9fa4a594cab29a4a95c2180c0ca64e5dcd0de59" || d.legacyRetire == nil || d.startLegacy == nil {
+					return errors.New("Gemma lifecycle: recognized legacy140 adapter required")
+				}
+				if !s.LegacyRetirementIssued {
+					s.LegacyRetirementIssued = true
+					s.OldOutcome = "legacy140 retirement requested; old outcome not attested"
+					if e = gemmaWorkerAdvance(d, s, "legacy-retire-intent"); e != nil {
+						return e
+					}
+					if e = d.legacyRetire(ctx, s.Plan); e != nil {
+						return errors.New("Gemma lifecycle: legacy140 retirement unknown; retain barrier/debt, never replay")
+					}
+				}
+				eligible = true // process retirement proof below, NEVER a pause acknowledgment
+			}
+			if eligible {
 				if e = d.joined(s.Plan); e != nil {
 					return fmt.Errorf("Gemma lifecycle: selected worker/children not joined; barrier retained: %w", e)
 				}
@@ -205,7 +231,12 @@ func continueGemmaWorker(ctx context.Context, d gemmaWorkerOperations, s *gemmaW
 				if e = gemmaWorkerAdvance(d, s, "start-intent"); e != nil {
 					return e
 				}
-				if e = d.start(ctx); e != nil {
+				start := d.start
+				if s.Plan.Legacy140 {
+					start = d.startLegacy
+					s.OldOutcome = "legacy140 kernel retirement confirmed; no cooperative pause acknowledgment; original outcome/history retained"
+				}
+				if e = start(ctx); e != nil {
 					return errors.New("Gemma lifecycle: start outcome unknown; no automatic replay")
 				}
 				p, e := d.inspect(ctx, "")

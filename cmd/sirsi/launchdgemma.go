@@ -15,7 +15,7 @@ import (
 
 func init() {
 	var thread, plan string
-	c := &cobra.Command{Use: "gemma-worker <plan|apply|recover>", Short: "Exact joined native Gemma worker lifecycle; no broker or stop action", Args: cobra.ExactArgs(1)}
+	c := &cobra.Command{Use: "gemma-worker <plan|plan140|apply|recover>", Short: "Exact joined native Gemma worker lifecycle; no broker or stop action", Args: cobra.ExactArgs(1)}
 	c.Flags().StringVar(&thread, "thread", "", "Exact selected worker thread for read-only plan")
 	c.Flags().StringVar(&plan, "plan", "", "Prior exact public plan JSON file for apply")
 	c.RunE = func(cmd *cobra.Command, args []string) error {
@@ -55,7 +55,7 @@ func init() {
 		if e != nil {
 			return e
 		}
-		if args[0] == "plan" {
+		if args[0] == "plan" || args[0] == "plan140" {
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(p)
 		}
 		_, e = fmt.Fprintln(cmd.OutOrStdout(), "Gemma worker lifecycle completed; no broker action")
