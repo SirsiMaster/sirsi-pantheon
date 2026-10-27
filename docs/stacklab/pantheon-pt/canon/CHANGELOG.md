@@ -1,5 +1,14 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-27 — v0.24.140 release candidate
+
+- Compose the exact normal merged fixes #1233, #1234, #1235 and #1236 from main `be62fe8aea4c9bd2390ca9bc3351e008c71876b4`. This entry prepares version and release notes; it does not publish, install or replace a loaded service.
+- Ma’at first-use inspection has visible typed results, strict pre-creation journal readiness, content-independent invalid-row reasons, access to confirmed preservation repair, inherited-root JSON receipts and fresh separate initialization consent. Historical retained-receipt recovery does not open the unrelated journal. Refs: `docs/ADR-004-MAAT-QA-GOVERNANCE.md` and the existing Ma’at System One recipe.
+- Legacy relay controller and successor share exact named-account/group membership resolution, including differing primary/effective GIDs. The capability fingerprint binds the factored policy; no-marker startup avoids the lookup. Permissions and custody checks remain. Refs: `docs/stacklab/pantheon-pt/canon/LEGACY_RELAY_APP_OPERATION_FENCE.md`. Source fixtures do not establish installed controller-to-successor adoption.
+- Wake-loop consumer declarations refresh only at a joined and scored idle boundary. Preserve the controller identity and failure/quota holds; withdraw capability on invalid replacement. No active child is signaled.
+- Router send JSON returns one committed result with resolved recipient and retains the committed ID on output failure without retry. CompassPoint bootstrap instructions and existing Ma’at diagnostics describe the actual registered executor and standalone coordination commands without granting permissions or changing roles/backoff. Refs: `docs/ADR-062-ROUTER-SERVICE-RA-CONCURRENCY.md`, `docs/runbooks/CONSUMER_BOOTSTRAP_ACTUAL_EXECUTOR.md`.
+- Public asset trust, exact cask readback, installed client/GUI verification, fresh legacy preview/successor readback and the original operational ledger criteria remain separate release/adoption evidence. This release candidate does not assert whole Ma’at/JEV or feature-freeze completion.
+
 ## 2026-10-26 — v0.24.139 release candidate
 
 - Recognize the separately inspected 0.24.121 source revision in the existing protected legacy maintenance preview profile and bind the selected revision into the plan digest. This records source-profile support only; it does not perform a rollover or claim the legacy worker is drained or cancel-joined.

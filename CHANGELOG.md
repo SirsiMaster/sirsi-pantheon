@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.140] — 2026-10-27
+
+- Show clear Ma’at first-use readiness and a path to the existing journal-preservation repair. Verify its JSON receipt, preserve the original journal, and require a fresh inspection and separate initialization confirmation. Journal diagnostics avoid exposing invalid record contents; historical receipt recovery remains independent.
+- Correct relay maintenance group validation when the enrolled service group differs from the account’s primary group. Controller and successor use the same verified group without changing filesystem permissions. Installed successor adoption remains separately verified.
+- Return a single machine-readable committed receipt from `sirsi router send --json`, including the resolved recipient and message ID. A post-commit output failure retains the ID and warns against sending a duplicate.
+- Clarify the CompassPoint worker’s existing queue assignment and actual executor bootstrap instructions. Diagnostics identify when standalone coordination or executor registration is needed; existing role and admission policies remain in force.
+- Refresh the wake controller’s consumer declaration only after its child is joined and scored. Preserve controller identity and failure/quota holds; an invalid replacement withdraws consumer capability while retaining the lead’s independent answer grant. No active consumer is signaled.
+
 ## [0.24.139] — 2026-10-26
 
 - Recognize the separately inspected 0.24.121 source revision in the existing protected legacy maintenance preview profile and bind the selected revision into the plan digest. This records source-profile support only; it does not perform a rollover or claim the legacy worker is drained or cancel-joined.

@@ -89,10 +89,13 @@ class TransportPlan(unittest.TestCase):
         remote = next(x for x in result.stdout.splitlines() if x.startswith('REMOTE_COMMAND='))
         self.assertIn("'a space'\\''; $(false) ; '\\''suffix'", remote)
 
-    def test_ra_existing_worker_has_answering_grant(self):
+    def test_ra_worker_cannot_override_attended_lead(self):
+        # ADR-079: Ra's lane is its interactive session; the worker never answers beside it.
         registry = json.loads((SCRIPT.parents[2] / '.agents/idea-router/agents.json').read_text())
         ra = registry['agents']['ra']
-        self.assertIs(ra.get('worker_answers'), True)
+        self.assertIs(ra.get('attended'), True)
+        self.assertFalse(ra.get('worker_answers', False))
+        self.assertEqual(ra['wake']['mechanism'], 'session-message')
         self.assertTrue(ra['consumer']['command'])
 
     def test_mercury_standby_cannot_override_attended_lead(self):
