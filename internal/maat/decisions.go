@@ -167,12 +167,26 @@ type JournalIssue struct {
 	Reason string `json:"reason"`
 }
 
+// JournalValidationError identifies the first strict-read record rejected by
+// the journal contract without retaining or exposing its decision contents.
+type JournalValidationError struct {
+	Issue JournalIssue
+}
+
+func (e *JournalValidationError) Error() string {
+	if e == nil {
+		return "maat decision journal: invalid record"
+	}
+	return fmt.Sprintf("maat decision journal: invalid record at line %d: %s", e.Issue.Line, e.Issue.Reason)
+}
+
 // JournalIntegrity accompanies the tolerant Casebook projection.  The strict
 // journal API remains the policy read path; this shape exists only so a legacy
 // or damaged display record cannot make every healthy Ma'at case invisible.
 type JournalIntegrity struct {
-	InvalidCount int            `json:"invalid_count"`
-	Issues       []JournalIssue `json:"issues,omitempty"`
+	InvalidCount      int            `json:"invalid_count"`
+	CountIsLowerBound bool           `json:"count_is_lower_bound,omitempty"`
+	Issues            []JournalIssue `json:"issues,omitempty"`
 }
 
 // JournalRepairReceipt names the retained original and the verified active
@@ -570,14 +584,14 @@ func (j *FileDecisionJournal) readRecent(limit int, tolerateInvalid bool) ([]Dec
 		var decision Decision
 		if err := json.Unmarshal([]byte(line), &decision); err != nil {
 			if !tolerateInvalid {
-				return nil, JournalIntegrity{}, fmt.Errorf("maat decision journal: malformed record: %w", err)
+				return nil, JournalIntegrity{}, &JournalValidationError{Issue: makeJournalIssue(lineNumber, raw, "malformed JSON record")}
 			}
 			integrity.addIssue(lineNumber, raw, "malformed JSON record")
 			continue
 		}
 		if err := validateDecision(decision); err != nil {
 			if !tolerateInvalid {
-				return nil, JournalIntegrity{}, err
+				return nil, JournalIntegrity{}, &JournalValidationError{Issue: makeJournalIssue(lineNumber, raw, journalIssueReason(err))}
 			}
 			integrity.addIssue(lineNumber, raw, journalIssueReason(err))
 			continue
@@ -599,21 +613,47 @@ func (integrity *JournalIntegrity) addIssue(line int, raw, reason string) {
 	if len(integrity.Issues) >= maxRetainedJournalIssues {
 		return
 	}
+	integrity.Issues = append(integrity.Issues, makeJournalIssue(line, raw, reason))
+}
+
+func makeJournalIssue(line int, raw, reason string) JournalIssue {
 	digest := sha256.Sum256([]byte(raw))
-	integrity.Issues = append(integrity.Issues, JournalIssue{
+	return JournalIssue{
 		Line: line, Digest: fmt.Sprintf("sha256:%x", digest), Reason: reason,
-	})
+	}
 }
 
 func journalIssueReason(err error) string {
-	reason := strings.TrimSpace(strings.TrimPrefix(err.Error(), "maat decision journal:"))
-	if reason == "" {
+	if err == nil {
 		return "record violates the Ma'at journal contract"
 	}
-	if len(reason) > 240 {
-		return reason[:240]
+	reason := strings.TrimSpace(strings.TrimPrefix(err.Error(), "maat decision journal:"))
+	switch {
+	case strings.Contains(reason, " is required"):
+		return "required field is missing"
+	case strings.HasPrefix(reason, "invalid time:"):
+		return "invalid time"
+	case reason == "resolution evidence exceeds bounded record size":
+		return reason
+	case reason == "incident links require retained receipt metadata":
+		return reason
+	case reason == "invalid or duplicate failure memory incident link":
+		return reason
+	case reason == "invalid failure-memory receipt reference":
+		return reason
+	case strings.HasPrefix(reason, "invalid System One verdict:"):
+		return "invalid System One verdict"
+	case reason == "System One verdict is valid only for system one screen":
+		return reason
+	case strings.HasPrefix(reason, "invalid System One calibration:"):
+		return "invalid System One calibration"
+	case reason == "System One calibration is valid only for system one calibration":
+		return reason
+	case reason == "screen and calibration records cannot coexist":
+		return reason
+	default:
+		return "record violates the Ma'at journal contract"
 	}
-	return reason
 }
 
 // RepairInvalidRecords preserves the original journal and rebuilds only the

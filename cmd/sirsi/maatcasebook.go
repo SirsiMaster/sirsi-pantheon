@@ -227,7 +227,7 @@ var maatCasebookRepairCmd = &cobra.Command{
 		}{
 			Status: "ok", Summary: "Ma'at preserved the original decision journal and verified the recovered active Casebook.", Repair: receipt,
 		}
-		if maatJSON {
+		if JsonOutput || maatJSON {
 			return emitJSON(result)
 		}
 		fmt.Printf("Ma'at Casebook recovered: preserved original at %s · removed %d invalid record(s) · retained %d verified record(s)\n", receipt.BackupPath, receipt.RemovedCount, receipt.RetainedCount)

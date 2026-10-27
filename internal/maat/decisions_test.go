@@ -1,7 +1,10 @@
 package maat
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -234,6 +237,80 @@ func TestFileDecisionJournalRejectsMalformedRecord(t *testing.T) {
 	}
 }
 
+func TestFileDecisionJournalStrictReadReportsFirstInvalidLateRowWithoutContents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	var contents bytes.Buffer
+	valid, err := json.Marshal(Decision{
+		Time: "2026-10-27T00:00:00Z", Host: "fixture", Kind: "reservation", Requester: "fixture",
+		Assessed: "fixture", Determination: "grant", Why: "valid retained row",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5000; i++ {
+		contents.Write(valid)
+		contents.WriteByte('\n')
+	}
+	invalid, err := json.Marshal(Decision{
+		Time: "2026-10-27T00:00:01Z", Host: "fixture", Kind: "reservation", Assessed: "fixture",
+		Determination: "refuse", Why: "PRIVATE fixture body must not appear in error",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents.Write(invalid)
+	contents.WriteByte('\n')
+	if err := os.WriteFile(path, contents.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = (&FileDecisionJournal{Path: path}).Recent(1)
+	var validation *JournalValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("strict Recent error = %T %v, want typed validation error", err, err)
+	}
+	wantDigest := sha256.Sum256(invalid)
+	if validation.Issue.Line != 5001 || validation.Issue.Digest != fmt.Sprintf("sha256:%x", wantDigest) || validation.Issue.Reason != "required field is missing" {
+		t.Fatalf("strict issue = %+v, want line 5001, exact digest, and content-independent required-field category", validation.Issue)
+	}
+	if strings.Contains(err.Error(), "PRIVATE fixture body") {
+		t.Fatal("strict validation error exposed rejected journal contents")
+	}
+}
+
+func TestFileDecisionJournalInvalidTimestampReasonDoesNotExposeValue(t *testing.T) {
+	const privateTimestamp = "PRIVATE-TIMESTAMP-SENTINEL-2042-13-99"
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	invalid, err := json.Marshal(Decision{
+		Time: privateTimestamp, Host: "fixture", Kind: "reservation", Requester: "fixture",
+		Assessed: "fixture", Determination: "refuse", Why: "invalid timestamp fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(invalid, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = (&FileDecisionJournal{Path: path}).Recent(1)
+	var validation *JournalValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("strict Recent error = %T %v, want typed validation error", err, err)
+	}
+	if validation.Issue.Reason != "invalid time" {
+		t.Fatalf("strict issue reason = %q, want content-independent category", validation.Issue.Reason)
+	}
+	issueJSON, marshalErr := json.Marshal(JournalIntegrity{
+		InvalidCount: 1, CountIsLowerBound: true, Issues: []JournalIssue{validation.Issue},
+	})
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	if strings.Contains(err.Error(), privateTimestamp) || bytes.Contains(issueJSON, []byte(privateTimestamp)) {
+		t.Fatalf("timestamp value leaked through strict error or JSON issue: %s / %s", err, issueJSON)
+	}
+}
+
 func TestFileDecisionJournalTolerantReadRetainsHealthyRowsAndIssues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "decisions.jsonl")
 	valid := `{"time":"2026-09-26T10:01:00Z","host":"m5","kind":"reservation","requester":"alpha","assessed":"free","determination":"grant","why":"no overlap"}`
@@ -256,8 +333,8 @@ func TestFileDecisionJournalTolerantReadRetainsHealthyRowsAndIssues(t *testing.T
 	if got, want := integrity.Issues[0].Digest, fmt.Sprintf("sha256:%x", wantDigest); got != want {
 		t.Fatalf("issue digest = %q, want %q", got, want)
 	}
-	if got := integrity.Issues[0].Reason; !strings.Contains(got, "requester is required") {
-		t.Fatalf("issue reason = %q, want requester violation", got)
+	if got := integrity.Issues[0].Reason; got != "required field is missing" {
+		t.Fatalf("issue reason = %q, want content-independent required-field category", got)
 	}
 	if _, err := (&FileDecisionJournal{Path: path}).Recent(10); err == nil {
 		t.Fatal("strict Recent accepted legacy requester-free row")

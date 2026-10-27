@@ -9,10 +9,19 @@ import (
 
 type maatLivenessMemoryInspection struct {
 	maat.DefaultStoreStatus
+	JournalReadiness     string                         `json:"journal_readiness"`
+	JournalIntegrity     *maat.JournalIntegrity         `json:"journal_integrity,omitempty"`
 	IncompleteAttempt    bool                           `json:"incomplete_attempt"`
 	ProjectionDebt       bool                           `json:"projection_debt"`
 	PreparedPreflight    *maat.PreparedPreflightReceipt `json:"prepared_preflight,omitempty"`
 	ReceiptRecoveryError string                         `json:"receipt_recovery_error,omitempty"`
+}
+
+type maatFirstUseJournalRefusal struct {
+	Status           string                 `json:"status"`
+	Stage            string                 `json:"stage"`
+	JournalReadiness string                 `json:"journal_readiness"`
+	JournalIntegrity *maat.JournalIntegrity `json:"journal_integrity"`
 }
 
 func addPreparedMaatReceiptInspection(result *maatLivenessMemoryInspection, store maatLivenessStore) {

@@ -311,7 +311,12 @@ func runMaatLivenessWatchAction() error {
 
 func inspectMaatLivenessMemory() error {
 	status := maatRepairDefaultStoreInspect()
-	result := maatLivenessMemoryInspection{DefaultStoreStatus: status}
+	result := maatLivenessMemoryInspection{DefaultStoreStatus: status, JournalReadiness: "unknown"}
+	// Journal readiness is a prerequisite for first-use initialization, not
+	// authority for inspecting or recovering an exact historical receipt.
+	if status.State == maat.DefaultStoreUninitialized {
+		inspectMaatJournalReadiness(&result)
+	}
 	if status.State == maat.DefaultStoreReady {
 		store, err := maatRepairOpenDefaultStore()
 		if err != nil {
@@ -350,6 +355,28 @@ func inspectMaatLivenessMemory() error {
 	return nil
 }
 
+func inspectMaatJournalReadiness(result *maatLivenessMemoryInspection) {
+	journal, err := newMaatDecisionJournal()
+	if err != nil {
+		result.JournalReadiness = "unavailable"
+		return
+	}
+	if _, err := journal.Recent(1); err == nil {
+		result.JournalReadiness = "ready"
+		return
+	} else {
+		var invalid *maat.JournalValidationError
+		if errors.As(err, &invalid) {
+			result.JournalReadiness = "invalid"
+			result.JournalIntegrity = &maat.JournalIntegrity{
+				InvalidCount: 1, CountIsLowerBound: true, Issues: []maat.JournalIssue{invalid.Issue},
+			}
+			return
+		}
+	}
+	result.JournalReadiness = "unavailable"
+}
+
 func initializeMaatLivenessMemory() error {
 	if !maatRepairConfirm {
 		return errors.New("Ma'at failure-memory initialization is explicit; review the first-use action and rerun with --confirm")
@@ -363,6 +390,21 @@ func initializeMaatLivenessMemory() error {
 		return fmt.Errorf("open Ma'at journal before first-use initialization: %w", err)
 	}
 	if _, err := journal.Recent(1); err != nil {
+		var invalid *maat.JournalValidationError
+		if errors.As(err, &invalid) {
+			if JsonOutput || maatJSON {
+				refusal := maatFirstUseJournalRefusal{
+					Status: "refused", Stage: "before_store_creation", JournalReadiness: "invalid",
+					JournalIntegrity: &maat.JournalIntegrity{
+						InvalidCount: 1, CountIsLowerBound: true, Issues: []maat.JournalIssue{invalid.Issue},
+					},
+				}
+				if writeErr := emitJSON(refusal); writeErr != nil {
+					return writeErr
+				}
+			}
+			return invalid
+		}
 		return fmt.Errorf("validate Ma'at journal before first-use initialization: %w", err)
 	}
 	storeUUID, err := maatRepairDefaultStoreInitialize()

@@ -48,29 +48,63 @@ struct MaatPreparedPreflight:Decodable,Equatable {
     @Published private(set)var current:MaatPreparedPreflight?
     @Published private(set)var retained:MaatPreparedPreflight?
     @Published private(set)var recovered:MaatRetainedPreflightRead?
+    @Published private(set)var inspection:MaatFailureMemoryStatus?
+    @Published private(set)var summary="Local failure memory has not been inspected. No health or empty-history claim is available."
     @Published private(set)var busy=false
     @Published private(set)var message:String?
     private var generation=UUID()
     private var readTask:Task<SirsiEngine.JSONCommandRead,Never>?
     private let reader:Reader
+    var canReviewFirstUseInitialization:Bool {
+        guard let inspection else{return false}
+        return inspection.state=="uninitialized" && inspection.journalReadiness=="ready" && !inspection.incompleteAttempt && !inspection.projectionDebt &&
+            inspection.preparedPreflight==nil && inspection.receiptRecoveryError==nil
+    }
     init(reader:Reader?=nil){self.reader=reader ?? {await SirsiEngine.runJSONRead(args:$0)}}
     func inspectionUnavailable(){
-        guard !busy else{return};generation=UUID();current=nil
-        message="Local memory inspection is unavailable. Prior historical detail remains; retry inspection before any recovery."
+        guard !busy else{return};generation=UUID();current=nil;inspection=nil
+        summary="Local failure memory inspection is unavailable. Prior historical detail remains; no approval is available."
+        if retained==nil && recovered==nil { message="Local memory inspection is unavailable. Prior historical detail remains; retry inspection before any recovery." }
     }
     func cancelRecovery(){readTask?.cancel()}
     func accept(_ status:MaatFailureMemoryStatus){
         guard !busy else{return}
-        generation=UUID();current=nil
-        if let prepared=status.preparedPreflight,prepared.valid(storeUUID:status.storeUUID){
+        generation=UUID();current=nil;inspection=status;summary=Self.summary(for:status)
+        if status.state=="incomplete",!status.incompleteAttempt,!status.projectionDebt,status.receiptRecoveryError==nil,
+           let prepared=status.preparedPreflight,prepared.valid(storeUUID:status.storeUUID){
             current=prepared;retained=prepared
-            message="Complete prepared historical receipt verified. Review exact recovery; no action or Casebook projection is authorized."
+            if recovered==nil { message="Complete prepared historical receipt verified. Review exact recovery; no action or Casebook projection is authorized." }
         }else if status.preparedPreflight != nil || status.receiptRecoveryError != nil{
-            message="Prepared receipt debt is unavailable or does not match current custody. Reinspect; missing, changed or unrelated bytes will not be reconstructed."
+            if retained==nil && recovered==nil { message="Prepared receipt debt is unavailable or does not match current custody. Reinspect; missing, changed or unrelated bytes will not be reconstructed." }
+        }
+    }
+    private static func summary(for status:MaatFailureMemoryStatus)->String {
+        let attempt=status.incompleteAttempt ? "present" : "none"
+        let projection=status.projectionDebt ? "present" : "none"
+        let debt="Incomplete attempt: \(attempt) · projection debt: \(projection)."
+        let receiptError=status.receiptRecoveryError.map{" Receipt recovery error: \($0)."} ?? ""
+        let journalStatus:String
+        switch status.journalReadiness {
+        case "ready": journalStatus="Strict journal readiness: ready."
+        case "invalid": journalStatus="Strict journal readiness: invalid; at least one record is rejected."
+        case "unavailable": journalStatus="Strict journal readiness: unavailable."
+        default: journalStatus="Strict journal readiness: unknown."
+        }
+        switch status.state {
+        case "uninitialized":
+            return "Local failure memory: not created. \(debt) \(journalStatus) No health or empty-history claim is available.\(receiptError)"
+        case "ready":
+            return "Local failure memory: ready. \(debt) \(journalStatus) Readiness is not a health or empty-history claim.\(receiptError)"
+        case "incomplete":
+            return "Local failure memory: incomplete. \(debt) \(journalStatus) Only an exact verified prepared receipt can be reviewed; no health or empty-history claim is available.\(receiptError)"
+        default:
+            return "Local failure memory state is unknown (\(status.state)). \(debt) \(journalStatus) No approval is available.\(receiptError)"
         }
     }
     func inspect()async {
         guard !busy else{return};busy=true
+        generation=UUID();current=nil;inspection=nil
+        summary="Inspecting local failure memory… no approval is available until this read completes."
         let task=Task{@MainActor in await self.reader(["maat","repair","liveness-watch","--inspect-failure-memory","--json"])}
         readTask=task
         let result=await withTaskCancellationHandler(operation:{await task.value},onCancel:{task.cancel()})
@@ -78,7 +112,9 @@ struct MaatPreparedPreflight:Decodable,Equatable {
         busy=false
         guard !task.isCancelled,!Task.isCancelled,result.exitStatus==0,!result.timedOut,result.launchError==nil,
               let status=try?JSONDecoder().decode(MaatFailureMemoryStatus.self,from:result.data)else{
-            generation=UUID();current=nil;message="Prepared receipt inspection failed or was canceled. Prior detail is retained; no recovery was attempted.";return
+            generation=UUID();current=nil;inspection=nil
+            summary="Local failure memory inspection failed or was canceled. Prior historical detail remains; no approval is available."
+            if retained==nil && recovered==nil { message="Prepared receipt inspection failed or was canceled. Prior detail is retained; no recovery was attempted." };return
         }
         accept(status)
     }

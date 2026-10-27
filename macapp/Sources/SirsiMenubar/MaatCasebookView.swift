@@ -44,6 +44,7 @@ import UniformTypeIdentifiers
         return MaatWorkspaceRecoveryFrame(
             recovery: engine.maatCaseOperations.preparedPreflightRecovery,
             content: AnyView(workspaceContent),
+            engine: engine,
             diagnostic: engine.maatCaseOperations.diagnosticRecord,
             diagnosticRefresh: refreshDiagnosticHistory)
     }
@@ -2365,6 +2366,8 @@ enum MaatFailureMemoryAction: Equatable {
 
 struct MaatFailureMemoryStatus: Decodable {
     let state: String
+    let journalReadiness:String?
+    let journalIntegrity:MaatJournalIntegrity?
     let storeUUID: String?
     let detail: String?
     let incompleteAttempt: Bool
@@ -2374,6 +2377,8 @@ struct MaatFailureMemoryStatus: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case state, detail
+        case journalReadiness = "journal_readiness"
+        case journalIntegrity = "journal_integrity"
         case storeUUID = "store_uuid"
         case incompleteAttempt = "incomplete_attempt"
         case projectionDebt = "projection_debt"
@@ -2384,12 +2389,27 @@ struct MaatFailureMemoryStatus: Decodable {
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         state = try values.decode(String.self, forKey: .state)
+        journalReadiness = try values.decodeIfPresent(String.self, forKey: .journalReadiness)
+        journalIntegrity = try values.decodeIfPresent(MaatJournalIntegrity.self, forKey: .journalIntegrity)
         storeUUID = try values.decodeIfPresent(String.self, forKey: .storeUUID)
         detail = try values.decodeIfPresent(String.self, forKey: .detail)
         incompleteAttempt = try values.decodeIfPresent(Bool.self, forKey: .incompleteAttempt) ?? false
         projectionDebt = try values.decodeIfPresent(Bool.self, forKey: .projectionDebt) ?? false
         preparedPreflight = try values.decodeIfPresent(MaatPreparedPreflight.self,forKey:.preparedPreflight)
         receiptRecoveryError = try values.decodeIfPresent(String.self,forKey:.receiptRecoveryError)
+    }
+}
+
+struct MaatFirstUseJournalRefusal:Decodable {
+    let status:String
+    let stage:String
+    let journalReadiness:String
+    let journalIntegrity:MaatJournalIntegrity
+
+    enum CodingKeys:String,CodingKey {
+        case status,stage
+        case journalReadiness="journal_readiness"
+        case journalIntegrity="journal_integrity"
     }
 }
 
@@ -3322,6 +3342,7 @@ struct MaatBinaryDriftTarget: Decodable, Equatable, Identifiable {
 struct MaatJournalRepairView: View {
     @ObservedObject var engine: SirsiEngine
     let integrity: MaatJournalIntegrity
+    var repairCompleted:()async->Void = {}
     @State private var confirmRepair = false
     @State private var repairing = false
     @State private var result: MaatJournalRepairResult?
@@ -3334,7 +3355,7 @@ struct MaatJournalRepairView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Label("Preserve and recover the casebook", systemImage: "shield.lefthalf.filled")
                         .sirsiFont(.title3, weight: .bold)
-                    Text("Ma'at found \(integrity.invalidCount) record\(integrity.invalidCount == 1 ? "" : "s") that cannot satisfy the current local journal contract. This repair does not invent or overwrite those decisions. It first preserves the full original journal, then rebuilds the active Casebook only from records that pass strict verification.")
+                    Text("Ma'at found \(integrity.countDescription) \(integrity.recordNoun) that cannot satisfy the current local journal contract. This repair does not invent or overwrite those decisions. It first preserves the full original journal, then rebuilds the active Casebook only from records that pass strict verification.")
                         .sirsiFont(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -3364,6 +3385,9 @@ struct MaatJournalRepairView: View {
                                 .sirsiFont(.headline)
                                 .foregroundStyle(.green)
                             Text("Preserved original: \(result.repair.backupPath)")
+                                .sirsiFont(.caption)
+                                .textSelection(.enabled)
+                            Text("Original SHA256: \(result.repair.originalDigest)")
                                 .sirsiFont(.caption)
                                 .textSelection(.enabled)
                             Text("Removed \(result.repair.removedCount) invalid record\(result.repair.removedCount == 1 ? "" : "s") from the active projection; \(result.repair.retainedCount) verified record\(result.repair.retainedCount == 1 ? "" : "s") remain.")
@@ -3420,6 +3444,7 @@ struct MaatJournalRepairView: View {
         let raw = await SirsiEngine.run(args: ["maat", "casebook", "repair", "--confirm", "--json"], stdin: nil)
         if let decoded = MaatJournalRepairResult.decode(raw), decoded.status == "ok" {
             result = decoded
+            await repairCompleted()
         } else {
             error = SirsiEngine.firstMeaningful(raw)
         }
@@ -3459,18 +3484,19 @@ struct MaatJournalRepairResult: Decodable {
 struct MaatJournalIntegrityCard: View {
     @ObservedObject var engine: SirsiEngine
     let integrity: MaatJournalIntegrity
+    var repairCompleted:()async->Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             Label("Casebook integrity needs resolution", systemImage: "exclamationmark.shield.fill")
                 .sirsiFont(.headline)
                 .foregroundStyle(.orange)
-            Text("\(integrity.invalidCount) legacy or damaged decision record\(integrity.invalidCount == 1 ? "" : "s") could not satisfy Ma'at’s journal contract. Valid cases remain visible. Pantheon can preserve the original journal, remove only invalid records from the active view, and verify the recovered casebook.")
+            Text("\(integrity.countDescription.capitalized) legacy or damaged decision \(integrity.recordNoun) could not satisfy Ma'at’s journal contract. Valid cases remain visible. Pantheon can preserve the original journal, remove only invalid records from the active view, and verify the recovered casebook.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             NavLink {
-                MaatJournalRepairView(engine: engine, integrity: integrity)
+                MaatJournalRepairView(engine: engine, integrity: integrity,repairCompleted:repairCompleted)
             } label: {
                 Label("Review and preserve invalid records", systemImage: "wrench.and.screwdriver")
             }
@@ -3763,23 +3789,29 @@ struct MaatKnownFailureProposal: Decodable, Identifiable {
 
 struct MaatJournalIntegrity: Decodable {
     let invalidCount: Int
+    let countIsLowerBound:Bool
     let issues: [MaatJournalIssue]
 
     enum CodingKeys: String, CodingKey {
         case invalidCount = "invalid_count"
+        case countIsLowerBound = "count_is_lower_bound"
         case issues
     }
 
-    static let clean = MaatJournalIntegrity(invalidCount: 0, issues: [])
+    static let clean = MaatJournalIntegrity(invalidCount: 0, issues: [],countIsLowerBound:false)
+    var countDescription:String { countIsLowerBound ? "at least one" : "\(invalidCount)" }
+    var recordNoun:String { invalidCount == 1 ? "record" : "records" }
 
-    init(invalidCount: Int, issues: [MaatJournalIssue]) {
+    init(invalidCount: Int, issues: [MaatJournalIssue],countIsLowerBound:Bool=false) {
         self.invalidCount = invalidCount
+        self.countIsLowerBound=countIsLowerBound
         self.issues = issues
     }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         invalidCount = try values.decodeIfPresent(Int.self, forKey: .invalidCount) ?? 0
+        countIsLowerBound = try values.decodeIfPresent(Bool.self,forKey:.countIsLowerBound) ?? false
         issues = try values.decodeIfPresent([MaatJournalIssue].self, forKey: .issues) ?? []
     }
 }

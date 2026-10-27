@@ -21,7 +21,7 @@ import XCTest
         catch { XCTFail("invalid inert JSON fixture: \(error)"); return .init(data: Data(), exitStatus: 1, timedOut: false, launchError: nil) }
     }
     static var lost: SirsiEngine.JSONCommandRead { .init(data: Data(), exitStatus: nil, timedOut: true, launchError: nil) }
-    var ready: [String: Any] { initialized ? ["state":"ready", "store_uuid":store] : ["state":"uninitialized"] }
+    var ready: [String: Any] { initialized ? ["state":"ready", "store_uuid":store, "journal_readiness":"ready"] : ["state":"uninitialized", "journal_readiness":"ready"] }
     var verdict: [String: Any] {
         ["feather_weight":1, "gate":"changes", "confidence":1,
          "subject":["kind":"host", "ref":"diagnostic", "head_sha":recordID, "repo":"fixture-mac"],
