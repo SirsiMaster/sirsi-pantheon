@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/user"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -19,9 +20,43 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// This source was inspected for consume-before-forward and no replay during
-// this implementation. Other releases are NOT inferred from a version label.
-const maintenanceLegacySource = "ba2a07bb464bbfd68808254a7d489769f122149b"
+// These exact source revisions were independently inspected for the existing
+// bounded legacy maintenance profile. A version label never selects a profile.
+const (
+	maintenanceLegacySourceCurrent = "ba2a07bb464bbfd68808254a7d489769f122149b"
+	maintenanceLegacySource121     = "22944b2458f377a9f3e5e10c63c3442cb3ea83c3"
+)
+
+func maintenanceLegacySourceProfile(info *debug.BuildInfo) (string, error) {
+	if info == nil || info.Main.Path != "github.com/SirsiMaster/sirsi-pantheon" {
+		return "", errors.New("main module identity unavailable")
+	}
+	var revision, modified string
+	hasRevision, hasModified := false, false
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			if hasRevision {
+				return "", errors.New("duplicate VCS revision setting")
+			}
+			revision, hasRevision = setting.Value, true
+		case "vcs.modified":
+			if hasModified {
+				return "", errors.New("duplicate VCS modified setting")
+			}
+			modified, hasModified = setting.Value, true
+		}
+	}
+	if !hasRevision || !hasModified || modified != "false" {
+		return "", errors.New("clean VCS source settings unavailable")
+	}
+	switch revision {
+	case maintenanceLegacySourceCurrent, maintenanceLegacySource121:
+		return revision, nil
+	default:
+		return "", errors.New("source revision is not an inspected maintenance profile")
+	}
+}
 
 func maintenanceRelayUser() (int, int, error) {
 	u, err := user.Lookup("_sirsipantheon")
@@ -79,15 +114,12 @@ func (b nativeServiceBackend) maintenancePreview(ctx context.Context, legacy str
 		return plan, fmt.Errorf("legacy maintenance: recoverable signed old payload required: %w", err)
 	}
 	info, err := buildinfo.ReadFile(legacy)
-	if err != nil || info.Main.Path != "github.com/SirsiMaster/sirsi-pantheon" {
-		return plan, errors.New("legacy maintenance: old payload source identity unavailable")
+	if err != nil {
+		return plan, fmt.Errorf("legacy maintenance: read old payload source identity: %w", err)
 	}
-	settings := map[string]string{}
-	for _, setting := range info.Settings {
-		settings[setting.Key] = setting.Value
-	}
-	if settings["vcs.revision"] != maintenanceLegacySource || settings["vcs.modified"] != "false" {
-		return plan, errors.New("legacy maintenance: old source not in the inspected consume-before-forward profile; no source override")
+	legacySource, err := maintenanceLegacySourceProfile(info)
+	if err != nil {
+		return plan, fmt.Errorf("legacy maintenance: old payload source profile refused: %w", err)
 	}
 	loaded, err := maintenanceImage(ctx, legacy, p.PID)
 	if err != nil {
@@ -118,7 +150,7 @@ func (b nativeServiceBackend) maintenancePreview(ctx context.Context, legacy str
 	}
 	plan = MaintenancePlan{Profile: RootRelayMaintenanceProfile, Original: p, LegacyPayload: legacy,
 		LegacySHA256: legacyHash, LoadedCDHash: loaded, KernelStart: start, ReplacementCDHash: replacement,
-		LegacySource: maintenanceLegacySource, RootDevice: uint64(st.Dev), RootInode: uint64(st.Ino),
+		LegacySource: legacySource, RootDevice: uint64(st.Dev), RootInode: uint64(st.Ino),
 		WriterScope: "cooperative-publication-only; uncovered-writers-and-old-remote-outcomes-unknown"}
 	plan.SHA256 = maintenanceDigest(plan)
 	return plan, plan.validate()
