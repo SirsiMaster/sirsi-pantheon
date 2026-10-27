@@ -70,9 +70,9 @@ func TestMaintenanceRetirementRefusesInvalidPIDAndCancelledContext(t *testing.T)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	state, err := maintenanceRetirementWith(ctx, MaintenancePlan{}, func(int) (string, error) { t.Fatal("cancelled identity read"); return "", nil }, func(int) error { t.Fatal("cancelled existence probe"); return nil }, func(context.Context) (bool, error) { t.Fatal("cancelled job read"); return false, nil })
+	state, err := maintenanceRetirementWith(ctx, MaintenancePlan{}, func(int) (string, error) { t.Fatal("canceled identity read"); return "", nil }, func(int) error { t.Fatal("canceled existence probe"); return nil }, func(context.Context) (bool, error) { t.Fatal("canceled job read"); return false, nil })
 	if state != "outcome_unknown" || !errors.Is(err, context.Canceled) {
-		t.Fatalf("cancelled context: %s %v", state, err)
+		t.Fatalf("canceled context: %s %v", state, err)
 	}
 }
 
