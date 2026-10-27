@@ -6,7 +6,7 @@
 // incident was associated with scheduled-task sessions, but that does not prove
 // each run leaks a session or establish session-level causation. This
 // LaunchAgent is OS-managed (RunAtLoad + StartInterval), needs no Claude app, and spawns NO
-// claude session, so it is zero-leak by construction. Routed by claude-home;
+// Claude session. Routed by claude-home;
 // canon A32 (overseer) + the launchd-durability item. Decision: this is the thin
 // liveness+alert safety net ONLY — it never runs the router's heavy passes.
 //
@@ -988,11 +988,11 @@ func probeMemoryDeath() Finding {
 	home, homeErr := os.UserHomeDir()
 	sampleStartedAt := time.Now().UTC()
 	md := guard.SampleMemoryDeath()
-	sampleFinishedAt := time.Now().UTC()
 	sizing := ""
 	if md.Dying && homeErr == nil {
 		sizing = rightSizeAdvice(home, md.AvailableGB)
 	}
+	sampleFinishedAt := time.Now().UTC()
 	body := memoryDeathSnapshotBody(md, sizing, sampleStartedAt, sampleFinishedAt)
 	f := Finding{Check: "memory-death", Fixable: true,
 		Title: "liveness-watch: memory death spiral",
