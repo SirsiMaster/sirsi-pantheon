@@ -24,7 +24,7 @@ func testWakeConsumerReloadAfterJoin(t *testing.T, invalid bool) {
 	if err := os.WriteFile(script, []byte(body), 0700); err != nil {
 		t.Fatal(err)
 	}
-	cfg := AgentConfig{ID: "reload-agent", Type: "worker", Consumer: ConsumerConfig{Command: []string{script, consumerAgentPlaceholder}, Prompt: "old {{thread}}"}}
+	cfg := AgentConfig{ID: "reload-agent", Type: "worker", WorkerAnswers: true, Consumer: ConsumerConfig{Command: []string{script, consumerAgentPlaceholder}, Prompt: "old {{thread}}"}}
 	root := wakeTestRoot(t, cfg)
 	sendItem(t, root, cfg.ID, "real fixture request")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -65,10 +65,17 @@ func testWakeConsumerReloadAfterJoin(t *testing.T, invalid bool) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		found := false
 		for _, thr := range reg.Threads {
-			if thr.AgentID == cfg.ID && (thr.ConsumerCapable || thr.AnswerRole) {
-				t.Fatal("invalid replacement retained capability/answer role")
+			if thr.AgentID == cfg.ID {
+				found = true
+				if thr.ConsumerCapable || !thr.AnswerRole {
+					t.Fatalf("invalid replacement capability/answer grant = %v/%v, want false/true", thr.ConsumerCapable, thr.AnswerRole)
+				}
 			}
+		}
+		if !found {
+			t.Fatal("invalid replacement lost the controller thread")
 		}
 		return
 	}
@@ -103,15 +110,15 @@ func TestWakeConsumerReloadRejectsRemovedAndInvalid(t *testing.T) {
 		t.Fatal(err)
 	}
 	rc, role, err := loadWakeConsumer(root, cfg.ID, "actual-controller")
-	if err == nil || rc != nil || role {
-		t.Fatal("invalid config retained authority")
+	if err == nil || rc != nil || !role {
+		t.Fatal("missing consumer changed the lead's answer grant or retained capability")
 	}
 	if err := SaveRegistry(root, &Registry{Agents: map[string]AgentConfig{}}); err != nil {
 		t.Fatal(err)
 	}
 	rc, role, err = loadWakeConsumer(root, cfg.ID, "actual-controller")
 	if err == nil || rc != nil || role {
-		t.Fatal("removed lane retained authority")
+		t.Fatal("removed lane retained authority or answer grant")
 	}
 	if !strings.Contains(strings.Join(old.Argv, " "), "work actual-controller") {
 		t.Fatal("old child snapshot mutated")

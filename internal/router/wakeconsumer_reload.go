@@ -16,7 +16,9 @@ func loadWakeConsumer(root, agent, thread string) (*ResolvedConsumer, bool, erro
 	}
 	rc, why := ResolveConsumer(*cfg, root)
 	if rc == nil {
-		return nil, false, fmt.Errorf("%s", why)
+		// The lead's answer grant is registry policy independent of whether an
+		// executable consumer can currently be resolved. Capability stays off.
+		return nil, cfg.WorkerAnswers, fmt.Errorf("%s", why)
 	}
 	bindConsumerThread(rc, thread)
 	return rc, cfg.WorkerAnswers, nil
