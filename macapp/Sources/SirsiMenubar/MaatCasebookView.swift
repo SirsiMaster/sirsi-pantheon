@@ -3703,7 +3703,10 @@ struct MaatHistoryRefreshState {
                 return nil
             }
         }
-        if nextCursor == nil { restartRequired = false }
+        if failure == .cancelled {
+            failure = nil
+            error = nil
+        }
         continuationPaused = false
         let request = MaatHistoryRefreshRequest(scope: scope, query: nextQuery, cursor: nextCursor,
             queryID: nextCursor == nil ? nil : history?.queryID, snapshot: nextCursor == nil ? nil : history?.snapshot)
@@ -3806,7 +3809,9 @@ struct MaatHistoryRefreshState {
         self.failure = failure
         error = failure.message
         continuationPaused = false
-        restartRequired = failure == .invalidResponse || failure == .staleSnapshot
+        if failure == .invalidResponse || failure == .staleSnapshot {
+            restartRequired = true
+        }
     }
 
     private static func isExactStaleSnapshotFailure(_ read: SirsiEngine.JSONCommandRead) -> Bool {

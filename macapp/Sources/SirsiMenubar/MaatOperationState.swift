@@ -4,11 +4,22 @@ import Foundation
 private final class MaatHistoryBurstCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
+    private var finished = false
 
-    func cancel() {
+    @discardableResult
+    func cancel() -> Bool {
         lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { return false }
         cancelled = true
-        lock.unlock()
+        return true
+    }
+
+    func finish() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        finished = true
+        return cancelled
     }
 
     var isCancelled: Bool {
@@ -67,7 +78,7 @@ final class MaatHistoryRefreshStore: ObservableObject {
     func load(scope: String, query: String? = nil, cursor: String? = nil,
               run: @escaping @Sendable ([String]) async -> SirsiEngine.JSONCommandRead) async {
         guard !Task.isCancelled else { return }
-        cancelActiveBurst(failure: .cancelled)
+        cancelActiveBurst()
         guard let request = state.begin(scope: scope, query: query, cursor: cursor) else { return }
 
         let burstID = UUID()
@@ -96,8 +107,9 @@ final class MaatHistoryRefreshStore: ObservableObject {
         await withTaskCancellationHandler {
             await task.value
         } onCancel: { [weak self] in
-            cancellation.cancel()
-            Task { @MainActor in self?.cancelBurst(id: burstID) }
+            if cancellation.cancel() {
+                Task { @MainActor in self?.cancelBurst(id: burstID) }
+            }
         }
         finishBurst(id: burstID)
     }
@@ -166,8 +178,9 @@ final class MaatHistoryRefreshStore: ObservableObject {
 
     private func pauseBurst(id: UUID, failure: MaatHistoryRefreshFailure?) {
         guard activeBurstID == id else { return }
+        _ = activeCancellation?.cancel()
         state.pauseContinuation(failure: failure)
-        finishBurst(id: id, cancelRead: true)
+        releaseBurst(id: id, cancelRead: true)
     }
 
     private func deadlineReached(for id: UUID) {
@@ -178,14 +191,22 @@ final class MaatHistoryRefreshStore: ObservableObject {
         pauseBurst(id: id, failure: .cancelled)
     }
 
-    private func cancelActiveBurst(failure: MaatHistoryRefreshFailure?) {
+    private func cancelActiveBurst() {
         guard let activeBurstID else { return }
-        pauseBurst(id: activeBurstID, failure: failure)
+        pauseBurst(id: activeBurstID, failure: nil)
     }
 
     private func finishBurst(id: UUID, cancelRead: Bool = false) {
         guard activeBurstID == id else { return }
-        activeCancellation?.cancel()
+        if activeCancellation?.finish() == true {
+            state.pauseContinuation(failure: .cancelled)
+        }
+        releaseBurst(id: id, cancelRead: cancelRead)
+    }
+
+    private func releaseBurst(id: UUID, cancelRead: Bool) {
+        guard activeBurstID == id else { return }
+        _ = activeCancellation?.finish()
         activeBurstID = nil
         activeCancellation = nil
         deadlineTask?.cancel()
