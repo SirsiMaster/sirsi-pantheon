@@ -23,7 +23,9 @@ import (
 // bounded legacy maintenance profile. A version label never selects a profile.
 const (
 	maintenanceLegacySourceCurrent = "ba2a07bb464bbfd68808254a7d489769f122149b"
+	maintenanceLegacySource129     = "0fd8463011ee2ebae12494895669b0e7b20b9ddf"
 	maintenanceLegacySource121     = "22944b2458f377a9f3e5e10c63c3442cb3ea83c3"
+	maintenanceLegacySource137     = "cb59d56f849235eb80f5e4b10514fc89467fb8af"
 )
 
 func maintenanceLegacySourceProfile(info *debug.BuildInfo) (string, error) {
@@ -50,7 +52,7 @@ func maintenanceLegacySourceProfile(info *debug.BuildInfo) (string, error) {
 		return "", errors.New("clean VCS source settings unavailable")
 	}
 	switch revision {
-	case maintenanceLegacySourceCurrent, maintenanceLegacySource121:
+	case maintenanceLegacySourceCurrent, maintenanceLegacySource121, maintenanceLegacySource129, maintenanceLegacySource137:
 		return revision, nil
 	default:
 		return "", errors.New("source revision is not an inspected maintenance profile")
