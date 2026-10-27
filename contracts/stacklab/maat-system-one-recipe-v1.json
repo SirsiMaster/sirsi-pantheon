@@ -23,6 +23,8 @@
       "source": [
         "internal/maat/history_query.go",
         "internal/maat/history_query_batch.go",
+        "internal/maat/history_prefix_unix.go",
+        "internal/maat/history_prefix_windows.go",
         "internal/mcp/maat_reads.go",
         "internal/dashboard/maat_reads.go",
         "internal/tui/command.go",
@@ -30,6 +32,7 @@
       ],
       "tests": [
         "internal/maat/history_query_batch_test.go",
+        "internal/maat/history_prefix_test.go",
         "internal/mcp/maat_history_test.go",
         "internal/dashboard/maat_history_test.go",
         "internal/tui/maat_history_test.go",
@@ -41,7 +44,8 @@
       ],
       "outputs": [
         "bounded reference batches sharing one canonical relationship pass per batch",
-        "unchanged per-call work budgets and no provisional cases; cursorv4 rejects stale schema",
+        "unchanged cumulative parser budgets and no provisional cases; cursorv5 binds a frozen prefix and rejects stale schema",
+        "separate verification_bytes reports complete prefix passes without charging scanned_bytes",
         "visible real TUI m operations return plus neutral bidirectional registry hint"
       ],
       "writes": [],
@@ -50,7 +54,11 @@
         "retain partial batches across request boundaries instead of reverting to per-candidate passes",
         "charge link scans and candidate re-reads; qualify before top-K and materialize selected links from same snapshot",
         "retain original80-call MCP tests byte-for-byte and fixed charged-work causal regression",
-        "Astra architecture and Main runtime pending; amortized batching is not a general linear/performance claim"
+        "verify each fixed prefix through the same forward stream used by phase parsing/capture; publish only after the digest and retained identities verify",
+        "allow appends beyond the anchored length; reject prefix changes, truncation, replacement and authority-metadata changes",
+        "share parser byte/row/work budgets and caller context across passes; default parser work is 300ms, overall verification is at most two seconds or an earlier caller deadline",
+        "report actual verification bytes and disclose O(K × H) for K complete passes over H anchored bytes; add no arbitrary size cap, cache, database, lock or write",
+        "Astra architecture accepted; Main runtime qualification pending; this is not a general linear/performance claim"
       ]
     },
     {

@@ -56,10 +56,10 @@ func TestQueryHistoryResumesBinaryRepairStateBeforeWindow(t *testing.T) {
 			cancel()
 			query.Context = ctx
 			canceled, err := journal.QueryHistory(query)
-			if err != nil || canceled.Coverage != HistoryCoveragePartial || len(canceled.Candidates) != 0 || canceled.Cursor == "" {
-				t.Fatalf("canceled history exposed provisional results: %+v / %v", canceled, err)
+			if !errors.Is(err, context.Canceled) || canceled.Cursor != "" || len(canceled.Candidates) != 0 {
+				t.Fatalf("canceled history returned progress: %+v / %v", canceled, err)
 			}
-			query.Context, query.Cursor = context.Background(), canceled.Cursor
+			query.Context, query.Cursor = context.Background(), ""
 			for step := 0; step < 512; step++ {
 				page, err := journal.QueryHistory(query)
 				if err != nil {
@@ -160,9 +160,17 @@ func TestHistoryRepairCursorVersionAndReadOnlyIntegrity(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	query.Context = ctx
+	query.ByteBudget, query.RowBudget = 1, 1
 	partial, err := journal.QueryHistory(query)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || partial.Cursor == "" {
+		t.Fatalf("missing bounded continuation fixture: %+v / %v", partial, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	query.Context, query.Cursor = ctx, partial.Cursor
+	paused, err := journal.QueryHistory(query)
+	if !errors.Is(err, context.Canceled) || paused.Cursor != "" {
+		t.Fatalf("canceled continuation returned progress: %+v / %v", paused, err)
 	}
 	state, err := decodeHistoryCursor(partial.Cursor)
 	if err != nil || state == nil {

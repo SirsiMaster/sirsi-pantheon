@@ -176,7 +176,7 @@ func TestQueryHistoryBudgetContinuationFindsLateMatchWithoutProvisionalEmpty(t *
 	t.Fatal("bounded continuation did not complete")
 }
 
-func TestQueryHistoryCancellationDuringFinalMaterializationReturnsNoProvisionalCases(t *testing.T) {
+func TestQueryHistoryCancellationDuringVerifiedPassReturnsNoCursorOrProvisionalCases(t *testing.T) {
 	journal := &FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
 	appendHistoryFixtures(t, journal,
 		historyFixtureScreen(t, "2026-10-03T00:00:00Z", "screen:materialize-new"),
@@ -195,18 +195,18 @@ func TestQueryHistoryCancellationDuringFinalMaterializationReturnsNoProvisionalC
 		Scope: HistoryScopeSystemOne, QueryKey: "materialize-cancel", Limit: 2, Context: ctx,
 		Match: match,
 	})
+	if !errors.Is(err, context.Canceled) || first.Cursor != "" || len(first.Candidates) != 0 {
+		t.Fatalf("canceled pass returned progress or provisional cases: %+v / %v", first, err)
+	}
+	complete, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "materialize-cancel", Limit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Coverage != HistoryCoveragePartial || len(first.Candidates) != 0 || first.Cursor == "" || first.ScannedRecords < 3 {
-		t.Fatalf("canceled materialization exposed provisional cases or lost its cursor: %+v", first)
-	}
-	complete, err := journal.QueryHistory(HistoryQuery{
-		Scope: HistoryScopeSystemOne, QueryKey: "materialize-cancel", Limit: 2, Cursor: first.Cursor,
-		Match: match,
-	})
-	if err != nil {
-		t.Fatal(err)
+	for calls := 0; complete.Coverage != HistoryCoverageComplete && calls < 10; calls++ {
+		complete, err = journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "materialize-cancel", Limit: 2, Cursor: complete.Cursor})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	if complete.Coverage != HistoryCoverageComplete || len(complete.Candidates) != 2 {
 		t.Fatalf("resumed materialization did not complete: %+v", complete)
@@ -263,13 +263,8 @@ func TestQueryHistoryDefersResidualMaterializationAndRetainsSelectedPage(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := file.Stat()
-	if err != nil {
-		_ = file.Close()
-		t.Fatal(err)
-	}
 	const limit, rowsPerRead = 3, 4
-	state := &historyCursor{Version: historyCursorVersion, Snapshot: historySnapshotID(journal.Path, info), QueryKey: "residual-budget", Phase: "scan", Limit: limit}
+	state := historyPrefixCursorFixture(t, journal.Path, "residual-budget", limit)
 	done, _, _, scanErr := scanHistoryChunk(context.Background(), time.Now().Add(time.Second), file, state,
 		defaultHistoryByteBudget, 100, HistoryScopeSystemOne, "", nil, nil, nil)
 	closeErr := file.Close()
@@ -416,13 +411,10 @@ func TestQueryHistoryCanceledScanReturnsNoProvisionalResultsAndCanResume(t *test
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	partial, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "cancel", Limit: 5, Context: ctx})
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, context.Canceled) || partial.Cursor != "" || len(partial.Candidates) != 0 {
+		t.Fatalf("canceled scan returned progress: %+v / %v", partial, err)
 	}
-	if partial.Coverage != HistoryCoveragePartial || len(partial.Candidates) != 0 || partial.Cursor == "" {
-		t.Fatalf("canceled scan exposed a result or lost its continuation: %+v", partial)
-	}
-	complete, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "cancel", Limit: 5, Cursor: partial.Cursor, Context: context.Background()})
+	complete, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "cancel", Limit: 5, Context: context.Background()})
 	if err != nil {
 		t.Fatal(err)
 	}
