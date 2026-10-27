@@ -94,5 +94,7 @@ implicitly DONE or waived by a diagram.
 | PT-REQ-11 Canon certification | All84 groups, especially P52,P83,P84 | C01–03,C11–13: semantic review, exact origin/pin, reading homes, billing crosswalk |
 
 Pnn means PT-Pnn. Cnn means PT-Cnn in [CERTIFICATION.md](CERTIFICATION.md).
-The101-package/target source snapshot remains explicitly historical until it is
-regenerated against the final composed source, rather than silently repointed.
+The101-package/target inventory was regenerated from committed composed candidate
+`6da4692c77f528caacc281375f37409ff8266fe4`:858 source,849 test and222 supporting files.
+Final-head digest equality and final-source qualification remain explicit; retained
+component evidence above keeps its original source/environment scope.

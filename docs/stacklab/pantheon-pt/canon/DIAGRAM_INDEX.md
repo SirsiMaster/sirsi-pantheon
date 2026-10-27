@@ -155,3 +155,29 @@ status or certify any criterion.
   `e26e324be107ab541ec8d4d1400392e1ee55fc26` on 2026-10-27. Runtime freshness
   was not measured. Owner: Pantheon PT; refresh this index with any catalog,
   source, requirement, story, release or runtime process change.
+
+## Corrective141 composition crosswalk
+
+The accepted finite census is retained at f676/normal merge24b4e50b. The fresh
+module inventory binds composed source6da4692c; it does not silently repin older
+process review evidence. Joined-worker behavior remains in PT-P55. Legacy
+129/137 profiles extend the existing selected maintenance flow, preserving
+unknown outcomes. The corrected consumer bootstrap separates coordination from
+admitted payload work in PT-P61/PT-P65. Timestamped memory/Doctor alerts in
+PT-P69/PT-P70 are observational and preserve their existing triggers and fit arithmetic.
+The web fabric metric-selection correction consumes the Ra-owned
+[`FABRIC_METRIC_DRILLDOWNS_V1`](../../ra/canon/FABRIC_METRIC_DRILLDOWNS_V1.md)
+contract: exact metric predicates, complete task selections and retained filter
+recovery; see PT-P64/PT-P82. Native Ra PT-P18 remains a separately qualified consumer. The PT-P73 Neith data view distinguishes
+build-log observations from actual vet/build/format/Thoth-memory checks.
+These are bounded corrections within existing process groups; no new process
+authority or runtime certificate is inferred. Final composed review and actual
+installed proof remain in CERTIFICATION.
+
+Pulse in PT-P41 now counts literal canonical roster declarations from the
+selected repository, including Isis without requiring a fictitious `isis.go`.
+Its regular-file read is bounded and nonblocking on Unix; invalid or unsupported
+input yields the existing zero counter without a separate availability field.
+This is source metadata, not command registration or runtime readiness. The
+`modules` Pulse field retains its immediate-internal-directory meaning; the
+full package/target denominator is MODULE_INVENTORY.

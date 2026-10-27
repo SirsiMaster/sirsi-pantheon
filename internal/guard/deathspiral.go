@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 )
@@ -44,20 +45,26 @@ func isDeathSpiral(swapPct, load1, availGB float64, cores int) bool {
 //   - Warn: swap ≥ 80%, OR load ≥ 1.5×cores, OR a single parent with ≥ 100 children.
 //   - OK otherwise, with the measured headroom shown as evidence.
 func checkMemoryDeathSpiral(p platform.Platform, report *DoctorReport) {
+	sampleStartedAt := time.Now().UTC()
 	load1, loadOK := readLoad1(p)
 	cores := readCores(p)
 	swapPct, swapUsedGB, swapOK := readSwapPct(p)
 	availGB, compressedGB := readVMStatGB(p)
 	fanCount, fanParent := maxProcessFanOut(p)
+	sampleFinishedAt := time.Now().UTC()
 
 	if !loadOK && !swapOK {
 		return // no signals readable on this platform — emit nothing, never guess
 	}
 
+	sampleWindow := fmt.Sprintf("Sample window UTC: %s through %s; values may not describe current state when the finding is read.",
+		sampleStartedAt.Format(time.RFC3339Nano), sampleFinishedAt.Format(time.RFC3339Nano))
+	resolutionBoundary := "Cause and process ownership are unknown. Refresh readings, confirm the exact workload owner/custody and current demand, then use its supported resolution at its own idle boundary."
+
 	f := DiagnosticFinding{
 		Check: "Memory Death Spiral",
-		Detail: fmt.Sprintf("load1 %.1f / %d cores | swap %.0f%% (%.1f GB) | available %.2f GB | compressor %.1f GB | max fan-out %d (%s)",
-			load1, cores, swapPct, swapUsedGB, availGB, compressedGB, fanCount, fanParent),
+		Detail: fmt.Sprintf("%s load1 %.1f / %d cores (sysctl vm.loadavg) | swap %.0f%% (%.2f GiB used, sysctl vm.swapusage) | available %.2f GiB (vm_stat free plus inactive) | compressor %.2f GiB (vm_stat) | observed child-process count %d from ps under %s | MLX model size not sampled",
+			sampleWindow, load1, cores, swapPct, swapUsedGB, availGB, compressedGB, fanCount, fanParent),
 	}
 
 	spiral := isDeathSpiral(swapPct, load1, availGB, cores)
@@ -66,23 +73,24 @@ func checkMemoryDeathSpiral(p platform.Platform, report *DoctorReport) {
 	switch {
 	case spiral:
 		f.Severity = SeverityCritical
-		f.Message = fmt.Sprintf("Memory death spiral — swap %.0f%% exhausted, load %.1f on %d cores, %.2f GB available. The machine is paging itself to death.", swapPct, load1, cores, availGB)
-		if leak {
-			f.Message += fmt.Sprintf(" Likely driver: %s has %d child processes — restart it to reclaim them.", fanParent, fanCount)
-		}
+		f.Message = fmt.Sprintf("%s Memory death spiral threshold met in this sample: swap %.0f%% in use, one-minute load %.1f on %d cores, and %.2f GiB available. %s",
+			sampleWindow, swapPct, load1, cores, availGB, resolutionBoundary)
 	case swapPct >= 80 || load1 >= 1.5*float64(cores) || leak:
 		f.Severity = SeverityWarn
 		switch {
 		case leak:
-			f.Message = fmt.Sprintf("Process leak: %s has %d child processes — restart it to reclaim memory before this becomes a spiral.", fanParent, fanCount)
+			f.Message = fmt.Sprintf("%s Observed process fan-out: parent %s has %d direct child processes. %s",
+				sampleWindow, fanParent, fanCount, resolutionBoundary)
 		case swapPct >= 80:
-			f.Message = fmt.Sprintf("Swap %.0f%% exhausted (%.1f GB) — nearing the wall; close or restart heavy apps.", swapPct, swapUsedGB)
+			f.Message = fmt.Sprintf("%s Swap %.0f%% in use (%.2f GiB). %s",
+				sampleWindow, swapPct, swapUsedGB, resolutionBoundary)
 		default:
-			f.Message = fmt.Sprintf("Load %.1f on %d cores — the machine is saturated.", load1, cores)
+			f.Message = fmt.Sprintf("%s One-minute load %.1f on %d cores in this sample. %s",
+				sampleWindow, load1, cores, resolutionBoundary)
 		}
 	default:
 		f.Severity = SeverityOK
-		f.Message = fmt.Sprintf("Memory headroom normal — swap %.0f%%, load %.1f/%d cores", swapPct, load1, cores)
+		f.Message = fmt.Sprintf("%s Memory headroom normal in this sample — swap %.0f%%, load %.1f/%d cores", sampleWindow, swapPct, load1, cores)
 	}
 	report.Findings = append(report.Findings, f)
 }

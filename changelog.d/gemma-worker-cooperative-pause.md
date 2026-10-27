@@ -1,1 +1,0 @@
-Gemma worker preserves the typed lane-claim barrier and exits cleanly between joined work turns, rather than continuing its idle poll loop. Canonical thread-close failures now propagate. This source step does not add a native lifecycle controller or qualify a live handoff.

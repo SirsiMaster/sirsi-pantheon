@@ -1,1 +1,0 @@
-Reconcile Pantheon Stack Lab canon with current native-product requirements, all-deity/module source inventory, process diagrams, replacement boundaries and criterion-to-proof certification. Preserve verified release evidence separately from final composed and installed acceptance; use established signing and mark changed reading copies stale until refreshed.

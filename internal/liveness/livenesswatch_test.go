@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routercfg"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
@@ -112,6 +113,55 @@ func TestProbeSessionLeak_Threshold(t *testing.T) {
 	}
 	if !f.Fixable || f.Title == "" {
 		t.Errorf("alert must be a routable fixable finding, got %+v", f)
+	}
+	for _, want := range []string{"session candidate sample window utc:", "candidate sessions", "does not prove a leak or cause", "exact workload owner/custody and current demand", "own idle boundary"} {
+		if !strings.Contains(strings.ToLower(f.Body), want) {
+			t.Errorf("candidate alert body must contain %q, got %q", want, f.Body)
+		}
+	}
+	window := strings.SplitN(f.Body, "Session candidate sample window UTC: ", 2)
+	if len(window) != 2 {
+		t.Fatalf("candidate alert lacks its sample window: %q", f.Body)
+	}
+	bounds := strings.SplitN(strings.SplitN(window[1], ". ", 2)[0], " through ", 2)
+	if len(bounds) != 2 {
+		t.Fatalf("candidate sample window lacks both UTC bounds: %q", f.Body)
+	}
+	start, startErr := time.Parse(time.RFC3339Nano, bounds[0])
+	finish, finishErr := time.Parse(time.RFC3339Nano, bounds[1])
+	if startErr != nil || finishErr != nil || finish.Before(start) {
+		t.Fatalf("candidate sample window is not a valid ordered UTC bracket: %q (start err %v, finish err %v)", f.Body, startErr, finishErr)
+	}
+	for _, unwanted := range []string{"reap-sessions", "--apply", "drive the swap", "restart"} {
+		if strings.Contains(f.Body, unwanted) {
+			t.Errorf("candidate alert must not assign cause or direct action with %q: %q", unwanted, f.Body)
+		}
+	}
+}
+
+func TestMemoryDeathSnapshotBodyIsHistoricalAndRequiresFreshCustodyCheck(t *testing.T) {
+	md := guard.MemoryDeath{
+		SwapPct: 92, SwapUsedGB: 12.5, AvailableGB: 0.25,
+		Load1: 16, Cores: 8, Readable: true, Dying: true,
+	}
+	started := time.Date(2026, time.October, 27, 12, 30, 0, 0, time.UTC)
+	finished := started.Add(250 * time.Millisecond)
+	body := memoryDeathSnapshotBody(md, "Sizing snapshot: model-ID estimate is 14.00 GiB of weights only; estimated fit threshold = 1.4 × 14.00 GiB weights + 4 GiB OS headroom = 23.60 GiB.", started, finished)
+	for _, want := range []string{
+		"2026-10-27T12:30:00Z through 2026-10-27T12:30:00.25Z", "not current truth when the alert is read", "12.50 GiB used",
+		"0.25 GiB (free plus inactive)", "one-minute load 16.0 across 8 cores",
+		"swap at least 90%", "below 0.50 GiB",
+		"Cause and process ownership are unknown", "exact workload owner/custody and current demand", "own idle boundary",
+		"model-ID estimate", "1.4 × 14.00 GiB weights + 4 GiB",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("memory snapshot body missing %q: %q", want, body)
+		}
+	}
+	for _, unwanted := range []string{"Claude.app", "reap-sessions", "sirsi gemma serve --stop", "restart", "close/restart", "kill -", "purge --"} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("memory snapshot body must not blame or issue a command containing %q: %q", unwanted, body)
+		}
 	}
 }
 
@@ -650,6 +700,17 @@ func TestRightSizeAdvice_HealthEndpointUsed(t *testing.T) {
 	if !strings.Contains(got, "37") && !strings.Contains(got, "~37") {
 		t.Errorf("advice does not reflect /health size (~37 GB): %q", got)
 	}
+	for _, want := range []string{"Configured model ID gemma-4-12B-it-8bit", "measured MLX /health mlx_active_bytes", "37.00 GiB active allocation", "includes KV cache and transient pages", "37.00 GiB + 4 GiB OS headroom = 41.00 GiB", "available memory is 9.68 GiB", "exact workload owner/custody and current demand"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("measured sizing context missing %q: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "1.4 ×") || strings.Contains(got, "sirsi gemma serve") {
+		t.Errorf("measured path must retain its MLX+4 GiB formula and give no command: %q", got)
+	}
+	if strings.Contains(got, "Current model ") {
+		t.Errorf("configured model ID must not imply running-model truth: %q", got)
+	}
 }
 
 // TestRightSizeAdvice_HealthUnavailableFallsBackToName is the regression guard
@@ -693,7 +754,7 @@ func TestRightSizeAdvice_27bReturnsSmaller(t *testing.T) {
 	}
 }
 
-func TestRightSizeAdvice_NothingFits_StopOnly(t *testing.T) {
+func TestRightSizeAdvice_NothingFits_NoDirectCommandWithoutFreshCustody(t *testing.T) {
 	// 9b model: 1.4×5+4=11 > 0.5; 2b tier: 1.4×1.5+4=6.1 > 0.5 — nothing fits.
 	home := homeWithModel(t, "mlx-community/gemma-2-9b-it-4bit")
 	t.Setenv("GEMMA_MODEL", "")
@@ -703,16 +764,20 @@ func TestRightSizeAdvice_NothingFits_StopOnly(t *testing.T) {
 	if got == "" {
 		t.Fatal("expected non-empty advice when nothing fits")
 	}
-	if strings.Contains(got, "echo '") {
-		t.Errorf("expected stop-only advice (no model switch), got: %q", got)
+	for _, want := range []string{"model-ID estimate is 5.00 GiB of weights only", "1.4 × 5.00 GiB weights + 4 GiB OS headroom = 11.00 GiB", "available memory is 0.50 GiB", "not current truth", "exact workload owner/custody and current demand"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("estimated sizing context missing %q: %q", want, got)
+		}
 	}
-	if !strings.Contains(got, "serve --stop") {
-		t.Errorf("expected stop command in fallback advice, got: %q", got)
+	for _, unwanted := range []string{"echo '", "sirsi gemma serve", "--stop"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("sizing context must not issue a command containing %q: %q", unwanted, got)
+		}
 	}
 }
 
 // TestRightSizeAdvice_Gemma4_NoGenDowngrade verifies that a gemma-4 node does
-// not receive an echo-to-conf command pointing at a gemma-2 tier.
+// not receive a sizing candidate from a different model generation.
 func TestRightSizeAdvice_Gemma4_NoGenDowngrade(t *testing.T) {
 	home := homeWithModel(t, "mlx-community/gemma-4-12B-it-8bit")
 	t.Setenv("GEMMA_MODEL", "")
@@ -728,8 +793,11 @@ func TestRightSizeAdvice_Gemma4_NoGenDowngrade(t *testing.T) {
 	if strings.Contains(got, "gemma-2") {
 		t.Errorf("advice must not offer a gemma-2 tier to a gemma-4 node: %q", got)
 	}
-	if !strings.Contains(got, "serve --stop") {
-		t.Errorf("expected stop command (no same-gen tier fits), got: %q", got)
+	if !strings.Contains(got, "No same-generation tier passed the existing fit check") {
+		t.Errorf("expected no-fit sizing context, got: %q", got)
+	}
+	if strings.Contains(got, "sirsi gemma serve") {
+		t.Errorf("no-fit alert must not issue a service command: %q", got)
 	}
 }
 
@@ -769,8 +837,16 @@ func TestRightSizeAdvice_EstimatedPath_FalseFitsAt18GB(t *testing.T) {
 
 	got := rightSizeAdvice(home, 18.5)
 	if got == "" {
-		t.Fatal("expected advice at 18.5 GB available: estimated threshold 1.4×14+4=23.6 > 18.5; " +
+		t.Fatal("expected advice at 18.5 GiB available: estimated threshold 1.4×14+4=23.6 > 18.5; " +
 			"gb+4=18 would silently pass (false-fits)")
+	}
+	for _, want := range []string{"model-ID estimate is 14.00 GiB of weights only", "estimated fit threshold = 1.4 × 14.00 GiB weights + 4 GiB OS headroom = 23.60 GiB", "available memory is 18.50 GiB", "not current truth", "exact workload owner/custody and current demand"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("estimated sizing context missing %q: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "sirsi gemma serve") || strings.Contains(got, "reap-sessions") {
+		t.Errorf("estimated sizing context must not direct process action: %q", got)
 	}
 }
 
@@ -793,6 +869,13 @@ func TestRightSizeAdvice_MeasuredPathNoDoubling(t *testing.T) {
 	// 20 GB available: 14+4=18 ≤ 20 → model fits, no advice.
 	if got := rightSizeAdvice(home, 20.0); got != "" {
 		t.Errorf("measured path must use modelGB+4 (18 ≤ 20): got advice %q", got)
+	}
+	got := rightSizeAdvice(home, 17.5)
+	if !strings.Contains(got, "measured fit threshold = 14.00 GiB + 4 GiB OS headroom = 18.00 GiB") {
+		t.Errorf("measured path must describe the unchanged MLX+4 GiB threshold, got %q", got)
+	}
+	if strings.Contains(got, "1.4 ×") {
+		t.Errorf("measured path must not apply the estimated-path KV multiplier, got %q", got)
 	}
 }
 
