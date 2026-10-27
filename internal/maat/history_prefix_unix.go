@@ -642,6 +642,12 @@ func historyPrefixStat(stat *unix.Stat_t) historyPrefixIdentity {
 	return historyPrefixIdentity{dev: uint64(stat.Dev), ino: stat.Ino, uid: stat.Uid, gid: stat.Gid, mode: uint32(stat.Mode), nlink: uint64(stat.Nlink)}
 }
 
+func historyPrefixDirectoryStat(stat *unix.Stat_t) historyPrefixIdentity {
+	identity := historyPrefixStat(stat)
+	identity.nlink = 0
+	return identity
+}
+
 func openHistoryPrefix(path string) (*historyPrefixFile, int64, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
@@ -682,7 +688,7 @@ func openHistoryPrefix(path string) (*historyPrefixFile, int64, error) {
 	}
 	file := os.NewFile(uintptr(fd), base)
 	closeParent = false
-	return &historyPrefixFile{file: file, parentFD: parentFD, original: absolute, parentPath: resolvedParent, base: base, parent: historyPrefixStat(&parentStat), leaf: leaf}, leafStat.Size, nil
+	return &historyPrefixFile{file: file, parentFD: parentFD, original: absolute, parentPath: resolvedParent, base: base, parent: historyPrefixDirectoryStat(&parentStat), leaf: leaf}, leafStat.Size, nil
 }
 
 func (f *historyPrefixFile) close() {
@@ -703,7 +709,7 @@ func (f *historyPrefixFile) verify(size int64) error {
 		return ErrHistorySnapshotChanged
 	}
 	var parentStat, leafStat, namedStat unix.Stat_t
-	if err := unix.Fstat(f.parentFD, &parentStat); err != nil || historyPrefixStat(&parentStat) != f.parent {
+	if err := unix.Fstat(f.parentFD, &parentStat); err != nil || historyPrefixDirectoryStat(&parentStat) != f.parent {
 		return ErrHistorySnapshotChanged
 	}
 	if err := unix.Fstat(int(f.file.Fd()), &leafStat); err != nil {
@@ -726,7 +732,7 @@ func (f *historyPrefixFile) verify(size int64) error {
 	}
 	defer unix.Close(currentParentFD)
 	var currentParentStat unix.Stat_t
-	if err := unix.Fstat(currentParentFD, &currentParentStat); err != nil || historyPrefixStat(&currentParentStat) != f.parent {
+	if err := unix.Fstat(currentParentFD, &currentParentStat); err != nil || historyPrefixDirectoryStat(&currentParentStat) != f.parent {
 		return ErrHistorySnapshotChanged
 	}
 	return nil

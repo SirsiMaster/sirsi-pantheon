@@ -1,0 +1,1 @@
+Treat a journal's retained parent directory identity independently of its link count, so creating the canonical mutation lock or another sibling does not invalidate a frozen history prefix. Keep the journal leaf's singly-linked regular-file requirement and all parent identity checks.

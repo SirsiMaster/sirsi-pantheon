@@ -98,6 +98,67 @@ func TestHistoryFrozenPrefixAllowsBetweenPhaseAppendsAndFreshQuerySeesThem(t *te
 	}
 }
 
+func TestHistoryFrozenPrefixAllowsFirstCanonicalAppendLockAndFreshQuerySeesTail(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	journal := &FileDecisionJournal{Path: filepath.Join(root, "decisions.jsonl")}
+	first := historyFixtureScreen(t, "2026-10-27T12:00:00Z", "lock:first")
+	appendPrefixFixture(t, journal.Path, first) // Seed without creating the canonical mutation lock.
+	lockPath := filepath.Join(root, ".decisions.jsonl.lock")
+	if _, err := os.Lstat(lockPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("mutation lock already exists before canonical append: %v", err)
+	}
+	page, err := journal.QueryHistory(HistoryQuery{QueryKey: "frozen-before-first-lock", Limit: 5, RowBudget: 1,
+		Match: func(decision Decision) bool { return decision.Evidence == first.Evidence },
+	})
+	if err != nil || page.Coverage != HistoryCoveragePartial || page.Cursor == "" {
+		t.Fatalf("initial frozen page=%+v err=%v", page, err)
+	}
+	tail := historyFixtureScreen(t, "2026-10-27T13:00:00Z", "lock:tail")
+	if err := journal.Append(tail); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(lockPath); err != nil {
+		t.Fatalf("canonical append did not create its mutation lock: %v", err)
+	}
+	continued := drainPrefixQuery(t, journal, HistoryQuery{QueryKey: "frozen-before-first-lock", Limit: 5, RowBudget: 1,
+		Cursor: page.Cursor, Match: func(decision Decision) bool { return decision.Evidence == first.Evidence },
+	}, false)
+	if len(continued.Candidates) != 1 || continued.Candidates[0].Decision.Evidence != first.Evidence {
+		t.Fatalf("frozen query changed across first lock creation: %+v", continued.Candidates)
+	}
+	fresh := drainPrefixQuery(t, journal, HistoryQuery{QueryKey: "fresh-after-first-lock", Limit: 5, RowBudget: 1,
+		Match: func(decision Decision) bool { return decision.Evidence == tail.Evidence },
+	}, false)
+	if len(fresh.Candidates) != 1 || fresh.Candidates[0].Decision.Evidence != tail.Evidence {
+		t.Fatalf("fresh query did not observe canonical append tail: %+v", fresh.Candidates)
+	}
+}
+
+func TestHistoryPrefixRetainedDirectoryIdentityAllowsSiblingAddition(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "decisions.jsonl")
+	if err := os.WriteFile(path, []byte("prefix\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	file, size, err := openHistoryPrefix(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.close()
+	if err := os.WriteFile(filepath.Join(root, "unrelated-sibling"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.verify(size); err != nil {
+		t.Fatalf("unrelated parent entry changed retained directory identity: %v", err)
+	}
+}
+
 type historyTruncateRestoreReader struct {
 	file      *os.File
 	original  []byte
