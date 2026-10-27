@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -373,3 +374,19 @@ func TestGemmaWorkerSingletonRejectsDuplicate(t *testing.T) {
 }
 
 func (s *gemmaWorkerStoreFake) Block(_, _, reason string) error { s.blocked = reason; return nil }
+
+func TestGemmaWorkerMaintenancePauseIsIdle(t *testing.T) {
+	for _, exact := range []bool{false, true} {
+		s, r := claimedGemmaItem()
+		s.claimErr = fmt.Errorf("remote: %w", routerstore.ErrLanePaused)
+		generated := false
+		w := testGemmaWorker(s, r, func(context.Context, string) (string, error) { generated = true; return "", nil })
+		if exact {
+			w.itemID = "selected"
+		}
+		worked, err := w.runOnce(context.Background())
+		if err != nil || worked || generated || s.started || s.renews != 0 || s.failed != "" || r.calls != 0 {
+			t.Fatal("maintenance pause caused work or failure")
+		}
+	}
+}

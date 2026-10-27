@@ -95,6 +95,9 @@ func (s *SQLiteStore) ListAgents() ([]Agent, error) {
 // SetState stores an arbitrary key/value pair, projecting the old state.json
 // scalar keys (last_*_read etc.) into the durable index.
 func (s *SQLiteStore) SetState(key, value string) error {
+	if key == laneClaimBarrierKey {
+		return errors.New("lane barrier: typed API required")
+	}
 	if strings.HasPrefix(key, "task-resume:") {
 		return errors.New("task resume: generic state writes cannot replace provenance")
 	}
@@ -141,6 +144,9 @@ func (s *SQLiteStore) GetState(key string) (string, bool, error) {
 // CompareAndSwapState is the compatible exact-snapshot API. The scheduler's
 // native operation API additionally keeps large ledger bytes at the service.
 func (s *SQLiteStore) CompareAndSwapState(key, expected string, exists bool, value string) (bool, error) {
+	if key == laneClaimBarrierKey {
+		return false, errors.New("lane barrier: typed API required")
+	}
 	if strings.HasPrefix(key, "task-resume:") {
 		return false, errors.New("task resume: generic CAS cannot replace provenance")
 	}

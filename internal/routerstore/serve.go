@@ -499,6 +499,13 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if name == "LaneClaimBarrier" {
+		if sess.Agent != "sirsi-software-admin" || sess.ThreadID == "" || s.ruleOfRa(sess, name) != nil {
+			writeErr(w, http.StatusForbidden, "", "lane barrier: registered SSA required")
+			return
+		}
+		ctx = context.WithValue(ctx, laneClaimBarrierActorKey{}, laneClaimBarrierActor{sess.Agent, sess.Host, sess.ThreadID})
+	}
 	if name == "RelocateTaskEvidence" || name == "ResumeTaskClaim" {
 		// Required even when the general audience gate is log/off. Owner comes
 		// only from this authenticated session, never an operator override.

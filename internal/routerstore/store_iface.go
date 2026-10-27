@@ -16,6 +16,7 @@ import (
 // backend and an HTTP client behind the same interface. No production code
 // may depend on the concrete type.
 type Store interface {
+	LaneClaimBarrier(context.Context, LaneClaimBarrierRequest) (LaneClaimBarrierResult, error)
 	MaatDelegation(action string, req schedule.Delegation) (schedule.Delegation, error)
 	MaatGetDelegation(pod string) (*schedule.Delegation, error)
 	MaatAuthorityReserve(machine string, req schedule.Reservation) (schedule.ReserveResult, error)

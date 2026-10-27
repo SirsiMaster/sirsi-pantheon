@@ -208,6 +208,10 @@ func (s *SQLiteStore) claimItemSessionOnce(agent, id string, ttl time.Duration, 
 		return nil, fmt.Errorf("routerstore: ClaimItem: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err = s.laneClaimGateTx(tx, agent); err != nil {
+		return nil, err
+	}
+
 	if err = s.reclaimExpiredTx(tx, now); err != nil {
 		return nil, err
 	}
@@ -277,6 +281,9 @@ func (s *SQLiteStore) claimNextSessionOnce(agent string, ttl time.Duration, sess
 		return nil, fmt.Errorf("routerstore: ClaimNext: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err = s.laneClaimGateTx(tx, agent); err != nil {
+		return nil, err
+	}
 
 	if err = s.reclaimExpiredTx(tx, now); err != nil {
 		return nil, err

@@ -62,6 +62,9 @@ func (s *SQLiteStore) claimTask(agent, exactTaskID, worker, threadID string, ttl
 		return nil, fmt.Errorf("routerstore: task claim begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err = s.laneClaimGateTx(tx, agent); err != nil {
+		return nil, err
+	}
 
 	// Expiry is a failed execution attempt, not an ownership cleanup. Exhausted
 	// crash loops are made visibly blocked instead of being reclaimed forever.
