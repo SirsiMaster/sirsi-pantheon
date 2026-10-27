@@ -879,7 +879,7 @@
     },
     "sirsi-software-admin": {
       "id": "sirsi-software-admin",
-      "lifecycle_services": ["ai.sirsi.apollo.observer", "ai.sirsi.apollo-chat", "ai.sirsi.gemma-broker", "ai.sirsi.mercury-monitor", "ai.sirsi.mercury-chip", "ai.sirsi.router.relay", "ai.sirsi.horus.agent-router", "ai.sirsi.router.surface"],
+      "lifecycle_services": ["ai.sirsi.gemma-worker.native", "ai.sirsi.apollo.observer", "ai.sirsi.apollo-chat", "ai.sirsi.gemma-broker", "ai.sirsi.mercury-monitor", "ai.sirsi.mercury-chip", "ai.sirsi.router.relay", "ai.sirsi.horus.agent-router", "ai.sirsi.router.surface"],
       "attended": true,
       "type": "codex",
       "command": [

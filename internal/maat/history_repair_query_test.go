@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -56,10 +57,14 @@ func TestQueryHistoryResumesBinaryRepairStateBeforeWindow(t *testing.T) {
 			cancel()
 			query.Context = ctx
 			canceled, err := journal.QueryHistory(query)
-			if err != nil || canceled.Coverage != HistoryCoveragePartial || len(canceled.Candidates) != 0 || canceled.Cursor == "" {
-				t.Fatalf("canceled history exposed provisional results: %+v / %v", canceled, err)
+			if runtime.GOOS == "windows" {
+				if err != nil || canceled.Cursor == "" || len(canceled.Candidates) != 0 {
+					t.Fatalf("legacy Windows canceled history did not return an empty continuation: %+v / %v", canceled, err)
+				}
+			} else if !errors.Is(err, context.Canceled) || canceled.Cursor != "" || len(canceled.Candidates) != 0 {
+				t.Fatalf("canceled history returned progress: %+v / %v", canceled, err)
 			}
-			query.Context, query.Cursor = context.Background(), canceled.Cursor
+			query.Context, query.Cursor = context.Background(), ""
 			for step := 0; step < 512; step++ {
 				page, err := journal.QueryHistory(query)
 				if err != nil {
@@ -157,12 +162,22 @@ func TestHistoryRepairCursorVersionAndReadOnlyIntegrity(t *testing.T) {
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("read-only history changed retained journal bytes")
 	}
+	query.Context = context.Background()
+	query.ByteBudget, query.RowBudget = 1, 1
+	partial, err := journal.QueryHistory(query)
+	if err != nil || partial.Cursor == "" {
+		t.Fatalf("missing bounded continuation fixture: %+v / %v", partial, err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	query.Context = ctx
-	partial, err := journal.QueryHistory(query)
-	if err != nil {
-		t.Fatal(err)
+	query.Context, query.Cursor = ctx, partial.Cursor
+	paused, err := journal.QueryHistory(query)
+	if runtime.GOOS == "windows" {
+		if err != nil || paused.Cursor == "" {
+			t.Fatalf("legacy Windows canceled continuation did not remain resumable: %+v / %v", paused, err)
+		}
+	} else if !errors.Is(err, context.Canceled) || paused.Cursor != "" {
+		t.Fatalf("canceled continuation returned progress: %+v / %v", paused, err)
 	}
 	state, err := decodeHistoryCursor(partial.Cursor)
 	if err != nil || state == nil {
@@ -183,7 +198,7 @@ func TestHistoryRepairCursorVersionAndReadOnlyIntegrity(t *testing.T) {
 	}
 }
 
-func TestHistoryRepairAppendInvalidatesContinuation(t *testing.T) {
+func TestHistoryRepairAppendUsesPlatformSnapshotScope(t *testing.T) {
 	journal, screen, attempt := historyRepairFixture(t, false)
 	query := HistoryQuery{Scope: HistoryScopeSystemOne, Evidence: screen.Evidence, QueryKey: "repair-snapshot", Limit: 1, RowBudget: 1, ByteBudget: 1}
 	partial, err := journal.QueryHistory(query)
@@ -193,7 +208,32 @@ func TestHistoryRepairAppendInvalidatesContinuation(t *testing.T) {
 	attempt.Kind, attempt.Determination, attempt.Evidence, attempt.Time = "diagnostic verified repair", "resolved", "receipt:new-terminal", "2026-09-01T00:03:00Z"
 	appendHistoryFixtures(t, journal, attempt)
 	query.Cursor = partial.Cursor
-	if _, err := journal.QueryHistory(query); !errors.Is(err, ErrHistorySnapshotChanged) {
-		t.Fatalf("terminal receipt append reused stale continuation: %v", err)
+	if runtime.GOOS == "windows" {
+		if _, err := journal.QueryHistory(query); !errors.Is(err, ErrHistorySnapshotChanged) {
+			t.Fatalf("legacy Windows terminal receipt append error: %v", err)
+		}
+		return
+	}
+	query.ByteBudget, query.RowBudget = defaultHistoryByteBudget, defaultHistoryRowBudget
+	var frozen HistoryPage
+	for step := 0; step < 64; step++ {
+		frozen, err = journal.QueryHistory(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if frozen.Coverage == HistoryCoverageComplete {
+			break
+		}
+		if frozen.Cursor == "" {
+			t.Fatalf("frozen continuation lost progress: %+v", frozen)
+		}
+		query.Cursor = frozen.Cursor
+	}
+	if frozen.Coverage != HistoryCoverageComplete || len(frozen.Candidates) != 1 || len(frozen.Links.RepairOutcomes) != 0 || len(frozen.Links.RepairAttempts) != 1 {
+		t.Fatalf("older repair query did not remain frozen: %+v", frozen)
+	}
+	fresh, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, Evidence: screen.Evidence, QueryKey: "repair-snapshot-fresh", Limit: 1})
+	if err != nil || fresh.Coverage != HistoryCoverageComplete || len(fresh.Links.RepairOutcomes) != 1 {
+		t.Fatalf("fresh repair query did not observe terminal append: %+v / %v", fresh, err)
 	}
 }

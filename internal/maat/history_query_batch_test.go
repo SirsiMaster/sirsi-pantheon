@@ -3,9 +3,11 @@ package maat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -107,8 +109,12 @@ func TestHistoryQualificationBatchCursorCancelAndMalformedState(t *testing.T) {
 	query.Context = ctx
 	query.Cursor = first.Cursor
 	paused, err := j.QueryHistory(query)
-	if err != nil || paused.Coverage != HistoryCoveragePartial || len(paused.Candidates) != 0 || paused.ScannedRecords != 0 {
-		t.Fatalf("canceled read materialized=%+v %v", paused, err)
+	if runtime.GOOS == "windows" {
+		if err != nil || paused.Cursor == "" || len(paused.Candidates) != 0 {
+			t.Fatalf("legacy Windows canceled read did not return an empty continuation=%+v %v", paused, err)
+		}
+	} else if !errors.Is(err, context.Canceled) || paused.Cursor != "" || len(paused.Candidates) != 0 {
+		t.Fatalf("canceled read returned progress=%+v %v", paused, err)
 	}
 	query.Context = context.Background()
 	state, err := decodeHistoryCursor(first.Cursor)

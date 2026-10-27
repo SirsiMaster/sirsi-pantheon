@@ -34,7 +34,6 @@ const (
 	maxHistoryRowBudget          = 10000
 	defaultHistoryTimeBudget     = 300 * time.Millisecond
 	maxHistoryTimeBudget         = 2 * time.Second
-	historyCursorVersion         = 4
 	maxHistoryQualificationBatch = 48
 )
 
@@ -96,19 +95,20 @@ type HistoryLinks struct {
 // or a completed page. NextCursor continues a bounded scan; NextPageCursor
 // starts the next older page on this exact snapshot.
 type HistoryPage struct {
-	Candidates      []HistoryCandidate
-	Links           HistoryLinks
-	Integrity       JournalIntegrity
-	Coverage        string
-	Snapshot        string
-	HasMore         bool
-	Cursor          string
-	NextPageCursor  string
-	ScannedBytes    int64
-	ScannedRecords  int
-	MatchCount      int64
-	EvidenceMatches int64
-	AfterCursor     bool
+	Candidates        []HistoryCandidate
+	Links             HistoryLinks
+	Integrity         JournalIntegrity
+	Coverage          string
+	Snapshot          string
+	HasMore           bool
+	Cursor            string
+	NextPageCursor    string
+	ScannedBytes      int64
+	VerificationBytes int64 `json:"verification_bytes,omitempty"`
+	ScannedRecords    int
+	MatchCount        int64
+	EvidenceMatches   int64
+	AfterCursor       bool
 }
 
 type historyOrder struct {
@@ -140,6 +140,8 @@ type historyCursor struct {
 	BatchIndex           int                   `json:"batch_index,omitempty"`
 	Version              int                   `json:"v"`
 	Snapshot             string                `json:"snapshot"`
+	PrefixBytes          int64                 `json:"prefix_bytes"`
+	PrefixSHA            string                `json:"prefix_sha256"`
 	QueryKey             string                `json:"query"`
 	Phase                string                `json:"phase"`
 	Offset               int64                 `json:"offset"`
@@ -169,294 +171,21 @@ type historyCursor struct {
 // same scan or relationship pass. Recent and RecentTolerant retain their
 // existing strict/tolerant contracts for mutation callers.
 func (j *FileDecisionJournal) QueryHistory(query HistoryQuery) (HistoryPage, error) {
-	if j == nil || strings.TrimSpace(j.Path) == "" {
-		return HistoryPage{}, fmt.Errorf("maat decision history: empty path")
-	}
-	if query.Scope == "" {
-		query.Scope = HistoryScopeAll
-	}
-	if query.Scope != HistoryScopeAll && query.Scope != HistoryScopeSystemOne {
-		return HistoryPage{}, fmt.Errorf("maat decision history: invalid scope")
-	}
-	if query.Limit <= 0 {
-		query.Limit = 50
-	}
-	if query.Limit > maxHistoryPageSize {
-		return HistoryPage{}, fmt.Errorf("maat decision history: page size exceeds %d", maxHistoryPageSize)
-	}
-	if strings.TrimSpace(query.QueryKey) == "" {
-		return HistoryPage{}, fmt.Errorf("maat decision history: query identity is required")
-	}
-	if len(query.QueryKey) > 1024 {
-		return HistoryPage{}, fmt.Errorf("maat decision history: query identity exceeds its bound")
-	}
-	if query.ByteBudget <= 0 {
-		query.ByteBudget = defaultHistoryByteBudget
-	} else if query.ByteBudget > maxHistoryByteBudget {
-		query.ByteBudget = maxHistoryByteBudget
-	}
-	if query.RowBudget <= 0 {
-		query.RowBudget = defaultHistoryRowBudget
-	} else if query.RowBudget > maxHistoryRowBudget {
-		query.RowBudget = maxHistoryRowBudget
-	}
-	if query.TimeBudget <= 0 {
-		query.TimeBudget = defaultHistoryTimeBudget
-	} else if query.TimeBudget > maxHistoryTimeBudget {
-		query.TimeBudget = maxHistoryTimeBudget
-	}
-	ctx := query.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	file, err := os.Open(j.Path)
-	if err != nil {
-		if os.IsNotExist(err) && query.Cursor == "" {
-			return HistoryPage{Candidates: []HistoryCandidate{}, Coverage: HistoryCoverageComplete, Snapshot: "missing"}, nil
-		}
-		if query.Cursor != "" {
-			return HistoryPage{}, ErrHistorySnapshotChanged
-		}
-		return HistoryPage{}, fmt.Errorf("maat decision history: open: %w", err)
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		return HistoryPage{}, fmt.Errorf("maat decision history: journal is not a readable regular file")
-	}
-	snapshot := historySnapshotID(j.Path, info)
-	state, err := decodeHistoryCursor(query.Cursor)
-	if err != nil {
-		return HistoryPage{}, err
-	}
-	if state == nil {
-		state = &historyCursor{Version: historyCursorVersion, Snapshot: snapshot, QueryKey: query.QueryKey, Phase: "scan", Limit: query.Limit}
-	} else if state.Snapshot != snapshot || state.QueryKey != query.QueryKey || state.Version != historyCursorVersion {
-		return HistoryPage{}, ErrHistorySnapshotChanged
-	}
-	if err := validateHistoryCursor(state, query.Limit, info.Size()); err != nil {
-		return HistoryPage{}, err
-	}
-
-	started := time.Now()
-	deadline := started.Add(query.TimeBudget)
-	page := HistoryPage{Coverage: HistoryCoveragePartial, Snapshot: snapshot, Candidates: []HistoryCandidate{}, Links: HistoryLinks{Acceptances: []Decision{}, ReviewedResolutionFor: []string{}}, AfterCursor: state.After != nil}
-	for page.ScannedBytes < query.ByteBudget && page.ScannedRecords < query.RowBudget && time.Since(started) < query.TimeBudget {
-		if err := ctx.Err(); err != nil {
-			break
-		}
-		remainingBytes := query.ByteBudget - page.ScannedBytes
-		remainingRows := query.RowBudget - page.ScannedRecords
-		if state.Phase == "scan" {
-			done, bytesRead, rowsRead, err := scanHistoryChunk(ctx, deadline, file, state, remainingBytes, remainingRows, query.Scope, query.Evidence, query.Match, query.NeedsState, query.MatchState)
-			if err != nil {
-				return HistoryPage{}, err
-			}
-			page.ScannedBytes += bytesRead
-			page.ScannedRecords += rowsRead
-			if !done {
-				if state.Phase == "candidate-links" || state.Phase == "batch-links" {
-					continue
-				}
-				break
-			}
-			state.Phase = "links"
-			state.Offset = 0
-			state.Links = makeHistoryLinkRefs(state.Candidates)
-			if len(state.Candidates) == 0 {
-				if err := verifyHistorySnapshot(file, j.Path, snapshot); err != nil {
-					return HistoryPage{}, err
-				}
-				page.Coverage = HistoryCoverageComplete
-				page.Integrity = cursorIntegrity(state)
-				page.MatchCount = state.Seen
-				page.EvidenceMatches = state.EvidenceSeen
-				return page, nil
-			}
-			continue
-		}
-		if state.Phase == "batch-links" {
-			// Reuse the exact canonical link resolver for a bounded reference batch.
-			// Only the reference slice is swapped; offsets/discard state and work
-			// counters advance in this same snapshot, never through another reader.
-			state.Links, state.BatchLinks = state.BatchLinks, state.Links
-			done, bytesRead, rowsRead, err := scanHistoryLinks(ctx, deadline, file, state, remainingBytes, remainingRows)
-			state.Links, state.BatchLinks = state.BatchLinks, state.Links
-			page.ScannedBytes += bytesRead
-			page.ScannedRecords += rowsRead
-			if err != nil {
-				return HistoryPage{}, err
-			}
-			if !done {
-				break
-			}
-			state.Phase = "batch-finalize"
-			continue
-		}
-		if state.Phase == "batch-finalize" {
-			pending := *state
-			ref, link := state.Batch[state.BatchIndex], state.BatchLinks[state.BatchIndex]
-			pending.Pending = &ref
-			pending.PendingAccepted = link.Acceptance != nil
-			pending.PendingReviewed = link.Review != nil
-			pending.PendingAcceptance = link.Acceptance
-			pending.PendingRepairOutcome = link.RepairOutcome
-			pending.PendingRepairAttempt = link.RepairAttempt
-			bundleBytes, bundleRows := ref.Order.Size, 1
-			if link.Acceptance != nil {
-				bundleBytes += link.Acceptance.Size
-				bundleRows++
-			}
-			if repair, _ := selectedHistoryRepair(link.Acceptance, link.RepairOutcome, link.RepairAttempt); repair != nil {
-				bundleBytes += repair.Size
-				bundleRows++
-			}
-			if (page.ScannedBytes > 0 || page.ScannedRecords > 0) && (bundleBytes > remainingBytes || bundleRows > remainingRows) {
-				break
-			}
-			matched, bytesRead, rowsRead, err := finishPendingHistoryCandidate(ctx, deadline, file, &pending, query)
-			page.ScannedBytes += bytesRead
-			page.ScannedRecords += rowsRead
-			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					break
-				}
-				return HistoryPage{}, err
-			}
-			state.Candidates = pending.Candidates
-			if matched {
-				state.Seen++
-			}
-			state.BatchIndex++
-			if state.BatchIndex == len(state.Batch) {
-				state.Batch = nil
-				state.BatchLinks = nil
-				state.BatchIndex = 0
-				state.Offset = state.ResumeOffset
-				state.ResumeOffset = 0
-				state.Phase = "scan"
-			}
-			continue
-		}
-		if state.Phase == "candidate-links" {
-			done, bytesRead, rowsRead, err := scanPendingHistoryLinks(ctx, deadline, file, state, remainingBytes, remainingRows)
-			if err != nil {
-				return HistoryPage{}, err
-			}
-			page.ScannedBytes += bytesRead
-			page.ScannedRecords += rowsRead
-			if !done {
-				break
-			}
-			state.Phase = "candidate-finalize"
-			continue
-		}
-		if state.Phase == "candidate-finalize" {
-			bundleBytes, bundleRows := state.Pending.Order.Size, 1
-			if state.PendingAcceptance != nil {
-				bundleBytes += state.PendingAcceptance.Size
-				bundleRows++
-			}
-			if repair, _ := selectedHistoryRepair(state.PendingAcceptance, state.PendingRepairOutcome, state.PendingRepairAttempt); repair != nil {
-				bundleBytes += repair.Size
-				bundleRows++
-			}
-			if (page.ScannedBytes > 0 || page.ScannedRecords > 0) && (bundleBytes > remainingBytes || bundleRows > remainingRows) {
-				break
-			}
-			candidate, bytesRead, rowsRead, err := finishPendingHistoryCandidate(ctx, deadline, file, state, query)
-			page.ScannedBytes += bytesRead
-			page.ScannedRecords += rowsRead
-			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					break
-				}
-				return HistoryPage{}, err
-			}
-			if candidate {
-				state.Seen++
-			}
-			state.Offset = state.ResumeOffset
-			state.ResumeOffset = 0
-			state.Pending = nil
-			state.PendingAccepted = false
-			state.PendingReviewed = false
-			state.PendingAcceptance = nil
-			state.PendingRepairOutcome = nil
-			state.PendingRepairAttempt = nil
-			state.Phase = "scan"
-			continue
-		}
-		if state.Phase == "links" {
-			done, bytesRead, rowsRead, err := scanHistoryLinks(ctx, deadline, file, state, remainingBytes, remainingRows)
-			if err != nil {
-				return HistoryPage{}, err
-			}
-			page.ScannedBytes += bytesRead
-			page.ScannedRecords += rowsRead
-			if !done {
-				break
-			}
-			state.Phase = "materialize"
-			continue
-		}
-		if state.Phase == "materialize" {
-			limited, materializedBytes, materializedRows, err := materializeHistoryPage(ctx, deadline, file, j.Path, snapshot, state, query, &page, query.ByteBudget-page.ScannedBytes, query.RowBudget-page.ScannedRecords)
-			page.ScannedBytes += materializedBytes
-			page.ScannedRecords += materializedRows
-			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errHistoryWorkBudget) {
-					break
-				}
-				return HistoryPage{}, err
-			}
-			if limited && (remainingBytes < query.ByteBudget || remainingRows < query.RowBudget) {
-				// Earlier phases consumed this request's budget. Keep every
-				// selected reference and retry materialization with a fresh
-				// request instead of publishing this residual-budget prefix.
-				break
-			}
-			page.Coverage = HistoryCoverageComplete
-			page.Integrity = cursorIntegrity(state)
-			page.MatchCount = state.Seen
-			page.EvidenceMatches = state.EvidenceSeen
-			if limited || len(state.Candidates) > len(page.Candidates) {
-				page.HasMore = true
-				last := page.Candidates[len(page.Candidates)-1]
-				page.NextPageCursor, err = encodeHistoryCursor(nextHistoryPageCursor(state, historyOrder{Time: last.Decision.Time, Offset: last.Offset}))
-				if err != nil {
-					return HistoryPage{}, err
-				}
-			}
-			return page, nil
-		}
-		return HistoryPage{}, fmt.Errorf("maat decision history: invalid cursor phase")
-	}
-	if err := verifyHistorySnapshot(file, j.Path, snapshot); err != nil {
-		return HistoryPage{}, err
-	}
-	page.Integrity = cursorIntegrity(state)
-	page.Cursor, err = encodeHistoryCursor(state)
-	if err != nil {
-		return HistoryPage{}, err
-	}
-	page.MatchCount = state.Seen
-	page.EvidenceMatches = state.EvidenceSeen
-	page.Candidates = []HistoryCandidate{}
-	page.Links = HistoryLinks{Acceptances: []Decision{}, ReviewedResolutionFor: []string{}}
-	return page, nil
+	return j.queryHistoryPrefixBound(query)
 }
 
 func scanHistoryChunk(ctx context.Context, deadline time.Time, file *os.File, state *historyCursor, byteBudget int64, rowBudget int, scope, evidence string, match func(Decision) bool, needsState func(Decision) bool, matchState func(Decision, HistoryMatchState) bool) (bool, int64, int, error) {
 	if _, err := file.Seek(state.Offset, io.SeekStart); err != nil {
 		return false, 0, 0, fmt.Errorf("maat decision history: seek: %w", err)
 	}
-	reader := bufio.NewReaderSize(file, 64*1024)
+	return scanHistoryChunkReader(ctx, deadline, bufio.NewReaderSize(file, 64*1024), state, byteBudget, rowBudget, scope, evidence, match, needsState, matchState)
+}
+
+func scanHistoryChunkReader(ctx context.Context, deadline time.Time, reader *bufio.Reader, state *historyCursor, byteBudget int64, rowBudget int, scope, evidence string, match func(Decision) bool, needsState func(Decision) bool, matchState func(Decision, HistoryMatchState) bool) (bool, int64, int, error) {
 	var bytesRead int64
 	rowsRead := 0
 	for rowsRead == 0 || (bytesRead < byteBudget && rowsRead < rowBudget) {
-		if ctx.Err() != nil || time.Now().After(deadline) {
+		if ctx.Err() != nil || historyWorkExpired(ctx, deadline) {
 			return false, bytesRead, rowsRead, nil
 		}
 		if state.DiscardingLine {
@@ -567,11 +296,14 @@ func scanHistoryLinks(ctx context.Context, deadline time.Time, file *os.File, st
 	if _, err := file.Seek(state.Offset, io.SeekStart); err != nil {
 		return false, 0, 0, fmt.Errorf("maat decision history: seek links: %w", err)
 	}
-	reader := bufio.NewReaderSize(file, 64*1024)
+	return scanHistoryLinksReader(ctx, deadline, bufio.NewReaderSize(file, 64*1024), state, byteBudget, rowBudget)
+}
+
+func scanHistoryLinksReader(ctx context.Context, deadline time.Time, reader *bufio.Reader, state *historyCursor, byteBudget int64, rowBudget int) (bool, int64, int, error) {
 	var bytesRead int64
 	rowsRead := 0
 	for rowsRead == 0 || (bytesRead < byteBudget && rowsRead < rowBudget) {
-		if ctx.Err() != nil || time.Now().After(deadline) {
+		if ctx.Err() != nil || historyWorkExpired(ctx, deadline) {
 			return false, bytesRead, rowsRead, nil
 		}
 		if state.DiscardingLine {
@@ -703,23 +435,17 @@ func readHistoryRepairAtCount(ctx context.Context, deadline time.Time, file *os.
 	return decision, consumed, nil
 }
 
-// scanPendingHistoryLinks resolves one candidate before it enters the bounded
-// top-K, retaining only hashes and references until finalization.
-func scanPendingHistoryLinks(ctx context.Context, deadline time.Time, file *os.File, state *historyCursor, byteBudget int64, rowBudget int) (bool, int64, int, error) {
+func scanPendingHistoryLinksReader(ctx context.Context, deadline time.Time, reader *bufio.Reader, state *historyCursor, byteBudget int64, rowBudget int) (bool, int64, int, error) {
 	if state.Pending == nil {
 		return false, 0, 0, fmt.Errorf("maat decision history: invalid pending candidate")
 	}
-	if _, err := file.Seek(state.Offset, io.SeekStart); err != nil {
-		return false, 0, 0, fmt.Errorf("maat decision history: seek candidate links: %w", err)
-	}
-	reader := bufio.NewReaderSize(file, 64*1024)
 	var bytesRead int64
 	rowsRead := 0
 	for rowsRead == 0 || (bytesRead < byteBudget && rowsRead < rowBudget) {
 		if err := ctx.Err(); err != nil {
 			return false, bytesRead, rowsRead, nil
 		}
-		if time.Now().After(deadline) {
+		if historyWorkExpired(ctx, deadline) {
 			return false, bytesRead, rowsRead, nil
 		}
 		if state.DiscardingLine {
@@ -780,74 +506,6 @@ func scanPendingHistoryLinks(ctx context.Context, deadline time.Time, file *os.F
 		state.PendingRepairOutcome, state.PendingRepairAttempt = link.RepairOutcome, link.RepairAttempt
 	}
 	return false, bytesRead, rowsRead, nil
-}
-
-func finishPendingHistoryCandidate(ctx context.Context, deadline time.Time, file *os.File, state *historyCursor, query HistoryQuery) (bool, int64, int, error) {
-	if state.Pending == nil {
-		return false, 0, 0, fmt.Errorf("maat decision history: invalid pending candidate")
-	}
-	if err := ctx.Err(); err != nil {
-		return false, 0, 0, err
-	}
-	if time.Now().After(deadline) {
-		return false, 0, 0, context.DeadlineExceeded
-	}
-	decision, candidateBytes, err := readHistoryDecisionAtCount(file, state.Pending.Order.Offset)
-	if err != nil {
-		return false, candidateBytes, 1, err
-	}
-	rowsRead := 1
-	bytesRead := candidateBytes
-	matchState := HistoryMatchState{Resolved: state.PendingAccepted, Hidden: state.PendingReviewed}
-	if state.PendingAcceptance != nil {
-		if err := ctx.Err(); err != nil {
-			return false, bytesRead, rowsRead, err
-		}
-		if time.Now().After(deadline) {
-			return false, bytesRead, rowsRead, context.DeadlineExceeded
-		}
-		resolution, resolutionBytes, err := readHistoryDecisionAtCount(file, state.PendingAcceptance.Offset)
-		bytesRead += resolutionBytes
-		rowsRead++
-		if err != nil {
-			return false, bytesRead, rowsRead, err
-		}
-		if resolution.Kind != "diagnostic owner acceptance" || historyKeyHash(resolution.ResolutionFor) != state.Pending.EvidenceHash || resolution.Time != state.PendingAcceptance.Time {
-			return false, bytesRead, rowsRead, ErrHistorySnapshotChanged
-		}
-		matchState.Resolution = &resolution
-	}
-	if ref, kind := selectedHistoryRepair(state.PendingAcceptance, state.PendingRepairOutcome, state.PendingRepairAttempt); ref != nil {
-		repair, consumed, readErr := readHistoryRepairAtCount(ctx, deadline, file, ref, kind, state.Pending.EvidenceHash)
-		bytesRead += consumed
-		if consumed > 0 {
-			rowsRead++
-		}
-		if readErr != nil {
-			return false, bytesRead, rowsRead, readErr
-		}
-		if kind == "diagnostic verified repair" {
-			matchState.RepairOutcome = &repair
-		} else {
-			matchState.RepairAttempt = &repair
-		}
-	}
-	if decision.Time != state.Pending.Order.Time || historyKeyHash(decision.Evidence) != state.Pending.EvidenceHash || historyKeyHash(decision.ResolutionFor) != state.Pending.ResolutionHash || (decision.Kind == "diagnostic owner acceptance") != state.Pending.OwnerAcceptance {
-		return false, bytesRead, rowsRead, ErrHistorySnapshotChanged
-	}
-	if query.MatchState != nil && !query.MatchState(decision, matchState) {
-		return false, bytesRead, rowsRead, nil
-	}
-	if err := ctx.Err(); err != nil {
-		return false, bytesRead, rowsRead, err
-	}
-	if time.Now().After(deadline) {
-		return false, bytesRead, rowsRead, context.DeadlineExceeded
-	}
-	// Candidate-finalization is atomic at one record plus its selected link;
-	// both bounded reads are included in the returned scan counters.
-	insertHistoryCandidate(state, *state.Pending, state.Limit+1)
-	return true, bytesRead, rowsRead, nil
 }
 
 func materializeHistoryPage(ctx context.Context, deadline time.Time, file *os.File, path, snapshot string, state *historyCursor, query HistoryQuery, page *HistoryPage, byteBudget int64, rowBudget int) (bool, int64, int, error) {
@@ -1008,6 +666,71 @@ func readHistoryDecisionAtCount(file *os.File, offset int64) (Decision, int64, e
 	return decision, consumed, nil
 }
 
+// captureHistoryDecisions reads only referenced records, in physical order,
+// from the request's already-hashed forward stream. Returned values are then
+// evaluated without reopening or seeking the journal.
+func captureHistoryDecisions(ctx context.Context, deadline time.Time, reader *bufio.Reader, refs []*historyOrder) (map[int64]Decision, int64, int, error) {
+	type target struct {
+		offset int64
+		size   int64
+	}
+	targetsByOffset := make(map[int64]int64, len(refs))
+	for _, ref := range refs {
+		if ref == nil {
+			continue
+		}
+		if previous, exists := targetsByOffset[ref.Offset]; exists && previous != ref.Size {
+			return nil, 0, 0, ErrHistorySnapshotChanged
+		}
+		targetsByOffset[ref.Offset] = ref.Size
+	}
+	targets := make([]target, 0, len(targetsByOffset))
+	for offset, size := range targetsByOffset {
+		targets = append(targets, target{offset: offset, size: size})
+	}
+	sort.Slice(targets, func(i, j int) bool { return targets[i].offset < targets[j].offset })
+	selected := make(map[int64]Decision, len(targets))
+	var position int64
+	var bytesRead int64
+	rowsRead := 0
+	for _, target := range targets {
+		if err := ctx.Err(); err != nil {
+			return nil, bytesRead, rowsRead, err
+		}
+		if historyWorkExpired(ctx, deadline) {
+			return nil, bytesRead, rowsRead, errHistoryWorkBudget
+		}
+		if target.offset < position || target.size <= 0 || target.size > maxHistoryRecordBytes+1 {
+			return nil, bytesRead, rowsRead, ErrHistorySnapshotChanged
+		}
+		clock, _ := ctx.Value(historyWorkClockKey{}).(*historyWorkClock)
+		if clock != nil {
+			clock.pause()
+		}
+		skipped, err := io.CopyN(io.Discard, reader, target.offset-position)
+		if clock != nil {
+			clock.resume()
+		}
+		position += skipped
+		if err != nil {
+			return nil, bytesRead, rowsRead, ErrHistorySnapshotChanged
+		}
+		raw := make([]byte, target.size)
+		if _, err := io.ReadFull(reader, raw); err != nil {
+			return nil, bytesRead, rowsRead, ErrHistorySnapshotChanged
+		}
+		position += target.size
+		bytesRead += target.size
+		rowsRead++
+		var decision Decision
+		if err := json.Unmarshal(bytes.TrimSpace(raw), &decision); err != nil || validateDecision(decision) != nil {
+			return nil, bytesRead, rowsRead, ErrHistorySnapshotChanged
+		}
+		selected[target.offset] = decision
+	}
+	return selected, bytesRead, rowsRead, nil
+}
+
 func readHistoryLine(reader *bufio.Reader) ([]byte, int64, bool, bool, string, error) {
 	var line []byte
 	var consumed int64
@@ -1068,7 +791,7 @@ func discardHistoryLine(reader *bufio.Reader, byteBudget int64, deadline time.Ti
 	}
 	var consumed int64
 	for consumed == 0 || consumed < byteBudget {
-		if ctx.Err() != nil || time.Now().After(deadline) {
+		if ctx.Err() != nil || historyWorkExpired(ctx, deadline) {
 			return false, consumed, nil
 		}
 		part, err := reader.ReadSlice('\n')
@@ -1190,7 +913,7 @@ func historyOrderAfter(candidate, after historyOrder) bool {
 }
 
 func nextHistoryPageCursor(state *historyCursor, last historyOrder) *historyCursor {
-	return &historyCursor{Version: historyCursorVersion, Snapshot: state.Snapshot, QueryKey: state.QueryKey, Phase: "scan", Limit: state.Limit, After: &last}
+	return &historyCursor{Version: state.Version, Snapshot: state.Snapshot, PrefixBytes: state.PrefixBytes, PrefixSHA: state.PrefixSHA, QueryKey: state.QueryKey, Phase: "scan", Limit: state.Limit, After: &last}
 }
 
 func encodeHistoryCursor(state *historyCursor) (string, error) {
@@ -1224,7 +947,17 @@ func decodeHistoryCursor(encoded string) (*historyCursor, error) {
 }
 
 func validateHistoryCursor(state *historyCursor, limit int, fileSize int64) error {
-	if state == nil || state.Offset < 0 || state.Line < 0 || state.Seen < 0 || state.EvidenceSeen < 0 || state.InvalidCount < 0 || state.Limit != limit || len(state.Candidates) > limit+1 || len(state.Issues) > maxRetainedJournalIssues {
+	if state == nil || state.Offset < 0 || state.Line < 0 || state.Seen < 0 || state.EvidenceSeen < 0 || state.InvalidCount < 0 || state.Limit != limit || len(state.Candidates) > limit+1 || len(state.Issues) > maxRetainedJournalIssues || state.PrefixBytes < 0 || state.PrefixBytes > fileSize {
+		return fmt.Errorf("maat decision history: invalid continuation")
+	}
+	if state.Version != historyCursorVersion {
+		return fmt.Errorf("maat decision history: invalid continuation")
+	}
+	if historyCursorVersion == 4 {
+		if state.Phase == "anchor" || state.PrefixBytes != 0 || state.PrefixSHA != "" {
+			return fmt.Errorf("maat decision history: invalid continuation")
+		}
+	} else if state.PrefixSHA != "" && !validHistoryDigest(state.PrefixSHA) || state.Phase != "anchor" && !validHistoryDigest(state.PrefixSHA) {
 		return fmt.Errorf("maat decision history: invalid continuation")
 	}
 	if state.DiscardingLine && (state.DiscardLine <= 0 || state.DiscardLine > state.Line || !validHistoryDigest(state.DiscardDigest)) {
@@ -1238,7 +971,7 @@ func validateHistoryCursor(state *historyCursor, limit int, fileSize int64) erro
 	if state.Offset > fileSize || state.ResumeOffset < 0 || state.ResumeOffset > fileSize || (state.After != nil && (state.After.Offset < 0 || state.After.Offset >= fileSize || state.After.Time == "")) {
 		return fmt.Errorf("maat decision history: invalid continuation")
 	}
-	if state.Phase != "scan" && state.Phase != "links" && state.Phase != "candidate-links" && state.Phase != "candidate-finalize" && state.Phase != "materialize" && state.Phase != "batch-links" && state.Phase != "batch-finalize" {
+	if state.Phase != "anchor" && state.Phase != "scan" && state.Phase != "links" && state.Phase != "candidate-links" && state.Phase != "candidate-finalize" && state.Phase != "materialize" && state.Phase != "batch-links" && state.Phase != "batch-finalize" {
 		return fmt.Errorf("maat decision history: invalid continuation")
 	}
 	if state.Phase == "candidate-links" || state.Phase == "candidate-finalize" {
