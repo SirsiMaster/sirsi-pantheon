@@ -69,3 +69,30 @@ Main owns the certification matrix and completion record. This matrix does not
 assert a whole-wing pass; preserve Main's separate 12-criterion status,
 including the actual public `v0.24.140` readback and still-pending `v0.24.141`
 evidence.
+
+
+## Full-canon requirement and process crosswalk (2026-10-27)
+
+This table covers the current eleven requirements. Detailed source, tests,
+effect bounds, owners and next actions are reached through the84-row
+[process index](DIAGRAM_INDEX.md). Source coverage is not installed acceptance.
+All source-only/runtime/qualification gaps retain their named owners; no row is
+implicitly DONE or waived by a diagram.
+
+| Requirement | Process groups | Certification / remaining proof |
+|---|---|---|
+| PT-REQ-01 One engine | P01,P04,P11,P57,P64,P71,P82 | C04,C08: exact composition, actual surface/engine correlation |
+| PT-REQ-02 Source and custody | P05,P07,P21,P23,P45,P73,P84 | C02,C04,C06,C12: immutable source and original evidence/claims |
+| PT-REQ-03 Release truth | P21–26,P51,P66,P83 | C05–07: same signed pair, exact remote bytes and lifecycle |
+| PT-REQ-04 Reversible promotion | P06,P08,P09,P25,P26,P45–47,P50,P60,P61,P66,P77,P80 | C07: selected supported recovery, no unknown-effect replay |
+| PT-REQ-05 Safe native operations | P11–20,P28,P43,P44,P55,P64,P68–70,P80–82 | C08: installed interaction, keyboard/AX, failure/cancel/retry/postcheck |
+| PT-REQ-06 Local intelligence | P19,P24,P29–36,P41–48,P51 | C09: deterministic baseline and final installed resolution without LLM |
+| PT-REQ-07 Qualified peers | P14,P15,P27,P53–67 | C08,C10: producer/authority/schema/freshness and supported selection |
+| PT-REQ-08 Recipe system | P13,P21,P37–40,P50,P52,P53,P65,P83 | C03,C10: component replacement and actual inspect/select/run contracts |
+| PT-REQ-09 Protected hygiene | P02,P10,P28,P43,P46,P47,P49,P68–70,P79 | C04,C07,C09: safety controls, protected work, measured effects and cleanup |
+| PT-REQ-10 Unified payload | P21–26 | C05: final one-engine Python-free signed inventory and resources |
+| PT-REQ-11 Canon certification | All84 groups, especially P52,P83,P84 | C01–03,C11–13: semantic review, exact origin/pin, reading homes, billing crosswalk |
+
+Pnn means PT-Pnn. Cnn means PT-Cnn in [CERTIFICATION.md](CERTIFICATION.md).
+The101-package/target source snapshot remains explicitly historical until it is
+regenerated against the final composed source, rather than silently repointed.
