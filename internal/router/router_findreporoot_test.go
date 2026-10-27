@@ -22,6 +22,19 @@ func sameDir(t *testing.T, a, b string) bool {
 	return os.SameFile(ai, bi)
 }
 
+// isolateGitEnv drops git's repository-selecting variables for one test. A
+// pre-push hook exports GIT_DIR, and these tests run git in temp repos: an
+// inherited GIT_DIR points every call at the pushing repo instead. t.Setenv
+// records the restore; Unsetenv is needed because git reads an empty GIT_DIR
+// as a path, not as unset.
+func isolateGitEnv(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX"} {
+		t.Setenv(k, "")
+		_ = os.Unsetenv(k)
+	}
+}
+
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
@@ -35,6 +48,7 @@ func gitRun(t *testing.T, dir string, args ...string) {
 // the linked worktree that actually invoked the close. These are intentionally
 // distinct roots.
 func TestFindCallerRepoRootUsesActualLinkedWorktree(t *testing.T) {
+	isolateGitEnv(t)
 	base := t.TempDir()
 	mainRoot := filepath.Join(base, "router")
 	appRoot := filepath.Join(base, "application-main")
@@ -83,6 +97,7 @@ func TestFindCallerRepoRootUsesActualLinkedWorktree(t *testing.T) {
 }
 
 func TestFindCallerRepoRootRefusesUnknownCaller(t *testing.T) {
+	isolateGitEnv(t)
 	t.Chdir(t.TempDir())
 	if root, err := FindCallerRepoRoot(); err == nil {
 		t.Fatalf("FindCallerRepoRoot = %q, want unknown caller refusal", root)

@@ -43,9 +43,12 @@ func IsAttendedSurface(surface string) bool {
 // AttendedSessionLive reports whether agentID has a live attended session that
 // can be expected to claim fresh inbox items.
 //
-// Liveness itself is threadArmedForNewest — the same proof AgentArmed uses —
-// so this never becomes a second, drifting definition of "alive". The only
-// thing added is the surface narrowing.
+// ADR-079 D1: an attended session is live on a fresh heartbeat. Loop evidence
+// is not required — ADR-065 retired the per-lane watch loop, so requiring it
+// meant no Claude session could ever read as attended. Registration already
+// refuses one-shot `--print` workers (ADR-024 Am.1 §2) and wake loops register
+// as surfaceWorker, so a fresh claude/codex record is a real interactive
+// session. This is a dispatch-suppression fence, not proof of delivery.
 //
 // Fail direction: an unreadable registry reads as NOT ATTENDED (false), so the
 // worker takes the item.
@@ -70,19 +73,14 @@ func AttendedSessionLive(routerRoot, agentID string) bool {
 		return false
 	}
 	now := time.Now().UTC()
-	threads := reg.SortedThreads()
-	newestByAgent := NewestActiveByAgent(threads)
-	for _, t := range threads {
+	for _, t := range reg.SortedThreads() {
 		if t == nil || t.AgentID != agentID {
 			continue
 		}
 		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
 			continue
 		}
-		if !IsAttendedSurface(t.Surface) {
-			continue
-		}
-		if threadArmedForNewest(t, now, newestByAgent[agentID] == t.ThreadID) {
+		if IsAttendedSurface(t.Surface) && !t.IsStale(now, DefaultThreadStaleAfter) {
 			return true
 		}
 	}
