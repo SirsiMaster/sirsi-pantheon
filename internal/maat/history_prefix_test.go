@@ -151,11 +151,23 @@ func TestHistoryPrefixRetainedDirectoryIdentityAllowsSiblingAddition(t *testing.
 		t.Fatal(err)
 	}
 	defer file.close()
-	if err := os.WriteFile(filepath.Join(root, "unrelated-sibling"), []byte("fixture"), 0600); err != nil {
+	sibling := filepath.Join(root, "unrelated-sibling")
+	if err := os.WriteFile(sibling, []byte("fixture"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := file.verify(size); err != nil {
 		t.Fatalf("unrelated parent entry changed retained directory identity: %v", err)
+	}
+	removalSnapshot, removalSize, err := openHistoryPrefix(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer removalSnapshot.close()
+	if err := os.Remove(sibling); err != nil {
+		t.Fatal(err)
+	}
+	if err := removalSnapshot.verify(removalSize); err != nil {
+		t.Fatalf("removing an unrelated sibling changed retained directory identity: %v", err)
 	}
 }
 
