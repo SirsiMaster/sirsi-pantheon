@@ -1,1 +1,0 @@
-Node status now probes process and loop liveness only when both stable machine IDs are present and equal. Foreign or unidentified loop-monitor lanes with pending work are shown as unverified from this node, not falsely armed or dead-stranded. Refs: `internal/router/nodestatus.go`; `internal/router/nodestatus_hostscope_test.go`.

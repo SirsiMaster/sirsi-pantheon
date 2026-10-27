@@ -6,6 +6,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.139] — 2026-10-26
+
+- Declare the existing attended RPA Codex session as the metadata-only `codex-sirsinexusapp` lane; no worker, launch agent, or answer capability is configured. Refs: session `01a179d5-340d-7e72-962d-8b828ad7960e`; thread `thr-a74850a2ddb72c1e`.
+
+- Node status now probes process and loop liveness only when both stable machine IDs are present and equal. Foreign or unidentified loop-monitor lanes with pending work are shown as unverified from this node, not falsely armed or dead-stranded. Refs: `internal/router/nodestatus.go`; `internal/router/nodestatus_hostscope_test.go`.
+
+- Maat's create-only write helper now treats an explicit close attempt as consumed even when close reports an error, so deferred cleanup cannot close a potentially reused descriptor a second time. Refs: `internal/maat/memory.go`; `internal/maat/memory_create_or_verify_raw_test.go`.
+
+- Restore the previously qualified Gemma maintenance claim barrier on the current router APIs. Session-bound item claims and task claims share the same lane lock; existing lease renewal and settlement continue during a pause.
+
+- Apply that barrier to fresh task-resume leases while preserving inspection and idempotent replay of an existing lease. Maintenance pauses cannot silently become new recovery claims.
+
+- This source change does not activate a live maintenance pause or replace a running worker. Matching controller, service, and client deployment remains an explicit operational transaction.
+
+- Pass the bounded lane-maintenance controller context through its durable row lock and every SQL statement. Preserve existing ordinary claim semantics and durable owner/capability; cancellation never releases the maintenance pause. Add an isolated PostgreSQL held-lock fixture that requires deadline return before unlock, joins the caller on all exits and verifies unchanged custody and paused claims. The current implementation passed 20 isolated PostgreSQL tests normally and under race, the worker pause fixture in both modes, vet and lint. Live maintenance activation and worker rollout remain separate operational actions.
+
+- Close each joined pause/claim race iteration's fixture store before the next schema reset, retaining parent cleanup as an idempotent failure fallback instead of accumulating sixteen PostgreSQL pools. The fixture server connection cap and production pool/barrier behavior are unchanged.
+
 ## [0.24.138] — 2026-10-26
 
 - Ma’at default-store bootstrap now uses exclusive lock creation and one bounded, identity-checked acquisition of an existing lock after a competing creation is observed. Both readers and initializers verify named-lock identity after flock before accessing the store. Deterministic fixtures cover failed-create appearance, unsafe leaves, replacement, disappearance, and refusal without creating again. The intermittent CI ENOENT's underlying kernel cause remains unproven; no existing store is reset or adopted. Refs: PR #1225 `TestDefaultStoreConcurrentInitializationCommitsExactlyOnce`; `internal/maat/memory_bootstrap_race_test.go`.
