@@ -77,9 +77,6 @@ func (b *fabricOutput) Write(p []byte) (int, error) {
 	}
 	return b.Buffer.Write(p)
 }
-func fabricHostCommand(name string, args ...string) (string, error) {
-	return fabricHostCommandContext(context.Background(), name, args...)
-}
 func fabricHostCommandContext(parent context.Context, name string, args ...string) (string, error) {
 	paths := map[string]string{"sysctl": "/usr/sbin/sysctl", "vm_stat": "/usr/bin/vm_stat", "memory_pressure": "/usr/bin/memory_pressure", "git": "/usr/bin/git"}
 	path, ok := paths[name]
@@ -106,9 +103,6 @@ func fabricHostCommandContext(parent context.Context, name string, args ...strin
 		return "", err
 	}
 	return out.String(), nil
-}
-func collectFabricHostHealth(repo string, now time.Time) ledger.FabricHealth {
-	return collectFabricHostHealthContext(context.Background(), repo, now)
 }
 func collectFabricHostHealthContext(ctx context.Context, repo string, now time.Time) ledger.FabricHealth {
 	command := func(name string, args ...string) (string, error) { return fabricHostCommandContext(ctx, name, args...) }

@@ -74,7 +74,7 @@ func TestFabricMintWaiterCancellationDoesNotWaitForNetworkMutex(t *testing.T) {
 			t.Fatal(err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("cancelled mint waiter waited for another caller's network mint")
+		t.Fatal("canceled mint waiter waited for another caller's network mint")
 	}
 	if calls.Load() != 1 {
 		t.Fatal("mint waiter started a second network mint")
@@ -142,7 +142,7 @@ func TestFabricContextualReadsPreserveWireAndCancelFakeTransport(t *testing.T) {
 					t.Fatal(e)
 				}
 			case <-time.After(time.Second):
-				t.Fatal("contextual read outlived cancelled transport")
+				t.Fatal("contextual read outlived canceled transport")
 			}
 		})
 	}

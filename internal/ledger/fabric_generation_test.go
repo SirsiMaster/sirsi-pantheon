@@ -124,7 +124,7 @@ func TestFabricGenerationFailureAndCancellationDoNotAdvanceHistory(t *testing.T)
 	if _, err := p.Read(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatal("canceled acquisition accepted", err)
 	}
-	// A cancelled waiter may return before legacy callback cleanup. Join its
+	// A canceled waiter may return before legacy callback cleanup. Join its
 	// actual exit before changing values captured by that callback.
 	p.mu.Lock()
 	active := p.active

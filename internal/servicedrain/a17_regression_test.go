@@ -67,7 +67,7 @@ func TestMaintenanceSnapshotReobservesCustodyAndKeepsFailuresClosed(t *testing.T
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := g.Wait(ctx); !errors.Is(err, context.Canceled) {
-		t.Fatalf("cancelled wait = %v", err)
+		t.Fatalf("canceled wait = %v", err)
 	}
 	if g.Status() != first {
 		t.Fatal("cancellation opened startup gate")

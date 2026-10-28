@@ -150,7 +150,7 @@ func TestFabricFirstCancellationKeepsSurvivingDemand(t *testing.T) {
 		t.Fatalf("first waiter: %v", v.err)
 	}
 	if acquisition.Err() != nil {
-		t.Fatal("first waiter cancelled a surviving acquisition")
+		t.Fatal("first waiter canceled a surviving acquisition")
 	}
 	close(release)
 	if v := fabricTake(t, second); v.err != nil {
@@ -162,14 +162,14 @@ func TestFabricFirstCancellationKeepsSurvivingDemand(t *testing.T) {
 }
 
 func TestFabricAbandonmentCancelsAndJoinsBeforeReplacement(t *testing.T) {
-	entered, cancelled, cleanup := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	entered, canceled, cleanup := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	defer fabricRelease(cleanup)
 	var calls atomic.Int32
 	p := NewFabricGenerationProducerContext(context.Background(), func(ctx context.Context) (FabricRead, error) {
 		if calls.Add(1) == 1 {
 			close(entered)
 			<-ctx.Done()
-			close(cancelled)
+			close(canceled)
 			<-cleanup
 			return fabricStatusRead("done"), nil
 		}
@@ -184,7 +184,7 @@ func TestFabricAbandonmentCancelsAndJoinsBeforeReplacement(t *testing.T) {
 	if v := fabricTake(t, first); !errors.Is(v.err, context.Canceled) {
 		t.Fatal(v.err)
 	}
-	fabricSignal(t, cancelled)
+	fabricSignal(t, canceled)
 	queued := &fabricObservedContext{Context: context.Background(), observed: make(chan struct{})}
 	next := fabricAsyncRead(p, queued)
 	fabricSignal(t, queued.observed)
@@ -246,7 +246,7 @@ func TestFabricCancelledQueuedSelectionAndRejectedPageNeverCommit(t *testing.T) 
 		t.Fatal(v.err)
 	}
 	if calls.Load() != 2 {
-		t.Fatal("cancelled queued selection invoked acquisition callback")
+		t.Fatal("canceled queued selection invoked acquisition callback")
 	}
 	close(release)
 	if v := fabricTake(t, active); v.err != nil {
@@ -296,7 +296,7 @@ func TestFabricFirstFailureAndShutdownDoNotSeedHistory(t *testing.T) {
 }
 
 func TestFabricShutdownReturnsWaiterButRetainsWorkerUntilExit(t *testing.T) {
-	entered, cancelled, cleanup := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	entered, canceled, cleanup := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	defer fabricRelease(cleanup)
 	p := NewFabricGenerationProducerContext(context.Background(), func(ctx context.Context) (FabricRead, error) {
 		if _, ok := ctx.Deadline(); !ok {
@@ -304,7 +304,7 @@ func TestFabricShutdownReturnsWaiterButRetainsWorkerUntilExit(t *testing.T) {
 		}
 		close(entered)
 		<-ctx.Done()
-		close(cancelled)
+		close(canceled)
 		<-cleanup
 		return fabricStatusRead("done"), nil
 	}, "fixture")
@@ -312,7 +312,7 @@ func TestFabricShutdownReturnsWaiterButRetainsWorkerUntilExit(t *testing.T) {
 	result := fabricAsyncRead(p, context.Background())
 	fabricSignal(t, entered)
 	p.Close()
-	fabricSignal(t, cancelled)
+	fabricSignal(t, canceled)
 	if got := fabricTake(t, result); !errors.Is(got.err, context.Canceled) {
 		t.Fatalf("shutdown failed to release waiter: %v", got.err)
 	}
@@ -326,6 +326,6 @@ func TestFabricShutdownReturnsWaiterButRetainsWorkerUntilExit(t *testing.T) {
 	close(cleanup)
 	fabricSignal(t, active.done)
 	if p.sequence != 0 || p.seeded {
-		t.Fatal("cancelled worker committed after shutdown")
+		t.Fatal("canceled worker committed after shutdown")
 	}
 }
