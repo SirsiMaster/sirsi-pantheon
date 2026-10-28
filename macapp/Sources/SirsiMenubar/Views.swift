@@ -186,8 +186,8 @@ private struct ScaledFont: ViewModifier {
     let weight: Font.Weight
     let design: Font.Design
     func body(content: Content) -> some View {
-        content.font(.system(size: pantheonScaledPointSize(size, scale: scale),
-                             weight: weight, design: design)) // sirsi:scaling-primitive
+        content.font(.system(size: pantheonScaledPointSize(size, scale: scale), // sirsi:scaling-primitive
+                             weight: weight, design: design))
     }
 }
 
