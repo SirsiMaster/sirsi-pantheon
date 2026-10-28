@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "6da4692c77f528caacc281375f37409ff8266fe4",
-  "source_tree": "8b8d3489a207e2c9c5493d1cd741b9d71f7561b3",
+  "source_commit": "cff180473acc6b4ab52d76572bfa85a9e7547fb0",
+  "source_tree": "abb0d52677c0f4629a0aa3ffdbefede3cfc99aae",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -122,7 +122,7 @@
         },
         {
           "path": "cmd/sirsi/dashboard.go",
-          "sha256": "f70f3e121d42cbf51e23a75e2a2607788a8ead3092ffa6a69c0fc8f2220a17ad"
+          "sha256": "68cd866c4f4b6efa9295b81dca7f6868abe3a3fb7e12b7754a762547a63eee52"
         },
         {
           "path": "cmd/sirsi/dashboard_stats.go",
@@ -142,7 +142,7 @@
         },
         {
           "path": "cmd/sirsi/fabric_host.go",
-          "sha256": "e4ae449c5b734aeca3c064d4d9725fb5d354137342f55d64d5388eb65f8ad12d"
+          "sha256": "9dfa58ab202e08930a7cae5fb45f1918c9f1a15951645d3e7fb2f6d575084363"
         },
         {
           "path": "cmd/sirsi/fix.go",
@@ -278,7 +278,7 @@
         },
         {
           "path": "cmd/sirsi/maat.go",
-          "sha256": "7ade532fe061401b6673ffbf769f7ce5c313da4339b0eb5991279c30d4cbd51f"
+          "sha256": "7b11ffdbfc1663e7a1c41b7f049e1e49799cc8fc91ecd825aa78fbd91f68114b"
         },
         {
           "path": "cmd/sirsi/maatcalibrate.go",
@@ -815,6 +815,10 @@
           "sha256": "22d430294861d0d4fd1085e0b24b89f43003f2bcc627a23d9dba1a208e6942f7"
         },
         {
+          "path": "cmd/sirsi/dashboard_node_auth_unix_test.go",
+          "sha256": "3af2038a49619e7714ea4800eaf3ee2bb6c350afefad613c1bd58cbb53509274"
+        },
+        {
           "path": "cmd/sirsi/dashboard_stats_test.go",
           "sha256": "c44cd69070fc17f4405be8dd15701f04a3c6ac782694cef224e324f869038e4d"
         },
@@ -937,6 +941,10 @@
         {
           "path": "cmd/sirsi/localreceipt_entry_test.go",
           "sha256": "105720a155cbb35e8ffd8d03e8cd3cc1005ee3a44f2cf94eed161921929e8ea7"
+        },
+        {
+          "path": "cmd/sirsi/maat_progress_test.go",
+          "sha256": "5db1e2bcb3c896f36ced31488e41dab6b5985e18813f4392be9490b39612fd7b"
         },
         {
           "path": "cmd/sirsi/maat_scales_test.go",
@@ -1295,6 +1303,7 @@
         "internal/brand",
         "internal/caskrelease",
         "internal/completionproof",
+        "internal/completionproof/entryfixture",
         "internal/dashboard",
         "internal/desktopcustody",
         "internal/desktoprecovery",
@@ -1528,6 +1537,7 @@
         "internal/notify",
         "internal/platform",
         "internal/router",
+        "internal/routerstore",
         "internal/setup",
         "internal/version",
         "internal/vitals",
@@ -1553,6 +1563,7 @@
         }
       ],
       "direct_local_imports": [
+        "internal/packageinventory",
         "internal/packageinventorycmd"
       ],
       "release_state": "source-inventory-only; qualification is recorded separately",
@@ -2065,7 +2076,7 @@
         },
         {
           "path": "internal/dashboard/server.go",
-          "sha256": "444ed76e7dc0fbc8c8c0c4bdf1b1ceed22c8167fe75e2ac7a8f683fa0b487f0e"
+          "sha256": "c7d85c8fc4d135fb51c61cf5c3d638a09fa52ffb24cf762ab7e014dad541b65b"
         },
         {
           "path": "internal/dashboard/ui.go",
@@ -2103,7 +2114,7 @@
         },
         {
           "path": "internal/dashboard/fabric_join_test.go",
-          "sha256": "bd43362edad74a20449414449ce8b5c6155da857735c14ae2c0b1619a97fb2b0"
+          "sha256": "4530329233fd39a72e723114dbf04e8486f6c4201468c734ff2bdc7bc4b934a5"
         },
         {
           "path": "internal/dashboard/fabric_tasks_test.go",
@@ -2180,10 +2191,14 @@
         "internal/platform",
         "internal/ra",
         "internal/router",
+        "internal/routerboard",
+        "internal/routerstore",
+        "internal/seshat",
         "internal/stele",
         "internal/supervision",
         "internal/vault",
-        "internal/version"
+        "internal/version",
+        "internal/work"
       ],
       "release_state": "source-inventory-only; qualification is recorded separately",
       "upgrade_boundary": "Replace this package/target through normal source review and rebuild the unified payload; callers and all applicable contracts must remain compatible."
@@ -2343,7 +2358,7 @@
         },
         {
           "path": "internal/dispatch/facade.go",
-          "sha256": "4a4adf267c3ef0524d7aa97c1a9325e479955c5513bca3a869a376a33c322bbb"
+          "sha256": "74f20eabf57f15ea6df45d42cdd4b9d838b4e9706a10a69d5e5b3b700dddf023"
         },
         {
           "path": "internal/dispatch/migrate.go",
@@ -2351,6 +2366,10 @@
         }
       ],
       "tests": [
+        {
+          "path": "internal/dispatch/alias_registry_test.go",
+          "sha256": "c1c3503b3f0365206aba4f76a5e7834dd2720b1db013e1b4231fbe266b501700"
+        },
         {
           "path": "internal/dispatch/alias_test.go",
           "sha256": "8bbca707563478ac9b625791d6dc182ee19f1e4d684d6cdf41b2232be2e668f7"
@@ -3039,7 +3058,8 @@
       ],
       "direct_local_imports": [
         "internal/cleaner",
-        "internal/oplog"
+        "internal/oplog",
+        "internal/platform"
       ],
       "release_state": "source-inventory-only; qualification is recorded separately",
       "upgrade_boundary": "Replace this package/target through normal source review and rebuild the unified payload; callers and all applicable contracts must remain compatible."
@@ -3230,7 +3250,7 @@
       "source": [
         {
           "path": "internal/ledger/fabric.go",
-          "sha256": "e5e2aba4540fca390c2baa4e356bdba9514dd61277c54da9397f9e956def068d"
+          "sha256": "ffd8e873b720e28641607f3540edd8f33ed12246aa9ebb7b740dc46455338e9d"
         },
         {
           "path": "internal/ledger/fabric_facts.go",
@@ -3238,7 +3258,7 @@
         },
         {
           "path": "internal/ledger/fabric_generation.go",
-          "sha256": "b057d2309f318abad0e42a89ad358d5dd55819256c752f13feca8d23f615b7d1"
+          "sha256": "74e499f9e91a172ff405c893b767111b5c58a50026431014c67abb40926a6a8a"
         },
         {
           "path": "internal/ledger/fabric_metadata.go",
@@ -3254,17 +3274,25 @@
         },
         {
           "path": "internal/ledger/ledger.go",
-          "sha256": "e7366ce560d23ea0c9c4ddc473c0f2c13710e1e694c4d5b8bdde77e363443024"
+          "sha256": "b7586b63582e4bd0ea47ebf5a272a8e34d6f3a829f3c613d414b0a483cbc2b51"
         }
       ],
       "tests": [
+        {
+          "path": "internal/ledger/fabric_auth_unix_test.go",
+          "sha256": "ef911b7fbbcc30c6abe2c1a487db90015e5399870256281e8e103ac72b9c7ef3"
+        },
+        {
+          "path": "internal/ledger/fabric_coalescing_test.go",
+          "sha256": "934234b76036b7d6fb0d4da9ddc8808923ed650d9013ca81eb22ca198b21b75b"
+        },
         {
           "path": "internal/ledger/fabric_filters_test.go",
           "sha256": "061b05ee3c46e494745c33a7fdcebaa52f6f5e2c3e2be8d56fd9f1ac86bbd12f"
         },
         {
           "path": "internal/ledger/fabric_generation_test.go",
-          "sha256": "0ef0860ec9c062ff6a9e67d43537d1e7c11cba2fa1630bd9e4b2a677a429b541"
+          "sha256": "123907862b7e74719152d42a31c51762152cd64408ced2cb2ccd230300a0a5da"
         },
         {
           "path": "internal/ledger/fabric_join_test.go",
@@ -3282,6 +3310,7 @@
       "direct_local_imports": [
         "internal/brand",
         "internal/dispatch",
+        "internal/machineid",
         "internal/router",
         "internal/routerstore",
         "internal/work"
@@ -3349,8 +3378,11 @@
         "internal/dispatch",
         "internal/guard",
         "internal/maat",
+        "internal/maat/casebook",
         "internal/platform",
-        "internal/reaper"
+        "internal/reaper",
+        "internal/routercfg",
+        "internal/work"
       ],
       "release_state": "source-inventory-only; qualification is recorded separately",
       "upgrade_boundary": "Replace this package/target through normal source review and rebuild the unified payload; callers and all applicable contracts must remain compatible."
@@ -3417,7 +3449,7 @@
         },
         {
           "path": "internal/maat/coverage.go",
-          "sha256": "5a5d4862112bac71f529103b5cd4dc028523f582713b672a2f557e6a0b3fc62a"
+          "sha256": "39fc99c3791106b1b83630b788a1c3b60175bf973a9603c6b9653991eb61f80f"
         },
         {
           "path": "internal/maat/credentialpreflight.go",
@@ -3584,6 +3616,10 @@
         {
           "path": "internal/maat/coverage_fastmode_test.go",
           "sha256": "e3a0f11d8dd0eef8c4645907d26dfd4a045c2b5ea2bd0045c2f439ba874e5fad"
+        },
+        {
+          "path": "internal/maat/coverage_runfull_regression_test.go",
+          "sha256": "2f07d667a80bc3de204c2c3b1a851b3ee92bb6cc299bddc02d083dcff2100489"
         },
         {
           "path": "internal/maat/coverage_sprint2_test.go",
@@ -3760,6 +3796,7 @@
       ],
       "direct_local_imports": [
         "internal/platform",
+        "internal/routerstore",
         "internal/stele",
         "internal/version"
       ],
@@ -4152,6 +4189,10 @@
       ],
       "tests": [
         {
+          "path": "internal/mailops/a17_regression_test.go",
+          "sha256": "13ba5f43558be92e9843ee8946844c5c581d27bca232567b6b7428f9dab3c29e"
+        },
+        {
           "path": "internal/mailops/mailops_test.go",
           "sha256": "3464cb3be048c5cf3b8d49f6279912464176c271085f0b75093643aba1f48095"
         }
@@ -4268,7 +4309,9 @@
         "internal/mercury",
         "internal/notify",
         "internal/router",
+        "internal/routerstore",
         "internal/rtk",
+        "internal/seshat",
         "internal/stele",
         "internal/thoth",
         "internal/vault"
@@ -5024,7 +5067,7 @@
       "source": [
         {
           "path": "internal/router/attended.go",
-          "sha256": "2b1794ba04ec0610c560caa205657e039e1d8b54953e809ae0d6d42aaff76144"
+          "sha256": "eb345990f8d7549d8b62ca7ccb4cc2841de9e77024eb1c1b810cc40b3ddaeabc"
         },
         {
           "path": "internal/router/backpressure.go",
@@ -5104,7 +5147,7 @@
         },
         {
           "path": "internal/router/nodestatus.go",
-          "sha256": "51ca6e2a6451715cd356c2903dbf75dd4a0ec949773b666e8077a1073d8e1b95"
+          "sha256": "244e9e536020172814f584a76653dc79d9d89c99e3d1cf5991c601634e6a4c8a"
         },
         {
           "path": "internal/router/notify.go",
@@ -5216,11 +5259,11 @@
         },
         {
           "path": "internal/router/threads.go",
-          "sha256": "6e392d2bb1ec9c86818f766cfcd6b731e67784e3271c8e9b6be09969a30ed213"
+          "sha256": "16696f733bd0bef7e0a3ff2d8c28e76db9fe40ba7af6d4a6a5628eb1103cf52c"
         },
         {
           "path": "internal/router/wake.go",
-          "sha256": "e6b6362f5a2abe6ddbabd18777b532572f86de003a6dbdd172206c62370ede37"
+          "sha256": "681a3c704b1dc99a7e6acc814bd0059f9d21c7357790e9edd2ec287428e85667"
         },
         {
           "path": "internal/router/wakeconsumer_reload.go",
@@ -5306,7 +5349,7 @@
         },
         {
           "path": "internal/router/attended_test.go",
-          "sha256": "f1dadf64d406a67c31f5c0fe983b2f322ad3c8a91bc5a96ca880383eed6238e1"
+          "sha256": "325d2afb6c189330db5f1c2a0ff986b39a702d046d2cba3495b61ac5d47595a4"
         },
         {
           "path": "internal/router/backpressure_cache_test.go",
@@ -5518,7 +5561,7 @@
         },
         {
           "path": "internal/router/router_findreporoot_test.go",
-          "sha256": "d60d7c534d9cbd841dff3e054f9586a59ef26ba4e6ad4d419e0acbd6008dc035"
+          "sha256": "ab44574eca38c0bea3d26f239d0e28e27bf1c6bae9fa8d1621e57107fc229060"
         },
         {
           "path": "internal/router/router_test.go",
@@ -5731,7 +5774,8 @@
         }
       ],
       "direct_local_imports": [
-        "internal/ledger"
+        "internal/ledger",
+        "internal/routerstore"
       ],
       "release_state": "source-inventory-only; qualification is recorded separately",
       "upgrade_boundary": "Replace this package/target through normal source review and rebuild the unified payload; callers and all applicable contracts must remain compatible."
@@ -5814,6 +5858,7 @@
       ],
       "direct_local_imports": [
         "internal/completionproof",
+        "internal/completionproof/entryfixture",
         "internal/dispatch",
         "internal/machineid",
         "internal/mcp",
@@ -5955,7 +6000,7 @@
         },
         {
           "path": "internal/routerstore/remote.go",
-          "sha256": "fbd5b35ad0241ed05614df2b13df511bab2c8ee9084490fef54a287875bf68b4"
+          "sha256": "5ddc55cd8cefe80e4d94f55420ae042cc6771b4848d67f6dc9522c84a285ea1a"
         },
         {
           "path": "internal/routerstore/remote_gen.go",
@@ -6158,6 +6203,10 @@
         {
           "path": "internal/routerstore/enforcement_adversarial_test.go",
           "sha256": "05c0601d253e3b3b1232b10d4b51510cd8709575551e04fb1bba595b383276c3"
+        },
+        {
+          "path": "internal/routerstore/fabric_context_test.go",
+          "sha256": "4dcd3a50b0b2fb0489cc357dafb18de2e15bfd1bc83b833c27b5135332954505"
         },
         {
           "path": "internal/routerstore/gzip_test.go",
@@ -6516,7 +6565,8 @@
         "internal/desktopcustody",
         "internal/maat/schedule",
         "internal/machineid",
-        "internal/servicedrain"
+        "internal/servicedrain",
+        "internal/work"
       ],
       "release_state": "source-inventory-only; qualification is recorded separately",
       "upgrade_boundary": "Replace this package/target through normal source review and rebuild the unified payload; callers and all applicable contracts must remain compatible."
@@ -6832,6 +6882,14 @@
       ],
       "tests": [
         {
+          "path": "internal/servicedrain/a17_cleanup_darwin_test.go",
+          "sha256": "77d57fc3df36381c4d63b5d27ff188f59b210c96f2bc2a59211f4a5e06bc7fc0"
+        },
+        {
+          "path": "internal/servicedrain/a17_regression_test.go",
+          "sha256": "382d5e3ef22e1751d3c7de1903d3eb71e2afd442ab91c4578ec714735735c30f"
+        },
+        {
           "path": "internal/servicedrain/custody_test.go",
           "sha256": "ba6422a773c2b5a6c6362f3b4ed93857d2b3672611b773f8ee92c213620cb0da"
         },
@@ -6849,7 +6907,7 @@
         },
         {
           "path": "internal/servicedrain/maintenance_test.go",
-          "sha256": "835796849f25f7c86dfca6e984177297e48d016a0edbf5894828d4f12135db3e"
+          "sha256": "1e591e2a2e3edeb5104b3946db840c2cd1e1a1d5261748b87df3e70ff42f53ee"
         }
       ],
       "direct_local_imports": [],
@@ -7330,7 +7388,7 @@
         },
         {
           "path": "internal/stacklab/doctor.go",
-          "sha256": "15e110edc396c5efaadc5e94020bfaffdfed21550d15c8f783c05acc7858c343"
+          "sha256": "a8177b003a1e640441eec309350a4cb3ad082c06a03037331d90eef0af64b481"
         },
         {
           "path": "internal/stacklab/local.go",
@@ -7360,7 +7418,7 @@
         },
         {
           "path": "internal/stacklab/doctor_test.go",
-          "sha256": "230e3a086cb330008b8bec37ea829ae8d9c11d12697c7b7d1b3d7bc0667916cf"
+          "sha256": "483a0928c3df5a1a93c08801b504d731dd1df42fad3bf3d9e073f8abc7f4f370"
         },
         {
           "path": "internal/stacklab/lifecycle_publication_test.go",
@@ -7984,15 +8042,15 @@
       "source": [
         {
           "path": "macapp/Sources/SirsiMenubar/ApolloRunPlannerView.swift",
-          "sha256": "608ed1eb704ff648a361216a1cfebef777ec291c7880b820a07ffbff778f5e46"
+          "sha256": "dbfc2d3088966f39dedc163e234d825d9aa495239c234b522e756b81f0ee6ed0"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/AppDelegate.swift",
-          "sha256": "333ae632692d737991721d1eb6587248d18628c7fd97e048b2d4f8c2f311b44a"
+          "sha256": "ddc0dfdc218810a6b738603d7c5754096588d6ecbf0de38a55539df9c0e9878e"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/ApplicationMenu.swift",
-          "sha256": "1057df86b0a32e507f3bf954ee1a0d71df86b9966224c9c0d98907bf52903e04"
+          "sha256": "15bd5e04d36e6011d7a0190a0761526c41cf73b10919c41393709b59c72ef49c"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/CLIArguments.swift",
@@ -8008,19 +8066,19 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/CleanCommitStep.swift",
-          "sha256": "e09ffabeb207b7b62ca201f9fa257c1bf0e586bf020d90cd5b71a39e6a35a676"
+          "sha256": "1e0c49624cc360e8706b59f68a9e9c173a8b9de2bc6ab98ebfd87a952812c387"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/CleanReviewRow.swift",
-          "sha256": "4359b7d89dc4aaaa27803c82a3dc55995d368c4dfeef25af7df67ff38aca45fa"
+          "sha256": "d08862b1a9a2db7ef61c11f27b402fed4bc1027928a6f81ec207a508ec30a2c2"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/CleanScanStep.swift",
-          "sha256": "19d906c3ed5b15a71ae72fd5aa3ad8c7cd9eacd64b19d3e44016b4e1088db63b"
+          "sha256": "02ecfb9f9b146121eef685d8733f2d7b01e18e9bf82e66be8e65b727152df7ac"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/ControlCenter.swift",
-          "sha256": "5658e96958a223e96c7f8f88a391d1c847ca1f1d9dc9f2451299a9ef9dd5f9f7"
+          "sha256": "b7d528f6b3564c4088f25ff468153b12ff6ab8531df5dbb22858e11c591711dd"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/FleetStatePresentation.swift",
@@ -8124,7 +8182,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/PantheonDesktopView.swift",
-          "sha256": "a2c535b11674c1464687d2704137b52367568b8ab413fcc58ee4c95db2774559"
+          "sha256": "320d52271df415507eee0fd11b2be1a96b6336b7ef3482f2b79ae4b00e33747b"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/RelayOutboxResolution.swift",
@@ -8144,7 +8202,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/Snapshot.swift",
-          "sha256": "9c1e6ab696ec89c5c10d648ceab1a9df5f68e3cebff4cbd31dbc29ba720445ee"
+          "sha256": "05d3566f0b5bb7aa0e336bf821e5454ff9d68f24f8a5006df516628da580b83c"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/StackLabCatalogView.swift",
@@ -8172,21 +8230,25 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/Views.swift",
-          "sha256": "6baf1e567d974b7ae1d4f6ab25725353fabf9f5ee497c590073220c1b30a8572"
+          "sha256": "48fca7e5038ef7157df97e372004bc891d3b7f0761adab87f9ec725c78cabef4"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/WorkspaceSession.swift",
-          "sha256": "4cd048552af0ef307b9b8c022e7db99136eba25da601d181f7c848f68549a0ea"
+          "sha256": "3e9ab8a973108780f593c913c66ae6c5acb6eac0dcf95b1bc9003e37b309294a"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/main.swift",
-          "sha256": "2e0ed0c4431a878c42e84732289a739aa0b4feb89c03b351fa321ff0649c11c8"
+          "sha256": "1efcd8b18aaa8325b108373fc7ea1b390b25208698e16f3678f9aea5072e18ba"
         }
       ],
       "tests": [
         {
+          "path": "macapp/Tests/SirsiMenubarTests/ApolloPlanContinuityTests.swift",
+          "sha256": "ec624ad6ae681d5e96746a69805a455d4b2b0bfbbf8046623dafd118d5d4b33d"
+        },
+        {
           "path": "macapp/Tests/SirsiMenubarTests/ApplicationMenuTests.swift",
-          "sha256": "1fda0f264ecb5a2fbe24a7ef6eed3b75884214fe5f4198caeae3c6462752112d"
+          "sha256": "b6b06f2076b60efb2924671a59f900ccf6424d35da4b703a4f757c77a8df2404"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/CLIArgumentsTests.swift",
@@ -8682,6 +8744,18 @@
           "sha256": "078121e72daf2c4c090d71e4b646e0c610836ac598eb032833d904a2a8e20d70"
         },
         {
+          "path": "scripts/qualify-hosted-commercial-lifecycle.py",
+          "sha256": "860a11b6387d39956e4b713b1659a605134bfcbd58083b8e1a20e4c23b0b136f"
+        },
+        {
+          "path": "scripts/qualify-hosted-commercial-lifecycle.sh",
+          "sha256": "747d453ccb875ae6e7cbbe7d7b568a684e41cecc2f4a0b4af8985e08ca1acc72"
+        },
+        {
+          "path": "scripts/qualify-hosted-commercial-lifecycle.test.py",
+          "sha256": "759b9bada92fe0f57ce14e53fc12d7757df84b2a6e2dfeb1990850e067b85025"
+        },
+        {
           "path": "scripts/record-demo.tape",
           "sha256": "c83b1cb412a8ca31d8399da49843ce5fad0a126d712f656f53bb3b55221ecb7e"
         },
@@ -8923,7 +8997,7 @@
         },
         {
           "path": "contracts/stacklab/maat-system-one-recipe-v1.json",
-          "sha256": "0e9564525319f8c7249b77b59eda71702d7e284319c2250864228b86264656f8"
+          "sha256": "159814c102ae3bc55467a981bdf6ca87144db43bc50d6cad1ad23e96229c4c5d"
         },
         {
           "path": "contracts/stacklab/maat-wing-v1.json",
@@ -8963,7 +9037,7 @@
         },
         {
           "path": "contracts/stacklab/ra-horus-fabric-wing-v1.json",
-          "sha256": "486b0e987118c12af06ed4f41f34ec00ba0de5b854f9e101cee0e0fca7effb62"
+          "sha256": "29752f364ae300aa0f4a56464da08a17054793c92ce027c8af8fb02679a7d30c"
         },
         {
           "path": "contracts/stacklab/v2/PROVENANCE.md",
@@ -9247,7 +9321,7 @@
         },
         {
           "path": "internal/dashboard/ui/app.js",
-          "sha256": "83804d209c253162b3dcce8f6317b3895fc5a15ec42e8fbb472b6e2e195060a3"
+          "sha256": "dc3af0b069f6460d1a28157f0c57d8d96b4bd8fa21bf3e43e992dc9ef798cb31"
         },
         {
           "path": "internal/dashboard/ui/fabric.js",
@@ -9304,6 +9378,10 @@
         {
           "path": ".github/workflows/maat-advise.yml",
           "sha256": "c88a494dd3e56028fdd698a5096e7430073d10f258c259e21d29cdf4d07c319c"
+        },
+        {
+          "path": ".github/workflows/qualify-hosted-commercial-lifecycle.yml",
+          "sha256": "06706c8ad2fc770fcd010675b43eb9f1ae93b7b7dbd5a56008258a35eaf87091"
         },
         {
           "path": ".github/workflows/release.yml",
