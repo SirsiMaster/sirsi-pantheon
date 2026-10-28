@@ -116,15 +116,25 @@ func writeApolloPortFile(home string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp := filepath.Join(dir, ".gemma-server.port.tmp")
-	if err := os.WriteFile(tmp, []byte(fmt.Sprintf("%d\n", liveness.ApolloRouterPort)), 0o644); err != nil {
+	// CreateTemp makes a fresh O_EXCL leaf: it never follows or clobbers an
+	// existing staging file or symlink. Only our own temp is ever removed.
+	f, err := os.CreateTemp(dir, ".gemma-server.port.*")
+	if err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, filepath.Join(dir, "gemma-server.port")); err != nil {
-		_ = os.Remove(tmp)
+	tmp := f.Name()
+	defer func() { _ = os.Remove(tmp) }() // no-op after a successful Rename
+	_, werr := fmt.Fprintf(f, "%d\n", liveness.ApolloRouterPort)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return werr
+	}
+	if err := os.Chmod(tmp, 0o644); err != nil {
 		return err
 	}
-	return nil
+	return os.Rename(tmp, filepath.Join(dir, "gemma-server.port"))
 }
 
 // GemmaBrokerInstalled reports whether the reboot-durable broker LaunchAgent

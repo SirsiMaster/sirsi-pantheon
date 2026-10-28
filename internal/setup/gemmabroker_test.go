@@ -156,6 +156,49 @@ func TestInstallGemmaBroker_ApolloRepointFailures(t *testing.T) {
 	})
 }
 
+// A stale fixed-name staging leaf (here a symlink to another settings file)
+// must be neither followed nor clobbered; the port file is published as a
+// regular file.
+func TestInstallGemmaBroker_ApolloRepointIgnoresStaleStagingLeaf(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin only")
+	}
+	home := apolloHome(t)
+	dir := filepath.Join(home, ".sirsi")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	referent := filepath.Join(dir, "orchestrator.conf")
+	if err := os.WriteFile(referent, []byte("provider = gemma\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(dir, ".gemma-server.port.tmp")
+	if err := os.Symlink(referent, stale); err != nil {
+		t.Fatal(err)
+	}
+
+	if res := InstallGemmaBroker(); res.Status != StatusSkipped {
+		t.Fatalf("want provided-by-Apollo skip, got %v %q", res.Status, res.Message)
+	}
+	if b, _ := os.ReadFile(referent); string(b) != "provider = gemma\n" {
+		t.Fatalf("symlink referent overwritten: %q", b)
+	}
+	if target, err := os.Readlink(stale); err != nil || target != referent {
+		t.Fatalf("stale staging symlink disturbed: %q %v", target, err)
+	}
+	port := filepath.Join(dir, "gemma-server.port")
+	fi, err := os.Lstat(port)
+	if err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("port file not a regular file: %v %v", fi, err)
+	}
+	if b, _ := os.ReadFile(port); string(b) != "8520\n" {
+		t.Fatalf("port file = %q", b)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, ".gemma-server.port.[0-9]*")); len(left) != 0 {
+		t.Fatalf("owned temp leaked: %v", left)
+	}
+}
+
 func TestInstallGemmaBroker_HonorsQuarantine(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("darwin only")
