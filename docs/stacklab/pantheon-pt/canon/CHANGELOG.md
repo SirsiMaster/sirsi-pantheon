@@ -2,6 +2,8 @@
 
 ## 2026-10-27 — v0.24.142 release candidate
 
+- Record the actual single hosted140 →141 →140 rollback →uninstall commercial cask qualification and bounded cleanup receipts; keep142 GUI/package and full certification acceptance separate.
+
 - Registry: `rpa` / `RPA` now route to the existing attended ReprogramAnything lane `codex-sirsinexusapp` (callsign `RPA`), per the owner's direction to "register with the router as RPA". Identity, claims and consumer policy unchanged; no new worker.
 - Readable native Mac workspace
 - Responsive Fabric reads
