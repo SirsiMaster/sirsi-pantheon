@@ -154,6 +154,57 @@ flowchart LR
 
 At the reviewed source, `apollo plan` calls `internal/apollo.Collect` and `BuildPlanForMachine`. It does not call the separate `apollo telemetry` reader. Telemetry reads the SNE session file only through its own command. `apollo chat` is a separate profile-bound Ma’at-admitted execution path. Cluster commands keep their explicit refusal path. No telemetry read, profile execution, chat or cluster request was made here.
 
+### Native selection continuity correction
+
+The installed141 Back path reset the operator's selection. The corrective source
+uses the per-window `PantheonWorkspaceSession.apolloRootDraft` as UI intent only;
+a pushed planning journey owns a distinct draft. A revision copies the plan into
+another draft, so cancelling a revision does not overwrite the origin. This does
+not add repository/project authority to the Apollo Go protocol.
+
+```mermaid
+flowchart TD
+  WINDOW[Desktop window WorkspaceSession] --> ROOT[Stable root planner draft]
+  PUSH[Pushed planner entry] --> JOURNEY[Separate journey draft]
+  ROOT --> SELECT[Choose machine engine chip estates cores memory swap]
+  JOURNEY --> SELECT
+  SELECT --> REFRESH[On entry or Back read fresh capacity]
+  REFRESH -->|same supported selection| READY[Preserve exact intent and enable plan]
+  REFRESH -->|missing option reduced capacity or read failure| BLOCK[Preserve intent show reason disable plan]
+  BLOCK --> SELECT
+  READY --> BUILD[Non-executing typed apollo plan]
+  BUILD -->|current attempt success| VIEW[Plan and separate session telemetry screen]
+  BUILD -->|error| SELECT
+  VIEW -->|normal Back| REFRESH
+  VIEW -->|Review| COPY[Independent revision draft seeded from plan]
+  COPY --> SELECT
+  COPY -->|cancel| VIEW
+  SELECT -->|leave or project presentation change| FENCE[Invalidate read and plan attempts cancel owned task]
+  FENCE -->|late completion| IGNORE[Do not overwrite another journey or project intent]
+```
+
+```mermaid
+flowchart LR
+  CATALOG[Fresh typed Apollo catalog] --> VALIDATE[Reconcile retained intent without silent clamping]
+  DRAFT[Per-window or per-entry editable draft] --> VALIDATE
+  VALIDATE --> REQUEST[Exact machine engine estate and resource plan arguments]
+  REQUEST --> GO[Canonical Go plan validator]
+  GO --> PLAN[Immutable non-executing plan]
+  PLAN --> REVISION[Independent editable revision copy]
+  TOKEN[Current read and build attempt identities] --> ACCEPT[Accept only matching completion]
+  GO --> ACCEPT
+  ACCEPT --> DRAFT
+  PROJECT[Selected project presentation identity] --> RESET[Reset UI draft only]
+  RESET --> DRAFT
+  PLAN -. no admission or model execution implied .-> TELEMETRY[Separate telemetry projection]
+```
+
+The changed sources are `ApolloRunPlannerView.swift`, `WorkspaceSession.swift`
+and `PantheonDesktopView.swift`; `ApolloPlanContinuityTests.swift` exercises the
+production root factory, reconstruction, journey/window isolation, fresh return
+validation and cancelled late results. Source review accepted the bounded patch;
+execution and corrected installed observation remain separate proof obligations.
+
 <a id="pt-p54"></a>
 ## PT-P54 — Ask, model route and redacted decision journal
 

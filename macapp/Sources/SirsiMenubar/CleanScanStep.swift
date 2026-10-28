@@ -43,7 +43,7 @@ struct CleanScanStep: View {
                         onScan()
                     } label: {
                         Text("Scan")
-                            .sirsiFont(13, weight: .semibold)
+                            .sirsiFont(14, weight: .semibold)
                     }
                     .buttonStyle(.borderedProminent)
                 }

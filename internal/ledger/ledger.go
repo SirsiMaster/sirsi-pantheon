@@ -4,6 +4,7 @@
 package ledger
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -63,6 +64,12 @@ func Build(repoRoot, agent string, now time.Time, staleAfter time.Duration) (Sna
 }
 
 func buildWithThreads(repoRoot, agent string, now time.Time, staleAfter time.Duration) (Snapshot, *router.ThreadRegistry, error) {
+	return buildWithThreadsContext(context.Background(), repoRoot, agent, now, staleAfter)
+}
+func buildWithThreadsContext(ctx context.Context, repoRoot, agent string, now time.Time, staleAfter time.Duration) (Snapshot, *router.ThreadRegistry, error) {
+	if err := ctx.Err(); err != nil {
+		return Snapshot{}, nil, err
+	}
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
@@ -74,17 +81,27 @@ func buildWithThreads(repoRoot, agent string, now time.Time, staleAfter time.Dur
 		return Snapshot{}, nil, err
 	}
 	defer f.Close()
-	all, _, err := f.ListActive()
+	all, _, err := f.ListActiveContext(ctx)
 	if err != nil {
 		return Snapshot{}, nil, err
 	}
-	tasks, err := f.Store().ListTasks(agent)
+	var tasks []routerstore.Task
+	if contextual, ok := f.Store().(interface {
+		ListTasksContext(context.Context, string) ([]routerstore.Task, error)
+	}); ok {
+		tasks, err = contextual.ListTasksContext(ctx, agent)
+	} else {
+		tasks, err = f.Store().ListTasks(agent)
+	}
 	if err != nil {
 		return Snapshot{}, nil, err
 	}
 	routerRoot := repoRoot + "/.agents/idea-router"
-	threads, err := router.LoadThreadRegistry(routerRoot)
+	threads, err := router.LoadThreadRegistryContext(ctx, routerRoot)
 	if err != nil {
+		return Snapshot{}, nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return Snapshot{}, nil, err
 	}
 	return BuildFrom(all, tasks, threads, agent, now, staleAfter), threads, nil

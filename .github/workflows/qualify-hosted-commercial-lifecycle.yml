@@ -1,0 +1,28 @@
+name: Exact signed Pantheon isolated lifecycle
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pantheon-isolated-commercial-lifecycle
+  cancel-in-progress: false
+jobs:
+  lifecycle:
+    # Existing disposable CI class; do not change to self-hosted labels.
+    runs-on: macos-15
+    # Controller execution30m + joined recovery5m leave5m for final evidence.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Actual immutable 140 to 141 to 140 commercial cask lifecycle
+        shell: bash
+        run: bash scripts/qualify-hosted-commercial-lifecycle.sh
+      - name: Retain actual results and cleanup debt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pantheon141-commercial-lifecycle-${{ github.run_id }}
+          path: ${{ runner.temp }}/pantheon141-lifecycle.*/
+          if-no-files-found: warn

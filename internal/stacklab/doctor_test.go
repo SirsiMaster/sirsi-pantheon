@@ -3,6 +3,8 @@ package stacklab
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -408,5 +410,91 @@ func TestContentSHA256_Deterministic(t *testing.T) {
 	}
 	if a == ContentSHA256([]byte("world")) {
 		t.Fatalf("different content must hash differently")
+	}
+}
+
+// Exercise the same roster/map/self inputs as the default doctor with only
+// in-memory origin/main and registry-pin reads, never a live API or checkout wing.
+func TestRun_RPADefaultRosterOriginPinAndUndeclared(t *testing.T) {
+	const id = "stacklab.wing.rpa"
+	const owner = "SirsiMaster/ReprogramAnything"
+	if got := LaneRepoMap["rpa"]; got != owner {
+		t.Fatalf("RPA owner = %q, want %q", got, owner)
+	}
+	if got := wingPath("rpa"); got != "contracts/stacklab/rpa-wing-v1.json" {
+		t.Fatalf("RPA origin path = %q", got)
+	}
+	raw, err := os.ReadFile(filepath.Join("..", "..", "contracts", "stacklab", "ra-horus-fabric-wing-v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wing, err := ValidateWing(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, peer := range wing.Handoffs.AllowedPeerWings {
+		if peer == id {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("default fabric roster contains RPA %d times, want exactly once", n)
+	}
+	for _, tc := range []struct {
+		name string
+		want string
+	}{
+		{"matching origin and pin", ""},
+		{"mismatched pin", KindUnpinned},
+		{"branch only origin", KindUnpushedStranded},
+		{"mapped but undeclared", KindUndeclared},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newMockReader()
+			roster := append([]string(nil), wing.Handoffs.AllowedPeerWings...)
+			var pinNames []string
+			for _, peer := range append(append([]string(nil), roster...), wing.ID) {
+				lane := laneOf(peer)
+				content := validWingJSON(peer)
+				if peer == wing.ID {
+					content = raw
+				}
+				ref := "main"
+				if peer == id && tc.name == "branch only origin" {
+					ref = "feature/rpa-wing"
+					r.branches[owner] = []string{ref}
+				}
+				r.putFile(LaneRepoMap[lane], ref, wingPath(lane), content)
+				pin := content
+				if peer == id && tc.name == "mismatched pin" {
+					pin = append(append([]byte(nil), content...), '\n')
+				}
+				name := lane + "-wing-v1.json"
+				pinNames = append(pinNames, name)
+				r.putFile(RegistryRepo, "main", RegistryPinsDir+"/"+name, pin)
+			}
+			r.putDir(RegistryRepo, "main", RegistryPinsDir, pinNames)
+			if tc.name == "mapped but undeclared" {
+				filtered := roster[:0]
+				for _, peer := range roster {
+					if peer != id {
+						filtered = append(filtered, peer)
+					}
+				}
+				roster = filtered
+			}
+			rep := Run(r, roster, LaneRepoMap, wing.ID)
+			if len(rep.Unknown) != 0 {
+				t.Fatalf("unexpected unknown origin/pin reads: %v", rep.Unknown)
+			}
+			if tc.want == "" {
+				if !rep.Clean() {
+					t.Fatalf("mapped declared RPA with exact origin/main pin must be clean: %+v", rep)
+				}
+			} else if len(rep.Findings) != 1 || rep.Findings[0].WingID != id || rep.Findings[0].Kind != tc.want || rep.Clean() {
+				t.Fatalf("RPA must retain %s refusal, got %+v", tc.want, rep)
+			}
+		})
 	}
 }

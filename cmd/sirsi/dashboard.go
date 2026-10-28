@@ -56,7 +56,9 @@ func runDashboard(cmd *cobra.Command, args []string) {
 
 	// Find our own binary path for the command runner.
 	selfBin, _ := os.Executable()
-	fabricSource := ledger.NewFabricGenerationProducer(collectDashboardFabricRead, buildversion.Current("sirsi").Version)
+	fabricContext, cancelFabric := context.WithCancel(cmd.Context())
+	defer cancelFabric()
+	fabricSource := ledger.NewFabricGenerationProducerContext(fabricContext, collectDashboardFabricReadContext, buildversion.Current("sirsi").Version)
 
 	srv := dashboard.New(dashboard.Config{
 		MercuryFn: mercury.NewConfigured().Read,
@@ -119,6 +121,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 
 	fmt.Println()
 	output.Info("Shutting down dashboard...")
+	cancelFabric()
 	_ = srv.Stop()
 	if nStore != nil {
 		nStore.Close()
@@ -192,20 +195,32 @@ func collectDashboardMaatKnowledge(query string) (knowledge.View, error) {
 }
 
 func collectDashboardFabricRead() (ledger.FabricRead, error) {
+	return collectDashboardFabricReadContext(context.Background())
+}
+func collectDashboardFabricReadContext(ctx context.Context) (ledger.FabricRead, error) {
+	if err := ctx.Err(); err != nil {
+		return ledger.FabricRead{}, err
+	}
 	repoRoot, err := router.FindRepoRoot()
 	if err != nil {
 		return ledger.FabricRead{}, fmt.Errorf("locate repo root: %w", err)
 	}
-	return collectDashboardFabricReadAtRoot(repoRoot)
+	return collectDashboardFabricReadAtRootContext(ctx, repoRoot)
 }
 
 func collectDashboardFabricReadAtRoot(repoRoot string) (ledger.FabricRead, error) {
+	return collectDashboardFabricReadAtRootContext(context.Background(), repoRoot)
+}
+func collectDashboardFabricReadAtRootContext(ctx context.Context, repoRoot string) (ledger.FabricRead, error) {
 	now := time.Now().UTC()
-	read, err := ledger.ReadFabric(repoRoot, now)
+	read, err := ledger.ReadFabricContext(ctx, repoRoot, now)
 	if err != nil {
 		return ledger.FabricRead{}, err
 	}
-	health := collectFabricHostHealth(repoRoot, now)
+	health := collectFabricHostHealthContext(ctx, repoRoot, now)
+	if err := ctx.Err(); err != nil {
+		return ledger.FabricRead{}, err
+	}
 	read.Evidence.Health = &health
 	return read, nil
 }
@@ -270,7 +285,11 @@ func collectDashboardNodeStatus() (*router.NodeStatus, error) {
 	if err != nil {
 		return nil, fmt.Errorf("locate repo root: %w", err)
 	}
-	return router.CollectNodeStatus(repoRoot, nil)
+	// Web observation must not launch agent auth/model commands. Explicit CLI
+	// diagnostics retain the collector's default active auth probe.
+	return router.CollectNodeStatus(repoRoot, nil, func(string, string) (bool, bool, string) {
+		return false, false, "not probed during passive dashboard read; use explicit auth diagnostics"
+	})
 }
 
 // collectDashboardStats gathers system metrics for the dashboard.

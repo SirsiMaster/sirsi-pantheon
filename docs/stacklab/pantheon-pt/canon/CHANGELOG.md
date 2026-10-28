@@ -1463,3 +1463,30 @@ The release also repairs inherited pre-push Git environment contamination in tes
 ## 2026-09-28
 
 - Added the independently cataloged development-versus-commercial release artifact recipe. Commercial artifact names now require the Developer ID/notary/stapling route; ad-hoc package work is explicitly `-dev` only.
+
+## Finite installed141 correction — source in preparation
+
+- Bind actual public141 signed pair/cask, exact source tests, selected loaded
+  adoption and human reading copies separately from remaining certification.
+- Preserve the actual91/100 A17 FAIL and its findings; retain independently
+  reviewed historical canon crosswalk and meaningful coverage work.
+- Retain per-window/journey Apollo selection through reconstruction/Back with
+  fresh-capacity validation; a revision cannot overwrite its origin on cancel.
+- Remove auth/model commands from passive Fabric, reuse the same bound default
+  board in the web app and preserve selected task/cursor and freshness semantics.
+- Add RPA's exact owning repository and declared peer; the changed Ra wing
+  requires normal owning merge and registry repin. No runtime grants change.
+
+Source/causal proofs and installed/lifecycle outcomes remain distinct. This is
+not a new release announcement or a retrospective rewrite of public141.
+
+### Native readability and command menus — same corrective cohort
+
+- Replaces the Quit-only menu with native Pantheon, File, Edit, View, Window and
+  Help menus, standard editing responder actions, and existing workspace routes.
+- Raises body text to 15 pt, secondary copy to 14 pt, and supporting text to a
+  12 pt floor before scaling; adds persisted 100–150% text sizing independent
+  of window width and preserves workspace/navigation state.
+- Compilation, menu validation, state continuity and installed visual/keyboard
+  verification are distinct acceptance evidence. This entry is source scope,
+  not a claim that 0.24.141 already includes these changes.

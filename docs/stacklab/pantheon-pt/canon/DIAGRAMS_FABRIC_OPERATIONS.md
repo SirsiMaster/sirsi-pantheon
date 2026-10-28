@@ -682,13 +682,20 @@ against a generation digest, preserve honest stale/unavailable state, and feed
 existing web, native, CLI, and compatibility consumers without creating
 another authority. Native handoff uses the fixed Horus sender.
 **State:** producer and consumer source are described; mixed-consumer
-qualification and cross-surface readback remain separate.
+qualification and cross-surface readback remain separate. The bounded corrective
+source proposals over `c1651420728e90063f55ffd314659e6b51cacd9e` below cover
+passive Fabric auth observation and default web snapshot reuse. Their fixtures
+are authored, not executed for this canon update. The accepted backend design is
+described below against frozen source-only patch `8e944b90d3abc2745ea7ed475a57df9446cb2e4823426fb0832b07d9b39c19a3`.
+Composed-source execution and installed adoption remain separate evidence.
 
 ### Logical and data view
 
 ```mermaid
 flowchart LR
-  Router[(Canonical router and thread facts)] --> Producer[One Fabric generation]
+  Router[(Canonical router and thread facts)] --> Node[Existing node metadata, PID, registry and stranding]
+  Passive[Fabric auth not probed, inconclusive] -.-> Node
+  Node --> Producer[One Fabric generation]
   Ledger[(Canonical task snapshot)] --> Producer
   Readiness[Existing lane readiness projection] --> Producer
   Host[Bounded host facts] --> Producer
@@ -698,7 +705,16 @@ flowchart LR
   Page --> Digest[Public projection digest continuation]
   Digest -->|same generation| Next[Next page]
   Digest -->|changed projection| Conflict[409, explicit first-page refresh]
-  Producer --> Web[Existing web endpoint and renderer]
+  Producer --> Snapshot[RouterSnapshot with bound Fabric board]
+  Snapshot --> Scope{Valid default board and current selection generation?}
+  Scope -->|yes| Web[Existing web renderer, original observation time]
+  Scope -->|late selection| Ignore[Keep newer selected observation]
+  Scope -->|absent, invalid or failed read| Request[Independent Fabric endpoint]
+  Selection[Explicit filter or digest continuation] --> Request
+  Request --> Producer
+  Request --> Fence{Response matches selected read generation?}
+  Fence -->|yes| Web
+  Fence -->|no| Ignore
   Producer --> Native[Native canonical reader]
   Producer --> Compat[Detached read-only compatibility adapters]
   Native -->|fixed sender and typed payload| Service[Canonical router service]
@@ -713,7 +729,10 @@ stateDiagram-v2
   Current --> Current: same facts, no synthetic transition
   Current --> Changed: real observed task status transition
   Changed --> Current: generation built from current snapshot
-  Current --> Retained: read failure preserves last observation with age and error
+  Current --> Reading: refresh default snapshot or explicit selected page
+  Reading --> Current: valid matching response, original observation timestamp
+  Reading --> Current: ignore response superseded by newer selection
+  Reading --> Retained: read failure preserves last observation with age and error
   Retained --> Current: later successful read
   Current --> Unavailable: producer failure, surface reports unavailable
   Current --> PageConflict: continuation digest changed
@@ -728,7 +747,13 @@ the last observation with age/error; a changed continuation refuses rather
 than skipping rows. Private task bodies, leases, local reference paths, and
 foreign raw payloads stay outside the bounded projection. Existing SSE and
 legacy wire contracts remain compatibility surfaces until their owning
-qualification/readback is recorded.
+qualification/readback is recorded. Reuse is within one received snapshot, with
+no TTL or synthetic freshness. An invalid/missing embedded default falls back to
+the existing Fabric endpoint. Filtered/continued reads retain their own request
+and response-selection fence. Fabric's supplied auth probe returns neither
+AuthOK nor NeedsLogin, with explicit not-probed/inconclusive detail. Existing
+explicit doctor/auth diagnostics keep their active probe. This does not hide
+registry, thread, PID, stranding or canonical lane-classification facts.
 
 ### Actor sequence
 
@@ -737,14 +762,24 @@ sequenceDiagram
   participant CLI as Protected CLI producer
   participant Store as Canonical router and ledger reads
   participant Board as Fabric generation builder
+  participant API as Dashboard snapshot and selection adapters
   participant Web as Web consumer
   participant Native as Native consumer
   participant Service as Router service
-  CLI->>Store: Read canonical facts once
-  Store-->>Board: Snapshot, readiness, and safe evidence
+  Web->>API: GET router snapshot for default refresh
+  API->>Store: Read existing canonical facts
+  Store-->>Board: Ledger, passive node metadata, readiness and safe evidence
   Board->>Board: Join planes and bind page digest
-  Web->>Board: Request first page or exact continuation
-  Board-->>Web: Current page, 409, or honest producer error
+  Board-->>API: Bound Fabric generation
+  API-->>Web: RouterSnapshot with Fabric and original generated_at
+  alt Default selection, valid embedded board, current read generation
+    Web->>Web: Use bound board without duplicate default endpoint read
+  else Explicit filter or continuation, or embedded default unavailable
+    Web->>API: GET Fabric with selected filter and digest, or default fallback
+    API->>Board: Existing complete acquisition and bounded selection
+    Board-->>Web: Current page, 409, or honest producer error
+    Web->>Web: Publish only for current selected read generation
+  end
   Native->>CLI: Request typed bounded board read
   CLI-->>Native: Canonical data and source status
   Native->>Service: Fixed-sender typed handoff action
@@ -753,19 +788,165 @@ sequenceDiagram
 Plain English: Fabric is a read model. It joins existing canonical facts and
 projects them for display; it neither repairs the router nor decides whether a
 worker is authorized. Task activity, inbox messages, runtime, and host health
-remain separate planes.
+remain separate planes. A passive board read does not launch a model/auth prompt
+and does not assert authentication health. Default web rendering can use the
+same bound response instead of collecting a second default board. This source
+change does not establish an installed latency improvement. The bounded backend
+subflow below shares overlapping acquisitions without creating another authority.
+
+### Bounded backend acquisition subflow
+
+This is part of PT-P64. One producer owns one active slot and committed history.
+Only overlapping unfiltered requests share an acquisition. Page/filter requests
+wait independently, then acquire and validate their own selection before commit.
+There is no completed-result cache or TTL. Every later non-overlapping request
+acquires again. Each returned View remains detached from the sealed generation.
+
+Logical view:
+
+```mermaid
+flowchart LR
+  Request[Request with caller context] --> Admission{Producer admission}
+  Admission -->|overlapping unfiltered with live demand| Join[Join current acquisition]
+  Admission -->|idle slot| Start[Start one acquisition]
+  Admission -->|selected read or abandoned slot| Queue[Wait cancellably for actual exit]
+  Queue --> Admission
+  Start --> Collect[Contextual collection, serial lane classification]
+  Join --> Collect
+  Collect --> Validate[Validate selection and stage candidate]
+  Validate --> Commit{Live demand and uncancelled operation?}
+  Commit -->|yes| Publish[One history commit and sealed generation]
+  Commit -->|no or failed validation| Discard[Discard candidate, retain committed history]
+```
+
+Data view:
+
+```mermaid
+flowchart LR
+  Waiters[Caller contexts, live waiter set] --> Operation[Owned acquisition context, 15 second ceiling]
+  Lifetime[Producer lifetime and shutdown] --> Operation
+  Operation --> Reads[Canonical task, thread, inbox and node reads]
+  Operation --> Mint[Cancellable session mint admission]
+  Mint --> RPC[Same signed methods, arguments and caller policy]
+  Reads --> Candidate[Private candidate and selection validator]
+  RPC --> Candidate
+  Baseline[(Last committed facts, events and sequence)] --> Candidate
+  Candidate --> Gate[Single final commit gate]
+  Waiters --> Gate
+  Operation --> Gate
+  Gate --> Baseline
+  Gate --> Sealed[Sealed generation, detached consumer views]
+```
+
+Lifecycle and recovery:
+
+```mermaid
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> Acquiring: first admitted reader
+  Acquiring --> Acquiring: overlapping unfiltered reader joins
+  Acquiring --> Acquiring: one reader cancels, live demand remains
+  Acquiring --> Abandoned: last demand cancels, deadline or shutdown
+  Abandoned --> Abandoned: slot held through actual callback cleanup
+  Abandoned --> Idle: callback exits, no history commit
+  Acquiring --> Idle: valid candidate, one history commit
+  Acquiring --> Idle: collector failure or selection refusal, no commit
+  Idle --> Closed: producer shutdown
+  Abandoned --> Closed: shutdown and actual callback exit
+```
+
+Actor sequence:
+
+```mermaid
+sequenceDiagram
+  participant A as First reader
+  participant B as Overlapping default reader
+  participant P as Fabric producer
+  participant C as Existing collectors and remote client
+  participant H as Committed history
+  A->>P: Read with caller context
+  P->>C: Acquire with owned bounded context
+  B->>P: Read while unfiltered acquisition is active
+  P->>P: Join same operation, no second acquisition
+  A->>P: Cancel first caller
+  P->>P: Keep operation while B still needs it
+  alt Successful acquisition with live demand
+    C-->>P: Candidate facts
+    P->>P: Validate and seal, recheck context and live demand
+    P->>H: Commit history once
+    P-->>B: Same sealed generation with detached View
+  else Last demand cancels, deadline or shutdown
+    P->>C: Cancel acquisition context
+    P->>P: Return cancelled waiters, retain active slot
+    Note over C,P: Contextless residual work can still be running
+    C-->>P: Actual callback exit and cleanup
+    P->>P: Discard cancelled result, release slot after exit
+  end
+```
+
+Cancellation is demand-specific. Cancelling the first reader cannot cancel a
+surviving reader's acquisition. Last-demand cancellation closes sharing and
+cancels downstream, but replacement work waits for actual callback exit. The
+15-second acquisition ceiling derives from producer lifetime, and new joiners
+do not extend it. Shutdown cancels active demand and closes future admission.
+Failures, cancellation and rejected pages do not seed or advance history.
+
+The actual dashboard path threads context through active/count, task/thread,
+inbox, operational-agent and classification client reads plus existing bounded
+host/launchctl helpers. Classification remains serial with unchanged canonical
+arguments. Session mint admission waits cancellably without holding the state
+mutex across network I/O. Only the three new Fabric RPC wrappers add the existing
+per-call ceiling. Generic caller budgets remain unchanged, including Wait's
+60-second default long poll plus 10-second allowance and shorter caller bounds.
+Legacy collector callbacks remain compatible, with their contextless interiors
+explicitly outside prompt-termination claims.
+
+**Limits:** cancelling client HTTP/spool waiting does not prove remote SQL stopped
+or retract an already-dispatched durable spool request. Server contextless SQL
+and classification bodies remain unchanged. Local legacy store operations,
+cold open/migration, initial thread import, filesystem/cache I/O, capacity and
+PID/machine/watcher interiors retain synchronous work and cancellation checkpoints
+between supported stages. The legacy RouterFn prelude remains contextless.
+There is no worker fanout, parallel classification or installed latency proof.
+
+**Backend source / authored controls:** `internal/ledger/fabric_generation.go`
+(`NewFabricGenerationProducerContext`, `readGeneration`, `runFabricOperation`,
+`buildFabricCandidate`), `internal/ledger/{fabric,ledger}.go`,
+`internal/dispatch/facade.go`, `internal/router/{nodestatus,threads,wake}.go`,
+`internal/routerstore/remote.go`, `cmd/sirsi/{dashboard,fabric_host}.go`, and
+`internal/dashboard/server.go`. Authored tests in
+`internal/ledger/fabric_coalescing_test.go` cover overlapping readers, surviving
+demand, retained cleanup slot, cancelled queued selection, rejected-page history,
+first failure and shutdown. `internal/routerstore/fabric_context_test.go` covers
+fake-transport mint contention, wire/context propagation and Wait/Fabric deadline
+budgets without waiting out those deadlines. Cancellation causal controls must
+bypass candidate context checkpoints and final cancellation/live-demand guards
+together, while keeping callback errors and page validation intact. Ordinary
+first-read failure is a separate control. All execution and installed proof
+remain Main-owned and are not asserted by this source description.
 
 **Source / tests:** `internal/ledger/fabric*.go`, `internal/router/readiness_projection.go`,
 `internal/routerboard/generation.go`, `internal/routerboard/http.go`,
 `internal/dashboard/fabric_generation.go`, `internal/dashboard/fabric.go`,
 `internal/dashboard/fleet.go`, `internal/dashboard/ui/fabric.js`,
-`internal/dashboard/ui/app.js`, `macapp/Sources/SirsiMenubar/CanonicalFabric.swift`,
+`internal/dashboard/ui/app.js`, `internal/dashboard/testdata/fabric_app.test.cjs`,
+`internal/ledger/fabric_auth_unix_test.go` (proposed inert ReadFabric sentinel fixture), `macapp/Sources/SirsiMenubar/CanonicalFabric.swift`,
 `SirsiEngine.swift`, `Views.swift`; recipe component `fabric-board` names the
 producer and consumer test inventory. Canon: `FABRIC_TASKS_AND_ROLES_V1.md`
 and `FABRIC_SURFACE_PRODUCER_V1.md`. Those canon files explicitly separate
 authored/unrun fixtures, R3 installed adoption, R4 same-wire convergence, and
 foreign Nexus/Horus readback.
 
+
+**Corrective controls and remaining action:** the proposed passive fixture calls
+actual `ReadFabric` over private explicit SQLite and router fixtures, with
+PATH-only fake Claude/Codex and launchctl helpers. Restoring the old nil-probe
+call must fail the command-execution sentinel assertion using only those fakes.
+Existing app-IIFE DOM/fetch tests add default request-count, filtered/continued
+read, delayed snapshot-selection and Fleet fallback controls. Restoring the
+unconditional default Fabric fetch must fail the zero-duplicate assertion.
+Main owns normal finite execution, exact composed-source review and installed
+endpoint timing/readback. No such pass or timing result is claimed here.
 ---
 
 <a id="pt-p65"></a>
@@ -1069,7 +1250,7 @@ router-service dispatcher or that any fleet command ran.
 | PT-P61 | `internal/router/{wake,providerquota,wakeimage,wakeconsumer_reload,threads}.go`, `internal/routerstore/{runnable,tasklease}.go` | Ra wake runtime; Horus | Current durable wake, quota and capacity gates, observer generation, loaded-image adoption, join refresh, bounded cleanup. | Main: qualify successor source and signed adoption, then retain real suppression, join, current-source refresh, and sequential queue receipts. |
 | PT-P62 | `internal/router/{supervisor,supervisorduties,census,fabricquarantine}.go`, `internal/routerstore/{breaker,dispatch,reconcile}.go` | Horus supervisor; Ra durable authority | Declared duty dispatch, census, explicit quarantine/stand-down, breaker and escalation resolution. | Duty owner: attach current pass and state-transition evidence for each active duty; exercise only authorized explicit lift/reset and retain the resulting receipt. |
 | PT-P63 | `internal/routerstore/mailboxreconcile*.go`, `cmd/sirsi/routermailboxreconcile.go` | Ra service; authorized SSA/Horus principal | Finite exact notice/digest reconciliation with principal/expiry/lease fences, atomic audit, idempotent bounded readback. | Authorized owner: qualify SQLite, PostgreSQL, and restricted-shell HTTP, then reconcile only the approved finite manifest and verify exact rows. |
-| PT-P64 | `internal/ledger/fabric*.go`, `internal/routerboard`, `internal/dashboard`, native `CanonicalFabric` | Ra facts; Horus projection | One private generation, distinct planes, digest-bound detail/pages, honest stale/error state, compatible consumers and fixed sender. | Main plus each consumer owner: run Go-to-web/native wire qualification, then record actual endpoint/SSE/native readback and Nexus/Horus mapping separately. |
+| PT-P64 | `internal/ledger/fabric*.go`, `internal/routerboard`, `internal/dashboard`, native `CanonicalFabric` | Ra facts; Horus projection | One private generation, passive auth metadata, default snapshot reuse, independently selected pages, honest stale/error state and fixed sender. | Main plus each consumer owner: qualify the proposed passive sentinel and frontend duplicate/selection controls, then retain actual endpoint/native timing and readback separately. Backend lifecycle is source-described below the existing PT-P64 views, qualification and installed readback remain separate. |
 | PT-P65 | `scripts/maat/fabric-run.sh`, `fabric-endpoints.py`, existing native executor | Ma'at executor; Ra task authority; Pantheon integration | Native locality only on exact evidence; otherwise strict pinned remote path; terminal refusal and existing evidence semantics. | Main: run all inert locality/selector controls, then the reviewed own-host invocation with executor, admission, terminal, completion, and release receipts. |
 | PT-P66 | `internal/routerstore/migratestore.go`, `migrationgate.go`, release workflow and operator runbook | Ra service; SSA publication; service operator | Compatible migration, server-first staging, traffic/readback, signed release, loaded adoption, declared rollback. | Service and release owners: document the actual release train, traffic and rollback receipts, then independently verify installed and loaded consumers. |
 | PT-P67 | `cmd/sirsi/ra.go`, `internal/ra/{pipeline,deploy,monitor,terminal}.go` | Pantheon PT CLI; target repo owners retain effects | Bound task/broadcast/nightly/pipeline/deploy/kill/collect/watch effects and evidence without implied cross-repo or release authority. | Ra CLI owner: reconcile legacy process orchestration with current authorized dispatch contract and document per-command effect gates and current evidence source. |

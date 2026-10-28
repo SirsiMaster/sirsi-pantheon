@@ -34,7 +34,7 @@ struct CleanCommitStep: View {
                     onClean()
                 } label: {
                     Text("Clean \(checkedCount) item\(checkedCount == 1 ? "" : "s") (\(checkedSizeText))")
-                        .sirsiFont(13, weight: .semibold)
+                        .sirsiFont(14, weight: .semibold)
                 }
                 .buttonStyle(.borderedProminent)
             }

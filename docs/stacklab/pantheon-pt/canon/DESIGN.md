@@ -26,3 +26,22 @@ Source diagrams describe code, not a new runtime observation or performance
 measurement. Recipes are inspectable composition contracts, not arbitrary code
 execution permission. Certification requires independent evidence for the final
 composition, as recorded in `CERTIFICATION.md`.
+
+## Native readability and command menus — corrective cohort
+
+The native workspace uses a 15 pt body, 14 pt secondary copy and a 12 pt minimum
+for supporting text. Text size is a presentation preference: 100–150 percent in
+10 percent steps, persisted locally, independent of window width. Changing it
+must retain the selected project, workspace navigation, Apollo draft and active
+operation state. At maximum size, content must wrap or scroll rather than hide
+action labels or require shrinking text.
+
+The application provides real macOS Pantheon, File, Edit, View, Window and Help
+menus. File selects a Git project through the existing project workflow and
+closes the existing window. Edit commands use the native first responder.
+View exposes text sizing, workspace search and navigation. Window commands
+operate the one retained workspace; Help opens the existing tools library.
+Unavailable commands are disabled with native menu validation. There are no
+placeholder document commands or separate menu-only workflow. Source tests,
+compilation and installed keyboard/menu/maximum-size inspection are separate
+proofs; this design does not claim that the installed 0.24.141 app has the fix.

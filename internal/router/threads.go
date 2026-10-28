@@ -10,6 +10,7 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -238,19 +239,39 @@ func threadsPath(routerRoot string) string {
 
 // LoadThreadRegistry reads threads.json. Missing file → empty registry.
 func LoadThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
+	return LoadThreadRegistryContext(context.Background(), routerRoot)
+}
+func LoadThreadRegistryContext(ctx context.Context, routerRoot string) (*ThreadRegistry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if routercfg.StoreWake() {
 		store, err := openThreadStore()
 		if err != nil {
 			return nil, err
 		}
 		defer store.Close()
-		return loadThreadRegistryStore(routerRoot, store)
+		return loadThreadRegistryStoreContext(ctx, routerRoot, store)
 	}
 	return loadLegacyThreadRegistry(routerRoot)
 }
 
 func loadThreadRegistryStore(routerRoot string, store routerstore.Store) (*ThreadRegistry, error) {
-	records, err := store.ListThreads()
+	return loadThreadRegistryStoreContext(context.Background(), routerRoot, store)
+}
+func loadThreadRegistryStoreContext(ctx context.Context, routerRoot string, store routerstore.Store) (*ThreadRegistry, error) {
+	list := func() ([]routerstore.ThreadRecord, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if contextual, ok := store.(interface {
+			ListThreadsContext(context.Context) ([]routerstore.ThreadRecord, error)
+		}); ok {
+			return contextual.ListThreadsContext(ctx)
+		}
+		return store.ListThreads()
+	}
+	records, err := list()
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +284,7 @@ func loadThreadRegistryStore(routerRoot string, store routerstore.Store) (*Threa
 			if importErr := store.ImportThreadsIfEmpty(seed); importErr != nil {
 				return nil, importErr
 			}
-			records, err = store.ListThreads()
+			records, err = list()
 			if err != nil {
 				return nil, err
 			}
@@ -280,6 +301,9 @@ func loadThreadRegistryStore(routerRoot string, store routerstore.Store) (*Threa
 		}
 		reg.Threads[record.ThreadID] = &thread
 		reg.baseline[record.ThreadID] = record
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return reg, nil
 }

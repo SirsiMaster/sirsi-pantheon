@@ -3,7 +3,9 @@ package maat
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -302,8 +304,8 @@ func (c *CoverageAssessor) runFullCoverage() (string, error) {
 	// If no progress callback, use simple buffered mode.
 	if c.ProgressFn == nil {
 		out, err := cmd.CombinedOutput()
-		if err != nil && len(out) == 0 {
-			return "", fmt.Errorf("go test -cover: %w", err)
+		if err != nil {
+			return string(out), fmt.Errorf("go test -cover: %w", err)
 		}
 		return string(out), nil
 	}
@@ -319,50 +321,60 @@ func (c *CoverageAssessor) runFullCoverage() (string, error) {
 		return "", fmt.Errorf("start go test: %w", err)
 	}
 
-	// Count expected packages from thresholds for progress denominator.
-	total := len(c.Thresholds)
-
-	var lines []string
+	// The completed package count is known only as results arrive. Thresholds
+	// describe policy modules, not the number of go test packages.
+	total := 0
 	count := 0
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		line := scanner.Text()
-		lines = append(lines, line)
-
-		// Detect package result lines and report progress.
-		if matches := coverageRegex.FindStringSubmatch(line); len(matches) == 3 {
-			count++
-			pkg := normalizePackageName(matches[1])
-			cov, _ := strconv.ParseFloat(matches[2], 64)
-			c.ProgressFn(PackageProgress{
-				Package:  pkg,
-				Coverage: cov,
-				Current:  count,
-				Total:    total,
-				Failed:   strings.HasPrefix(line, "FAIL"),
-			})
-		} else {
-			matches := noTestRegex.FindStringSubmatch(line)
-			if matches == nil {
-				matches = bareNoTestRegex.FindStringSubmatch(line)
-			}
-			if len(matches) == 2 {
+	var output strings.Builder
+	reader := bufio.NewReader(stdout)
+	var readErr error
+	for {
+		rawLine, lineErr := reader.ReadString('\n')
+		if len(rawLine) > 0 {
+			output.WriteString(rawLine)
+			line := strings.TrimSuffix(rawLine, "\n")
+			// Detect package result lines and report progress.
+			if matches := coverageRegex.FindStringSubmatch(line); len(matches) == 3 {
 				count++
 				pkg := normalizePackageName(matches[1])
+				cov, _ := strconv.ParseFloat(matches[2], 64)
 				c.ProgressFn(PackageProgress{
-					Package: pkg,
-					NoTests: true,
-					Current: count,
-					Total:   total,
+					Package:  pkg,
+					Coverage: cov,
+					Current:  count,
+					Total:    total,
+					Failed:   strings.HasPrefix(line, "FAIL"),
 				})
+			} else {
+				matches := noTestRegex.FindStringSubmatch(line)
+				if matches == nil {
+					matches = bareNoTestRegex.FindStringSubmatch(line)
+				}
+				if len(matches) == 2 {
+					count++
+					pkg := normalizePackageName(matches[1])
+					c.ProgressFn(PackageProgress{
+						Package: pkg,
+						NoTests: true,
+						Current: count,
+						Total:   total,
+					})
+				}
 			}
+		}
+		if lineErr != nil {
+			if !errors.Is(lineErr, io.EOF) {
+				readErr = lineErr
+			}
+			break
 		}
 	}
 
-	// Wait for command to finish — don't fail on non-zero exit if we got output.
-	_ = cmd.Wait()
-
-	return strings.Join(lines, "\n"), nil
+	waitErr := cmd.Wait()
+	if readErr != nil || waitErr != nil {
+		return output.String(), fmt.Errorf("go test -cover: %w", errors.Join(readErr, waitErr))
+	}
+	return output.String(), nil
 }
 
 // runDiffCoverage only tests packages with changed .go files.

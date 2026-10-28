@@ -280,7 +280,10 @@ func runLaunchctl(args ...string) error {
 // genuinely blocks; any launchctl invocation the test could reach either returns
 // immediately or hangs the test suite for the full production bound.
 func runBounded(name string, args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), launchctlTimeout)
+	return runBoundedContext(context.Background(), name, args...)
+}
+func runBoundedContext(parent context.Context, name string, args ...string) error {
+	ctx, cancel := context.WithTimeout(parent, launchctlTimeout)
 	defer cancel()
 	err := exec.CommandContext(ctx, name, args...).Run()
 	if ctx.Err() == context.DeadlineExceeded {

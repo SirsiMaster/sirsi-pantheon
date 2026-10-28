@@ -36,7 +36,12 @@ MainActor.assumeIsolated {
         let delegate = AppDelegate()
         app.delegate = delegate
         app.setActivationPolicy(.regular)
-        app.mainMenu = makePantheonMainMenu(quitTarget: app)
+        let servicesMenu = NSMenu(title: "Services")
+        app.servicesMenu = servicesMenu
+        let mainMenu = makePantheonMainMenu(target: delegate, servicesMenu: servicesMenu)
+        app.mainMenu = mainMenu
+        app.windowsMenu = mainMenu.items.first { $0.title == "Window" }?.submenu
+        app.helpMenu = mainMenu.items.first { $0.title == "Help" }?.submenu
         app.run()
     }
 }
