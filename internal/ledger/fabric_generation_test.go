@@ -124,6 +124,14 @@ func TestFabricGenerationFailureAndCancellationDoNotAdvanceHistory(t *testing.T)
 	if _, err := p.Read(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatal("canceled acquisition accepted", err)
 	}
+	// A cancelled waiter may return before legacy callback cleanup. Join its
+	// actual exit before changing values captured by that callback.
+	p.mu.Lock()
+	active := p.active
+	p.mu.Unlock()
+	if active != nil {
+		fabricSignal(t, active.done)
+	}
 	cancelOnRead = false
 	input.Snapshot.Agents[0].Tasks[0].Status = "in-progress"
 	g, err := p.Read(context.Background())

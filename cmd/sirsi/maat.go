@@ -172,7 +172,7 @@ func runMaatAudit(cmd *cobra.Command, args []string) error {
 	}
 	if !JsonOutput {
 		assessor.ProgressFn = func(p maat.PackageProgress) {
-			prefix := fmt.Sprintf("  [%d/%d]", p.Current, p.Total)
+			prefix := maatCoverageProgressPrefix(p)
 			switch {
 			case p.NoTests:
 				output.Dim("%s %s — no test files", prefix, p.Package)
@@ -240,6 +240,13 @@ func runMaatAudit(cmd *cobra.Command, args []string) error {
 	cr.AddNextAction("sirsi scan", "Scan for infrastructure waste")
 	cr.Render()
 	return nil
+}
+
+func maatCoverageProgressPrefix(p maat.PackageProgress) string {
+	if p.Total <= 0 {
+		return fmt.Sprintf("  [%d]", p.Current)
+	}
+	return fmt.Sprintf("  [%d/%d]", p.Current, p.Total)
 }
 
 // newMaatAuditAssessors is the explicit recipe for a full local governance

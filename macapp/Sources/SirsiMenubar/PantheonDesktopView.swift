@@ -4,13 +4,19 @@ struct PantheonDesktopView: View {
     @ObservedObject var engine: SirsiEngine
     @Environment(\.snapshotMode) private var snapshotMode
     @StateObject private var session = PantheonWorkspaceSession()
+    @AppStorage(PantheonTextSizePreference.key) private var textSizePercent = 100
     @State private var search = ""
+    @State private var projectChooserPresented = false
+    @State private var projectChooserSheetRegistrationID = UUID()
     @FocusState private var searchFocused: Bool
     private let previewWorkspace: PantheonWorkspace?
     private let previewContent: AnyView?
+    private let menuBridge: PantheonMenuBridge?
 
-    init(engine: SirsiEngine, previewWorkspace: PantheonWorkspace? = nil, previewContent: AnyView? = nil) {
+    init(engine: SirsiEngine, menuBridge: PantheonMenuBridge? = nil,
+         previewWorkspace: PantheonWorkspace? = nil, previewContent: AnyView? = nil) {
         self.engine = engine
+        self.menuBridge = menuBridge
         self.previewWorkspace = previewWorkspace
         self.previewContent = previewContent
     }
@@ -47,16 +53,75 @@ struct PantheonDesktopView: View {
         .preferredColorScheme(.dark)
         .tint(gold)
         .background(PantheonTheme.canvas)
+        .environment(\.sirsiTypeScale, CGFloat(PantheonTextSizePreference.normalized(textSizePercent)) / 100)
+        .environment(\.pantheonMenuBridge, menuBridge)
+        .sheet(isPresented: $projectChooserPresented,
+               onDismiss: {
+                   menuBridge?.cancelPendingProjectChoice()
+                   menuBridge?.unregisterProjectChooser(id: projectChooserSheetRegistrationID)
+               }) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Choose a project").sirsiFont(17, weight: .semibold)
+                        Text("Project-scoped tools use this repository.")
+                            .sirsiFont(.callout).foregroundStyle(PantheonTheme.mutedText)
+                    }
+                    Spacer()
+                    Button("Cancel") { projectChooserPresented = false }
+                        .keyboardShortcut(.cancelAction)
+                }
+                ProjectBar(engine: engine, chooserRegistrationID: projectChooserSheetRegistrationID) {
+                    engine.loadProjectRoot()
+                    projectChooserPresented = false
+                }
+                HStack {
+                    Spacer()
+                    Button("Done") { projectChooserPresented = false }
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+            .environment(\.pantheonMenuBridge, menuBridge)
+            .environment(\.sirsiTypeScale, CGFloat(PantheonTextSizePreference.normalized(textSizePercent)) / 100)
+            .padding(18)
+            .frame(minWidth: 480)
+        }
         .onChange(of: engine.pendingOwnerItemID) { id in
             guard let id else { return }
             session.open(.maat, detail: OwnerActionView(engine: engine, itemID: id))
             engine.pendingOwnerItemID = nil
         }
         .task {
+            textSizePercent = PantheonTextSizePreference.normalized(textSizePercent)
             guard !snapshotMode else { return }
             engine.loadProjectRoot()
             engine.loadActivity()
             engine.loadRunReport()
+        }
+        .onAppear {
+            menuBridge?.presentProjectChooser = { projectChooserPresented = true }
+            menuBridge?.actionHandlers = [
+                PantheonMenuAction.search: { searchFocused = true },
+                PantheonMenuAction.back: { nav.pop() },
+                PantheonMenuAction.home: {
+                    session.select(.command)
+                    session.navigation(for: .command).popToRoot()
+                },
+                PantheonMenuAction.help: {
+                    session.select(.library)
+                    session.navigation(for: .library).popToRoot()
+                }
+            ]
+            menuBridge?.canGoBack = !nav.atRoot
+        }
+        .onDisappear {
+            menuBridge?.tearDown()
+        }
+        .onChange(of: nav.stack.count) { _ in
+            menuBridge?.canGoBack = !nav.atRoot
+        }
+        .onChange(of: section) { _ in
+            menuBridge?.canGoBack = !nav.atRoot
         }
     }
 
@@ -66,7 +131,7 @@ struct PantheonDesktopView: View {
                 PantheonBrandMark(size: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Pantheon").sirsiFont(18, weight: .semibold)
-                    Text("Sirsi workspace").sirsiFont(11).foregroundStyle(PantheonTheme.mutedText)
+                    Text("Sirsi workspace").sirsiFont(14).foregroundStyle(PantheonTheme.mutedText)
                 }
             }
             .padding(.horizontal, 18).padding(.top, 23).padding(.bottom, 23)
@@ -125,7 +190,7 @@ struct PantheonDesktopView: View {
                 .foregroundStyle(gold).frame(width: 25)
             VStack(alignment: .leading, spacing: 4) {
                 Text(section.title).sirsiFont(19, weight: .semibold)
-                Text(section.detail).sirsiFont(12).foregroundStyle(PantheonTheme.mutedText).lineLimit(2)
+                Text(section.detail).sirsiFont(14).foregroundStyle(PantheonTheme.mutedText).lineLimit(2)
             }
             Spacer(minLength: 12)
             if !nav.atRoot {
@@ -142,7 +207,7 @@ struct PantheonDesktopView: View {
         let visible = destinations.filter { $0.matches(search) }
         if !visible.isEmpty {
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).sirsiFont(11, weight: .medium).foregroundStyle(PantheonTheme.mutedText)
+                Text(title).sirsiFont(14, weight: .medium).foregroundStyle(PantheonTheme.mutedText)
                     .padding(.horizontal, 10).padding(.bottom, 5)
                 ForEach(visible) { workspace in
                     Button { select(workspace) } label: {
@@ -153,7 +218,7 @@ struct PantheonDesktopView: View {
                             Spacer(minLength: 0)
                             if section == workspace { Circle().fill(gold).frame(width: 4, height: 4) }
                         }
-                        .sirsiFont(13).padding(.horizontal, 10).padding(.vertical, 9)
+                        .sirsiFont(14).padding(.horizontal, 10).padding(.vertical, 9)
                         .contentShape(Rectangle())
                         .background(section == workspace ? PantheonTheme.panelRaised : .clear,
                                     in: RoundedRectangle(cornerRadius: 7))
@@ -173,7 +238,7 @@ struct PantheonDesktopView: View {
     @ViewBuilder private func workspaceView(_ workspace: PantheonWorkspace) -> some View {
         switch workspace {
         case .command: PantheonControlCenterView(engine: engine)
-        case .apollo: ApolloRunPlannerView(engine: engine)
+        case .apollo: session.apolloPlanner(engine: engine)
         case .mercury: MercuryWorkspaceView(engine: engine)
         case .maat: MaatWorkspaceView(engine: engine)
         case .ra: RaFabricView(engine: engine)

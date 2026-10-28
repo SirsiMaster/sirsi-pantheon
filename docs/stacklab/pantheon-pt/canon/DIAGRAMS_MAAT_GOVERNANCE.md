@@ -24,8 +24,15 @@ coverage distinguishes measured zero from missing coverage and applies declared
 module floors; Pulse records whether measurements were actually made; Proof and
 Platform expose their own evidence. These are related assessment paths, not one
 combined all-or-nothing pass. A cache hit is a coverage input and must cover
-the configured floors before fast mode can rely on it. Missing evidence remains unavailable or
-unmeasured rather than being silently promoted to a pass.
+the configured floors before fast mode can rely on it. In explicit full mode,
+`runFullCoverage` returns captured output together with a nonzero child or
+stream-read error; the failed run is not parsed or cached as coverage.
+`CoverageAssessor.Assess` wraps the error and returns no coverage rows. `Weigh`
+turns that error into a failed assessment; the CLI still journals and renders the
+report under its existing exit convention. Streaming progress reports the package
+ordinal while its total is unknown: threshold modules are policy floors, not a
+package count. Missing evidence remains unavailable or unmeasured rather than
+being silently promoted to a pass.
 
 ```mermaid
 flowchart TD
@@ -40,12 +47,17 @@ flowchart TD
   SELECT -->|independent signal| PLATFORM[Platform evaluates platform facts]
   CANON --> RESULT[Typed assessment or explicit error/unavailable]
   PIPE --> RESULT
-  COV --> RESULT
+  COV -->|cached/diff or successful full run| RESULT
+  COV -->|full child/read failure| COVERR[runFullCoverage returns captured output and error]
+  COVERR --> ASSESSERR[Assess wraps error; returns no rows and skips cache]
+  ASSESSERR --> WEIGHFAIL[Weigh creates an explicit failed assessment]
+  WEIGHFAIL --> RESULT
   PULSE --> RESULT
   PROOF --> RESULT
   PLATFORM --> RESULT
   REPORT[Weigh audit report and record through DecisionJournal]
-  COV --> REPORT
+  COV -->|successful coverage assessment| REPORT
+  WEIGHFAIL --> REPORT
   CANON --> REPORT
   PIPE --> REPORT
 ```
@@ -54,8 +66,16 @@ flowchart TD
 flowchart LR
   GIT[Commit source] --> CANON[CanonAssessor]
   GH[Pipeline run source] --> PIPE[PipelineAssessor]
-  TEST[Coverage command output] --> PARSE[Parse and evaluate]
   CACHE[(Coverage cache)] --> COV[CoverageAssessor]
+  COV -->|full mode| TEST[Existing go test -cover child]
+  TEST -->|combined output and exit status| GATE{Output read complete and child exits zero?}
+  GATE -->|yes| PARSE[Parse and evaluate]
+  PARSE -->|successful coverage results| COV
+  GATE -->|no| CERR[runFullCoverage returns captured output and error]
+  GATE -->|result lines| PROGRESS["Report package ordinal; total unknown (0)"]
+  CERR --> ASSESSERR[Assess wraps error; no rows and no fresh cache write]
+  ASSESSERR --> WEIGHFAIL[Weigh creates failed assessment]
+  WEIGHFAIL --> OUT
   HOST[Configured local probes] --> PULSE[Pulse]
   ROSTER[Selected source canonical Roster literal] --> RREAD[Bounded regular-file read and source AST]
   RREAD -->|valid literal| RCOUNT[Unique declared keys]
@@ -67,9 +87,11 @@ flowchart LR
   CANON --> OUT[Assessment records]
   PIPE --> OUT
   PARSE --> OUT
-  COV -->|optional cache write| CACHE
+  COV -->|successful fresh results only| CACHE
+  COV -->|successful assessment| OUT
   PULSE -->|metrics file and stele event when configured| OUT
   CHECK --> OUT
+  OUT --> CLI[Existing CLI journals and renders the report; exit convention unchanged]
 ```
 
 ```mermaid
@@ -79,6 +101,9 @@ stateDiagram-v2
   Requested --> Unavailable: required source cannot be read
   Measuring --> Measured: actual bounded observation returned
   Measuring --> Unavailable: probe or parser fails
+  Measuring --> Failed: child nonzero or output read fails; preserve output and error
+  Failed --> Fail: Weigh records the assessor error as a failed assessment
+  Fail --> Requested: later explicit audit
   Measured --> Pass: declared floor is met
   Measured --> Warn: result is near but below floor
   Measured --> Fail: result is below floor
@@ -90,18 +115,40 @@ stateDiagram-v2
 ```mermaid
 sequenceDiagram
   participant Caller
-  participant Assessor as Ma'at assessor
-  participant Source as Local or configured source
+  participant CLI as Existing audit command
+  participant Assessor as CoverageAssessor
+  participant Child as Existing go test -cover child
+  participant Weigh as Existing Weigh aggregator
   participant Cache as Coverage cache
-  Caller->>Assessor: request selected assessment
-  Assessor->>Source: bounded read or measurement
-  Source-->>Assessor: evidence, empty result, or error
+  participant Journal as Existing DecisionJournal
+  Caller->>CLI: request selected audit
+  CLI->>Assessor: run selected coverage mode
   opt coverage cache is enabled
-    Assessor->>Cache: read candidate results and check floors
+    Assessor->>Cache: read candidate results and check configured floors
     Cache-->>Assessor: cache result or miss
-    Assessor->>Cache: write measured results when produced
   end
-  Assessor-->>Caller: typed assessment with measured/unavailable distinction
+  opt explicit full coverage mode
+    Assessor->>Child: run package coverage
+    loop package result lines as streamed
+      Child-->>Assessor: package output
+      Assessor-->>CLI: package ordinal, total unknown
+    end
+    Child-->>Assessor: child exit status after output closes
+  end
+  alt full child exits nonzero or output read fails
+    Assessor->>Assessor: runFullCoverage returns captured output and error
+    Assessor-->>Weigh: Assess returns wrapped error, no coverage rows or cache write
+    Weigh->>Weigh: create explicit failed assessment
+  else selected cached/diff or successful full result
+    Assessor->>Assessor: parse selected results
+    Assessor-->>Weigh: typed coverage assessment
+    opt coverage cache is enabled and fresh results succeeded
+      Assessor->>Cache: write measured results
+    end
+  end
+  Weigh-->>CLI: report including any failed assessment
+  CLI->>Journal: append report
+  CLI-->>Caller: render report under existing exit convention
 ```
 
 **Evidence references.** Sources: `cmd/sirsi/maat.go`, `internal/maat/maat.go`,
@@ -109,8 +156,16 @@ sequenceDiagram
 `internal/maat/pipeline.go`, `internal/maat/pulse.go`,
 `internal/maat/proof.go`, `internal/maat/platform.go`.
 Tests: `internal/maat/maat_test.go`, `canon_test.go`, `coverage_test.go`,
-`coverage_fastmode_test.go`, `pipeline_test.go`, `pipeline_sprint_test.go`,
-`pulse_test.go`, `pulse_open_unix_test.go`, `proof_test.go`, `platform_test.go`.
+`coverage_fastmode_test.go`, `coverage_runfull_regression_test.go`,
+`pipeline_test.go`, `pipeline_sprint_test.go`, `pulse_test.go`,
+`pulse_open_unix_test.go`, `proof_test.go`, `platform_test.go`, and
+`cmd/sirsi/maat_progress_test.go`. The same finite corrective cohort also
+references `internal/mailops/a17_regression_test.go`,
+`internal/servicedrain/a17_regression_test.go`,
+`internal/servicedrain/a17_cleanup_darwin_test.go`, and
+`internal/servicedrain/maintenance_test.go` as source-level qualification
+fixtures; they describe existing package behavior, not a new audit feature or
+process. These are test references, not observed coverage or runtime receipts.
 The source counter also uses `pulse_open_unix.go` / `pulse_open_other.go`.
 The deity counter describes selected-source roster declarations, not registered
 commands or live availability; its existing integer field cannot distinguish

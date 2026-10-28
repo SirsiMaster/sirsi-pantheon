@@ -132,19 +132,39 @@ func sirsiArgs(_ command: String) -> [String] {
 // the user asked for. No screen ever kicks out to Terminal or a browser.
 // ── Responsive type ──────────────────────────────────────────────────────────
 //
-// The owner's requirement is that the TEXT resizes with the window, not just
-// the container. The first implementation did that with `.scaleEffect` on the
-// whole view tree, which has two defects: `.scaleEffect` is a LAYER transform
-// (SwiftUI rasterizes at the natural size, then CoreAnimation stretches the
-// bitmap), so at non-integral factors every glyph lands off the pixel grid and
-// goes soft; and because it paired the zoom with `.frame(height: h / scale)`,
-// widening the window SHRANK the vertical content space.
-//
-// Passing the factor down as an environment value and multiplying it into the
-// point size instead means the text engine rasterizes at the true size — sharp
-// at every width — while layout, padding and dividers stay native, so nothing
-// eats vertical space. Same requirement, without either defect.
+// Desktop text size is a persisted presentation preference. Applying it through
+// the environment keeps native layout and glyph rasterization while preserving
+// each workspace's existing state and view identity.
 private struct TypeScaleKey: EnvironmentKey { static let defaultValue: CGFloat = 1 }
+
+enum PantheonTextSizePreference {
+    static let key = "pantheon.textSizePercent"
+    static let values = Array(stride(from: 100, through: 150, by: 10))
+
+    static func normalized(_ value: Int?) -> Int {
+        guard let value, values.contains(value) else { return 100 }
+        return value
+    }
+
+    static func current(defaults: UserDefaults = .standard) -> Int {
+        let stored = defaults.object(forKey: key) as? Int
+        let value = normalized(stored)
+        if stored != value { defaults.set(value, forKey: key) }
+        return value
+    }
+
+    static func set(_ value: Int, defaults: UserDefaults = .standard) {
+        defaults.set(normalized(value), forKey: key)
+    }
+
+    static func adjust(by delta: Int, defaults: UserDefaults = .standard) {
+        set(min(150, max(100, current(defaults: defaults) + delta)), defaults: defaults)
+    }
+}
+
+func pantheonScaledPointSize(_ size: CGFloat, scale: CGFloat) -> CGFloat {
+    max(size, 12) * scale
+}
 
 extension EnvironmentValues {
     var sirsiTypeScale: CGFloat {
@@ -153,13 +173,11 @@ extension EnvironmentValues {
     }
 }
 
-// typeScale maps window width to a type multiplier. Deliberately damped and
-// CAPPED: growing linearly to the 900pt maxSize would be 2.5×, which reads as a
-// magnifying glass rather than a resize. 360pt (the window's minSize) is 1.0,
-// 900pt (maxSize) is 1.6.
+// Kept for existing snapshot callers and width-scale consumers. The desktop
+// workspace intentionally uses the persisted text-size preference instead.
 func typeScale(forWidth width: CGFloat) -> CGFloat {
-    let t = min(max((width - 360) / (900 - 360), 0), 1)
-    return 1 + 0.6 * t
+    let progress = min(max((width - 360) / (900 - 360), 0), 1)
+    return 1 + 0.6 * progress
 }
 
 private struct ScaledFont: ViewModifier {
@@ -168,63 +186,42 @@ private struct ScaledFont: ViewModifier {
     let weight: Font.Weight
     let design: Font.Design
     func body(content: Content) -> some View {
-        content.font(.system(size: size * scale, weight: weight, design: design)) // sirsi:scaling-primitive
+        content.font(.system(size: pantheonScaledPointSize(size, scale: scale),
+                             weight: weight, design: design)) // sirsi:scaling-primitive
     }
 }
 
 extension View {
     // sirsiFont replaces `.font(.system(size:weight:design:))` everywhere on this
-    // surface. Same call shape, but the point size tracks the window.
+    // surface. Same call shape, with the point size controlled by the desktop
+    // text-size preference and a 12 pt floor for supporting copy.
     func sirsiFont(_ size: CGFloat, weight: Font.Weight = .regular,
                    design: Font.Design = .default) -> some View {
         modifier(ScaledFont(size: size, weight: weight, design: design))
     }
 }
 
-// SirsiTextStyle mirrors the SwiftUI semantic styles this surface uses. Base
-// point sizes are the MEASURED macOS values (NSFont.preferredFont(forTextStyle:)
-// on this OS), not guesses — caption/caption2/footnote really are all 10pt on
-// macOS, unlike iOS.
-//
-// The scale-1.0 branch below returns the NATIVE semantic font rather than a
-// system font of the same size. That is deliberate: at the owner's default
-// window width the rendering is byte-identical to what shipped, so restoring
-// responsive type cannot quietly restyle the panel at rest. Only widening the
-// window switches to an explicitly-sized font.
+// Explicit semantic sizes keep body and secondary copy readable, with 12 pt as
+// the minimum for supporting details.
 enum SirsiTextStyle {
     case largeTitle, title, title2, title3, headline, body, callout, subheadline, footnote, caption, caption2
 
     var base: CGFloat {
         switch self {
-        case .largeTitle: return 26
-        case .title: return 22
-        case .title2: return 17
-        case .title3: return 15
-        case .headline, .body: return 13
-        case .callout: return 12
-        case .subheadline: return 11
-        case .footnote, .caption, .caption2: return 10
+        case .largeTitle: return 30
+        case .title: return 24
+        case .title2: return 19
+        case .title3: return 17
+        case .headline: return 16
+        case .body: return 15
+        case .callout, .subheadline: return 14
+        case .footnote, .caption, .caption2: return 12
         }
     }
 
     // headline is the only style macOS renders bold by default.
     var defaultWeight: Font.Weight { self == .headline ? .bold : .regular }
 
-    var native: Font {
-        switch self {
-        case .largeTitle: return .largeTitle
-        case .title: return .title
-        case .title2: return .title2
-        case .title3: return .title3
-        case .headline: return .headline
-        case .body: return .body
-        case .callout: return .callout
-        case .subheadline: return .subheadline
-        case .footnote: return .footnote
-        case .caption: return .caption
-        case .caption2: return .caption2
-        }
-    }
 }
 
 private struct ScaledSemanticFont: ViewModifier {
@@ -233,22 +230,16 @@ private struct ScaledSemanticFont: ViewModifier {
     let weight: Font.Weight?
     let design: Font.Design
 
-    @ViewBuilder func body(content: Content) -> some View {
-        if scale == 1 && weight == nil && design == .default {
-            content.font(style.native) // sirsi:scaling-primitive
-        } else {
-            content.font(.system(size: style.base * scale, // sirsi:scaling-primitive
-                                 weight: weight ?? style.defaultWeight,
-                                 design: design))
-        }
+    func body(content: Content) -> some View {
+        content.font(.system(size: pantheonScaledPointSize(style.base, scale: scale), // sirsi:scaling-primitive
+                             weight: weight ?? style.defaultWeight,
+                             design: design))
     }
 }
 
 extension View {
-    // sirsiFont(.caption) replaces .sirsiFont(.caption) and friends. Semantic styles
-    // were the gap that made the owner report "text is super tiny": #320 scaled
-    // the 73 explicit .system(size:) sites but left 135 semantic ones fixed, so
-    // numerals grew while body copy in the SAME card did not.
+    // Semantic styles use the same preference and minimum size as explicit
+    // point-size calls.
     func sirsiFont(_ style: SirsiTextStyle, weight: Font.Weight? = nil,
                    design: Font.Design = .default) -> some View {
         modifier(ScaledSemanticFont(style: style, weight: weight, design: design))
@@ -391,24 +382,15 @@ struct RootView: View {
         // put ~82pt of dead space above every screen (owner, 2026-07-24:
         // "huge display gap ... on every window").
         //
-        // The type DOES track the window (owner: "why doesnt the window and text
-        // resize?"), but via the environment scale that `sirsiFont` multiplies
-        // into each point size — not `.scaleEffect`. The geometry reader here
-        // reads width and nothing else: layout stays native, so unlike the old
-        // `design at 360pt, .scaleEffect(w/360), .frame(height: h/scale)` form,
-        // widening the window no longer steals vertical space, and glyphs are
-        // rasterized at their true size instead of being stretched as a bitmap.
-        GeometryReader { geo in
-            VStack(spacing: 0) {
-                if let top = nav.stack.last {
-                    top.view.id(top.id)
-                } else {
-                    HomeView(engine: engine)
-                }
+        VStack(spacing: 0) {
+            if let top = nav.stack.last {
+                top.view.id(top.id)
+            } else {
+                HomeView(engine: engine)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .environment(\.sirsiTypeScale, typeScale(forWidth: geo.size.width))
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .environment(\.sirsiTypeScale, 1)
         // Every panel (re)open starts at a fresh Home. Pushed screens load their
         // command output once (.task) and would otherwise show it forever — the
         // RTK screen kept rendering output from a since-replaced binary.
@@ -563,7 +545,7 @@ struct CommandDeckView: View {
                                 .sirsiFont(24, weight: .bold)
                                 .foregroundStyle(.primary)
                             Text(aiState.detail)
-                                .sirsiFont(13, weight: .medium)
+                                .sirsiFont(14, weight: .medium)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -647,7 +629,7 @@ struct CommandDeckView: View {
                     .sirsiFrame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Autonomous fixes")
-                        .sirsiFont(13, weight: .semibold)
+                        .sirsiFont(14, weight: .semibold)
                     Text(engine.autonomousOn ? "enabled for safe health work" : "review-first mode")
                         .sirsiFont(11, weight: .medium)
                         .foregroundStyle(.secondary)
@@ -837,7 +819,7 @@ struct DeityRow: View {
             Spacer()
             if let dot { Circle().fill(dot).frame(width: 7, height: 7) }
             if let detail {
-                Text(detail).sirsiFont(13, weight: .medium).foregroundStyle(.secondary)
+                Text(detail).sirsiFont(14, weight: .medium).foregroundStyle(.secondary)
             }
             Image(systemName: "chevron.right").sirsiFont(13, weight: .medium).foregroundStyle(.tertiary)
         }
@@ -1926,7 +1908,7 @@ struct RaFabricView: View {
                             HStack(spacing: 8) {
                                 Circle().fill(.gray).frame(width: 8, height: 8)
                                 Text(engine.routerEmptyStateTitle)
-                                    .sirsiFont(13, weight: .medium)
+                                    .sirsiFont(14, weight: .medium)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Spacer()
                             }
@@ -2030,7 +2012,7 @@ struct RaFabricView: View {
                         HStack(spacing: 8) {
                             Circle().fill(engine.routerObservationIsCurrent(at: now) ? Color.green : gold).frame(width: 8, height: 8)
                             Text(engine.routerObservationIsCurrent(at: now) ? "No blockers in the latest fabric observation" : "No blockers in the retained observation · refresh to revalidate")
-                                .sirsiFont(13, weight: .semibold)
+                                .sirsiFont(15, weight: .semibold)
                             Spacer()
                         }
                         .padding(12)
@@ -2108,7 +2090,7 @@ struct RaFabricView: View {
                                     .foregroundStyle(.secondary)
                                     .frame(width: 24)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(row.agentId).sirsiFont(13, weight: .medium)
+                                    Text(row.agentId).sirsiFont(14, weight: .medium)
                                     Text("\(row.openItems) pending item\(row.openItems == 1 ? "" : "s") · \(row.scopeLabel)")
                                         .sirsiFont(.caption).foregroundStyle(.secondary)
                                 }
@@ -2219,7 +2201,7 @@ struct RaHandoffView: View {
                             .sirsiFont(.caption2, weight: .semibold)
                             .foregroundStyle(.secondary)
                         Text("horus")
-                            .sirsiFont(13, weight: .medium)
+                            .sirsiFont(14, weight: .medium)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(8)
                             .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.055)))
@@ -2262,7 +2244,7 @@ struct RaHandoffView: View {
                             .sirsiFont(.caption2, weight: .semibold)
                             .foregroundStyle(.secondary)
                         TextEditor(text: $instructions)
-                            .sirsiFont(13)
+                            .sirsiFont(15)
                             .frame(minHeight: 132)
                             .padding(7)
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.055)))
@@ -2308,7 +2290,7 @@ struct RaHandoffView: View {
                 .foregroundStyle(.secondary)
             TextField(prompt, text: text)
                 .textFieldStyle(.roundedBorder)
-                .sirsiFont(13)
+                .sirsiFont(15)
         }
     }
 }
@@ -2322,7 +2304,7 @@ private struct RaStrandedInboxRow: View {
                 .foregroundStyle(.orange)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 1) {
-                Text(stranded.agentId).sirsiFont(13, weight: .medium)
+                Text(stranded.agentId).sirsiFont(14, weight: .medium)
                 Text("\(stranded.openItems) item\(stranded.openItems == 1 ? "" : "s") waiting")
                     .sirsiFont(.caption).foregroundStyle(.secondary)
             }
@@ -2407,7 +2389,7 @@ struct AuthBlockerCard: View {
                     .foregroundStyle(gold)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(health.agentType) needs re-login")
-                        .sirsiFont(13, weight: .semibold)
+                        .sirsiFont(14, weight: .semibold)
                     Text(blockedNote).sirsiFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -2485,7 +2467,7 @@ struct DaemonBlockerCard: View {
                 Text("⚙️").sirsiFont(18)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(broken.count) Ra relay\(broken.count == 1 ? "" : "s") missing")
-                        .sirsiFont(13, weight: .semibold)
+                        .sirsiFont(14, weight: .semibold)
                     Text("Work can't relay while a session is closed.")
                         .sirsiFont(.caption).foregroundStyle(.secondary)
                 }
@@ -2528,7 +2510,7 @@ struct OutboxBlockerCard: View {
                 Text("📪").sirsiFont(18)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(blocked.count) relay outbox observation\(blocked.count == 1 ? "" : "s") unavailable")
-                        .sirsiFont(13, weight: .semibold)
+                        .sirsiFont(14, weight: .semibold)
                     Text("Retry depth is unknown, not zero. Repair is offered only after a same-user metadata preflight; service-owned private outboxes are observed through the relay.")
                         .sirsiFont(.caption).foregroundStyle(.secondary)
                 }
@@ -2593,7 +2575,7 @@ struct OutboxServiceObservationCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Relay-owned retry observations", systemImage: "tray.full")
-                .sirsiFont(13, weight: .semibold)
+                .sirsiFont(14, weight: .semibold)
             ForEach(rows) { row in
                 VStack(alignment: .leading, spacing: 3) {
                     Text(row.agent).sirsiFont(.caption, design: .monospaced)
@@ -2634,7 +2616,7 @@ struct OutboxRetryCard: View {
                 Text("⏳").sirsiFont(18)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(held.count) relay outbox\(held.count == 1 ? "" : "es") holding retries")
-                        .sirsiFont(13, weight: .semibold)
+                        .sirsiFont(14, weight: .semibold)
                     Text("Held for the relay's retry path. This observation does not prove delivery.")
                         .sirsiFont(.caption).foregroundStyle(.secondary)
                 }
@@ -2813,7 +2795,7 @@ struct AnubisView: View {
                         Label("Trash could not be read", systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.orange)
                         Text(workflow.message ?? "The contents are unknown, not empty.")
-                            .sirsiFont(13).fixedSize(horizontal: false, vertical: true)
+                            .sirsiFont(15).fixedSize(horizontal: false, vertical: true)
                         if let failure = workflow.browseFailure {
                             Text("\(failure.stage.rawValue) · \(failure.code.rawValue)\(failure.posixErrno.map { " · errno \($0)" } ?? "")")
                                 .sirsiFont(12).foregroundStyle(.secondary)
@@ -2833,7 +2815,7 @@ struct AnubisView: View {
                         Button("Start a fresh Trash browse") { Task { await workflow.loadPage { await engine.trashList(browser: workflow.browser) } } }
                     } else if workflow.phase == .empty {
                         Text("This folder page has no entries. Nothing is selected for deletion.")
-                            .sirsiFont(13).foregroundStyle(.secondary)
+                            .sirsiFont(15).foregroundStyle(.secondary)
                         if let page = workflow.page, page.directory != "." {
                             Button("Browse parent folder") { browseParent(page) }
                         }
@@ -2882,12 +2864,12 @@ struct AnubisView: View {
                             .foregroundStyle(workflow.confirmedSuccess ? .green : .orange)
                         if let operation = workflow.operation {
                             Text("\(operation.deleted.count) reviewed member(s) deleted · \(SirsiEngine.human(operation.logical_bytes)) advisory logical bytes")
-                                .sirsiFont(13).fixedSize(horizontal: false, vertical: true)
+                                .sirsiFont(15).fixedSize(horizontal: false, vertical: true)
                             Text("This is the reviewed operation, not a claim that Trash is now empty or that physical disk space was reclaimed.")
                                 .sirsiFont(12).foregroundStyle(.secondary)
                         }
                         if let message = workflow.message {
-                            Text(message).sirsiFont(13).fixedSize(horizontal: false, vertical: true)
+                            Text(message).sirsiFont(15).fixedSize(horizontal: false, vertical: true)
                         }
                         Button("Review next batch / remaining items") {
                             let request = workflow.browseRequest
@@ -3429,7 +3411,7 @@ struct RiskView: View {
                                 .foregroundStyle(riskPresentation(r.risk).tint)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("\(r.uncommittedFiles) file\(r.uncommittedFiles == 1 ? "" : "s") not checkpointed")
-                                    .sirsiFont(13, weight: .semibold)
+                                    .sirsiFont(14, weight: .semibold)
                                 Text("Last commit \(SirsiEngine.humanDuration(r.timeSinceCommit / 1_000_000_000)) ago — \(r.lastCommitMessage)")
                                     .sirsiFont(.caption2).foregroundStyle(.secondary).lineLimit(2)
                             }
@@ -3789,9 +3771,22 @@ struct CommandView: View {
 struct ProjectBar: View {
     @ObservedObject var engine: SirsiEngine
     @Environment(\.snapshotMode) private var snapshotMode
+    @Environment(\.pantheonMenuBridge) private var menuBridge
     var onChange: () -> Void   // re-runs the command after the project changes
     @State private var candidates: [String] = []
     @State private var selectionError: String?
+    private let suppliedChooserRegistrationID: UUID?
+    @State private var localChooserRegistrationID = UUID()
+
+    private var chooserRegistrationID: UUID {
+        suppliedChooserRegistrationID ?? localChooserRegistrationID
+    }
+
+    init(engine: SirsiEngine, chooserRegistrationID: UUID? = nil, onChange: @escaping () -> Void) {
+        _engine = ObservedObject(wrappedValue: engine)
+        suppliedChooserRegistrationID = chooserRegistrationID
+        self.onChange = onChange
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -3855,6 +3850,16 @@ struct ProjectBar: View {
         .task {
             engine.loadProjectRoot()
             refreshCandidates()
+        }
+        .onAppear {
+            guard !snapshotMode, let menuBridge else { return }
+            menuBridge.registerProjectChooser(id: chooserRegistrationID) {
+                guard !snapshotMode else { return }
+                chooseProject()
+            }
+        }
+        .onDisappear {
+            menuBridge?.unregisterProjectChooser(id: chooserRegistrationID)
         }
         .alert("Choose a Git project", isPresented: Binding(
             get: { selectionError != nil },
@@ -4696,7 +4701,7 @@ private struct ActivityDetailView: View {
                             Button { confirmMaatReview = true } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: "sparkles")
-                                    Text("Review this outcome in Ma'at").sirsiFont(13, weight: .semibold)
+                                    Text("Review this outcome in Ma'at").sirsiFont(14, weight: .semibold)
                                     Spacer()
                                     Image(systemName: "arrow.right.circle.fill").sirsiFont(.caption, weight: .semibold)
                                 }
@@ -5016,7 +5021,7 @@ struct ThothMemoryInfoView: View {
 
     private var noProject: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Project memory lives with each project.").sirsiFont(13, weight: .semibold)
+            Text("Project memory lives with each project.").sirsiFont(15, weight: .semibold)
             Text("Thoth keeps a small memory file inside every project so a new session picks up where the last one left off — no re-reading the whole codebase.")
                 .sirsiFont(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text("Pick a project above to see its memory.").sirsiFont(.callout).foregroundStyle(.secondary)
@@ -5029,7 +5034,7 @@ struct ThothMemoryInfoView: View {
             HStack(spacing: 6) {
                 Text("📖").sirsiFont(14)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("\(engine.projectName ?? "project") memory").sirsiFont(13, weight: .semibold)
+                    Text("\(engine.projectName ?? "project") memory").sirsiFont(14, weight: .semibold)
                     Text("\(lineCount) lines\(modified.map { " · synced \($0)" } ?? "")").sirsiFont(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -5052,7 +5057,7 @@ struct ThothMemoryInfoView: View {
 
     private var noMemoryYet: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("No Thoth memory in \(engine.projectName ?? "this project") yet.").sirsiFont(13, weight: .semibold)
+            Text("No Thoth memory in \(engine.projectName ?? "this project") yet.").sirsiFont(15, weight: .semibold)
             Text("Initialize it so future sessions resume from a compact project state instead of re-reading everything.")
                 .sirsiFont(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button { runThoth(["thoth", "init"], "Memory initialized") } label: { Label("Initialize memory", systemImage: "sparkles") }.disabled(busy)

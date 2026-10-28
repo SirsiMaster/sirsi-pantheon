@@ -81,13 +81,13 @@ implicitly DONE or waived by a diagram.
 
 | Requirement | Process groups | Certification / remaining proof |
 |---|---|---|
-| PT-REQ-01 One engine | P01,P04,P11,P57,P64,P71,P82 | C04,C08: exact composition, actual surface/engine correlation |
+| PT-REQ-01 One engine | P01,P04,P11,P57,P64,P71,P82 | C04,C08: exact composition and actual surface/engine correlation, P64 passive-auth/default-snapshot-reuse controls authored over c165 and unrun here, selected reads and original observation timestamps retained |
 | PT-REQ-02 Source and custody | P05,P07,P21,P23,P45,P73,P84 | C02,C04,C06,C12: immutable source and original evidence/claims |
 | PT-REQ-03 Release truth | P21–26,P51,P66,P83 | C05–07: same signed pair, exact remote bytes and lifecycle |
 | PT-REQ-04 Reversible promotion | P06,P08,P09,P25,P26,P45–47,P50,P60,P61,P66,P77,P80 | C07: selected supported recovery, no unknown-effect replay |
 | PT-REQ-05 Safe native operations | P11–20,P28,P43,P44,P55,P64,P68–70,P80–82 | C08: installed interaction, keyboard/AX, failure/cancel/retry/postcheck |
 | PT-REQ-06 Local intelligence | P19,P24,P29–36,P41–48,P51 | C09: deterministic baseline and final installed resolution without LLM |
-| PT-REQ-07 Qualified peers | P14,P15,P27,P53–67 | C08,C10: producer/authority/schema/freshness and supported selection |
+| PT-REQ-07 Qualified peers | P14,P15,P27,P52,P53–67 | C08,C10: producer/authority/schema/freshness and supported selection, P52 RPA owner/peer source proposal requires exact origin/main pin and preserves undeclared/mismatch refusal, no alias/service/runtime authority inferred |
 | PT-REQ-08 Recipe system | P13,P21,P37–40,P50,P52,P53,P65,P83 | C03,C10: component replacement and actual inspect/select/run contracts |
 | PT-REQ-09 Protected hygiene | P02,P10,P28,P43,P46,P47,P49,P68–70,P79 | C04,C07,C09: safety controls, protected work, measured effects and cleanup |
 | PT-REQ-10 Unified payload | P21–26 | C05: final one-engine Python-free signed inventory and resources |
@@ -98,3 +98,11 @@ The101-package/target inventory was regenerated from committed composed candidat
 `6da4692c77f528caacc281375f37409ff8266fe4`:858 source,849 test and222 supporting files.
 Final-head digest equality and final-source qualification remain explicit; retained
 component evidence above keeps its original source/environment scope.
+
+Native readability/menu corrective acceptance (PT-P12/PT-P13): real standard
+macOS menus; existing single-window operations; first-responder editing; body
+15 pt/secondary 14 pt/supporting floor 12 pt; persisted presentation-only
+100–150% scaling without losing project, navigation or Apollo intent. Source
+coverage is in `ApplicationMenuTests` and the shared font/menu implementation.
+Actual installed menus, shortcuts and narrow-window layout at maximum size
+remain separate checks before this corrective cohort is called shipped.

@@ -1,61 +1,191 @@
 import AppKit
+import SwiftUI
 import XCTest
 @testable import SirsiMenubar
 
-@MainActor
-private final class QuitMenuTarget: NSObject {
-    var calls = 0
-    var sender: Any?
-
-    @objc func terminate(_ sender: Any?) {
-        calls += 1
-        self.sender = sender
-    }
-}
+private final class MenuTargetDouble: NSObject {}
 
 final class ApplicationMenuTests: XCTestCase {
-    @MainActor func testQuitUsesStandardApplicationMenuAndCommandQ() throws {
-        let target = QuitMenuTarget()
-        let menu = makePantheonMainMenu(quitTarget: target)
-        XCTAssertEqual(menu.items.count, 1)
-        let application = try XCTUnwrap(menu.items.first)
-        XCTAssertEqual(application.title, "Pantheon")
-        let submenu = try XCTUnwrap(application.submenu)
-        XCTAssertEqual(submenu.title, "Pantheon")
-        XCTAssertEqual(submenu.items.count, 1)
-        let quit = try XCTUnwrap(submenu.items.first)
-        XCTAssertEqual(quit.title, "Quit Pantheon")
+    @MainActor
+    func testMainMenuProvidesNativeMenusAndUsesSuppliedTargets() throws {
+        let target = MenuTargetDouble()
+        let servicesMenu = NSMenu(title: "Services")
+        let menu = makePantheonMainMenu(target: target, servicesMenu: servicesMenu)
+        XCTAssertEqual(menu.items.compactMap(\.title), ["Pantheon", "File", "Edit", "View", "Window", "Help"])
+
+        let application = try XCTUnwrap(submenu("Pantheon", in: menu))
+        XCTAssertNotNil(application.items.first { $0.title == "About Pantheon" && $0.action == #selector(NSApplication.orderFrontStandardAboutPanel(_:)) })
+        XCTAssertTrue(try XCTUnwrap(application.items.first { $0.title == "Services" }?.submenu) === servicesMenu)
+        let quit = try XCTUnwrap(application.items.first { $0.title == "Quit Pantheon" })
         XCTAssertEqual(quit.keyEquivalent, "q")
         XCTAssertEqual(quit.keyEquivalentModifierMask, [.command])
-        XCTAssertEqual(quit.action, #selector(NSApplication.terminate(_:)))
-        XCTAssertTrue(quit.target === target)
-        XCTAssertTrue(quit.isEnabled)
-        XCTAssertEqual(target.calls, 0, "Factory must not invoke Quit")
+        XCTAssertNil(quit.target, "Application commands resolve through AppKit's responder chain")
+
+        let file = try XCTUnwrap(submenu("File", in: menu))
+        let choose = try XCTUnwrap(file.items.first { $0.title == "Choose Project…" })
+        XCTAssertEqual(choose.keyEquivalent, "o")
+        XCTAssertTrue(choose.target === target)
+        XCTAssertEqual(file.items.first { $0.title == "Close Window" }?.action, #selector(NSWindow.performClose(_:)))
+
+        let edit = try XCTUnwrap(submenu("Edit", in: menu))
+        for title in ["Undo", "Redo", "Cut", "Copy", "Paste", "Select All"] {
+            XCTAssertNotNil(edit.items.first { $0.title == title }, "Missing standard Edit command: \(title)")
+        }
+        XCTAssertTrue(edit.items.allSatisfy { $0.isSeparatorItem || $0.target == nil }, "Edit actions must use the responder chain")
+
+        let view = try XCTUnwrap(submenu("View", in: menu))
+        for title in ["Larger Text", "Smaller Text", "Default Text Size", "Search Workspaces…", "Back", "Home"] {
+            XCTAssertNotNil(view.items.first { $0.title == title }, "Missing View command: \(title)")
+        }
+        XCTAssertEqual(view.items.first { $0.title == "Search Workspaces…" }?.keyEquivalent, "k")
+
+        let window = try XCTUnwrap(submenu("Window", in: menu))
+        for title in ["Show Pantheon", "Minimize", "Zoom", "Bring All to Front"] {
+            XCTAssertNotNil(window.items.first { $0.title == title }, "Missing Window command: \(title)")
+        }
+        XCTAssertNotNil(submenu("Help", in: menu)?.items.first { $0.title == "Pantheon Help & Tools" })
     }
 
-    @MainActor func testQuitActionInvokesOnlyInjectedFakeTarget() throws {
-        let target = QuitMenuTarget()
-        let menu = makePantheonMainMenu(quitTarget: target)
-        let quit = try XCTUnwrap(menu.items.first?.submenu?.items.first)
-        let action = try XCTUnwrap(quit.action)
-        let actualTarget = try XCTUnwrap(quit.target as? QuitMenuTarget)
-        XCTAssertTrue(actualTarget === target)
-        XCTAssertTrue(actualTarget.responds(to: action))
-        // Invoke the actual factory selector on its fake target. No event is
-        // posted, no app is launched, and no real termination target is used.
-        _ = actualTarget.perform(action, with: quit)
-        XCTAssertEqual(target.calls, 1)
-        XCTAssertTrue((target.sender as? NSMenuItem) === quit)
+    @MainActor
+    func testMenuAvailabilityDisablesUnavailableActions() {
+        func available(_ action: Selector, size: Int, back: Bool = false, choose: Bool = false) -> Bool {
+            PantheonMenuAvailability.isEnabled(action: action, textSizePercent: size,
+                                               canGoBack: back, canChooseProject: choose) ?? true
+        }
+
+        XCTAssertFalse(available(#selector(AppDelegate.increaseTextSize(_:)), size: 150))
+        XCTAssertTrue(available(#selector(AppDelegate.increaseTextSize(_:)), size: 140))
+        XCTAssertFalse(available(#selector(AppDelegate.decreaseTextSize(_:)), size: 100))
+        XCTAssertTrue(available(#selector(AppDelegate.decreaseTextSize(_:)), size: 110))
+        XCTAssertFalse(available(#selector(AppDelegate.resetTextSize(_:)), size: 100))
+        XCTAssertTrue(available(#selector(AppDelegate.resetTextSize(_:)), size: 120))
+        XCTAssertFalse(available(#selector(AppDelegate.goBack(_:)), size: 100, back: false))
+        XCTAssertTrue(available(#selector(AppDelegate.goBack(_:)), size: 100, back: true))
+        XCTAssertFalse(available(#selector(AppDelegate.chooseProject(_:)), size: 100, choose: false))
+        XCTAssertTrue(available(#selector(AppDelegate.chooseProject(_:)), size: 100, choose: true))
     }
 
-    func testLaunchInstallsFactoryMenuBeforeRun() throws {
-        let package = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let source = try String(contentsOf: package.appendingPathComponent("Sources/SirsiMenubar/main.swift"), encoding: .utf8)
-        let launch = try XCTUnwrap(source.range(of: "case .launch:"))
-        let body = source[launch.upperBound...]
-        let assignment = try XCTUnwrap(body.range(of: "app.mainMenu = makePantheonMainMenu(quitTarget: app)"))
-        let run = try XCTUnwrap(body.range(of: "app.run()"))
-        XCTAssertLessThan(assignment.lowerBound, run.lowerBound)
+    func testTextSizePreferenceNormalizesAndClamps() {
+        let suite = "PantheonTextSizePreferenceTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertEqual(PantheonTextSizePreference.current(defaults: defaults), 100)
+        defaults.set(125, forKey: PantheonTextSizePreference.key)
+        XCTAssertEqual(PantheonTextSizePreference.current(defaults: defaults), 100)
+        XCTAssertEqual(defaults.integer(forKey: PantheonTextSizePreference.key), 100)
+
+        PantheonTextSizePreference.set(130, defaults: defaults)
+        XCTAssertEqual(PantheonTextSizePreference.current(defaults: defaults), 130)
+        PantheonTextSizePreference.adjust(by: 10, defaults: defaults)
+        XCTAssertEqual(PantheonTextSizePreference.current(defaults: defaults), 140)
+        PantheonTextSizePreference.set(150, defaults: defaults)
+        PantheonTextSizePreference.adjust(by: 10, defaults: defaults)
+        XCTAssertEqual(PantheonTextSizePreference.current(defaults: defaults), 150)
+        PantheonTextSizePreference.set(90, defaults: defaults)
+        XCTAssertEqual(PantheonTextSizePreference.current(defaults: defaults), 100)
+    }
+
+    func testSupportingTextFloorScalesWithThePreference() {
+        XCTAssertEqual(pantheonScaledPointSize(10, scale: 1), 12)
+        XCTAssertEqual(pantheonScaledPointSize(10, scale: 1.5), 18)
+        XCTAssertEqual(pantheonScaledPointSize(15, scale: 1.5), 22.5)
+    }
+
+    @MainActor
+    func testChangingTextPreferencePreservesWorkspaceAndNavigationState() {
+        let suite = "PantheonSessionContinuityTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let session = PantheonWorkspaceSession(defaults: defaults)
+        session.select(.apollo)
+        session.navigation(for: .apollo).push(Text("unfinished plan"))
+
+        PantheonTextSizePreference.set(140, defaults: defaults)
+
+        XCTAssertEqual(session.section, .apollo)
+        XCTAssertEqual(session.navigation(for: .apollo).stack.count, 1)
+        XCTAssertEqual(PantheonTextSizePreference.current(defaults: defaults), 140)
+    }
+
+    @MainActor
+    func testProjectChoiceRequestFromRetainedReleaseDetailKeepsItsStack() {
+        let suite = "PantheonRetainedReleaseChooserTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let session = PantheonWorkspaceSession(defaults: defaults)
+        session.select(.release)
+        session.navigation(for: .release).push(Text("release draft"))
+        let bridge = PantheonMenuBridge()
+        var chooserSurfaceRequests = 0
+        bridge.presentProjectChooser = { chooserSurfaceRequests += 1 }
+
+        bridge.chooseProject()
+
+        XCTAssertEqual(chooserSurfaceRequests, 1)
+        XCTAssertEqual(session.section, .release)
+        XCTAssertEqual(session.navigation(for: .release).stack.count, 1)
+        XCTAssertNotNil(bridge.pendingProjectChoiceID)
+    }
+
+    @MainActor
+    func testDeferredProjectChoiceIsCancelledWhenChooserUnregisters() throws {
+        let bridge = PantheonMenuBridge()
+        bridge.presentProjectChooser = {}
+        bridge.chooseProject()
+        let requestID = try XCTUnwrap(bridge.pendingProjectChoiceID)
+        let chooserID = UUID()
+        var chooserCalls = 0
+        bridge.registerProjectChooser(id: chooserID) { chooserCalls += 1 }
+        bridge.unregisterProjectChooser(id: chooserID)
+
+        bridge.deliverProjectChoice(chooserID: chooserID, requestID: requestID)
+
+        XCTAssertEqual(chooserCalls, 0)
+        XCTAssertNil(bridge.pendingProjectChoiceID)
+    }
+
+    @MainActor
+    func testDeferredProjectChoiceIsCancelledOnRootTeardown() throws {
+        let bridge = PantheonMenuBridge()
+        bridge.presentProjectChooser = {}
+        bridge.chooseProject()
+        let requestID = try XCTUnwrap(bridge.pendingProjectChoiceID)
+        let chooserID = UUID()
+        var chooserCalls = 0
+        bridge.registerProjectChooser(id: chooserID) { chooserCalls += 1 }
+        bridge.tearDown()
+
+        bridge.deliverProjectChoice(chooserID: chooserID, requestID: requestID)
+
+        XCTAssertEqual(chooserCalls, 0)
+        XCTAssertFalse(bridge.canChooseProject)
+        XCTAssertFalse(bridge.canGoBack)
+    }
+
+    @MainActor
+    func testSheetDismissalCancelsOnlyItsPendingChooserRegistration() throws {
+        let bridge = PantheonMenuBridge()
+        bridge.presentProjectChooser = {}
+        bridge.actionHandlers[PantheonMenuAction.home] = {}
+        bridge.chooseProject()
+        let requestID = try XCTUnwrap(bridge.pendingProjectChoiceID)
+        let chooserID = UUID()
+        var chooserCalls = 0
+        bridge.registerProjectChooser(id: chooserID) { chooserCalls += 1 }
+
+        bridge.cancelPendingProjectChoice()
+        bridge.unregisterProjectChooser(id: chooserID)
+        bridge.deliverProjectChoice(chooserID: chooserID, requestID: requestID)
+
+        XCTAssertEqual(chooserCalls, 0)
+        XCTAssertNil(bridge.pendingProjectChoiceID)
+        XCTAssertTrue(bridge.canChooseProject, "The window-level fallback remains registered")
+        XCTAssertNotNil(bridge.actionHandlers[PantheonMenuAction.home], "Sheet dismissal must not tear down root actions")
+    }
+
+    @MainActor
+    private func submenu(_ title: String, in menu: NSMenu) -> NSMenu? {
+        menu.items.first { $0.title == title }?.submenu
     }
 }

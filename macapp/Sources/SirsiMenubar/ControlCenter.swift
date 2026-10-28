@@ -44,7 +44,7 @@ struct PantheonControlCenterView: View {
                     .sirsiFont(27, weight: .semibold)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Choose intelligence, connect your machines, coordinate work, and resolve what needs attention.")
-                    .sirsiFont(13).foregroundStyle(PantheonTheme.mutedText)
+                    .sirsiFont(15).foregroundStyle(PantheonTheme.mutedText)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 610, alignment: .leading)
             }
@@ -194,7 +194,7 @@ struct PantheonControlCenterView: View {
     private func observation(_ title: String, _ value: String, tint: Color = PantheonTheme.text) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title).sirsiFont(11).foregroundStyle(PantheonTheme.mutedText)
-            Text(value).sirsiFont(13, weight: .medium).foregroundStyle(tint).monospacedDigit()
+            Text(value).sirsiFont(14, weight: .medium).foregroundStyle(tint).monospacedDigit()
                 .fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -295,7 +295,7 @@ struct PantheonLibraryView: View {
         NavLink(destination: destination) {
             HStack(spacing: 10) {
                 Image(systemName: symbol).frame(width: 20).foregroundStyle(gold)
-                Text(title).sirsiFont(13, weight: .medium)
+                Text(title).sirsiFont(14, weight: .medium)
                 Spacer()
                 Image(systemName: "chevron.right").sirsiFont(10).foregroundStyle(PantheonTheme.mutedText)
             }

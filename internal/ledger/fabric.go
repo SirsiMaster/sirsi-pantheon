@@ -190,14 +190,24 @@ func fabricFromFacts(s Snapshot, ns *router.NodeStatus, build string, evidence F
 // ReadFabric reads existing canonical ledger/node/runtime authorities only.
 // In particular it never invokes SuperviseOnce or its reconcile/wake writes.
 func ReadFabric(repoRoot string, now time.Time) (FabricRead, error) {
+	return ReadFabricContext(context.Background(), repoRoot, now)
+}
+func ReadFabricContext(ctx context.Context, repoRoot string, now time.Time) (FabricRead, error) {
+	if err := ctx.Err(); err != nil {
+		return FabricRead{}, err
+	}
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	snap, threads, err := buildWithThreads(repoRoot, "", now, DefaultStaleAfter)
+	snap, threads, err := buildWithThreadsContext(ctx, repoRoot, "", now, DefaultStaleAfter)
 	if err != nil {
 		return FabricRead{}, err
 	}
-	ns, err := router.CollectNodeStatus(repoRoot, nil)
+	// Fabric observes metadata; model/auth commands belong to explicit diagnostics.
+	// Inconclusive is neither authenticated nor a login failure or blocked work.
+	ns, err := router.CollectNodeStatusContext(ctx, repoRoot, nil, func(string, string) (bool, bool, string) {
+		return false, false, "not probed during passive Fabric read; use explicit auth diagnostics"
+	})
 	if err != nil {
 		return FabricRead{}, err
 	}
@@ -218,7 +228,14 @@ func ReadFabric(repoRoot string, now time.Time) (FabricRead, error) {
 	}
 	unavailable := router.UnroutableFromRuntime(reg, threads, now)
 	metadata := captureFabricMetadata(reg, threads, ns)
-	ids, err := f.Store().OperationalAgents()
+	var ids []string
+	if contextual, ok := f.Store().(interface {
+		OperationalAgentsContext(context.Context) ([]string, error)
+	}); ok {
+		ids, err = contextual.OperationalAgentsContext(ctx)
+	} else {
+		ids, err = f.Store().OperationalAgents()
+	}
 	if err != nil {
 		return FabricRead{}, err
 	}
@@ -234,12 +251,25 @@ func ReadFabric(repoRoot string, now time.Time) (FabricRead, error) {
 	}
 	operational := map[string]routerstore.LaneOperationalState{}
 	for _, agent := range snap.Agents {
+		if err := ctx.Err(); err != nil {
+			return FabricRead{}, err
+		}
 		blocked, declared := unavailable[agent.AgentID]
-		value, err := f.Store().ClassifyLane(agent.AgentID, declared && !blocked, 5*time.Minute)
+		var value routerstore.LaneOperationalState
+		if contextual, ok := f.Store().(interface {
+			ClassifyLaneContext(context.Context, string, bool, time.Duration) (routerstore.LaneOperationalState, error)
+		}); ok {
+			value, err = contextual.ClassifyLaneContext(ctx, agent.AgentID, declared && !blocked, 5*time.Minute)
+		} else {
+			value, err = f.Store().ClassifyLane(agent.AgentID, declared && !blocked, 5*time.Minute)
+		}
 		if err != nil {
 			return FabricRead{}, fmt.Errorf("fabric runtime unavailable: %w", err)
 		}
 		operational[agent.AgentID] = value
+	}
+	if err := ctx.Err(); err != nil {
+		return FabricRead{}, err
 	}
 	return FabricRead{Snapshot: snap, Node: ns, Evidence: FabricEvidence{Operational: operational}, Metadata: metadata}, nil
 }

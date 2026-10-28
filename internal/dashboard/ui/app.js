@@ -26,9 +26,22 @@ function get(u){return fetch(u,{cache:'no-store',signal:AbortSignal.timeout(1500
 function load(){
  if(state.loading)return state.loading;
  setLive('Router refreshing…','stale');
- var router=get('/api/router/v1/snapshot').then(function(d){state.data=d;state.err=null;state.at=new Date()}).catch(function(e){state.err=e.message}).then(function(){render();setLive(state.err?'Router stale / unavailable · '+state.err:'Router received '+state.at.toLocaleTimeString(),' '+(state.err?'err':''))});
+ // The snapshot already binds one canonical Fabric generation. Reuse it only
+ // for the default board; an explicit filter/cursor remains its own read.
+ var useBoundFabric=!state.fabricTaskPage,generation=null;
+ if(useBoundFabric){generation=(state.fabricReadGeneration||0)+1;state.fabricReadGeneration=generation}
+ function currentDefault(){return useBoundFabric&&generation===state.fabricReadGeneration&&!state.fabricTaskPage}
+ function receiveBoundFabric(d){
+  if(!currentDefault())return;
+  var f=d&&d.fabric,p=PantheonFabric.taskPage(f);
+  if(PantheonFabric.valid(f)&&(!f.tasks||p&&p.offset===0&&(!p.filter||p.filter==='open'))){state.fleet=f;state.fleetErr=null;return}
+  // Older/malformed snapshot producers must not erase the independent Fleet
+  // recovery path or substitute a filtered/continued page for the default.
+  return loadFleet(null);
+ }
+ var router=get('/api/router/v1/snapshot').then(function(d){state.data=d;state.err=null;state.at=new Date();return receiveBoundFabric(d)}).catch(function(e){state.err=e.message;if(currentDefault())return loadFleet(null)}).then(function(){render();setLive(state.err?'Router stale / unavailable · '+state.err:'Router received '+state.at.toLocaleTimeString(),' '+(state.err?'err':''))});
  var host=get('/api/stats').then(function(d){state.stats=d;state.hostErr=null}).catch(function(e){state.hostErr=e.message}).then(function(){if(state.view==='host')render()});
- var fleet=loadFleet();
+ var fleet=useBoundFabric?null:loadFleet();
  state.loading=Promise.allSettled([router,host,fleet]).finally(function(){state.loading=null});return state.loading;
 }
 function loadFleet(taskPage,focusTasks){var selected=taskPage===undefined?state.fabricTaskPage:taskPage,url='/api/fabric',query=[],generation=(state.fabricReadGeneration||0)+1;state.fabricReadGeneration=generation;state.fabricTaskPage=selected||null;if(selected&&selected.filter)query.push('tasks_filter='+encodeURIComponent(selected.filter));if(selected&&selected.offset){query.push('tasks_offset='+encodeURIComponent(selected.offset));query.push('tasks_snapshot='+encodeURIComponent(selected.snapshot))}if(query.length)url+='?'+query.join('&');return get(url).then(function(f){if(generation!==state.fabricReadGeneration)return;if(!PantheonFabric.valid(f)||selected&&selected.filter&&(!PantheonFabric.taskPage(f)||f.tasks.filter!==selected.filter))throw new Error('Invalid fabric projection or task selection');state.fleet=f;state.fleetErr=null}).catch(function(e){if(generation===state.fabricReadGeneration)state.fleetErr=e.message}).then(function(){if(generation===state.fabricReadGeneration&&(state.view==='fleet'||state.view==='overview'||state.view==='host')){render();if(focusTasks&&!state.fleetErr&&state.view==='fleet'){var heading=document.getElementById('fabric-task-heading');if(heading){heading.focus({preventScroll:true});if(heading.scrollIntoView)heading.scrollIntoView({block:'start'})}}}})}
@@ -40,7 +53,7 @@ function nav(){
   return '<button type="button" data-v="'+v[0]+'"'+(state.view===v[0]?' aria-current="page"':'')+'>'+ICON[v[0]]+'<span>'+v[1]+'</span>'+(v[0]==='overview'&&n?'<span class="count" aria-label="'+n+' critical">'+n+'</span>':'')+'</button>'}).join('');
  $('#nav').querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.v)})});
 }
-function go(v){var dlg=$('.inspector');if(dlg&&dlg.open)dlg.close();state.view=v;location.hash=v;render();if(v==='fleet'&&!state.fleet)loadFleet();$('#main').focus({preventScroll:true})}
+function go(v){var dlg=$('.inspector');if(dlg&&dlg.open)dlg.close();state.view=v;location.hash=v;render();if(v==='fleet'&&!state.fleet&&!state.loading)loadFleet();$('#main').focus({preventScroll:true})}
 
 function skeleton(){return '<p class="sub loading">Loading the local snapshot… Other views remain available.</p>'+ '<div class="grid g4"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>'}
 function chip(v){return '<span class="chip v-'+esc(v)+'">'+esc(v.replace('_',' ').toLowerCase().replace(/^./,function(c){return c.toUpperCase()}))+'</span>'}
