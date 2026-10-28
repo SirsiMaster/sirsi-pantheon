@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "7019c112ca73e0acbcbd8b811938675e0a6d451b",
-  "source_tree": "311e58ee51c845df49fa6354bbe2a193e7bf4a06",
+  "source_commit": "958db55b58ddbd6560ce5d0da8f0a6f56488f225",
+  "source_tree": "587f652d166b6156c3d9611771c9461696d8ae18",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -8230,7 +8230,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/Views.swift",
-          "sha256": "48fca7e5038ef7157df97e372004bc891d3b7f0761adab87f9ec725c78cabef4"
+          "sha256": "5a57e3543a7489c3496c31038805770e3341e79024e6f0595d2b89670ef083a0"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/WorkspaceSession.swift",

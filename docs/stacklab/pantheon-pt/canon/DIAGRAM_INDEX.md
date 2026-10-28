@@ -159,7 +159,7 @@ status or certify any criterion.
 ## Corrective141 composition crosswalk
 
 The accepted finite census is retained at f676/normal merge24b4e50b. The fresh
-module inventory binds corrective source7019c112; it does not silently repin older
+module inventory binds corrective source958db55b; it does not silently repin older
 process review evidence. Joined-worker behavior remains in PT-P55. Legacy
 129/137 profiles extend the existing selected maintenance flow, preserving
 unknown outcomes. The corrected consumer bootstrap separates coordination from
