@@ -110,6 +110,23 @@ func gemmaBrokerPlistContent(_ string, home string) string {
 `, GemmaBrokerLabel, sneBin, modelDir, logPath, logPath)
 }
 
+// writeApolloPortFile atomically points ~/.sirsi/gemma-server.port at Apollo's router.
+func writeApolloPortFile(home string) error {
+	dir := filepath.Join(home, ".sirsi")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp := filepath.Join(dir, ".gemma-server.port.tmp")
+	if err := os.WriteFile(tmp, []byte(fmt.Sprintf("%d\n", liveness.ApolloRouterPort)), 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, filepath.Join(dir, "gemma-server.port")); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
 // GemmaBrokerInstalled reports whether the reboot-durable broker LaunchAgent
 // is in place. macOS only.
 func GemmaBrokerInstalled() bool {
@@ -128,9 +145,14 @@ func InstallGemmaBroker() InstallResult {
 	}
 	home, _ := os.UserHomeDir()
 	if liveness.ApolloProvidesGemma(home) {
-		// Point every port-file client at Apollo's router; never write the broker plist.
-		_ = os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755)
-		_ = os.WriteFile(filepath.Join(home, ".sirsi", "gemma-server.port"), []byte(fmt.Sprintf("%d\n", liveness.ApolloRouterPort)), 0o644)
+		// Point every port-file client at Apollo's router; never write the broker
+		// plist. Temp+rename keeps the previous pointer intact on any failure, and
+		// a failure returns before any launchd action, so nothing legacy relaunches.
+		if err := writeApolloPortFile(home); err != nil {
+			res.Status = StatusFailed
+			res.Message = "Apollo.app provides the local model, but the port file could not be repointed: " + err.Error()
+			return res
+		}
 		res.Status = StatusSkipped
 		res.Message = fmt.Sprintf("local model provided by Apollo.app (router 127.0.0.1:%d); setup will not write %s", liveness.ApolloRouterPort, GemmaBrokerLabel)
 		return res

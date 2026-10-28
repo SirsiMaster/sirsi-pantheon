@@ -88,6 +88,74 @@ func TestInstallGemmaBroker_ProvidedByApolloApp(t *testing.T) {
 	}
 }
 
+// apolloHome builds a temp HOME with SNE and Apollo.app's router present.
+func apolloHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	fakeSNERuntime(t, home)
+	router := filepath.Join(home, "Applications", "Apollo.app", "Contents", "Helpers", "apollo-router")
+	if err := os.MkdirAll(filepath.Dir(router), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(router, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
+func assertApolloRepointFailed(t *testing.T, res InstallResult) {
+	t.Helper()
+	if res.Status != StatusFailed || !strings.Contains(res.Message, "could not be repointed") {
+		t.Fatalf("want failed repoint, got %v %q", res.Status, res.Message)
+	}
+	if fileExists(GemmaBrokerPlistPath()) {
+		t.Fatal("failed repoint fell back to writing the legacy broker plist")
+	}
+}
+
+func TestInstallGemmaBroker_ApolloRepointFailures(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin only")
+	}
+	t.Run("obstructed parent dir", func(t *testing.T) {
+		home := apolloHome(t)
+		if err := os.WriteFile(filepath.Join(home, ".sirsi"), []byte("not a dir"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		assertApolloRepointFailed(t, InstallGemmaBroker())
+	})
+	t.Run("obstructed target file", func(t *testing.T) {
+		home := apolloHome(t)
+		target := filepath.Join(home, ".sirsi", "gemma-server.port")
+		if err := os.MkdirAll(filepath.Join(target, "child"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		assertApolloRepointFailed(t, InstallGemmaBroker())
+		if fi, err := os.Stat(filepath.Join(target, "child")); err != nil || !fi.IsDir() {
+			t.Fatalf("obstruction was disturbed: %v", err)
+		}
+	})
+	t.Run("unwritable dir keeps previous pointer", func(t *testing.T) {
+		home := apolloHome(t)
+		dir := filepath.Join(home, ".sirsi")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "gemma-server.port"), []byte("8477\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(dir, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+		assertApolloRepointFailed(t, InstallGemmaBroker())
+		if b, _ := os.ReadFile(filepath.Join(dir, "gemma-server.port")); string(b) != "8477\n" {
+			t.Fatalf("previous pointer changed to %q", b)
+		}
+	})
+}
+
 func TestInstallGemmaBroker_HonorsQuarantine(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("darwin only")
