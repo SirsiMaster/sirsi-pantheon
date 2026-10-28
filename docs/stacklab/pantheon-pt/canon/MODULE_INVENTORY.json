@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "cff180473acc6b4ab52d76572bfa85a9e7547fb0",
-  "source_tree": "abb0d52677c0f4629a0aa3ffdbefede3cfc99aae",
+  "source_commit": "7019c112ca73e0acbcbd8b811938675e0a6d451b",
+  "source_tree": "311e58ee51c845df49fa6354bbe2a193e7bf4a06",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -142,7 +142,7 @@
         },
         {
           "path": "cmd/sirsi/fabric_host.go",
-          "sha256": "9dfa58ab202e08930a7cae5fb45f1918c9f1a15951645d3e7fb2f6d575084363"
+          "sha256": "47c54635ee6e20597af804941276814a8e7781545612ce14c7efba7af5acae0a"
         },
         {
           "path": "cmd/sirsi/fix.go",
@@ -3284,7 +3284,7 @@
         },
         {
           "path": "internal/ledger/fabric_coalescing_test.go",
-          "sha256": "934234b76036b7d6fb0d4da9ddc8808923ed650d9013ca81eb22ca198b21b75b"
+          "sha256": "375fffa9c527821bf4321c6f01dcf01dfd69b66ab8ca53121e8f6b049a596acd"
         },
         {
           "path": "internal/ledger/fabric_filters_test.go",
@@ -3292,7 +3292,7 @@
         },
         {
           "path": "internal/ledger/fabric_generation_test.go",
-          "sha256": "123907862b7e74719152d42a31c51762152cd64408ced2cb2ccd230300a0a5da"
+          "sha256": "2030f53c78514584c0460dd8d6255f16105a79544386df101114b46de7c907e0"
         },
         {
           "path": "internal/ledger/fabric_join_test.go",
@@ -6206,7 +6206,7 @@
         },
         {
           "path": "internal/routerstore/fabric_context_test.go",
-          "sha256": "4dcd3a50b0b2fb0489cc357dafb18de2e15bfd1bc83b833c27b5135332954505"
+          "sha256": "72de16333e2764ed7e2da67ad1ae6e62c2eda835e451a7f7a79e59209b4d9252"
         },
         {
           "path": "internal/routerstore/gzip_test.go",
@@ -6887,7 +6887,7 @@
         },
         {
           "path": "internal/servicedrain/a17_regression_test.go",
-          "sha256": "382d5e3ef22e1751d3c7de1903d3eb71e2afd442ab91c4578ec714735735c30f"
+          "sha256": "67a0ddfb27c36e6f2a4b80c765a00d4f2b2e588e6e7a962c15bcd866cd47748f"
         },
         {
           "path": "internal/servicedrain/custody_test.go",

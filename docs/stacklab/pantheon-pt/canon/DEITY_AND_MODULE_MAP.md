@@ -1,6 +1,6 @@
 # Pantheon deity and module replacement map
 
-Source snapshot: `cff180473acc6b4ab52d76572bfa85a9e7547fb0` (unpublished post-141 corrective source).
+Source snapshot: `7019c112ca73e0acbcbd8b811938675e0a6d451b` (unpublished post-141 corrective source).
 Owner: Pantheon source maintainer. Identity/domain authority:
 `docs/DEITY_REGISTRY.md`; source-level display metadata is
 `internal/deity/registry.go`. Neither a name nor a source directory proves that

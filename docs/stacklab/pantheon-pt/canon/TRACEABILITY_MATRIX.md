@@ -95,7 +95,7 @@ implicitly DONE or waived by a diagram.
 
 Pnn means PT-Pnn. Cnn means PT-Cnn in [CERTIFICATION.md](CERTIFICATION.md).
 The101-package/target inventory was regenerated from committed composed candidate
-`cff180473acc6b4ab52d76572bfa85a9e7547fb0`:858 source,860 test and226 supporting files.
+`7019c112ca73e0acbcbd8b811938675e0a6d451b`:858 source,860 test and226 supporting files.
 Final-head digest equality and final-source qualification remain explicit; retained
 component evidence above keeps its original source/environment scope.
 
