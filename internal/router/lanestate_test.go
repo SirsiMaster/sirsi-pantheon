@@ -45,7 +45,7 @@ func TestPingLaneVerdicts(t *testing.T) {
 		{"auth required", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, LastOutcome: OutcomeAuthRequired, LastDetail: "Not logged in"}, time.Minute)), AgentConfig{}, VerdictAuthRequired, false, "Not logged in"},
 		{"held by window", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldWindow}, time.Minute)), AgentConfig{}, VerdictHeld, true, "window"},
 		{"held by backoff with expiry", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldBackoff, HoldUntil: pingNow.Add(time.Hour)}, time.Minute)), AgentConfig{}, VerdictHeld, true, "until"},
-		{"quarantine is not workable", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldQuarantine}, time.Minute)), AgentConfig{}, VerdictHeld, false, "needs a human"},
+		{"quarantine is not workable", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldQuarantine}, time.Minute)), AgentConfig{}, VerdictHeld, false, "no attended session registered"},
 		{"relay unreachable", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, LastOutcome: OutcomeRelay, LastDetail: "64 requests in flight"}, time.Minute)), AgentConfig{}, VerdictHeld, false, "relay"},
 		{"stale worker", regWith(worker("a", true, ok, time.Hour)), AgentConfig{}, VerdictUnreachable, false, "last reported"},
 		{"no thread, wake none", regWith(), AgentConfig{}, VerdictUnstaffed, false, "no worker path"},
