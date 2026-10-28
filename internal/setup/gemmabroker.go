@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
 )
 
 // ── Reboot-durable Gemma broker (ADR-045, owner directive 2026-07-23) ────────
@@ -124,11 +126,19 @@ func InstallGemmaBroker() InstallResult {
 		res.Status, res.Message = StatusSkipped, "local model broker is macOS only"
 		return res
 	}
+	home, _ := os.UserHomeDir()
+	if liveness.ApolloProvidesGemma(home) {
+		// Point every port-file client at Apollo's router; never write the broker plist.
+		_ = os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755)
+		_ = os.WriteFile(filepath.Join(home, ".sirsi", "gemma-server.port"), []byte(fmt.Sprintf("%d\n", liveness.ApolloRouterPort)), 0o644)
+		res.Status = StatusSkipped
+		res.Message = fmt.Sprintf("local model provided by Apollo.app (router 127.0.0.1:%d); setup will not write %s", liveness.ApolloRouterPort, GemmaBrokerLabel)
+		return res
+	}
 	if GemmaBrokerQuarantined() {
 		res.Status, res.Message = StatusSkipped, "local model broker is intentionally quarantined; setup will not recreate or start it"
 		return res
 	}
-	home, _ := os.UserHomeDir()
 	if !fileExists(filepath.Join(home, ".local", "bin", "sirsi-inference")) {
 		res.Status, res.Message = StatusSkipped, "skipped — native SNE binary not installed"
 		return res

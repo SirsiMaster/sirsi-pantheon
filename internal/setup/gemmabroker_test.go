@@ -60,6 +60,34 @@ func TestInstallGemmaBroker_SkipsWithoutSNE(t *testing.T) {
 	}
 }
 
+func TestInstallGemmaBroker_ProvidedByApolloApp(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	fakeSNERuntime(t, home) // SNE present too: Apollo.app must still win
+	router := filepath.Join(home, "Applications", "Apollo.app", "Contents", "Helpers", "apollo-router")
+	if err := os.MkdirAll(filepath.Dir(router), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(router, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	res := InstallGemmaBroker()
+	if res.Status != StatusSkipped || !strings.Contains(res.Message, "Apollo.app") {
+		t.Fatalf("want provided-by-Apollo skip, got %v %q", res.Status, res.Message)
+	}
+	if fileExists(GemmaBrokerPlistPath()) {
+		t.Fatal("setup wrote the broker plist although Apollo.app provides the model")
+	}
+	port, err := os.ReadFile(filepath.Join(home, ".sirsi", "gemma-server.port"))
+	if err != nil || strings.TrimSpace(string(port)) != "8520" {
+		t.Fatalf("port file = %q, %v; want 8520", port, err)
+	}
+}
+
 func TestInstallGemmaBroker_HonorsQuarantine(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("darwin only")

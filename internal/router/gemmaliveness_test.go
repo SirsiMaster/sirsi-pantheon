@@ -10,6 +10,23 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
 )
 
+// Fixtures never read the host's Apollo.app install; the stand-down test opts in.
+func init() { apolloProvidesFn = func(string) bool { return false } }
+
+// TestGemmaLiveness_ApolloProvidedStandsDown: with Apollo.app installed the
+// duty neither probes nor serves, even for a down broker with strikes pending.
+func TestGemmaLiveness_ApolloProvidedStandsDown(t *testing.T) {
+	calls := installGemmaFakes(t, liveness.GemmaDown)
+	probes := 0
+	setGemmaProbeFn(func(string) (liveness.GemmaStatus, string) { probes++; return liveness.GemmaDown, "fixture" })
+	setApolloProvidesFn(func(string) bool { return true })
+	t.Cleanup(func() { setApolloProvidesFn(func(string) bool { return false }) })
+	gemmaWedgeStrikes = 1
+	if err := RunGemmaLivenessDuty("", ""); err != nil || probes != 0 || len(*calls) != 0 || gemmaWedgeStrikes != 0 {
+		t.Fatalf("probes=%d serve=%v strikes=%d err=%v", probes, *calls, gemmaWedgeStrikes, err)
+	}
+}
+
 func writeGemmaRouteRegistry(t *testing.T, root string) {
 	t.Helper()
 	body := `{"agents":{"horus":{"id":"horus","type":"service","repo":"/tmp","workstream":"pantheon","wake":{"mechanism":"none"}},"owner":{"id":"owner","type":"human","repo":"/tmp","workstream":"portfolio","wake":{"mechanism":"owner-surface"}}}}`
