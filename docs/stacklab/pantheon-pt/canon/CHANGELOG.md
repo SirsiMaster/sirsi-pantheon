@@ -1,5 +1,15 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-27 — v0.24.142 release candidate
+
+- Registry: `rpa` / `RPA` now route to the existing attended ReprogramAnything lane `codex-sirsinexusapp` (callsign `RPA`), per the owner's direction to "register with the router as RPA". Identity, claims and consumer policy unchanged; no new worker.
+- Readable native Mac workspace
+- Responsive Fabric reads
+- Preserve Apollo planning intent
+- Truthful Ma’at assessment failures
+- Stack Lab source traceability
+- ADR-079 D1: `sirsi thread attended <agent>` (and the wake hold and worker deferral that share it) now credits a heartbeat-fresh interactive `claude`/`codex` session as attended. It previously also required a watch-loop process that ADR-065 retired, so no Claude lane could ever read as attended and a headless worker answered beside the live session. Stale, suspended, closed, worker and resident records still never count.
+
 ## 2026-10-27 — v0.24.141 release candidate
 
 - Pulse deity-count correction uses the selected canonical roster, not six legacy filenames; bounded regular-file parsing preserves offline metrics and existing schema.

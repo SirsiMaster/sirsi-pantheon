@@ -6,6 +6,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.142] — 2026-10-27
+
+- Registry: `rpa` / `RPA` now route to the existing attended ReprogramAnything lane `codex-sirsinexusapp` (callsign `RPA`), per the owner's direction to "register with the router as RPA". Identity, claims and consumer policy unchanged; no new worker.
+
+- **Readable native Mac workspace** — Increase body text to 15 pt, secondary text to 14 pt and supporting text to at least 12 pt. Add persisted 100–150% text sizing and native File, Edit, View, Window and Help menus, preserving the existing workspace, project and Apollo draft. Project selection remains cancellable from nested screens.
+
+- **Responsive Fabric reads** — Keep passive status reads from launching authentication probes, share overlapping default reads without duplicating transitions, cancel abandoned readers and reuse a validated snapshot already returned to the dashboard. Explicit authentication diagnostics remain available separately.
+
+- **Preserve Apollo planning intent** — Keep resource choices through navigation and telemetry views, revalidate current capacity on return, retain invalid intent for correction and fence canceled or stale plan completions.
+
+- **Truthful Ma’at assessment failures** — Retain child output and errors, avoid caching failed coverage runs and distinguish package progress from policy-module counts. Expand mail and service-cleanup regression coverage against the existing policy floors.
+
+- **Stack Lab source traceability** — Reconcile the native and Fabric process canon, refresh the exact module inventory and declare the RPA recipe peer without broadening runtime authority. Add a disposable hosted commercial-lifecycle qualification workflow; actual package, installed and lifecycle acceptance remains separately evidenced.
+
+- ADR-079 D1: `sirsi thread attended <agent>` (and the wake hold and worker deferral that share it) now credits a heartbeat-fresh interactive `claude`/`codex` session as attended. It previously also required a watch-loop process that ADR-065 retired, so no Claude lane could ever read as attended and a headless worker answered beside the live session. Stale, suspended, closed, worker and resident records still never count.
+
 ## [0.24.141] — 2026-10-27
 
 - **Correct canonical deity metrics** — Ma’at Pulse counts literal canonical roster declarations in the selected source, including inline Isis, with bounded non-blocking input handling. This count does not claim runtime registration or availability.
