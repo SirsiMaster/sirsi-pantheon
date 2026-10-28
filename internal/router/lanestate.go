@@ -164,7 +164,11 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 				res.Detail += " until " + l.HoldUntil.Local().Format("15:04:05")
 			}
 			if l.Hold == HoldQuarantine {
-				res.Detail += " (needs a human)"
+				// This branch is reached only when no attended session is heartbeat-fresh,
+				// so the hold describes the background loop, not the lane. An attended
+				// session whose thread was reaped (e.g. a resumed session with a new PID)
+				// is invisible here until it registers again.
+				res.Detail += " (background loop quarantined; no attended session registered — a live session must `sirsi thread register` to be seen)"
 			}
 		case l != nil && l.LastOutcome == OutcomeRelay:
 			res.Verdict = VerdictHeld

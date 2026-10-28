@@ -1450,7 +1450,15 @@ func reapDeadThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 		// there is no OS-truth claim to probe). Stale-after-lease is still a
 		// reap so the terminal invariant holds and the supersession path
 		// (ReapStrayThreads) remains unaffected.
-		if t.PID < minAgentPID {
+		//
+		// The same lease governs an attended claude/codex session that DOES carry a
+		// PID. A desktop conversation outlives its process: the session resumes
+		// with a new PID and the same session_id, and RegisterThread's
+		// session-keyed path renews the record. Reaping on the old PID's death made
+		// the record terminal first, so the resumed session's heartbeats were
+		// refused and its re-register minted a second thread, leaving the router
+		// blind to a working lane (claude-m5-compasspoint and ra, 2026-10-27).
+		if t.PID < minAgentPID || (t.SessionID != "" && IsAttendedSurface(t.Surface)) {
 			ttl := DefaultThreadStaleAfter
 			if t.SessionID != "" {
 				ttl = LeaseSessionTTL
