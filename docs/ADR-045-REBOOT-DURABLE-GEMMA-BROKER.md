@@ -17,6 +17,20 @@
 
 ## Context
 
+> **2026-10-29 amendment — Apollo-provided stand-down:** Following the owner
+> repoint-first/retire-legacy decision recorded by Rail20261028-031050 and
+> clarified20261029-165705, setup and Gemma liveness stand down when the fixed
+> installed Apollo.app router helper is a regular executable file. Invalid
+> installation markers fail closed before legacy lifecycle actions. This
+> installation-shape check is not runtime, signature, or model-readiness proof.
+> Setup does not create or rewrite a host endpoint, profile, or port file;
+> already-selected8520 and8521 routes are distinct and remain authoritative.
+> No running service is stopped or restored by this source change. Explicit
+> operational adoption remains with the service owner, with normal admission
+> for any subsequent model work. Quarantine and disabled-label protections
+> remain intact on non-Apollo hosts. Source/tests are independently reviewable;
+> current installed143 does not yet include this amendment.
+
 The warm local-model broker (bounded MLX server on 127.0.0.1:8765) was launched
 via `nohup` — it died at reboot AND once more mid-day, and a **cloud** agent had
 to revive it each time. That inverts sovereignty: the Tier-0 substrate every

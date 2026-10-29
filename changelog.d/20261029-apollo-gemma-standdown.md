@@ -1,0 +1,1 @@
+- Apollo-owned Gemma setup/healer stand down without rewriting the host-selected profile or port. Require a regular executable installed router; invalid markers fail closed without legacy restoration. Installation shape is not runtime/signature/readiness proof.

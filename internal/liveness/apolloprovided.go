@@ -1,13 +1,10 @@
 package liveness
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
-
-// ApolloRouterPort is the loopback port Apollo.app's router serves its
-// OpenAI-compatible API on (GET /v1/models, POST /v1/chat/completions).
-const ApolloRouterPort = 8520
 
 // ApolloRouterPath is the router helper inside the installed Apollo.app.
 func ApolloRouterPath(home string) string {
@@ -21,6 +18,27 @@ func ApolloRouterPath(home string) string {
 // neither write nor restore its own broker: that would hold a second copy of
 // the same model in memory.
 func ApolloProvidesGemma(home string) bool {
-	_, err := os.Stat(ApolloRouterPath(home))
-	return err == nil
+	provided, err := CheckApolloGemmaProvider(home)
+	return provided && err == nil
+}
+
+// CheckApolloGemmaProvider distinguishes absence from an invalid installed
+// marker. Callers must not fall back to legacy lifecycle actions on an error.
+// This checks only installation shape, not signature, liveness, model readiness,
+// or the selected host endpoint. It never probes, launches, or changes a route.
+func CheckApolloGemmaProvider(home string) (bool, error) {
+	if home == "" {
+		return false, fmt.Errorf("Apollo provider check requires a home directory")
+	}
+	fi, err := os.Lstat(ApolloRouterPath(home))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect installed Apollo router: %w", err)
+	}
+	if !fi.Mode().IsRegular() || fi.Mode().Perm()&0o111 == 0 {
+		return false, fmt.Errorf("installed Apollo router must be a regular executable file")
+	}
+	return true, nil
 }
