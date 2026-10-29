@@ -6,8 +6,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
-- Keep diagnostic repair actions fully readable at enlarged text sizes: their gold surface grows with the title and wrapping command, with dark high-contrast text instead of a clipped single-line native bezel.
-
 ## [0.24.143] — 2026-10-29
 
 - `sirsi router ping` no longer reports a lane whose background loop is quarantined as "needs a human". That verdict is reached only when no attended session is heartbeat-fresh, so it now says the background loop is quarantined and no attended session is registered. A working session whose thread was reaped (a resumed session with a new PID) must re-register to be seen.
