@@ -23,6 +23,17 @@ lock contention. At that October20 checkpoint, full affected-package race
 qualification was still running; the checkpoint is historical, not a current
 job-status signal. This document does not establish that run's terminal result.
 
+Later protected CI supplies a distinct, completed qualification receipt:
+[PR1257 Test job123476885508](https://github.com/SirsiMaster/sirsi-pantheon/actions/runs/40882340139/job/123476885508)
+on exact source `60644218ce1de5c72cf23e19f35a742464832c15` passed all seven
+`TestProviderQuota*` functions with the repository command
+`go test -v -race -short -coverprofile=coverage.out ./...`; the router package
+completed successfully. Both `providerquota.go` and `providerquota_test.go`
+have the same immutable Git blob IDs there as at the integrated unlock-error
+correction `d0e04220c342ac0fe7924afeb9c889a92c37a971`. This is actual existing
+CI evidence for that corrected quota source under race/short mode, not a new
+helper test run or a claim that every non-short/native-provider scenario passed.
+
 The implementation landed in commit
 `1d324cf859919e64333578cffe395e2753349085`, followed by unlock-error handling
 and import corrections in `d0e04220c342ac0fe7924afeb9c889a92c37a971`.
