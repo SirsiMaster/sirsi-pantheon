@@ -33,12 +33,14 @@ type PodJournal struct {
 	state                         podFrame
 	now                           func() time.Time
 	failed                        bool
+	fenced                        bool
 	events                        []Reservation
 	requests                      map[string]podReply
 	currentOperation, currentHash string
 	pendingReply                  json.RawMessage
 }
 type podFrame struct {
+	Fenced      bool            `json:"fenced,omitempty"`
 	Grant       Delegation      `json:"grant"`
 	Seq         int64           `json:"seq"`
 	Rows        []Reservation   `json:"rows,omitempty"`
@@ -113,6 +115,15 @@ func OpenPodJournal(path, machine string, grant Delegation) (*PodJournal, error)
 				return fail(err)
 			}
 			frame.Grant.AckedSeq = 0
+			// A fence is durable authority state, not a reservation event. It
+			// consumes no replay sequence and never rewrites prior grant history.
+			if frame.Fenced {
+				if !reflect.DeepEqual(frame.Grant, grant) || frame.Seq != j.state.Seq || frame.Event != nil || len(frame.Rows) != 0 || frame.Operation != "" || frame.RequestHash != "" || len(frame.Reply) != 0 {
+					return fail(fmt.Errorf("maat: invalid retained authority fence"))
+				}
+				j.fenced = true
+				continue
+			}
 			if !reflect.DeepEqual(frame.Grant, grant) || frame.Seq != j.state.Seq+1 {
 				return fail(fmt.Errorf("maat: journal epoch/sequence mismatch"))
 			}
@@ -182,6 +193,9 @@ func (j *PodJournal) Reserve(req Reservation, queue bool) (ReserveResult, error)
 	return j.reserveLocked(req, queue)
 }
 func (j *PodJournal) reserveLocked(req Reservation, queue bool) (ReserveResult, error) {
+	if j.fenced {
+		return ReserveResult{}, fmt.Errorf("maat: canonical authority fenced; no new grants")
+	}
 	if j.f == nil || j.failed {
 		return ReserveResult{}, fmt.Errorf("maat: journal unavailable")
 	}
@@ -321,7 +335,7 @@ func (j *PodJournal) mutateLocked(holder, action, id, value string) (*Reservatio
 	if old.Status != StatusActive || old.leaseExpired(j.now()) {
 		return nil, fmt.Errorf("maat: terminal or expired reservation")
 	}
-	if (action == "heartbeat" || action == "extend") && j.grant.expired(j.now()) {
+	if (action == "heartbeat" || action == "extend") && (j.fenced || j.grant.expired(j.now())) {
 		return nil, fmt.Errorf("maat: delegation expired")
 	}
 	store := &podProjection{rows: append([]Reservation(nil), j.state.Rows...)}
@@ -394,7 +408,27 @@ func (j *PodJournal) RelayOnce(ctx context.Context, canonical AtomicDelegationSc
 	if err != nil {
 		return 0, err
 	}
-	if d == nil || d.Epoch != j.grant.Epoch || d.AuthorityMachine != j.grant.AuthorityMachine {
+	// Transport failure above is not revocation. A successful canonical
+	// observation of lost/changed authority, however, must survive restart.
+	current := d != nil
+	if current {
+		expected, observed := j.grant, *d
+		expected.AckedSeq, observed.AckedSeq = 0, 0
+		current = reflect.DeepEqual(expected, observed) && !d.expired(j.now())
+	}
+	if !current {
+		if err := j.retainAuthorityFence(); err != nil {
+			return 0, err
+		}
+	}
+	j.mu.Lock()
+	fenced := j.fenced
+	j.mu.Unlock()
+	var fenceErr error
+	if fenced {
+		fenceErr = fmt.Errorf("maat: canonical authority fenced; cleanup replay only")
+	}
+	if d == nil || d.Pod != j.grant.Pod || d.Epoch != j.grant.Epoch || d.AuthorityMachine != j.grant.AuthorityMachine {
 		return 0, fmt.Errorf("maat: relay authority superseded")
 	}
 	rows := j.Replay(d.AckedSeq)
@@ -402,7 +436,7 @@ func (j *PodJournal) RelayOnce(ctx context.Context, canonical AtomicDelegationSc
 		rows = rows[:256]
 	}
 	if len(rows) == 0 {
-		return d.AckedSeq, nil
+		return d.AckedSeq, fenceErr
 	}
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -416,7 +450,41 @@ func (j *PodJournal) RelayOnce(ctx context.Context, canonical AtomicDelegationSc
 	if err == nil && ack != rows[len(rows)-1].Seq {
 		return 0, fmt.Errorf("maat: canonical acknowledgement mismatch")
 	}
+	if err == nil {
+		err = fenceErr
+	}
 	return ack, err
+}
+
+// Preserve a canonical refusal in the same private journal before another
+// admission can proceed. Cleanup and terminal reconciliation remain possible.
+func (j *PodJournal) retainAuthorityFence() error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.fenced {
+		return nil
+	}
+	j.fenced = true
+	if j.f == nil || j.failed {
+		return fmt.Errorf("maat: authority fence journal unavailable")
+	}
+	b, err := json.Marshal(podFrame{Grant: j.grant, Seq: j.state.Seq, Fenced: true})
+	if err == nil {
+		b = append(b, '\n')
+		var n int
+		n, err = j.f.Write(b)
+		if err == nil && n != len(b) {
+			err = io.ErrShortWrite
+		}
+	}
+	if err == nil {
+		err = j.f.Sync()
+	}
+	if err != nil {
+		j.failed = true
+		return fmt.Errorf("maat: authority fence durability unknown: %w", err)
+	}
+	return nil
 }
 
 // This disposable policy projection is never a second store or database.
@@ -478,6 +546,9 @@ func (j *PodJournal) ExecutePod(holder string, req podRequest) (json.RawMessage,
 			return nil, fmt.Errorf("maat: nonce reused with changed request")
 		}
 		if req.Action == "reserve" || req.Action == "heartbeat" || req.Action == "extend" {
+			if j.fenced {
+				return nil, fmt.Errorf("maat: canonical authority fenced; historical nonce is not liveness")
+			}
 			id := req.ID
 			if req.Action == "reserve" {
 				id = req.Reservation.ID
@@ -562,7 +633,7 @@ func (j *PodJournal) RunRelay(ctx context.Context, canonical AtomicDelegationSch
 func (j *PodJournal) ReadOwn(holder, resource string) ([]Reservation, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	if j.f == nil || j.failed || j.grant.expired(j.now()) || !j.grant.coversResource(resource) {
+	if j.f == nil || j.failed || j.fenced || j.grant.expired(j.now()) || !j.grant.coversResource(resource) {
 		return nil, fmt.Errorf("maat: own guard authority unavailable")
 	}
 	rows := []Reservation{}
