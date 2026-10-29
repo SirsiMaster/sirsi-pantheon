@@ -1,0 +1,51 @@
+import AppKit
+import SwiftUI
+import XCTest
+@testable import SirsiMenubar
+
+final class DiagnosticRepairActionTests: XCTestCase {
+    @MainActor
+    func testTwoLineActionGrowsWithTextSizeWithoutSingleLineBezelClipping() throws {
+        let regular = try render(width: 520, scale: 1)
+        let enlarged = try render(width: 520, scale: 1.5)
+        XCTAssertGreaterThanOrEqual(regular.size.height, 60)
+        XCTAssertGreaterThanOrEqual(enlarged.size.height, 72)
+        XCTAssertGreaterThan(enlarged.size.height, regular.size.height)
+    }
+
+    @MainActor
+    func testNarrowEnlargedActionWrapsLongCommandAndTitle() throws {
+        let wide = try render(width: 720, scale: 1.5, long: true)
+        let narrow = try render(width: 300, scale: 1.5, long: true)
+        XCTAssertGreaterThan(narrow.size.height, wide.size.height)
+        XCTAssertLessThanOrEqual(narrow.size.width, 300)
+    }
+
+    // Render only the inert production label/style. No engine, process,
+    // confirmation, live repair or installed-app interaction is performed.
+    @MainActor
+    private func render(width: CGFloat, scale: CGFloat, long: Bool = false) throws -> NSImage {
+        let title = long ? "Restore managed services and verify their recovery" : "Relieve the live cause"
+        let command = long ? "sirsi maat repair launchd-disabled --confirm" : "sirsi relieve --memory"
+        let content = Button {} label: {
+            DiagnosticRepairActionLabel(title: title, command: command, systemImage: "info.circle")
+        }
+        .buttonStyle(DiagnosticRepairButtonStyle())
+        .environment(\.sirsiTypeScale, scale)
+        .environment(\.colorScheme, .dark)
+        .frame(width: width)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(PantheonTheme.canvas)
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 2
+        let image = try XCTUnwrap(renderer.nsImage)
+        if let directory = ProcessInfo.processInfo.environment["PANTHEON_REPAIR_LAYOUT_CAPTURE_DIR"] {
+            let root = URL(fileURLWithPath: directory, isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let bitmap = try XCTUnwrap(image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
+            let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            try data.write(to: root.appendingPathComponent("repair-\(Int(width))-\(Int(scale * 100))-\(long ? "long" : "short").png"))
+        }
+        return image
+    }
+}

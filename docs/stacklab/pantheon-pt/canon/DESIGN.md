@@ -36,6 +36,12 @@ must retain the selected project, workspace navigation, Apollo draft and active
 operation state. At maximum size, content must wrap or scroll rather than hide
 action labels or require shrinking text.
 
+Diagnostic repair actions use a content-sized gold surface with dark text. Both
+the action title and supporting command wrap at narrow widths and 150 percent
+text size; a native single-line bezel must not crop this two-line content.
+The control retains its Button semantics, pressed/disabled states and existing
+evidence-bound confirmation before execution.
+
 The application provides real macOS Pantheon, File, Edit, View, Window and Help
 menus. File selects a Git project through the existing project workflow and
 closes the existing window. Edit commands use the native first responder.

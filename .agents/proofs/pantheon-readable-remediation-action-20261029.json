@@ -1,0 +1,112 @@
+{
+  "work_item_id": "pantheon-readable-remediation-action-20261029",
+  "agent_id": "codex-pantheon",
+  "repo": "/Users/thekryptodragon/.codex/worktrees/pantheon-live-relief-readable/sirsi-pantheon",
+  "status": "ready_for_review",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "governance",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/COMMERCIALIZATION_GATE.md",
+      "role": "scope",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/ARCHITECTURE_DESIGN.md",
+      "role": "architecture",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/SAFETY_DESIGN.md",
+      "role": "security",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "portfolio-canon",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/stacklab/pantheon-pt/canon/DESIGN.md",
+      "role": "stacklab-canon",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/stacklab/maat/canon/NATIVE_REMEDIATION_EXECUTION.md",
+      "role": "architecture",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "docs/stacklab/pantheon-pt/canon/DESIGN.md",
+      "section": "Native readability and command menus",
+      "claim": "Two-line diagnostic action remains fully readable at100\u2013150percent and narrow widths, with dark text on content-sized gold surface.",
+      "files_changed": [
+        "macapp/Sources/SirsiMenubar/Views.swift",
+        "macapp/Sources/SirsiMenubar/DiagnosticRepairAction.swift",
+        "macapp/Tests/SirsiMenubarTests/DiagnosticRepairActionTests.swift"
+      ],
+      "evidence": [
+        "Native48d6e185a6b64a94a9b6143095f41a2e success0:fontguard965scaled/0unscaled;2layouttests0failures;4actualinertproductioncomponentrenders."
+      ]
+    },
+    {
+      "doc": "docs/stacklab/maat/canon/NATIVE_REMEDIATION_EXECUTION.md",
+      "section": "Approval and invocation",
+      "claim": "Existing frozen evidence/argv/repository confirmation and execution routes unchanged; style only.",
+      "files_changed": [
+        "macapp/Sources/SirsiMenubar/Views.swift"
+      ],
+      "evidence": [
+        "Diff changes only diagnostic button style and label composition; no action/approval/executor code changed."
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Operator can read the live-cause repair title and full command without reducing preferred text size. This addresses the supplied screenshot.",
+    "design": "Black-first brand retained; high-contrast dark text/gold surface and natural vertical wrapping. Four actual component render captures inspected, including150percent short and300pointlong.",
+    "technical": "Actual Swift target/test compilation, font guard and2focusedrenderlayouttests PASS. Independent source review/protected CI remain next; no claim full Swift/Go suite or installed behavior.",
+    "operational": "No repair, process/model/service mutation or installed binary replacement. SSA owns normal reviewed signed release; no competing144publisher.",
+    "narrative": "Stack Lab DESIGN/component catalog/recipe source+test pointers and changelog updated; source qualification is distinct from installed rollout."
+  },
+  "verification": [
+    {
+      "name": "font-and-swift-layout",
+      "command": "bash macapp/check-font-scaling.sh && swift test --package-path macapp --scratch-path OWNED_EVIDENCE/swift-scratch --jobs 1 --filter DiagnosticRepairActionTests",
+      "status": "passed",
+      "evidence": "Native48d6e185a6b64a94a9b6143095f41a2e success0;2tests0failures; compiledSwiftapp+testtarget; no live action."
+    },
+    {
+      "name": "render-inspection",
+      "command": "Inspect retained ImageRenderer PNGs",
+      "status": "passed",
+      "evidence": "/Users/thekryptodragon/.sirsi/evidence/pantheon-live-relief-readable-20261029/captures:520pt100/150short,720/300pt150long; title/command fullyvisible."
+    },
+    {
+      "name": "diff-check",
+      "command": "git diff --check",
+      "status": "passed",
+      "evidence": "No whitespace defects."
+    }
+  ],
+  "working_status": {
+    "environment": "Own managed worktree fromorigin/mainc94ac433; legitimate own finiteCPU1 native executor; isolatedSwift scratch; inertproductioncomponentrenderonly.",
+    "how_verified": "Actual Swift compilation/render geometry at100/150percent and narrow widths; manual PNGinspection; existingcallbacks unchanged.",
+    "observed_result": "Source fix qualified, not installed. Normal independent review/protected CI/signed integration remain.",
+    "verified_at": "2026-10-29T17:05:47.545109+00:00"
+  },
+  "handoffs": [],
+  "blockers": []
+}

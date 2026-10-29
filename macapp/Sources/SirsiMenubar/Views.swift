@@ -1506,13 +1506,13 @@ struct FindingView: View {
                         Text(fixSectionLabel).sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
                         if fixRequiresConfirmation {
                             Button { freezeRepair(repairArgs); confirmFix = true } label: { fixButtonContents(fix) }
-                                .buttonStyle(.borderedProminent).tint(gold)
+                                .buttonStyle(DiagnosticRepairButtonStyle())
                         } else {
                             Button {
                                 freezeRepair(repairArgs)
                                 confirmFix = true
                             } label: { fixButtonContents(fix) }
-                            .buttonStyle(.borderedProminent).tint(gold)
+                            .buttonStyle(DiagnosticRepairButtonStyle())
                         }
                     } else if requiresNativeCleanupReview {
                         nativeCleanupReview
@@ -1593,17 +1593,8 @@ struct FindingView: View {
     }
 
     private func fixButtonContents(_ fix: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: fixIcon)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(fixButtonLabel).sirsiFont(12, weight: .semibold)
-                Text(repairCommand).sirsiFont(.caption2, design: .monospaced)
-                    .foregroundStyle(Color.white.opacity(0.85))
-            }
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 2)
+        DiagnosticRepairActionLabel(title: fixButtonLabel, command: repairCommand,
+                                    systemImage: fixIcon)
     }
 
     @ViewBuilder private var legacyNativeRepair: some View {
