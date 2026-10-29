@@ -67,6 +67,20 @@ cmd/sirsi verbs ──► dispatch.Facade ──► routerstore.Store (interface
 
 ## Tests
 
+### Authenticated task claims
+
+Authenticated ClaimTask/ClaimNextTask require the requested agent/thread to
+match this caller's nonempty authenticated session thread, including when the
+general audience policy is in log/off mode. A body `--thread` is not a caller
+binding. The internal `claimTaskSession` transaction commits the exact session
+owner together with task lease, attempt and wake acknowledgment; a binding
+failure rolls all of them back. No new RPC, schema or credentials are added.
+Existing release/renew/complete checks and same-host/agent/thread remint rules
+are unchanged. Pre-existing threadless leases are not transferred or repaired
+by registering a different session. The negative regressions are in
+`taskclaim_session_binding_test.go`; `remote_test.go` preserves legacy cache
+and existing-lease ownership behavior without authorizing new threadless claims.
+
 ### Authenticated item claims (DC01)
 
 `serve.go` routes authenticated ClaimNext/ClaimItem to the unexported backend

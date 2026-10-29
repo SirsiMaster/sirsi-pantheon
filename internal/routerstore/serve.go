@@ -676,6 +676,42 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		}
 		lease, err := backend.claimItemSession(in[0].String(), id, sess.ID, in[ttlIndex].Interface().(time.Duration))
 		outs = []reflect.Value{reflect.ValueOf(lease), reflect.ValueOf(&err).Elem()}
+	} else if sess.ID != "" && (name == "ClaimTask" || name == "ClaimNextTask") {
+		// --thread in the body is not authenticated caller identity. Refuse
+		// incoherent claims before consuming an attempt or creating a lease
+		// whose threadless owner cannot survive an ordinary session remint.
+		threadIndex, ttlIndex, exactID := 2, 3, ""
+		if name == "ClaimTask" {
+			threadIndex, ttlIndex, exactID = 3, 4, strings.TrimSpace(in[1].String())
+			if exactID == "" {
+				writeErr(w, http.StatusBadRequest, "", "routerstore: exact task claim requires task id")
+				return
+			}
+		}
+		if strings.TrimSpace(sess.ThreadID) == "" || in[threadIndex].String() != sess.ThreadID || in[0].String() != sess.Agent {
+			if exactID != "" {
+				s.recordTaskLeaseEvent(exactID, in[0].String(), "bind", sess, "refused", "empty or mismatched authenticated caller thread/agent; task unchanged")
+			}
+			writeErr(w, http.StatusForbidden, "ErrNotOwner", "routerstore: task claim requires this authenticated agent and bound caller thread; body --thread is not a session binding")
+			return
+		}
+		backend, ok := s.store.(interface {
+			claimTaskSession(string, string, string, string, string, time.Duration) (*TaskLease, error)
+		})
+		if !ok {
+			writeErr(w, http.StatusServiceUnavailable, "", "authenticated atomic task claim unavailable")
+			return
+		}
+		workerIndex := threadIndex - 1
+		lease, err := backend.claimTaskSession(in[0].String(), exactID, in[workerIndex].String(), sess.ThreadID, sess.ID, in[ttlIndex].Interface().(time.Duration))
+		outs = []reflect.Value{reflect.ValueOf(lease), reflect.ValueOf(&err).Elem()}
+		verdict, reason := "allowed", ""
+		if err != nil {
+			verdict, reason = "error", err.Error()
+		}
+		if lease != nil {
+			s.recordTaskLeaseEvent(lease.TaskID, lease.Agent, "bind", sess, verdict, reason)
+		}
 	} else {
 		outs = s.sv.MethodByName(name).Call(in)
 	}
@@ -723,8 +759,8 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Authenticated item binding already committed atomically with its lease.
-	// Preserve the separate existing task-binding path (not DC01's item scope).
-	s.bindAfterClaim(name, results, sess)
+	// Authenticated task binding also committed with its lease above. Never
+	// rebind it after commit, where it could race a reclaimed replacement.
 	if sess.ID != "" {
 		_ = s.store.TouchSession(sess.ID)
 	}
@@ -905,22 +941,6 @@ func (s *server) recordTaskLeaseEvent(taskID, agent, op string, caller Session, 
 	}
 	if err := s.store.RecordTaskLeaseEvent(entry); err != nil {
 		s.logf("task-lease-log: record %s for %s/%s failed: %v", op, agent, taskID, err)
-	}
-}
-
-func (s *server) bindAfterClaim(name string, results []reflect.Value, caller Session) {
-	if caller.ID == "" || len(results) == 0 {
-		return
-	}
-	switch name {
-	case "ClaimTask", "ClaimNextTask":
-		if l, ok := results[0].Interface().(*TaskLease); ok && l != nil {
-			verdict, reason := "allowed", ""
-			if err := s.store.BindTaskSession(l.Agent, l.TaskID, caller.ID); err != nil {
-				verdict, reason = "error", err.Error()
-			}
-			s.recordTaskLeaseEvent(l.TaskID, l.Agent, "bind", caller, verdict, reason)
-		}
 	}
 }
 
