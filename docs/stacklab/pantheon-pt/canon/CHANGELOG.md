@@ -1,5 +1,10 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-29 — v0.24.143 release candidate
+
+- `sirsi router ping` no longer reports a lane whose background loop is quarantined as "needs a human". That verdict is reached only when no attended session is heartbeat-fresh, so it now says the background loop is quarantined and no attended session is registered. A working session whose thread was reaped (a resumed session with a new PID) must re-register to be seen.
+- A Claude/Codex session that resumes with a new process no longer drops off the router. The reaper used to retire an attended session's thread as soon as its old PID died, so the resumed session's heartbeats were refused and re-registering minted a second thread. Attended session-keyed threads now follow the 2-hour session lease (the same rule PID-less sessions already had). Re-registering with the same session ID renews the original thread. Workers keep the immediate OS-truth reap.
+
 ## 2026-10-27 — v0.24.142 release candidate
 
 - Record the actual single hosted140 →141 →140 rollback →uninstall commercial cask qualification and bounded cleanup receipts; keep142 GUI/package and full certification acceptance separate.
