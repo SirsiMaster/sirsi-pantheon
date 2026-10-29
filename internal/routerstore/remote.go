@@ -550,15 +550,9 @@ func (rs *RemoteStore) do(ctx context.Context, method string, args []any, sess *
 		return fmt.Errorf("routerstore: remote %s: %w", method, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	wr, err := readRPCResponse(resp.Body, 64<<20)
 	if err != nil {
-		return fmt.Errorf("routerstore: remote %s: read: %w", method, err)
-	}
-	var wr wireResponse
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &wr); err != nil {
-			return fmt.Errorf("routerstore: remote %s: HTTP %d, non-JSON body: %.200s", method, resp.StatusCode, raw)
-		}
+		return fmt.Errorf("routerstore: remote %s: HTTP %d: %w", method, resp.StatusCode, err)
 	}
 	if wr.Error != nil {
 		if s, ok := sentinelErrors[wr.Error.Name]; ok {
@@ -589,6 +583,29 @@ func (rs *RemoteStore) do(ctx context.Context, method string, args []any, sess *
 		}
 	}
 	return nil
+}
+
+// readRPCResponse accepts one complete JSON object, not an empty/HTML response
+// or a valid prefix cut off by the size bound. Keep raw response bytes out of
+// diagnostics: a proxy or service error can contain private caller data.
+// The limit argument is a private fixture seam; the HTTP caller retains64MiB.
+func readRPCResponse(body io.Reader, limit int64) (wireResponse, error) {
+	var wr wireResponse
+	raw, err := io.ReadAll(io.LimitReader(body, limit+1))
+	if err != nil {
+		return wr, fmt.Errorf("read response: %w", err)
+	}
+	if int64(len(raw)) > limit {
+		return wr, fmt.Errorf("response exceeds %d-byte limit", limit)
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return wr, errors.New("response must be one JSON object")
+	}
+	if err := json.Unmarshal(trimmed, &wr); err != nil {
+		return wireResponse{}, errors.New("invalid JSON response object")
+	}
+	return wr, nil
 }
 
 // ── methods that cannot be generated ───────────────────────────────────────
