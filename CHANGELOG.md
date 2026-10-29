@@ -6,13 +6,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
-- Keep provider-session and surface identity when reusing a shared runtime PID,
-  and reject pinned-thread rebinding to another session. Ambiguous native Codex
-  aliases now fail attended registration before any registry or marker write;
-  they no longer silently fall back to a parent's PID-backed thread. Same-session
-  and legacy same-surface registrations remain idempotent. No audience check,
-  credential scope, compute admission or worker capability is relaxed.
-
 ## [0.24.144] — 2026-10-29
 
 - Route typed Apollo CLI chat through the existing installed native bridge, retaining explicit provider/model selection and bounded response behavior.
