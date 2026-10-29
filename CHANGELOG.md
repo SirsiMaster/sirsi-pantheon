@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.144] — 2026-10-29
+
+- Route typed Apollo CLI chat through the existing installed native bridge, retaining explicit provider/model selection and bounded response behavior.
+- Observe admitted Darwin process groups through native kernel inventory instead of depending on sandbox-blocked process-list commands; retain unknown states and exact cleanup custody.
+- Bind new authenticated task claims to their genuine same-agent session in the same transaction as the claim and wake acknowledgment. Refused or failed bindings do not acquire a lease; existing ownership and wire/schema contracts remain unchanged.
+- Persist canonical pod revocation and authority-loss observations as sticky local fences. A transport outage alone is not revocation; legacy journal readers fail closed. Deployment and delegated authority remain separately qualified.
+- Isolate provider tests from inherited production identity aliases without changing production session policy. Refuse CCD archive/reap actions when the initial process observation is incomplete or indeterminate.
+- Add read-only retained billing evidence reporting with explicit unknown/delayed states, measured integer amounts and no invented budget, credits, authentication or enforcement.
+- Reconcile the Ma’at contract's published-source status and quota-retry runbook with retained qualification while keeping unverified reading mirrors, installed adoption and full product acceptance explicit.
+
+Release preparation retains the original changelog fragments and all prior evidence. Signed package publication, compatible cloud promotion and actual loaded-client adoption require their own recorded results; this source entry does not assert them.
+
 ## [0.24.143] — 2026-10-29
 
 - `sirsi router ping` no longer reports a lane whose background loop is quarantined as "needs a human". That verdict is reached only when no attended session is heartbeat-fresh, so it now says the background loop is quarantined and no attended session is registered. A working session whose thread was reaped (a resumed session with a new PID) must re-register to be seen.
