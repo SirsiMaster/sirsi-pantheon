@@ -29,6 +29,26 @@ func TestCurrentSessionIDProviderBindings(t *testing.T) {
 	}
 }
 
+func TestCheckedSessionIdentityRejectsConflictingAliases(t *testing.T) {
+	t.Setenv(SessionIDEnv, "")
+	t.Setenv("CODEX_SESSION_ID", "parent-session")
+	t.Setenv("CODEX_THREAD_ID", "helper-session")
+	if sid, err := CheckedCurrentSessionID(); err == nil || sid != "" {
+		t.Fatalf("ambiguous native identity accepted: %q %v", sid, err)
+	}
+	if CurrentSessionID() != "" {
+		t.Fatal("compatibility result must remain empty, not select either session")
+	}
+	t.Setenv("CODEX_SESSION_ID", "helper-session")
+	if sid, err := CheckedCurrentSessionID(); err != nil || sid != "helper-session" {
+		t.Fatalf("matching actual identity rejected: %q %v", sid, err)
+	}
+	t.Setenv(SessionIDEnv, "explicit-claude-session")
+	if sid, err := CheckedCurrentSessionID(); err != nil || sid != "explicit-claude-session" {
+		t.Fatalf("existing explicit Claude binding changed: %q %v", sid, err)
+	}
+}
+
 func TestCodexSessionUsesSameAgentAndThreadMarkers(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv(SessionIDEnv, "")

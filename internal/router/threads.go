@@ -849,6 +849,13 @@ func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mi
 				(existing.MachineID != "" && t.MachineID != "" && existing.MachineID != t.MachineID) {
 				continue
 			}
+			// Several real provider sessions can share one durable host PID.
+			// PID fallback must not undo the session/surface check above, or a
+			// helper can overwrite its parent's metadata and receive its thread.
+			// Two legacy empty-session records still deduplicate normally.
+			if existing.SessionID != t.SessionID || existing.Surface != t.Surface {
+				continue
+			}
 			// ADR-025: a suspended record must NOT be revived by the live
 			// fast-path — resuming is an explicit transition (`thread resume`)
 			// that restores the payload + re-arms the watcher. Skip it here so
@@ -919,6 +926,9 @@ func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mi
 	if t.ThreadID != "" {
 		if existing, ok := reg.Threads[t.ThreadID]; ok && existing != nil && existing.AgentID != t.AgentID {
 			return nil, fmt.Errorf("thread %q is bound to agent %q; refusing to register it as %q (cross-lane identity adoption is prohibited)", t.ThreadID, existing.AgentID, t.AgentID)
+		}
+		if existing := reg.Threads[t.ThreadID]; existing != nil && (existing.SessionID != t.SessionID || existing.Surface != t.Surface) {
+			return nil, fmt.Errorf("thread %q belongs to a different provider session or surface; refusing identity adoption", t.ThreadID)
 		}
 	}
 
