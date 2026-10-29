@@ -1,0 +1,26 @@
+{
+  "schema": "sirsi-selected-reading-homes-v1",
+  "work_item_id": "inherited-sleeve-20260910",
+  "classification": "research",
+  "canonical": {
+    "path": "docs/design/SLEEVE_MPI_OWNER_DIRECTION_20260910.md",
+    "original_retained_commit": "715da8dcdec65ef6121fb7b3267bb9f2b881bd55",
+    "sha256": "4784b06a027c24c413476c746eb49fee92e4448e32ddd8be11d12309ef307151",
+    "scope": "Verbatim preserved September owner-direction design and qualification brief; no new hardware/runtime/performance claim"
+  },
+  "desktop": {
+    "status": "exact-original-preserved-backlinks-added",
+    "path": "/Users/thekryptodragon/Desktop/Sirsi/00 Owner Reading Room/Photon/Sleeve MPI architecture and qualification brief.md",
+    "backlinks": "/Users/thekryptodragon/Desktop/Sirsi/00 Owner Reading Room/Photon/Sleeve MPI brief - Publication backlinks - 2026-10-29.md",
+    "sha256": "4784b06a027c24c413476c746eb49fee92e4448e32ddd8be11d12309ef307151"
+  },
+  "workspace": {
+    "status": "content-and-structure-verified",
+    "native_url": "https://docs.google.com/document/d/1WEEA0fUs68-ruyXFO_KkH94hu5qcAHLZ4LsfVC9Y49Q",
+    "mime_type": "application/vnd.google-apps.document",
+    "shared": false,
+    "verification": "All source paragraphs,44 table cells and7 numbered steps checked; Desktop backlink follow-through appended; Mermaid remains a specification, no PDF/electrical layout certification"
+  },
+  "supersession": "Historical September native-document-runtime blocker superseded by actual native publication; preserved source paragraph is history, not a current gate. Research/diligence-only claims unchanged.",
+  "receipt": "/Users/thekryptodragon/.sirsi/evidence/ssa-backlog-20261029/fleet-other/sleeve-native-publication-receipt.json"
+}
