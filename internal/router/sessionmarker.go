@@ -14,6 +14,7 @@
 package router
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -62,18 +63,26 @@ func sanitizeSessionID(s string) string {
 // accept either supported native alias, but refuse conflicting alias values:
 // selecting one would silently attribute work to a different conversation.
 func CurrentSessionID() string {
+	session, _ := CheckedCurrentSessionID()
+	return session
+}
+
+// CheckedCurrentSessionID is the registration variant: an ambiguous attended
+// identity must fail before writing any thread or session marker. Read-only
+// compatibility callers retain CurrentSessionID's empty-on-conflict result.
+func CheckedCurrentSessionID() (string, error) {
 	if sid := strings.TrimSpace(os.Getenv(SessionIDEnv)); sid != "" {
-		return sid
+		return sid, nil
 	}
 	session := strings.TrimSpace(os.Getenv("CODEX_SESSION_ID"))
 	thread := strings.TrimSpace(os.Getenv("CODEX_THREAD_ID"))
 	if session != "" && thread != "" && session != thread {
-		return ""
+		return "", errors.New("conflicting native Codex session aliases; reconcile the actual runtime identity before registration")
 	}
 	if session != "" {
-		return session
+		return session, nil
 	}
-	return thread
+	return thread, nil
 }
 
 // WriteSessionAgentMarker records that sessionID resolves to agentID. No-op when
