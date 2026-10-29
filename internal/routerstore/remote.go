@@ -602,7 +602,7 @@ func readRPCResponse(body io.Reader, limit int64) (wireResponse, error) {
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return wr, errors.New("response must be one JSON object")
 	}
-	if err := json.Unmarshal(trimmed, &wr); err != nil {
+	if err := json.Unmarshal(raw, &wr); err != nil {
 		return wireResponse{}, errors.New("invalid JSON response object")
 	}
 	return wr, nil
