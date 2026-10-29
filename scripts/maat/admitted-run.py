@@ -98,7 +98,7 @@ class _BSDInfo(ctypes.Structure):
         ('start_usec', ctypes.c_uint64)]
 
 
-def native_process_info(pid):
+def native_process_info(pid, include_zombies=False):
     """Existing Darwin public proc_pidinfo metadata; no argv/environment read."""
     if sys.platform != 'darwin' or type(pid) is not int or pid <= 1:
         raise Refused('Native process identity unavailable on this execution host')
@@ -109,7 +109,9 @@ def native_process_info(pid):
     lookup.restype = ctypes.c_int
     row = _BSDInfo()
     size = ctypes.sizeof(row)
-    read = lookup(pid, 3, 0, ctypes.byref(row), size)
+    # XNU's BSD-info arg=1 explicitly includes the zombie table. Group cleanup
+    # needs its unreaped anchor; ordinary live identity reads retain arg=0.
+    read = lookup(pid, 3, int(include_zombies), ctypes.byref(row), size)
     if read != size or row.pid != pid or row.start_sec <= 0:
         raise Refused('Kernel process identity unavailable or changed for PID '+str(pid))
     return row
@@ -224,6 +226,74 @@ def select_scope(args, command, regime):
 
 
 def local_group_snapshot(group):
+    if sys.platform == 'darwin':
+        return native_group_snapshot(group)
+    return ps_group_snapshot(group)
+
+
+def _native_group_pids(group, listpids):
+    # proc_listpids returns BYTES; its wrapper returns zero on both syscall
+    # failure and successful empty result. Clear/check errno on EACH call.
+    ctypes.set_errno(0)
+    size = listpids(2, group, None, 0)  # PROC_PGRP_ONLY
+    error = ctypes.get_errno()
+    unit = ctypes.sizeof(ctypes.c_int)
+    if error or size <= 0 or size % unit or size > (1 << 20) - 64:
+        raise Refused('Native process-group sizing unavailable or malformed; no absence inferred')
+    capacity = size + 64
+    buffer = (ctypes.c_int * (capacity // unit))()
+    ctypes.set_errno(0)
+    read = listpids(2, group, buffer, capacity)
+    error = ctypes.get_errno()
+    if error or read < 0 or read >= capacity or read % unit:
+        raise Refused('Native process-group enumeration denied, truncated or malformed; no absence inferred')
+    pids = list(buffer[:read // unit])
+    if any(pid <= 0 for pid in pids) or len(set(pids)) != len(pids):
+        raise Refused('Native process-group PID list malformed; no absence inferred')
+    return sorted(pids)
+
+
+def native_group_snapshot(group):
+    """Fresh Darwin group observation, never a ps-error-to-absence fallback.
+
+    Same-executor positive control must enumerate our own known-live PID. The
+    requested group is enumerated before and after exact BSD-info metadata,
+    including zombies, without reading argv/environment or trusting a cache.
+    Denial, partial observation and membership drift retain cleanup debt.
+    """
+    if (sys.platform != 'darwin' or type(group) is not int or not 1 < group <= 0x7fffffff
+            or ctypes.sizeof(ctypes.c_int) != 4 or ctypes.sizeof(_BSDInfo) != 136):
+        raise Refused('Native process-group observation ABI unavailable')
+    library = ctypes.CDLL('/usr/lib/libproc.dylib', use_errno=True)
+    listpids = library.proc_listpids
+    listpids.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_int]
+    listpids.restype = ctypes.c_int
+    own_pid, own_group = os.getpid(), os.getpgrp()
+    def qualify():
+        own = native_process_info(own_pid)
+        if (own.pid != own_pid or own.pgid != own_group or own.uid != os.getuid()
+                or own.ruid != os.getuid() or own.status not in (1, 2, 3, 4)
+                or own_pid not in _native_group_pids(own_group, listpids)):
+            raise Refused('Native group observer positive control failed; no absence inferred')
+    qualify()
+    pids = _native_group_pids(group, listpids)
+    rows = []
+    states = {1: 'I', 2: 'R', 3: 'S', 4: 'T', 5: 'Z'}
+    for pid in pids:
+        row = native_process_info(pid, include_zombies=True)
+        if row.pgid != group or row.status not in states:
+            raise Refused('Native group member changed or status unknown; no absence inferred')
+        rows.append(dict(pid=row.pid, ppid=row.ppid, pgid=row.pgid,
+                         uid=row.uid, status=states[row.status]))
+    if _native_group_pids(group, listpids) != pids:
+        raise Refused('Native group membership changed during observation; no absence inferred')
+    qualify()
+    return rows
+
+
+def ps_group_snapshot(group):
+    # Non-Darwin compatibility only. Darwin never depends on spawning ps and
+    # never chooses this path after a failed native observation.
     probe = subprocess.run(['/bin/ps', '-axo', 'pid=,ppid=,pgid=,uid=,stat='], capture_output=True, text=True, timeout=2)
     if probe.returncode or len(probe.stdout)>1<<20:
         raise Refused('Local process-group observation unavailable')

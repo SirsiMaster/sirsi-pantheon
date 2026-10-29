@@ -243,6 +243,27 @@ retaining local ancestry/start verification. A denied, short, disappeared or
 PID-mismatched kernel observation refuses; there is no cached-identity fallback.
 The compatibility start string remains Go `time.ANSIC` in host-local time.
 
+Local process-group cleanup also uses Darwin `proc_listpids(PROC_PGRP_ONLY)`
+and BSD-info metadata in the actual supervisor process. Each call clears and
+checks errno: the libproc wrapper returns zero both on an empty successful
+enumeration and on syscall failure, so zero alone is not absence. Fresh
+same-executor enumeration must include the supervisor's known-live PID, and
+target membership must agree before/after metadata reads. BSD-info group reads
+explicitly include the zombie table so the exact unreaped child remains an
+observable cleanup anchor. Denial, truncation, malformed ABI/status, missing
+member metadata or membership drift retain cleanup debt, never signal or
+release on uncertainty. Darwin does not spawn `ps` or fall back to it after a
+native failure. Non-Darwin retains the existing strict ps parser.
+
+Source/ABI references: Apple's XNU `libsyscall/wrappers/libproc/libproc.c`
+(`proc_listpids`), `bsd/kern/proc_info.c` (group enumeration, zombie-table arg)
+and the installed SDK `sys/proc_info.h`/`sys/proc.h`. Unit controls in
+`test_local_native_group.py` include denial-zero, partial/malformed lists,
+positive-control failure, zombie metadata and a bounded actual own-child
+natural-exit/no-signal check. Candidate source is not installed qualification;
+the runtime custodian must retain fresh normal-admission evidence before
+normal publication/install. No new reconciliation or replay path is added.
+
 Use the installed CLI's `thread heartbeat --thread ID --json` as the exact
 canonical row observation, avoiding the full-list OS reaper. This is an ordinary
 own-session heartbeat, not a read-only fleet sweep: terminal/suspended records
