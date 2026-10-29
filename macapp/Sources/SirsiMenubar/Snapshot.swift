@@ -124,14 +124,9 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
                 .environmentObject(Nav())
                 .environment(\.snapshotMode, true)
                 .environment(\.colorScheme, appearance)
-                // Width is a parameter so the harness can prove RESPONSIVE
-                // behaviour headlessly: render the same screen at the panel's
-                // minSize and at a wide size and diff them. Verifying type
-                // scaling by driving the live panel needs an unlocked screen;
-                // this does not.
                 .frame(width: width, height: height)
                 .background(appearance == .light ? Color.white : Color.black)
-                .environment(\.sirsiTypeScale, typeScale(forWidth: width)))
+                .environment(\.sirsiTypeScale, CGFloat(PantheonTextSizePreference.current()) / 100))
             renderer.scale = 2.0
             var wrote = 0
             if let img = renderer.nsImage, let tiff = img.tiffRepresentation,

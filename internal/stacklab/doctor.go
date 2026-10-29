@@ -45,6 +45,7 @@ var LaneRepoMap = map[string]string{
 	"maat":                 "SirsiMaster/sirsi-pantheon",
 	"pantheon.pt-wing-001": "SirsiMaster/sirsi-pantheon",
 	"ra-horus-fabric":      "SirsiMaster/sirsi-pantheon",
+	"rpa":                  "SirsiMaster/ReprogramAnything",
 	"sne-engine":           "SirsiMaster/sirsi-inference",
 }
 

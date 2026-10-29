@@ -1,0 +1,2 @@
+router serve: no declared recipient registry; preserving legacy inbox admission (actor-only guard not configured)
+router serve: listening on 100.88.242.95:18762 (store: /private/tmp/claude-501/-Users-sirsimasterdev/6509a1af-6205-4a70-b158-8c3a4cb16b23/scratchpad/g3/run/base.db)

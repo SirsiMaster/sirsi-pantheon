@@ -48,13 +48,14 @@ type Machine struct {
 }
 
 type Engine struct {
-	ID            string `json:"id"`
-	MachineID     string `json:"machine_id,omitempty"`
-	Name          string `json:"name"`
-	Provider      string `json:"provider"`
-	ResidentModel string `json:"resident_model,omitempty"`
-	Endpoint      string `json:"endpoint,omitempty"`
-	State         string `json:"state"` // configured|unconfigured
+	ID               string               `json:"id"`
+	MachineID        string               `json:"machine_id,omitempty"`
+	Name             string               `json:"name"`
+	Provider         string               `json:"provider"`
+	ResidentModel    string               `json:"resident_model,omitempty"`
+	Endpoint         string               `json:"endpoint,omitempty"`
+	State            string               `json:"state"` // configured|unconfigured
+	InstalledProfile *InstalledAppProfile `json:"installed_profile,omitempty"`
 }
 
 type ChipEstate struct {
@@ -109,7 +110,17 @@ func Collect(home string) (Catalog, error) {
 		{ID: "neural-engine", Name: "Neural Engine", Available: hw.NeuralEngine, Description: ternary(hw.NeuralEngine, "Detected on this Mac", "Not detected")},
 	}
 	machine := Machine{ID: "this-mac", Name: machineName, CPUCores: hw.CPUCores, MemoryBytes: hw.TotalRAM, ChipEstates: estateIDs(estates), Estates: estates}
-	return Catalog{SchemaVersion: "apollo-catalog/v2", Machine: machine, Machines: []Machine{machine}, Engines: []Engine{engine}, Estates: estates}, nil
+	engines := []Engine{engine}
+	if profile, err := InstalledApp(home); err == nil {
+		// An exact installed binding, never evidence that the model is resident
+		// or the endpoint has passed a runtime qualification.
+		engines = withInstalledAppEngine(engines, profile)
+	}
+	return Catalog{SchemaVersion: "apollo-catalog/v2", Machine: machine, Machines: []Machine{machine}, Engines: engines, Estates: estates}, nil
+}
+
+func withInstalledAppEngine(engines []Engine, profile InstalledAppProfile) []Engine {
+	return append(engines, Engine{ID: "apollo-app-qwen35-9b", MachineID: "this-mac", Name: "Installed Apollo 2.2.6 Qwen", Provider: "Apollo", Endpoint: profile.Endpoint, State: "configured", InstalledProfile: &profile})
 }
 
 // BuildPlan validates a user-selected resource envelope without reserving

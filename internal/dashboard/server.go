@@ -297,6 +297,9 @@ func (s *Server) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if source, ok := s.cfg.FabricSource.(interface{ Close() }); ok {
+		source.Close()
+	}
 	if !s.running {
 		return nil
 	}

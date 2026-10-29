@@ -22,14 +22,14 @@ class NativeWaitTests(unittest.TestCase):
     def test_ps_accepts_signed_foreign_uid_but_keeps_selected_group_custody(self):
         own = f'24680 {os.getpid()} 24680 {os.getuid()} Z\n'
         with mock.patch.object(runner.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout='\n644 1 644 -2 S\n'+own)) as probe:
-            rows = runner.local_group_snapshot(24680)
+            rows = runner.ps_group_snapshot(24680)
             self.assertEqual(rows, [dict(pid=24680, ppid=os.getpid(), pgid=24680, uid=os.getuid(), status='Z')])
             self.assertEqual(probe.call_args.args[0], ['/bin/ps', '-axo', 'pid=,ppid=,pgid=,uid=,stat='])
         with mock.patch.object(runner.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout='24680 1 24680 -2 Z\n')):
-            self.assertEqual(runner.local_group_snapshot(24680)[0]['uid'], -2)
+            self.assertEqual(runner.ps_group_snapshot(24680)[0]['uid'], -2)
         for raw in ('', '\n', 'bad row\n', '-1 1 42 501 S\n', '1 -1 42 501 S\n', '1 1 -42 501 S\n', '1 1 42 unknown S\n'):
             with self.subTest(raw=raw), mock.patch.object(runner.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout=raw)):
-                with self.assertRaises(runner.Refused): runner.local_group_snapshot(24680)
+                with self.assertRaises(runner.Refused): runner.ps_group_snapshot(24680)
         for uid in (-2,0,os.getuid()+1):
             child = self.child('start')
             with self.subTest(group_uid=uid),mock.patch.object(runner, 'local_group_snapshot', return_value=[dict(pid=24680, uid=uid, status='Z')]), \

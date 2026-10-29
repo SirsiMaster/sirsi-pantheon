@@ -355,6 +355,83 @@ The catalog's install/upgrade/rollback/uninstall installed-host evidence is
 OPEN. This is a map of required lifecycle proof, not a claim every action has
 automated rollback. Exact capability varies by selected owner and package.
 
+### Disposable-host commercial lifecycle qualification
+
+This is the bounded source design for the same PT-P26 lifecycle, not another
+installer. The proposed `qualify-hosted-commercial-lifecycle` shell/controller,
+manual workflow and inert fixture file use an existing GitHub-hosted macOS15
+ARM64 executor. They remain unexecuted until exact source review, fixture
+qualification and SSA's single supported dispatch. Development Python does not
+enter the signed Pantheon payload. Temporary HOME/appdir alone never isolates
+canonical bundle-ID quit or launchctl uninstall hooks.
+
+```mermaid
+flowchart TD
+  SSA[SSA dispatches exact reviewed published workflow once] --> GUARD[Verify actual hosted runner account UID home OS and architecture]
+  GUARD --> NS[Read complete cask inventory and exact app CLI bundle label plist namespace]
+  NS -->|occupied unreadable or unknown| REFUSE[Refuse before lifecycle mutation and retain evidence]
+  NS -->|demonstrated absent| TAP[Record original tap state and introduced-tap intent]
+  TAP --> BACKUP[Create-only verified durable original-cask backup]
+  BACKUP --> PINS[Fetch exact tap commits and verify both canonical cask blob and SHA identities]
+  PINS --> INSTALL[Normal Homebrew install140]
+  INSTALL --> VERIFY[Trust and byte identity before actual PATH caller version clean commit check]
+  VERIFY --> UPGRADE[Normal Homebrew upgrade141 and same verification]
+  UPGRADE --> ROLLBACK[Normal Homebrew reinstall140 and original digest equality]
+  ROLLBACK --> CLEAN[Normal uninstall plus exact absence inventory readback]
+  INSTALL -->|failure or cancel after owned child joined| CLEAN
+  UPGRADE -->|failure or cancel after owned child joined| CLEAN
+  ROLLBACK -->|failure or cancel after owned child joined| CLEAN
+  CLEAN --> BARRIER{Every owned child joined and recovery safe?}
+  BARRIER -->|unknown or unjoined| DEBT[Stop further mutations retain cleanup debt and failed terminal]
+  BARRIER -->|known safe| RESTORE[Restore only verified original cask and reconcile introduced tap]
+  RESTORE --> END[Retain original exit cleanup exit identities and namespace outcome]
+  END -->|missing terminal or forced job teardown| UNKNOWN[Interrupted or unknown never PASS]
+```
+
+```mermaid
+flowchart LR
+  SOURCE[(Exact source script workflow and fixture hashes)] --> JOB[Existing disposable hosted job]
+  CASKS[(Published140 and141 tap commit path blob SHA)] --> JOB
+  PAYLOAD[(Signed immutable release assets)] --> BREW[Unmodified canonical Homebrew lifecycle]
+  JOB --> BREW
+  BREW --> APP[Disposable runner app and CLI namespace]
+  APP --> TRUST[Apple trust hash link target and actual installed caller readback]
+  ORIGINAL[(Original tap cask digest HEAD and worktree)] --> BACKUP[Verified retained backup authority]
+  BACKUP --> RECOVERY[Exact safe recovery only after joined-child barrier]
+  TRUST --> RECEIPTS[(Per-phase logs identities original and cleanup outcomes)]
+  RECOVERY --> RECEIPTS
+  RECEIPTS --> SSA[SSA terminal review and Main independent readback]
+  LIMIT[No claim of host teardown proof fleet drain or loaded GUI] -. scope .-> SSA
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> Preflight
+  Preflight --> Refused: account platform namespace or exact pin unknown
+  Preflight --> Ready: complete safe baseline and verified backup
+  Ready --> Applying: exact normal Homebrew phase
+  Applying --> Checking: owned child joined
+  Checking --> Applying: exact identity matches next selected transition
+  Applying --> Joining: cancellation or timeout flag
+  Joining --> Recovering: child and owned group joined
+  Joining --> Debt: child ownership or join unknown
+  Checking --> Recovering: transition failed but child custody known
+  Recovering --> Debt: any later child becomes unknown or recovery fails
+  Recovering --> Terminal: original state and selected absence read back
+  Debt --> Terminal: failed outcome retains explicit debt no more mutations
+  Terminal --> Accepted: all original and cleanup results pass and evidence exists
+  Terminal --> Failed: original or cleanup result fails
+  Terminal --> Unknown: terminal evidence incomplete
+```
+
+The controller must register child ownership without an asynchronous throwing
+signal gap. Cancellation is observed in the owned wait/join path; recovery cannot
+race a possibly live installer or cleanup child. An unknown group is sticky and
+stops later restore/untap operations. Inert whole-driver fixtures exercise these
+branches without real Brew, launchctl, installed binaries or signals. Actual
+hosted lifecycle and cleanup evidence remain C07 work; executor teardown and
+fleet-wide behavior are separate claims.
+
 ## Additional evidence/custody subflows
 
 Evidence custody is represented above in PT-P05 and PT-P07. The native

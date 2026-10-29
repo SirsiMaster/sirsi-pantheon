@@ -8,7 +8,7 @@ import UserNotifications
 // Fantastical / CleanMyMac MenuBar. The panel STAYS OPEN, drills in, and goes
 // back; nothing is rendered into a dropdown that closes on click.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
     private var statusItem: NSStatusItem!
     // Pantheon is a full desktop application. The Eye is only a companion
     // affordance; both open this same normal, movable, resizable NSWindow.
@@ -16,8 +16,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // drift away from the application the user is actually operating.
     private var window: NSWindow!
     private let engine = SirsiEngine()
+    let menuBridge = PantheonMenuBridge()
     private var refreshTimer: Timer?
     private var instanceLease: MenubarInstanceLease?
+
+    @objc func chooseProject(_ sender: Any?) {
+        showWorkspace(sender)
+        menuBridge.chooseProject()
+    }
+
+    @objc func increaseTextSize(_ sender: Any?) {
+        PantheonTextSizePreference.adjust(by: 10)
+    }
+
+    @objc func decreaseTextSize(_ sender: Any?) {
+        PantheonTextSizePreference.adjust(by: -10)
+    }
+
+    @objc func resetTextSize(_ sender: Any?) {
+        PantheonTextSizePreference.set(100)
+    }
+
+    @objc func searchWorkspaces(_ sender: Any?) { menuBridge.perform(PantheonMenuAction.search) }
+    @objc func goBack(_ sender: Any?) { menuBridge.perform(PantheonMenuAction.back) }
+    @objc func goHome(_ sender: Any?) { menuBridge.perform(PantheonMenuAction.home) }
+    @objc func openHelp(_ sender: Any?) { menuBridge.perform(PantheonMenuAction.help) }
+
+    @objc func showWorkspace(_ sender: Any?) { togglePopover(sender) }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard let action = menuItem.action else { return true }
+        return PantheonMenuAvailability.isEnabled(
+            action: action,
+            textSizePercent: PantheonTextSizePreference.current(),
+            canGoBack: menuBridge.canGoBack,
+            canChooseProject: menuBridge.canChooseProject
+        ) ?? true
+    }
 
     // retireOlderInstances terminates every OTHER running process with our bundle
     // identifier that launched before us. Uses launchDate (not PID magnitude —
@@ -224,7 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // Dock, resize it for dense operational work, and close it without losing
     // the menu-bar companion.
     private func buildMainWindow() {
-        let hosting = NSHostingView(rootView: PantheonDesktopView(engine: engine))
+        let hosting = NSHostingView(rootView: PantheonDesktopView(engine: engine, menuBridge: menuBridge))
         // CRITICAL for resize: NSHostingView otherwise pins Auto Layout
         // constraints to its content's intrinsic (fitting) size, which locks the
         // window at a fixed size no matter the .resizable mask. Clearing

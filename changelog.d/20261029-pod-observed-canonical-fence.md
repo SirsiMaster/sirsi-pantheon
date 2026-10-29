@@ -1,0 +1,4 @@
+### Fixed
+
+- Persist a successfully observed canonical loss/change of pod authority in its existing private journal. Refuse new admission, renewal, live guard read and nonce-liveness replay after that observation, including an offline reopen with the old finite cache. Preserve owned release/invalidation and reservation history/sequence; transport outages alone do not revoke a finite delegation. No credentials, listener, deployment or release authority is added. Refs: ADR-120, PANTHEON_RULES A16/A35.
+- Reconcile ADR-120's command, journal, canonical state and native mTLS descriptions with implemented source while retaining Proposed status and the unqualified automatic-renewal/offline acceptance boundaries. Runtime integration, independent review, normal publication and three-home synchronization remain open.

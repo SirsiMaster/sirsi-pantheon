@@ -1,7 +1,8 @@
 # Pantheon Ma'at failure memory and operational preflight
 
-Status: repository contract adopted from the SNE policy; executable integration and
-publication remain pending. This document does not certify installed enforcement.
+Status: repository contract adopted from the SNE policy and published in canonical
+Git. Full executable integration, current human-mirror synchronization and native
+Workspace publication remain unverified. This document does not certify installed enforcement.
 Integration owner: codex-pantheon. Stack Lab governance owner: SSA. Classification: platform-foundation. Date: 2026-09-11.
 Governing decision: ADR-004, extended here for operational incident prevention.
 Source request: 20260911-063933-codex-inference-codex-pantheon-canonize-ma-at-shared-sne-pantheon-contract.
@@ -311,12 +312,26 @@ requires a privacy-safe derived receipt and existing explicit export authority;
 raw local audit logs are never uploaded. Mirrors carry policy text, not host data.
 
 Canonical repository path: `docs/contracts/PANTHEON_MAAT_FAILURE_MEMORY_CONTRACT.md`.
-Owner Reading Room: pending; this session cannot write that filesystem location.
-Sirsi Google Workspace: pending; no mirror id has been established for this contract.
-Git publication: pending; managed session denied `.git/FETCH_HEAD` writes.
-These are publication blockers, not a requirement for renewed owner approval.
-A writable publication lane must preserve this path, publish through Git/CI and
-independent review, update existing human indexes, and record stable mirror ids.
+
+Publication reconciliation (2026-10-29): this exact canonical path exists in
+published merge `7e5b4e728a04239137b75ab45d02b5261971b510` (tree
+`24f92b32f2f5e0778a46085f50f185e823bd2b47`). The earlier managed-session
+`.git/FETCH_HEAD` write denial is historical, not a current missing-Git-publication
+blocker. Git presence alone does not establish independent acceptance of every
+later source continuation or any installed enforcement.
+
+The historical Owner Reading Room entry was named
+`Pantheon Maat failure memory contract.md`. The exact last-recorded Desktop path
+was not found in this helper's bounded 2026-10-29 host lookup; that is not evidence
+that no reading copy exists on another host or under a moved index. Its current
+location, body synchronization and linked publication receipt remain unverified.
+Recover the existing reading-home identity rather than creating a competing mirror.
+Sirsi Google Workspace remains unverified: no stable native mirror id is recorded
+here. The normal integrating publisher must refresh the existing reading copy and
+human indexes from the accepted canonical source and record linked mirror ids, or
+retain the exact synchronization blocker visibly. This scoped source correction
+does not write either external reading home or claim their current contents match.
+No renewed owner approval or duplicate contract/implementation is required.
 
 ## G02 retained preflight source checkpoint (2026-10-25)
 

@@ -1,0 +1,33 @@
+{
+  "work_item_id": "apollo226-normal-command-binding-20261029",
+  "agent_id": "sirsi-software-admin",
+  "repo": "/Users/thekryptodragon/.sirsi/evidence/ssa-backlog-20261029/apollo-rail/publication-worktree",
+  "status": "draft",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {"path":"PANTHEON_RULES.md","role":"governance","read_at":"2026-10-29","notes":"Relevant safety, injection, concurrency, evidence scope and completion sections read; no global canon or memory mutated. Date-granularity read record, not invented second precision."},
+    {"path":"docs/COMMERCIALIZATION_GATE.md","role":"scope","read_at":"2026-10-29","notes":"Platform groundwork, not a launchable/commercial product claim."},
+    {"path":"docs/ARCHITECTURE_DESIGN.md","role":"architecture","read_at":"2026-10-29","notes":"Shared engine and explicit surface routing; native fleet route retained."},
+    {"path":"docs/SAFETY_DESIGN.md","role":"security","read_at":"2026-10-29","notes":"No process/service/registry/key changes or external prompt egress."},
+    {"path":"/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md","role":"portfolio-canon","read_at":"2026-10-29","notes":"Apollo engine owns model operations; Pantheon owns normal command and truthful proof boundaries."}
+  ],
+  "requirements_trace": [
+    {"doc":"docs/ARCHITECTURE_DESIGN.md","section":"Shared command surface","claim":"Add exact installed226 Qwen loopback dispatch without replacing native fleet/Gemma.","files_changed":["cmd/sirsi/apollo.go","cmd/sirsi/apollo_app.go","internal/apollo/installed_app.go","internal/apollo/catalog.go"],"evidence":["Rail103939 five installed artifacts and19 evidence hashes independently match.","Typed loopback profile and actual Cobra dispatch fixtures; native profile source unchanged."]},
+    {"doc":"docs/SAFETY_DESIGN.md","section":"System integrity and network boundary","claim":"No service mutation, endpoint override, proxy/redirect, POST retry, tier fallback, or native-fence completion assertion on app route.","files_changed":["internal/apollo/installed_app_test.go","cmd/sirsi/apollo_app_test.go"],"evidence":["Focused synthetic CPU fixtures and race pass, Ma'at98f46376e2d9463992e3b0214bd9cc7b.","Tier guard mutation causes tier_drift test to fail, nativeecda05b8bbac476b8e568c0ada5223a8; restored green retained."]}
+  ],
+  "closure_evidence": {
+    "product":"Operator needs normal installed command for exact Qwen model, precision and mode; source implements that path, not installed completion.",
+    "design":"Explicit flags and refusal paths, separate catalog installed binding, no misleading resident-model or native-cleanup statement.",
+    "technical":"Focused normal/race and patch-scoped golangci-lint pass; full repository build/vet/lint/race, independent review and signed adoption still owed.",
+    "operational":"Ra adoption requested by router124805. No package/tag/install/service action. Rollback is normal reviewed source revert and signed client adoption.",
+    "narrative":"User and developer guides name mode semantics, exact precision, limitations and remaining runtime proof; owner-readable mirrors not yet published."
+  },
+  "verification": [
+    {"name":"focused-race","command":"GOMAXPROCS=1 go test -race -p 1 ./internal/apollo ./cmd/sirsi -run 'TestInstalledApp|TestApolloInstalledApp|TestApolloChatJSON|TestApolloClusterCLI|TestApolloNative|TestNativeProfile|TestBuildPlan' -count=1","status":"pass","evidence":"Ma'at98f46376e2d9463992e3b0214bd9cc7b success0, own executor3c3c6b1e876d42229c5b1a19e486a2e6, CPU1/noBorrow/released."},
+    {"name":"causal-tier-control","command":"Temporarily remove exact response tier guard; run TestInstalledAppResponseRefusals/tier_drift; restore guard and rerun focused race suite","status":"pass","evidence":"Mutant correctly fails accepted bad response (ecda05b8bbac476b8e568c0ada5223a8 exit1); restored source98f463 passes. No model or live listener used."},
+    {"name":"patch-lint","command":"GOMAXPROCS=1 golangci-lint run ./internal/apollo ./cmd/sirsi --new-from-rev=e34f1fb2 --timeout=2m","status":"pass","evidence":"0 issues, Ma'at263332048f9d4029b7050fb0719caf55."}
+  ],
+  "working_status": {"environment":"Own detached task worktree at Pantheon e34f1fb2, separate legitimate per-command CPU1 native executors. No inherited parent thread used for admission.","how_verified":"Synthetic request/response/Cobra/artifact fixtures, negative tier mutation, race and patch lint. No GPU or actual service request.","observed_result":"Source implemented and focused checks passed. NOT product-complete, installed, signed, independently accepted or runtime-certified.","verified_at":"2026-10-29"},
+  "handoffs": [{"from":"sirsi-software-admin","to":"ra","router_item":"20261029-124805-sirsi-software-admin-ra-apollo226-typed-loopback-bridge-sole-source-owner-coordinate","status":"normal tested signed adoption requested; no competing143 tag"}],
+  "blockers": ["Independent source review and normal Main/Ra full-repository qualification/adoption outstanding.","Actual normal installed sirsi model/precision/mode result under legitimate current Rail/Ma'at readiness outstanding; no dev client or endpoint override proof accepted.","Canonical source guide has no Desktop/native Workspace mirror yet; publication remains open."]
+}

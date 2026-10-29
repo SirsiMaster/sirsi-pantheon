@@ -1,5 +1,22 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-29 — v0.24.143 release candidate
+
+- `sirsi router ping` no longer reports a lane whose background loop is quarantined as "needs a human". That verdict is reached only when no attended session is heartbeat-fresh, so it now says the background loop is quarantined and no attended session is registered. A working session whose thread was reaped (a resumed session with a new PID) must re-register to be seen.
+- A Claude/Codex session that resumes with a new process no longer drops off the router. The reaper used to retire an attended session's thread as soon as its old PID died, so the resumed session's heartbeats were refused and re-registering minted a second thread. Attended session-keyed threads now follow the 2-hour session lease (the same rule PID-less sessions already had). Re-registering with the same session ID renews the original thread. Workers keep the immediate OS-truth reap.
+
+## 2026-10-27 — v0.24.142 release candidate
+
+- Record the actual single hosted140 →141 →140 rollback →uninstall commercial cask qualification and bounded cleanup receipts; keep142 GUI/package and full certification acceptance separate.
+
+- Registry: `rpa` / `RPA` now route to the existing attended ReprogramAnything lane `codex-sirsinexusapp` (callsign `RPA`), per the owner's direction to "register with the router as RPA". Identity, claims and consumer policy unchanged; no new worker.
+- Readable native Mac workspace
+- Responsive Fabric reads
+- Preserve Apollo planning intent
+- Truthful Ma’at assessment failures
+- Stack Lab source traceability
+- ADR-079 D1: `sirsi thread attended <agent>` (and the wake hold and worker deferral that share it) now credits a heartbeat-fresh interactive `claude`/`codex` session as attended. It previously also required a watch-loop process that ADR-065 retired, so no Claude lane could ever read as attended and a headless worker answered beside the live session. Stale, suspended, closed, worker and resident records still never count.
+
 ## 2026-10-27 — v0.24.141 release candidate
 
 - Pulse deity-count correction uses the selected canonical roster, not six legacy filenames; bounded regular-file parsing preserves offline metrics and existing schema.
@@ -1463,3 +1480,30 @@ The release also repairs inherited pre-push Git environment contamination in tes
 ## 2026-09-28
 
 - Added the independently cataloged development-versus-commercial release artifact recipe. Commercial artifact names now require the Developer ID/notary/stapling route; ad-hoc package work is explicitly `-dev` only.
+
+## Finite installed141 correction — source in preparation
+
+- Bind actual public141 signed pair/cask, exact source tests, selected loaded
+  adoption and human reading copies separately from remaining certification.
+- Preserve the actual91/100 A17 FAIL and its findings; retain independently
+  reviewed historical canon crosswalk and meaningful coverage work.
+- Retain per-window/journey Apollo selection through reconstruction/Back with
+  fresh-capacity validation; a revision cannot overwrite its origin on cancel.
+- Remove auth/model commands from passive Fabric, reuse the same bound default
+  board in the web app and preserve selected task/cursor and freshness semantics.
+- Add RPA's exact owning repository and declared peer; the changed Ra wing
+  requires normal owning merge and registry repin. No runtime grants change.
+
+Source/causal proofs and installed/lifecycle outcomes remain distinct. This is
+not a new release announcement or a retrospective rewrite of public141.
+
+### Native readability and command menus — same corrective cohort
+
+- Replaces the Quit-only menu with native Pantheon, File, Edit, View, Window and
+  Help menus, standard editing responder actions, and existing workspace routes.
+- Raises body text to 15 pt, secondary copy to 14 pt, and supporting text to a
+  12 pt floor before scaling; adds persisted 100–150% text sizing independent
+  of window width and preserves workspace/navigation state.
+- Compilation, menu validation, state continuity and installed visual/keyboard
+  verification are distinct acceptance evidence. This entry is source scope,
+  not a claim that 0.24.141 already includes these changes.

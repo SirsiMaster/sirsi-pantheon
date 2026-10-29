@@ -106,3 +106,70 @@ test('actual Fabric button binds clicked board even with router absent or contra
  assert.match(h.dialog.innerHTML,/2026-10-25T12:00:01/);
  h.clickRouter();assert.match(h.dialog.innerHTML,/router-only-condition/);assert.match(h.dialog.innerHTML,/99/);assert.doesNotMatch(h.dialog.innerHTML,/fabric-build/);
 });
+
+function snapshotWithFabric(f){return {...router(),fabric:f,fabric_generation:'fixture-bound-generation'}}
+function blockedTaskBoard(offset=0){
+ const b=taskBoard(offset);b.tasks.filter='blocked';b.tasks.rows.forEach(row=>row.status='blocked');b.work.blocked=65;b.work.assigned_not_started=0;return b;
+}
+test('default refresh consumes the bound snapshot Fabric without a duplicate endpoint read',async()=>{
+ const h=host('overview',{router:snapshotWithFabric(taskBoard()),fabric:new Error('duplicate-default-read')});
+ await h.settle();h.navigate('fleet');await h.settle();
+ assert.equal(h.requests.filter(url=>url.startsWith('/api/fabric')).length,0,'default Fabric must come from RouterSnapshot.Fabric');
+ assert.equal(h.requests.filter(url=>url==='/api/router/v1/snapshot').length,1);
+ assert.match(h.elements['#view'].innerHTML,/Actual task 0/);
+ h.age();assert.equal(h.elements['#view'].receipt.dataset.fabricState,'retained');
+ h.refresh();await h.settle();
+ assert.equal(h.requests.filter(url=>url==='/api/router/v1/snapshot').length,2,'reuse is per response, never a TTL read suppression');
+ assert.equal(h.requests.filter(url=>url.startsWith('/api/fabric')).length,0);
+ assert.match(h.elements['#view'].innerHTML,/Retained Fabric observation/,'receiving an old observation again must not renew its freshness');
+ assert.match(h.elements['#view'].innerHTML,/2026-10-25T12:00:00/);
+});
+test('Fleet entry during a pending snapshot waits for its bound default board',async()=>{
+ let finish;const h=host('overview',{router:()=>new Promise(resolve=>{finish=resolve})});
+ await h.settle();h.navigate('fleet');await h.settle();
+ assert.equal(h.requests.filter(url=>url.startsWith('/api/fabric')).length,0);
+ finish(snapshotWithFabric(taskBoard()));await h.settle();
+ assert.match(h.elements['#view'].innerHTML,/Actual task 0/);
+ assert.equal(h.requests.filter(url=>url.startsWith('/api/fabric')).length,0);
+});
+test('missing invalid or nondefault embedded Fabric preserves independent Fleet fallback',async()=>{
+ const invalid={...board(),work:{...board().work,open:-1}};
+ for(const embedded of [undefined,invalid,taskBoard(64),blockedTaskBoard()]){
+  const h=host('fleet',{router:snapshotWithFabric(embedded),fabric:taskBoard()});await h.settle();
+  assert.equal(h.requests.filter(url=>url==='/api/fabric').length,1);
+  assert.match(h.elements['#view'].innerHTML,/Actual task 0/);
+  assert.doesNotMatch(h.elements['#view'].innerHTML,/Actual task 64|Blocked tasks/);
+ }
+ const unavailable=host('fleet',{router:new Error('router-not-available'),fabric:taskBoard()});await unavailable.settle();
+ assert.match(unavailable.elements['#view'].innerHTML,/Actual task 0/);
+ assert.match(unavailable.elements['#live-t'].textContent,/Router stale/);
+ assert.equal(unavailable.requests.filter(url=>url==='/api/fabric').length,1);
+ unavailable.reply.fabric=new Error('fabric-not-available');unavailable.refresh();await unavailable.settle();
+ assert.match(unavailable.elements['#view'].innerHTML,/Retained Fabric observation/);
+ assert.match(unavailable.elements['#view'].innerHTML,/Actual task 0/);
+});
+test('late bound snapshot cannot replace a newer explicit filtered selection',async()=>{
+ const h=host('overview',{router:snapshotWithFabric(taskBoard())});await h.settle();
+ let finish;h.reply.router=()=>new Promise(resolve=>{finish=resolve});
+ h.refresh();await h.settle();
+ h.reply.fabric=url=>blockedTaskBoard(url.includes('tasks_offset=64')?64:0);
+ h.metric('blocked');await h.settle();
+ assert.match(h.elements['#view'].innerHTML,/Blocked tasks/);
+ finish(snapshotWithFabric(taskBoard()));await h.settle();
+ assert.match(h.elements['#view'].innerHTML,/Blocked tasks/,'delayed default snapshot cannot publish across a newer selected-read generation');
+ assert.equal(h.requests.filter(url=>url==='/api/fabric').length,0,'late snapshot cannot launch a default fallback either');
+ h.taskPage('next');await h.settle();
+ assert.equal(h.requests.at(-1),'/api/fabric?tasks_filter=blocked&tasks_offset=64&tasks_snapshot='+'a'.repeat(64));
+ assert.match(h.elements['#view'].innerHTML,/Actual task 64/);
+});
+test('filtered continuation refresh stays independent even when snapshot has a valid default board',async()=>{
+ const h=host('overview',{router:snapshotWithFabric(taskBoard())});await h.settle();
+ h.reply.fabric=url=>blockedTaskBoard(url.includes('tasks_offset=64')?64:0);
+ h.metric('blocked');await h.settle();h.taskPage('next');await h.settle();
+ const before=h.requests.length;h.refresh();await h.settle();
+ const reads=h.requests.slice(before).filter(url=>url.startsWith('/api/fabric'));
+ assert.deepEqual(reads,['/api/fabric?tasks_filter=blocked&tasks_offset=64&tasks_snapshot='+'a'.repeat(64)]);
+ assert.match(h.elements['#view'].innerHTML,/Blocked tasks/);
+ assert.match(h.elements['#view'].innerHTML,/Actual task 64/);
+ assert.doesNotMatch(h.elements['#view'].innerHTML,/Actual task 0</);
+});

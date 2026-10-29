@@ -6,6 +6,35 @@ option 2"), authorizes this design to go ahead. This document is the ADR text pr
 back to the owner for review; he has not yet signed off on the text itself.
 Design owner: Ra.
 
+### Implementation reconciliation (2026-10-29)
+
+This proposed design is not an activation or acceptance receipt. The current
+implementation uses `maat authority-serve` and already-approved mutual TLS
+identities, not a pod shared-secret transport. The corrections below describe
+the source contract; they do not ratify an authentication change, create keys,
+delegate a resource, enable a service, or establish the offline acceptance test.
+Service preparation remains the dormant, explicit-consent workflow in
+[Ma'at native authority service](user-guides/MAAT_POD_AUTHORITY_SERVICE.md).
+
+The finite grant, durable journal, replay and native routing source exists.
+The 2026-10-29 corrective candidate additionally retains a successfully observed
+canonical revocation, disappearance or changed grant in that same journal.
+It refuses new grants, renewal, live guard reads and historical nonce-liveness
+replay after restart with the old cache. Owned release/invalidation and history
+remain available. A transport error alone is not a canonical fence observation.
+The marker is not a reservation event and does not consume a replay sequence;
+older journal readers refuse it rather than silently discarding the fence.
+This candidate requires independent review and normal compatible publication;
+it is not claimed installed. A failed marker write is an explicit durability
+error and blocks the running authority; no crash-durability claim is inferred
+from a failed persistence operation.
+Automatic 15-minute renewal described as a design goal below is not implemented
+by the authority's catch-up loop: `RunRelay` calls `RelayOnce`, not `Delegate`.
+An unrenewed grant therefore remains bounded by its original `not_after`.
+Runtime/design reconciliation remains Ra's responsibility; SSA owns compatible
+service/deployment custody, Mercury the original offline acceptance. A signed
+package or dormant recipe is not evidence those obligations are complete.
+
 Related:
 - ADR-062: the router as a service, with a single canonical ledger. This ADR amends it.
 - ADR-069: the durable ordered outbox.
@@ -49,7 +78,9 @@ key stay on the single canonical service.
 
 ### 1. The delegation record (canonical, cloud)
 
-The state key `maat:delegation:<pod>` holds one JSON document:
+The implemented state key `maat:delegations` holds a JSON document whose
+`delegations` array contains one record per pod. The earlier singular
+`maat:delegation:<pod>` spelling is historical, not an operator selector:
 
 | Field | Meaning |
 |---|---|
@@ -60,7 +91,8 @@ The state key `maat:delegation:<pod>` holds one JSON document:
 | `epoch` | Monotonic integer; the fence (§3) |
 | `issued_at`, `not_after` | `not_after` is at most `issued_at + 12h`; finite (§4) |
 | `acked_seq` | Highest pod journal sequence the cloud has reconciled (§5) |
-| `pod_secret_hash` | Hash of the pod's shared secret (§6) |
+| `pod_secret_hash` | Optional retained schema field; not authentication for the implemented native mTLS transport (§6) |
+| `revoked` | Canonical revocation state; does not by itself terminate a partitioned authority or erase the handback fence |
 
 - **Created by** `sirsi maat delegate --pod … --authority … --resources …`.
   Ra or the owner runs it while online.
@@ -78,10 +110,13 @@ authority, whether or not the cloud is reachable.
   nothing.
 - **While online, the authority writes through.** Each grant it makes is copied
   to the canonical ledger immediately, so the cloud record stays current.
-- **Pod authority = `sirsi maat authority serve`** on `authority_machine`.
-  - It runs the existing `schedule.Ledger` over a local SQLite `StateStore`, so
-    the grant rules are unchanged: floor share, cedes, lease TTL and expiry.
-  - It serves on the Tailscale and LAN addresses only.
+- **Pod authority = `sirsi maat authority-serve`** on `authority_machine`.
+  - The implemented `PodJournal` uses a retained private event journal and a
+    disposable in-memory `StateStore` policy projection with the existing
+    `schedule.Ledger`; it does not open a second SQLite reservation database.
+  - The listener is explicit. The native client currently requires one exact
+    approved HTTPS endpoint from the finite delegation; there is no automatic
+    Tailscale/LAN discovery or address failover.
 - **One authority, no failover.**
   - If that Mac is off, the pod fails closed.
   - Moving authority means a new delegation, which needs the cloud.
@@ -103,30 +138,34 @@ authority, whether or not the cloud is reachable.
 
 ### 4. Finite delegation and renewal
 
-- **Renewal.** While the cloud is reachable, the authority renews every 15 min,
-  moving `not_after` to now + 12 h.
+- **Renewal goal, not current runtime behavior.** The original design calls for
+  renewal every 15 min, moving `not_after` to now + 12 h while online. The current
+  authority only catches up its journal; it does not renew the delegation.
+  Do not describe catch-up, a cached grant, or process liveness as renewal.
 - **Expiry.** With no renewal, the delegation expires at most 12 h after the
   cloud was last seen. At `not_after` the authority stops granting, so the pod
   fails closed.
 - **Handback.** The cloud treats the resources as its own again only after
   `not_after` + 5 min, a margin for clock skew. So there is never a moment when
   both could grant.
-- **Running jobs.** Live reservations keep their own heartbeat leases (120–240 s
-  today) and are never cut off mid-run by renewal timing.
+- **Running jobs.** Reservations and heartbeats must fit within the finite
+  delegation window. The implemented authority refuses extension beyond that
+  bound; the earlier promise of uninterrupted work across renewal timing is
+  not qualified. Clients must retain conservative execution/cleanup semantics.
 
 ### 5. Reconciliation exactly once
 
-- **The pod journal.** The authority appends every grant and every state change
-  (heartbeat excluded; release, expire, done and invalidate included) to a local
+- **The pod journal.** The authority appends every granted lifecycle change,
+  including heartbeat renewals needed to prove finite lease continuity, to a local
   journal with a monotonic `seq`. The journal is fsynced before the caller gets
   its answer.
 - **Catch-up.** When the cloud is reachable, the authority replays
   `seq > acked_seq` in order.
   - Each entry is an **upsert by reservation ID** into `maat:reservations`, so a
     replay after a crash rewrites the same row; it never adds a second.
-  - Then `acked_seq` is advanced.
-  - A crash between the two writes only causes a harmless second upsert of the
-    same row.
+  - The canonical transaction adapter commits the replay batch and `acked_seq`
+    together, or rolls both back. Repeated acknowledged entries must still bind
+    the same reservation/holder/resource/epoch; gaps or substitutions refuse.
 - **Queued intent stays queued.** A caller that could not reach the authority
   holds no grant; its request is not in the journal and is never "reconciled
   into" a grant.
@@ -141,11 +180,13 @@ authority, whether or not the cloud is reachable.
   - If the cache says the delegation has expired, use the cloud. If the cloud is
     unreachable too, **refuse.**
 - **Any other resource:** the cloud, as today. If unreachable, refuse (unchanged).
-- **Auth.**
-  - **Pod secret.** Pod members authenticate to the authority with a pod secret
-    issued with the delegation and installed 0600 on each member while online.
-    It rotates every epoch, so revoking or moving the authority invalidates the
-    old secret.
+- **Implemented native auth.**
+  - **Mutual TLS.** Both peers use existing approved certificate/key/CA path
+    selectors. The authority requires verified client certificates and an exact
+    leaf-certificate SHA-256-to-registered-agent binding. Caller JSON cannot
+    choose a principal; no pod shared-secret authentication is implemented.
+    TLS policy requires at least TLS 1.3, verified server identity and no redirects.
+    These references neither issue nor authorize copying any key.
   - **The cloud token never leaves a Mac.** The ADR-062 host token stays with
     that Mac's relay. The authority never holds or forwards cloud tokens; its
     write-through and catch-up use its own host's relay.
@@ -180,9 +221,9 @@ authority, whether or not the cloud is reachable.
 
 ```mermaid
 flowchart LR
-  C[Cloud Ma'at ledger\nmaat:reservations\nmaat:delegation:pod] -- "delegate / renew every 15m\n(epoch, not_after ≤ 12h)" --> A[Pod authority\nStudio: sirsi maat authority serve\nlocal SQLite + journal]
-  A -- "write-through when online\ncatch-up seq > acked_seq\nupsert by reservation id" --> C
-  S[Studio gate / guard] -- "reserve/heartbeat/release\n(pod secret, Tailscale or LAN)" --> A
+  C[Cloud Ma'at ledger\nmaat:reservations\nmaat:delegations] -- "finite delegation\n(epoch, not_after ≤ 12h)\nautomatic renewal remains unimplemented" --> A[Pod authority\nmaat authority-serve\nprivate journal + policy projection]
+  A -- "bounded catch-up when online\nseq > acked_seq\natomic replay + acknowledgement" --> C
+  S[Studio gate / guard] -- "reserve/heartbeat/release\n(approved mutual TLS, exact endpoint)" --> A
   M[M5 gate / guard] -- same --> A
   S -. "authority unreachable\n+ delegation unexpired" .-> X[REFUSE — fail closed]
   M -. same .-> X
@@ -194,7 +235,7 @@ flowchart LR
 1. **Delegation schema and fence on the cloud side.** The `maat:delegation`
    record, `maat delegate` / `--revoke`, the cloud refusing delegated resources,
    and upsert-by-ID. Unit tests: overlap refusal, epoch fence, upsert idempotency.
-2. **`maat authority serve`.** The existing `schedule.Ledger` over SQLite, the
+2. **`maat authority-serve`.** The existing `schedule.Ledger` policy projection, the
    journal, catch-up, renewal and self-fencing. Tests:
    - crash between upsert and ack: no duplicate row;
    - expiry stops granting;
@@ -215,7 +256,7 @@ Apollo its runner. SSA keeps service and deploy custody.
 | Delegation length | short (1 h) / long (12 h) / unbounded | **12 h, renewed every 15 min.** Finite, and covers an evening offsite. |
 | Idempotency key | content hash / reservation ID + journal seq | **Reservation ID (upsert) + seq watermark.** IDs already exist and are unique. |
 | Authority store | reuse `schedule.Ledger` over a new `StateStore` / a new ledger | **Reuse.** Same grant rules; only the store differs. |
-| Pod auth | cloud host tokens / pod secret per epoch | **Pod secret per epoch.** Cloud tokens never leave their Mac. |
+| Native transport as implemented | cloud host tokens / new shared secret / existing approved mTLS identities | **Existing approved mTLS identities**, exact endpoint and fingerprint-to-agent binding. No new credential issuance or cloud-token copying. Original shared-secret design is superseded descriptively, not silently ratified. |
 
 ## Verification (Mercury's pre-registered acceptance test, 2026-10-22)
 

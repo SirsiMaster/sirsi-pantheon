@@ -168,66 +168,7 @@ func TestIntegrationRuntimeCannotRecoverOwnersCutoverMarker(t *testing.T) {
 // the subprocess to resolve from its own cwd. Pinning PWD additionally keeps any
 // os.Getwd()-based resolution consistent with cmd.Dir.
 func sirsiTestEnv(cwd, storeDB string, extra ...string) []string {
-	dir := cwd
-	base := os.Environ()
-	out := make([]string, 0, len(base)+len(extra)+1)
-	for _, kv := range base {
-		if strings.HasPrefix(kv, "GIT_") {
-			continue
-		}
-		// Identity inputs must come from the test, never the host. resolveCurrentAgent
-		// consults $SIRSI_AGENT_ID and then the session marker at
-		// ~/.claude/run/agent-by-session/$CLAUDE_CODE_SESSION_ID. Inheriting either
-		// makes identity tests environment-dependent: they pass in CI (no session)
-		// and fail on any developer machine running inside a CCD session, which is
-		// exactly how TestRouterRespondStoreOnlyItem broke. Worse, `thread register`
-		// WRITES that marker, so tests inheriting a real session id overwrite the
-		// live operator's identity — 99 markers on this host had been rewritten to
-		// "test-adr024-idem", including the running conduit's own.
-		if strings.HasPrefix(kv, "SIRSI_AGENT_ID=") || strings.HasPrefix(kv, "CLAUDE_CODE_SESSION_ID=") {
-			continue
-		}
-		if dir != "" && strings.HasPrefix(kv, "PWD=") {
-			continue
-		}
-		// Strip the ambient acting-identity sources. resolveCurrentAgent
-		// resolves --agent → $SIRSI_AGENT_ID → session marker → sole live
-		// thread. Rungs 1/2/4 are already hermetic here (the flag is explicit,
-		// the thread registry is read from the test's own routerRoot), but the
-		// session marker is an ABSOLUTE host path keyed on an INHERITED env
-		// var: ~/.claude/run/agent-by-session/$CLAUDE_CODE_SESSION_ID. A
-		// subprocess launched from a registered agent's session therefore
-		// resolves that agent's id, and a test asserting "identity is
-		// ambiguous, fail closed" cannot construct ambiguity at all. That is
-		// green on CI (no session id in the env) and red on any agent's
-		// machine — TestRouterRespondStoreOnlyItem resolved a live `claude-home`
-		// and completed a respond the test required to fail. The subprocess
-		// cannot use router.sessionMarkerDirOverride (in-process only), so the
-		// env is the seam.
-		if strings.HasPrefix(kv, "CLAUDE_CODE_SESSION_ID=") || strings.HasPrefix(kv, "SIRSI_AGENT_ID=") {
-			continue
-		}
-		out = append(out, kv)
-	}
-	if dir != "" {
-		out = append(out, "PWD="+dir)
-	}
-	// Sandbox the router store: without this, every test send lands in the
-	// LIVE ~/.sirsi/router.db (six polluted rows found there 2026-07-07).
-	//
-	// The caller names the store. Mutating router tests pass a path inside their
-	// own t.TempDir(), so each gets a virgin store — that is what actually
-	// defeats the send idempotency window: dedupe keys on (from, to, title)
-	// within a time bucket, so any two tests — or any two runs — that share a
-	// store and send the same logical item will see the second send return
-	// "Deduped ... nothing appended" and fail on an item that was never created.
-	// A per-run store narrows that race; only a per-test store closes it.
-	// Read-only commands (version, help) pass testStoreDB, the per-run store
-	// inside TestMain's MkdirTemp, which is removed when the run ends.
-	//
-	// An explicit SIRSI_ROUTER_DB in extra still wins (append order).
-	out = append(out, "SIRSI_ROUTER_DB="+storeDB)
-	return append(out, extra...)
+	return sirsiTestEnvFrom(os.Environ(), cwd, storeDB, extra...)
 }
 
 // runSirsi executes the test binary with the given args and a timeout.

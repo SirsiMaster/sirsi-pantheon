@@ -9,7 +9,7 @@ import (
 )
 
 func fixtureMarker() MaintenanceMarker {
-	return MaintenanceMarker{1, strings.Repeat("1", 32), strings.Repeat("2", 64), 3, 4}
+	return MaintenanceMarker{1, strings.Repeat("1", 32), strings.Repeat("a2", 32), 3, 4}
 }
 
 func TestStartupMaintenanceRequiresExactExplicitActivation(t *testing.T) {

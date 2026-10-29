@@ -77,13 +77,13 @@ func (b *fabricOutput) Write(p []byte) (int, error) {
 	}
 	return b.Buffer.Write(p)
 }
-func fabricHostCommand(name string, args ...string) (string, error) {
+func fabricHostCommandContext(parent context.Context, name string, args ...string) (string, error) {
 	paths := map[string]string{"sysctl": "/usr/sbin/sysctl", "vm_stat": "/usr/bin/vm_stat", "memory_pressure": "/usr/bin/memory_pressure", "git": "/usr/bin/git"}
 	path, ok := paths[name]
 	if !ok {
 		return "", errors.New("unsupported host read")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, args...)
 	if name == "git" {
@@ -104,11 +104,12 @@ func fabricHostCommand(name string, args ...string) (string, error) {
 	}
 	return out.String(), nil
 }
-func collectFabricHostHealth(repo string, now time.Time) ledger.FabricHealth {
-	capacity := sampleNodeCapacityFn()                 // existing shared capacity read model, no policy writes
-	sample := swaphygiene.Take(fabricHostCommand, now) // read-only; never Record()
+func collectFabricHostHealthContext(ctx context.Context, repo string, now time.Time) ledger.FabricHealth {
+	command := func(name string, args ...string) (string, error) { return fabricHostCommandContext(ctx, name, args...) }
+	capacity := sampleNodeCapacityFn()       // existing shared capacity read model, no policy writes
+	sample := swaphygiene.Take(command, now) // read-only; never Record()
 	var dirty *bool
-	if status, err := fabricHostCommand("git", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-C", repo, "status", "--porcelain", "--untracked-files=normal"); err == nil {
+	if status, err := command("git", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-C", repo, "status", "--porcelain", "--untracked-files=normal"); err == nil {
 		value := status != ""
 		dirty = &value
 	}

@@ -117,40 +117,49 @@ func TestFabricConcurrentReadsKeepOneRealTransition(t *testing.T) {
 		}
 		return fabricReadFixture(state, at), nil
 	}})
-	done := make(chan struct{}, 8)
+	read := func() ledger.FabricBoard {
+		t.Helper()
+		w := httptest.NewRecorder()
+		s.apiFabric(w, httptest.NewRequest("GET", "/api/fabric", nil))
+		if w.Code != 200 {
+			t.Errorf("endpoint: %d", w.Code)
+		}
+		var board ledger.FabricBoard
+		if err := json.Unmarshal(w.Body.Bytes(), &board); err != nil {
+			t.Error(err)
+		}
+		return board
+	}
+	seed := read()
+	if seed.ActivitySeeded || len(seed.Activity) != 0 {
+		t.Fatal("first read invented activity")
+	}
 	boards := make(chan ledger.FabricBoard, 8)
 	for i := 0; i < 8; i++ {
-		go func() {
-			defer func() { done <- struct{}{} }()
-			w := httptest.NewRecorder()
-			s.apiFabric(w, httptest.NewRequest("GET", "/api/fabric", nil))
-			if w.Code != 200 {
-				t.Errorf("endpoint: %d", w.Code)
-			}
-			var board ledger.FabricBoard
-			if err := json.Unmarshal(w.Body.Bytes(), &board); err != nil {
-				t.Error(err)
-			}
-			boards <- board
-		}()
+		go func() { boards <- read() }()
 	}
-	for i := 0; i < 8; i++ {
-		<-done
-	}
-	if calls != 8 {
-		t.Fatal(calls)
-	}
-	observed := 0
+	var event ledger.FabricActivity
 	for i := 0; i < 8; i++ {
 		board := <-boards
-		if len(board.Activity) > 1 {
-			t.Fatal("concurrent reads fabricated transitions")
+		if !board.ActivitySeeded || len(board.Activity) != 1 {
+			t.Fatalf("missing or duplicated real transition: %+v", board.Activity)
 		}
-		if len(board.Activity) == 1 {
-			observed++
+		got := board.Activity[0]
+		if got.Agent != "lane" || got.TaskID != "task" || got.From != "pending" || got.To != "in-progress" {
+			t.Fatalf("wrong transition: %+v", got)
+		}
+		if i == 0 {
+			event = got
+		} else if got != event {
+			t.Fatalf("inconsistent transition: %+v vs %+v", got, event)
 		}
 	}
-	if observed != 7 {
-		t.Fatalf("real transition missing from later generations: %d", observed)
+	before := calls
+	fresh := read()
+	if calls != before+1 {
+		t.Fatalf("fresh read did not acquire: %d -> %d", before, calls)
+	}
+	if !fresh.ActivitySeeded || len(fresh.Activity) != 1 || fresh.Activity[0] != event {
+		t.Fatalf("fresh read duplicated or lost transition: %+v", fresh.Activity)
 	}
 }

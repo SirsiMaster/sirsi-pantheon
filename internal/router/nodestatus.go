@@ -415,8 +415,14 @@ func isAuthError(output string) bool {
 // CollectNodeStatus gathers the Horus local-node view from all sources.
 // Pass nil for authProbe to use DefaultAuthProbe.
 func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authProbe ...AuthProbeFunc) (*NodeStatus, error) {
+	return CollectNodeStatusContext(context.Background(), repoRoot, launchctlCheck, authProbe...)
+}
+func CollectNodeStatusContext(ctx context.Context, repoRoot string, launchctlCheck LaunchctlChecker, authProbe ...AuthProbeFunc) (*NodeStatus, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if launchctlCheck == nil {
-		launchctlCheck = DefaultLaunchctlChecker
+		launchctlCheck = func(args ...string) error { return runBoundedContext(ctx, "launchctl", args...) }
 	}
 	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
 
@@ -488,7 +494,15 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 		// items, a 36 MB response on 2026-09-15) through the relay's response
 		// cap and the client's 30 s spool wait, so `ctr`/`node-status` on the
 		// M5 "hung" and printed nothing (SHA 20260914-234610; A31, A35).
-		items, lErr := store.Inbox("")
+		var items []routerstore.Item
+		var lErr error
+		if contextual, ok := store.(interface {
+			InboxContext(context.Context, string) ([]routerstore.Item, error)
+		}); ok {
+			items, lErr = contextual.InboxContext(ctx, "")
+		} else {
+			items, lErr = store.Inbox("")
+		}
 		if lErr != nil {
 			return nil, fmt.Errorf("node-status: list service pending: %w", lErr)
 		}
@@ -560,12 +574,15 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	// transport registry. Lifecycle writers (register, doctor --fix, session
 	// reaper) own reconciliation. We still project local OS truth below so a
 	// dead PID cannot be presented as live while it awaits that maintenance pass.
-	if treg, loadErr := LoadThreadRegistry(routerRoot); loadErr == nil {
+	if treg, loadErr := LoadThreadRegistryContext(ctx, routerRoot); loadErr == nil {
 		now := time.Now().UTC()
 		sortedThrs := treg.SortedThreads()
 		newestByAgent := NewestActiveByAgent(sortedThrs)
 		machineID := MachineID()
 		for _, thr := range sortedThrs {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if thr.Status.IsTerminal() {
 				continue
 			}
@@ -683,6 +700,9 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	}
 
 	for _, agentType := range []string{"claude", "codex"} {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		check := AgentHealthCheck{AgentType: agentType}
 		path, err := exec.LookPath(agentType)
 		if err != nil {
@@ -732,6 +752,9 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	threads := append(append([]ThreadSummary(nil), ns.LiveThreads...), ns.StaleThreads...)
 	ns.StrandedInbox, ns.UnverifiedInbox = computeNodeStatusStranding(ns.PendingByAgent, liveWakeAgents(strandAgents, launchctlCheck), noWakeAgents(reg), threads)
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return ns, nil
 }
 

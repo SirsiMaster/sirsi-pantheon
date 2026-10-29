@@ -136,7 +136,9 @@ remains OPEN.
 
 ```mermaid
 flowchart TD
-  U[User selects workspace section] --> S[WorkspaceSession selection]
+  U[User selects workspace or native menu action] --> S[Existing window-owned workspace session]
+  U --> T[View text size - normalize persisted 100 to 150 percent]
+  T --> R[Re-render readable fonts without replacing session]
   S --> N[Resolve section view and its local navigation stack]
   N --> V[Render PantheonDesktopView / ControlCenter]
   V --> A[Existing operation view]
@@ -146,7 +148,9 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-  USER[Section choice] -->|section identifier| SESSION[WorkspaceSession]
+  USER[Section choice or menu command] -->|existing window bridge| SESSION[WorkspaceSession]
+  USER -->|text size only| TYPE[(Local presentation preference)]
+  TYPE -->|body 15 - secondary 14 - support minimum 12 pt| VIEW[Workspace views]
   SESSION -->|in-memory independent stack| VIEW[Workspace views]
   SESSION -->|selection only| PREF[(Local preference)]
   VIEW -->|typed action| ENGINE[Existing canonical operation]
@@ -158,13 +162,18 @@ stateDiagram-v2
   [*] --> Restoring
   Restoring --> Ready: valid stored section or default
   Restoring --> Ready: invalid/missing preference, use default
-  Ready --> Navigating: section selected
+  Ready --> Ready: text size changes, draft and navigation retained
+  Ready --> Navigating: section selected or enabled menu command
   Navigating --> Ready: destination stack published
   Ready --> OperationPending: user starts operation
   OperationPending --> Ready: result, refusal or cancellation is presented
   OperationPending --> Reconcile: uncertain effect, use owning operation workflow
   Reconcile --> Ready: fresh evidence shown
 ```
+
+Native File/Edit/View/Window/Help commands reuse the current workspace and
+AppKit first-responder editing. Unavailable actions disable; menu actions never
+create a second engine, operation authority, or workspace session.
 
 Recovery: invalid preference falls back to the documented default; it does not
 restore operation consent or authority. Tests and fixture renders are listed in

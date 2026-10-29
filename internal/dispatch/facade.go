@@ -364,13 +364,20 @@ func (f *Facade) Inbox(agent string) ([]work.Item, error) {
 // ListAll filtered, so behavior is unchanged there. The full ledger is 13k+ rows
 // and 6-20 s per call on the service, which under concurrency became the 30 s
 // spool timeouts every lane reported.
-func (f *Facade) ListActive() (items []work.Item, closed int, err error) {
+func (f *Facade) ListActive() ([]work.Item, int, error) {
+	return f.ListActiveContext(context.Background())
+}
+
+func (f *Facade) ListActiveContext(ctx context.Context) (items []work.Item, closed int, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
 	if routercfg.StoreWake() {
-		rows, rerr := f.store.ListActive(context.Background())
+		rows, rerr := f.store.ListActive(ctx)
 		if rerr != nil {
 			return nil, 0, fmt.Errorf("store list unavailable (store is the cutover authority): %w", rerr)
 		}
-		n, cerr := f.store.CountClosed(context.Background())
+		n, cerr := f.store.CountClosed(ctx)
 		if cerr != nil {
 			return nil, 0, fmt.Errorf("store count unavailable (store is the cutover authority): %w", cerr)
 		}
@@ -391,6 +398,9 @@ func (f *Facade) ListActive() (items []work.Item, closed int, err error) {
 			continue
 		}
 		items = append(items, it)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
 	}
 	return items, closed, nil
 }

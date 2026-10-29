@@ -79,12 +79,34 @@ func (g *FabricGeneration) View() (FabricGenerationView, error) {
 	return FabricGenerationView(d), nil
 }
 
-// FabricGenerationProducer serializes acquisition and real transition
-// observation. Existing request/poll owners call Read; it starts no goroutine,
-// timer, listener or global cache. Failed/canceled reads never advance history.
+// FabricGenerationProducer owns one active acquisition and one history commit.
+// Only overlapping unfiltered readers share it. Completed observations are never
+// cached for later requests, and abandoned work retains the slot until it exits.
+const fabricAcquisitionCeiling = 15 * time.Second
+
+type fabricWaiter struct{ ctx context.Context }
+type fabricOperation struct {
+	ctx                   context.Context
+	cancel                context.CancelFunc
+	done                  chan struct{}
+	waiters               map[*fabricWaiter]struct{}
+	unfiltered, abandoned bool
+	generation            *FabricGeneration
+	err                   error
+}
+type fabricCandidate struct {
+	generation *FabricGeneration
+	previous   map[string]string
+	events     []FabricTransition
+	instance   string
+	completed  int
+}
 type FabricGenerationProducer struct {
 	mu              sync.Mutex
-	read            func() (FabricRead, error)
+	parent          context.Context
+	stop            context.CancelFunc
+	active          *fabricOperation
+	read            func(context.Context) (FabricRead, error)
 	build, instance string
 	sequence        uint64
 	previous        map[string]string
@@ -93,8 +115,33 @@ type FabricGenerationProducer struct {
 	seeded          bool
 }
 
+// Legacy readers keep their original callback. Their interior work remains
+// context-less: cancellation discards the result and never frees its slot early.
 func NewFabricGenerationProducer(read func() (FabricRead, error), build string) *FabricGenerationProducer {
-	return &FabricGenerationProducer{read: read, build: build, previous: map[string]string{}, events: []FabricTransition{}}
+	var contextual func(context.Context) (FabricRead, error)
+	if read != nil {
+		contextual = func(context.Context) (FabricRead, error) { return read() }
+	}
+	return NewFabricGenerationProducerContext(context.Background(), contextual, build)
+}
+
+func NewFabricGenerationProducerContext(parent context.Context, read func(context.Context) (FabricRead, error), build string) *FabricGenerationProducer {
+	ctx, stop := context.WithCancel(parent)
+	return &FabricGenerationProducer{parent: ctx, stop: stop, read: read, build: build, previous: map[string]string{}, events: []FabricTransition{}}
+}
+
+// Close cancels acquisition on shutdown. It does not claim a remote spool/SQL
+// operation has been retracted or joined; the active slot stays until actual exit.
+func (p *FabricGenerationProducer) Close() { p.stop() }
+
+func liveFabricWaiters(op *fabricOperation) int {
+	n := 0
+	for w := range op.waiters {
+		if w.ctx.Err() == nil {
+			n++
+		}
+	}
+	return n
 }
 
 func (p *FabricGenerationProducer) Read(ctx context.Context) (*FabricGeneration, error) {
@@ -115,15 +162,114 @@ func (p *FabricGenerationProducer) ReadTaskSelection(ctx context.Context, offset
 }
 
 func (p *FabricGenerationProducer) readGeneration(ctx context.Context, validate func(FabricRead) error) (*FabricGeneration, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		p.mu.Lock()
+		if err := p.parent.Err(); err != nil {
+			p.mu.Unlock()
+			return nil, err
+		}
+		op := p.active
+		if op != nil && (liveFabricWaiters(op) == 0 || op.ctx.Err() != nil) {
+			op.abandoned = true
+			op.cancel()
+		}
+		if op != nil && (validate != nil || !op.unfiltered || op.abandoned) {
+			done := op.done
+			p.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-p.parent.Done():
+				return nil, p.parent.Err()
+			case <-done:
+				continue
+			}
+		}
+		w := &fabricWaiter{ctx: ctx}
+		if op == nil {
+			acquisition, cancel := context.WithTimeout(p.parent, fabricAcquisitionCeiling)
+			op = &fabricOperation{ctx: acquisition, cancel: cancel, done: make(chan struct{}), waiters: map[*fabricWaiter]struct{}{}, unfiltered: validate == nil}
+			p.active = op
+			op.waiters[w] = struct{}{}
+			go p.runFabricOperation(op, validate)
+		} else {
+			op.waiters[w] = struct{}{}
+		}
+		p.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			p.leaveFabricWaiter(op, w)
+			return nil, ctx.Err()
+		case <-op.ctx.Done():
+			// Prefer the sealed result when completion released this context.
+			select {
+			case <-op.done:
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+				return op.generation, op.err
+			default:
+			}
+			p.leaveFabricWaiter(op, w)
+			return nil, op.ctx.Err()
+		case <-op.done:
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return op.generation, op.err
+		}
+	}
+}
+
+func (p *FabricGenerationProducer) leaveFabricWaiter(op *fabricOperation, w *fabricWaiter) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.active != op {
+		return
+	}
+	delete(op.waiters, w)
+	if liveFabricWaiters(op) == 0 || op.ctx.Err() != nil {
+		op.abandoned = true
+		op.cancel()
+	}
+}
+
+func (p *FabricGenerationProducer) runFabricOperation(op *fabricOperation, validate func(FabricRead) error) {
+	candidate, err := p.buildFabricCandidate(op.ctx, validate)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// Cancellation and successful commit are linearized at this lock boundary.
+	if e := op.ctx.Err(); e != nil {
+		err = e
+	}
+	if p.active != op || op.abandoned || liveFabricWaiters(op) == 0 {
+		err = context.Canceled
+	}
+	if err == nil {
+		p.previous, p.events, p.completed, p.seeded = candidate.previous, candidate.events, candidate.completed, true
+		p.instance = candidate.instance
+		p.sequence++
+		op.generation = candidate.generation
+	}
+	op.err = err
+	p.active = nil
+	close(op.done)
+	op.cancel()
+}
+
+// The sole active operation reads the last committed baseline. It stages every
+// change locally; only runFabricOperation publishes after validation/live demand.
+func (p *FabricGenerationProducer) buildFabricCandidate(ctx context.Context, validate func(FabricRead) error) (*fabricCandidate, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if p.read == nil {
 		return nil, errors.New("fabric reader unavailable")
 	}
-	input, err := p.read()
+	input, err := p.read(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -173,12 +319,13 @@ func (p *FabricGenerationProducer) readGeneration(ctx context.Context, validate 
 	if err != nil {
 		return nil, errors.New("fabric observation time unavailable")
 	}
-	if p.instance == "" {
+	instance := p.instance
+	if instance == "" {
 		var nonce [16]byte
 		if _, err = rand.Read(nonce[:]); err != nil {
 			return nil, err
 		}
-		p.instance = hex.EncodeToString(nonce[:]) // trace identity, never authority
+		instance = hex.EncodeToString(nonce[:]) // trace identity, never authority
 	}
 	next := map[string]string{}
 	events := append([]FabricTransition{}, p.events...)
@@ -205,7 +352,7 @@ func (p *FabricGenerationProducer) readGeneration(ctx context.Context, validate 
 	}
 	facts := fabricFacts(read.Snapshot)
 	board := fabricFromFacts(read.Snapshot, read.Node, p.build, read.Evidence, facts)
-	d := fabricGenerationData{ID: p.instance + ":" + hexSequence(p.sequence+1), Read: read, Board: board, Facts: facts, Events: events, Completed: completed}
+	d := fabricGenerationData{ID: instance + ":" + hexSequence(p.sequence+1), Read: read, Board: board, Facts: facts, Events: events, Completed: completed}
 	sealed, err := json.Marshal(d)
 	if err != nil {
 		return nil, err
@@ -213,9 +360,7 @@ func (p *FabricGenerationProducer) readGeneration(ctx context.Context, validate 
 	if err = ctx.Err(); err != nil {
 		return nil, err
 	}
-	p.previous, p.events, p.completed, p.seeded = next, events, completed, true
-	p.sequence++
-	return &FabricGeneration{sealed: sealed}, nil
+	return &fabricCandidate{generation: &FabricGeneration{sealed: sealed}, previous: next, events: events, completed: completed, instance: instance}, nil
 }
 
 func hexSequence(n uint64) string {

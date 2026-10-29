@@ -15,13 +15,17 @@ This supports reliable local operation; willingness to pay is not independently
 validated. Ra owns runtime behavior, Pantheon owns package composition, and SSA
 owns release and deployment custody.
 
-ADR-120's supplied revision 2 remains **Proposed**. Its older spelling
-`maat authority serve` and per-epoch pod-secret description do not describe
-the current implementation verbatim: the exact source command is
+ADR-120 remains **Proposed**. Its 2026-10-29 implementation reconciliation
+distinguishes the current source contract from the original revision-2
+design: the exact source command is
 `maat authority-serve`, using existing approved mutual TLS certificates and
 fingerprint-to-agent bindings. This component packages that implemented command;
 it does not ratify the authentication change or claim that all ADR runtime
-requirements are implemented. Ra owns reconciliation of the ADR and runtime.
+requirements are implemented. Automatic delegation renewal remains unimplemented;
+the catch-up loop does not extend a finite grant. The corrective same-journal
+canonical-refusal marker is source-only until independently reviewed and
+normally published. Ra owns runtime design; SSA retains service/deployment
+custody and Mercury the original offline acceptance.
 
 Only existing, explicitly approved TLS path references are accepted. The private
 key is neither printed nor copied into the recipe. One canonical delegation owns

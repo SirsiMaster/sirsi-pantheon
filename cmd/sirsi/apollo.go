@@ -116,11 +116,17 @@ var apolloChatCmd = &cobra.Command{
 	Long: `Runs the installed Apollo profile only: the current macOS user is the
 principal, Ma'at provides live all-rank memory fences, and Apollo owns pinned
 native workers and teardown. The command accepts no endpoint, token, model path,
-or worker-path override. Plain and Flash never fall back between each other.`,
+or worker-path override. Qwen3.5-9B uses the exact installed Apollo 2.2.6 loopback
+profile instead; the existing Apollo service owns admission and teardown there.
+Qwen requires explicit --mode and --precision Q4-affine-g64-bf16. Plain, Flash
+and MLX-certified never fall back between each other.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		messages, err := apolloChatMessages(cmd)
 		if err != nil {
 			return err
+		}
+		if apollo.IsInstalledAppModel(apolloModelID) {
+			return runInstalledApolloAppChat(cmd, messages)
 		}
 		requestID, err := apolloOpaqueID(apolloRequestID)
 		if err != nil {
@@ -328,7 +334,7 @@ func init() {
 	apolloChatCmd.Flags().StringVar(&apolloRequestID, "request-id", "", "Opaque request id bound to the authenticated session")
 	apolloChatCmd.Flags().StringVar(&apolloSessionID, "session-id", "", "Opaque authenticated conversation session id")
 	apolloChatCmd.Flags().StringVar(&apolloModelID, "model", "", "Exact registered model id")
-	apolloChatCmd.Flags().StringVar(&apolloMode, "mode", "plain", "Inference mode: plain or flash")
+	apolloChatCmd.Flags().StringVar(&apolloMode, "mode", "plain", "Inference mode: plain or flash; installed Qwen also supports mlx-certified")
 	apolloChatCmd.Flags().StringVar(&apolloPrecision, "precision", "Q8", "Exact admitted precision")
 	apolloChatCmd.Flags().Uint32Var(&apolloMaxOutput, "max-output-tokens", 0, "Maximum output token count")
 	apolloChatCmd.Flags().StringVar(&apolloPrompt, "prompt", "", "One user chat message")
