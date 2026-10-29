@@ -1,5 +1,11 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-29 — v0.24.145 release candidate
+
+- Preserve provider session and surface identity for shared-runtime registrations; refuse a pinned thread belonging to another subject.
+- Reject conflicting attended Codex aliases before registry or marker writes; preserve same-subject and legacy idempotence without weakening audience, compute or consumer controls.
+- Exact source PR1270 was independently accepted and passed protected CI. Signing, client adoption and actual helper registration remain separately verified operations, not claims from these preparation notes.
+
 ## 2026-10-29 — v0.24.144 release candidate
 
 - Compose the reviewed Apollo CLI bridge, native admitted-process observer, atomic authenticated task-session binding, sticky observed pod-authority fence, provider-test isolation and fail-closed CCD observation correction.
