@@ -39,25 +39,59 @@ if [ "${1:-}" = --context-only ]; then
   build_context "$2"; exit 0
 fi
 
+RP=(--project="$PROJECT" --region="$REGION")
+PREV=$(bash "$ROOT/scripts/router-service/traffic-target.sh" "${RP[@]}") || exit 1
 CTX=$(mktemp -d); trap "rm -rf \"$CTX\"" EXIT
 build_context "$CTX"
-RP=(--project="$PROJECT" --region="$REGION")
-PREV=$(gcloud run services describe sirsi-router "${RP[@]}" --format="value(status.traffic[0].revisionName)" 2>/dev/null || true)
+# Building may take minutes. Refuse if the serving state changed during it.
+CURRENT=$(bash "$ROOT/scripts/router-service/traffic-target.sh" "${RP[@]}") || exit 1
+[ "$CURRENT" = "$PREV" ] || { echo "stage: serving traffic changed during build; refusing deployment" >&2; exit 1; }
 if [ -z "$PREV" ]; then
   # First deploy: a new service cannot start with --no-traffic.
   gcloud run deploy sirsi-router --source "$CTX" "${RP[@]}" --quiet "$@"
   echo "PREV="; echo "NEW=$(gcloud run services describe sirsi-router "${RP[@]}" --format="value(status.latestReadyRevisionName)")"
   exit 0
 fi
-TAG="stg-$(git -C "$ROOT" rev-parse --short=8 HEAD)"
-gcloud run deploy sirsi-router --source "$CTX" "${RP[@]}" --no-traffic --tag "$TAG" --quiet "$@"
-NEW=$(gcloud run services describe sirsi-router "${RP[@]}" --format="value(status.latestReadyRevisionName)")
-[ -n "$NEW" ] && [ "$NEW" != "$PREV" ] || { echo "stage: no new ready revision (latest=$NEW); traffic still on $PREV" >&2; exit 1; }
-TURL=$(gcloud run services describe sirsi-router "${RP[@]}" --format=json | jq -r --arg t "$TAG" ".status.traffic[] | select(.tag==\$t) | .url")
+# A fresh revision identity binds the deployment request to the tag readback.
+# Cloud Run revision names are service name + suffix; revisions are immutable.
+nonce=$(openssl rand -hex 12) || { echo "stage: cannot generate revision nonce" >&2; exit 1; }
+[[ "$nonce" =~ ^[0-9a-f]{24}$ ]] || { echo "stage: invalid revision nonce" >&2; exit 1; }
+SUFFIX="stg-$(git -C "$ROOT" rev-parse --short=8 HEAD)-$nonce"
+TAG="$SUFFIX"
+EXPECTED="sirsi-router-$SUFFIX"
+gcloud run deploy sirsi-router --source "$CTX" "${RP[@]}" --no-traffic --quiet "$@" --tag "$TAG" --revision-suffix "$SUFFIX"
+# Bind the URL actually probed to its tagged revision, while confirming the
+# original serving target remains intact. Never use global latestReady here.
+staged_target() {
+  local service target
+  service=$(gcloud run services describe sirsi-router "${RP[@]}" --format=json) || return 1
+  target=$(jq -ser --arg tag "$TAG" --arg prev "$PREV" --arg expected "$EXPECTED" '
+    if length != 1 or .[0].metadata.name != "sirsi-router" or (.[0].status.traffic | type) != "array" then error("invalid service") else .[0].status.traffic end
+    | if all(.[]; type == "object" and
+        (((.percent | type) == "number" and .percent >= 0 and .percent <= 100 and (.percent | floor) == .percent)
+         or (.percent == null and (.tag | type == "string" and length > 0)))) then . else error("invalid traffic") end
+    | . as $traffic
+    | [ $traffic[] | select((.percent // 0) > 0) ] as $serving
+    | [ $traffic[] | select(.tag == $tag) ] as $staged
+    | if ($serving | length) == 1 and $serving[0].percent == 100 and $serving[0].revisionName == $prev
+      and ($staged | length) == 1 and ($staged[0].percent // 0) == 0
+      and ($staged[0].revisionName | type == "string" and test("^[a-z]([-a-z0-9]*[a-z0-9])?$"))
+      and $staged[0].revisionName == $expected and $expected != $prev
+      and ($staged[0].url | type == "string" and test("^https://[a-z0-9][a-z0-9.-]*[a-z0-9]$"))
+      then [$staged[0].revisionName, $staged[0].url] | @tsv else error("ambiguous staged or serving traffic") end
+  ' <<<"$service") || return 1
+  [[ "$target" =~ ^[a-z][-a-z0-9]*$'\t'https://[a-z0-9][a-z0-9.-]*[a-z0-9]$ ]] || return 1
+  printf '%s\n' "$target"
+}
+STAGED=$(staged_target) || { echo "stage: invalid staged tag or serving traffic; refusing traffic shift" >&2; exit 1; }
+IFS=$'\t' read -r NEW TURL <<<"$STAGED"
 for _ in 1 2 3; do
   code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$TURL/v1/healthz" || true)
   [ "$code" = 200 ] || { echo "stage: $NEW answered healthz $code at $TURL; traffic NOT shifted (still $PREV)" >&2; exit 1; }
 done
+CURRENT_STAGED=$(staged_target) || { echo "stage: staged tag or serving traffic changed; refusing traffic shift" >&2; exit 1; }
+[ "$CURRENT_STAGED" = "$STAGED" ] || { echo "stage: staged target changed after health checks; refusing traffic shift" >&2; exit 1; }
 gcloud run services update-traffic sirsi-router "${RP[@]}" --to-revisions "$NEW=100" --quiet
 gcloud run services update-traffic sirsi-router "${RP[@]}" --remove-tags "$TAG" --quiet >/dev/null
 echo "PREV=$PREV"; echo "NEW=$NEW"
+echo "RACE=readbacks are not atomic with health probes or traffic update; single publisher required"
