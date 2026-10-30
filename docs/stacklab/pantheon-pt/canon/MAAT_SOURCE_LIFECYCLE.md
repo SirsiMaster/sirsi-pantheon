@@ -79,6 +79,11 @@ accepted policy, actual evaluation, or independent-outcome pins. Thus no model
 profile is empirically qualified. Inert Go/Swift fixtures remain software tests
 and are never inserted or counted as real calibration evidence.
 
+The installed-engine identity and no-follow validation live in the leaf
+`internal/packagedengine` package shared by setup and Ma'at. It retains the two
+exact shipped paths and the existing Team-ID/identifier signature check;
+Ma'at alone mints the opaque lifecycle authority after both checks succeed.
+
 The CLI additionally supports an explicit owner-adoption preview/confirm for an
 exact canonical independent outcome receipt and its originating evaluation
 receipt. It binds both raw Instructions SHA256 values, repo/head/profile,
