@@ -113,7 +113,6 @@ func FabricReadStage(ctx context.Context, stage FabricStage, read func() error) 
 	trace, _ := ctx.Value(fabricStageTraceKey{}).(*fabricStageTrace)
 	if trace == nil {
 		trace = &fabricStageTrace{}
-		ctx = context.WithValue(ctx, fabricStageTraceKey{}, trace)
 	}
 	trace.begin(stage)
 	err := read()

@@ -156,7 +156,7 @@ func TestFabricProducerDeadlineRacePreservesObservedStage(t *testing.T) {
 		<-active.done
 	}
 	if p.sequence != 0 || p.seeded {
-		t.Fatal("late cancelled acquisition committed generation history")
+		t.Fatal("late canceled acquisition committed generation history")
 	}
 }
 

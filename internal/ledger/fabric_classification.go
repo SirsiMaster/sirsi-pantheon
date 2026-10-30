@@ -53,7 +53,6 @@ func classifyFabricAgents(ctx context.Context, agents []Agent, unavailable map[s
 		select {
 		case jobs <- index:
 		case <-ctx.Done():
-			break
 		}
 		if ctx.Err() != nil {
 			break
