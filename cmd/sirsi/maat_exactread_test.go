@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
 
 type exactReadCLIStore struct{ kind, id string }

@@ -2,9 +2,10 @@ package routerstore
 
 import (
 	"encoding/json"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"strings"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
 
 func TestMaatExactReadLargeHistoryRemote(t *testing.T) {
