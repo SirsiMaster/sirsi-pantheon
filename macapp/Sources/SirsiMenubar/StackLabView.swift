@@ -358,12 +358,30 @@ struct StackLabReport: Decodable {
     var clean: Bool { findings.isEmpty && unknown.isEmpty }
 
     static func decode(_ data: Data) -> StackLabReport? {
-        try? JSONDecoder().decode(StackLabReport.self, from: data)
+        guard let payload = try? JSONSerialization.jsonObject(with: data),
+              let object = payload as? [String: Any],
+              !object.keys.contains("diagnostic"),
+              object["roster"] as? [String] != nil else {
+            return nil
+        }
+        return try? JSONDecoder().decode(StackLabReport.self, from: data)
     }
+}
+
+private struct StackLabReadDiagnostic: Decodable {
+    struct Detail: Decodable {
+        let code: String
+    }
+
+    let diagnostic: Detail?
 }
 
 enum StackLabReadFailure {
     static func message(for read: SirsiEngine.JSONCommandRead) -> String {
+        if let diagnostic = try? JSONDecoder().decode(StackLabReadDiagnostic.self, from: read.data),
+           diagnostic.diagnostic?.code == "missing_gh" {
+            return "The GitHub CLI is missing. Install it with Homebrew (brew install gh) or add its executable to PATH, then refresh. No registry result was inferred."
+        }
         if read.timedOut {
             return "The canonical registry did not answer within 20 seconds, so Pantheon made no registry decision. Refresh to retry the bounded read; if it repeats, open Ma'at evidence to retain the failed read and guide the next repair."
         }
