@@ -1,5 +1,13 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-30 — v0.24.148 release candidate
+
+- Add `maat status --id ID --json` using server-side exact MaatRead selection with a 64KiB response ceiling. Preserve whole-history status compatibility; unknown is not released, duplicate/oversized rows fail closed, old servers refuse without broad fallback. No admission or reservation mutation; delegated pod IDs refuse unsupported canonical fallback.
+- Keep terminal wake failures unresolved when a legacy completion contains only a whitespace-padded no-result marker. Filter in SQLite/PostgreSQL without returning result bodies. Refs: ADR-061; docs/stacklab/LANE_CURRENT_WAKE_FAILURES.md.
+- Resolve the existing GitHub CLI from the inherited PATH and standard macOS Homebrew locations for the Stack Lab fabric reader. A missing CLI now yields a typed unknown diagnostic and static native install guidance without exposing command stderr. Refs: ADR-009, ADR-066, `docs/stacklab/LOCAL_TIER1_AND_STACKLAB.md`.
+- Canonicalize temporary roots in Stack Lab executable-path fixtures so exact path assertions match macOS symlink resolution. Refs: ADR-009, ADR-066.
+- Fix staged router deploy rollback receipts to identify the sole 100% serving revision and refuse ambiguous or unreadable traffic state. Bind health checks and traffic shifts to a freshly named staged revision and refuse tag retargets. Refs: scripts/router-service/stage.sh.
+
 ## 2026-10-30 — v0.24.147 release candidate
 
 - Keep Ma'at proposals pinned to their exact catalog bytes while reading proposals from the current catalog or the trusted historical catalog at `68b1ee17ac49d4c087c54bd4860eee597181fd45`. Classify current versus historical only in the read projection, preserve original local bytes, and continue refusing unknown or malformed provenance. Historical proposals remain local evidence for current Stack Lab review and do not affect fabric matching or promotion authority.

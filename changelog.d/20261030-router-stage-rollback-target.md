@@ -1,1 +1,0 @@
-- Fix staged router deploy rollback receipts to identify the sole 100% serving revision and refuse ambiguous or unreadable traffic state. Bind health checks and traffic shifts to a freshly named staged revision and refuse tag retargets. Refs: scripts/router-service/stage.sh.

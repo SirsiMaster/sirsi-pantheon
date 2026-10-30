@@ -1,1 +1,0 @@
-- Canonicalize temporary roots in Stack Lab executable-path fixtures so exact path assertions match macOS symlink resolution. Refs: ADR-009, ADR-066.

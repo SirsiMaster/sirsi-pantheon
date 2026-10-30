@@ -1,1 +1,0 @@
-Add `maat status --id ID --json` using server-side exact MaatRead selection with a 64KiB response ceiling. Preserve whole-history status compatibility; unknown is not released, duplicate/oversized rows fail closed, old servers refuse without broad fallback. No admission or reservation mutation; delegated pod IDs refuse unsupported canonical fallback.
