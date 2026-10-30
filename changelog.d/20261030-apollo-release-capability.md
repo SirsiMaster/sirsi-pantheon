@@ -15,10 +15,13 @@ as unavailable. The published-v147 release workflow remains native-disabled.
 
 These source changes and fixtures do not certify a signed or installed release;
 signing, publication, and installed-runtime evidence remain separate.
+The release-preflight fixtures pin the reviewed builder and workflow bytes
+while retaining their changed-source, symlink and missing-control refusals.
 
 Refs: docs/evidence/APOLLO_NATIVE_PACKAGE_COMPOSITION_20261015.md;
 internal/packageinventorycmd/verify.go;
 internal/packageinventorycmd/verify_test.go;
+internal/maat/releasepreflight_test.go;
 scripts/build-dmg.sh; scripts/build-pkg.sh;
 scripts/new-apollo-digest-receipt.sh; Makefile;
 .github/workflows/release.yml;
