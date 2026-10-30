@@ -87,7 +87,7 @@ func TestResolveApolloBundleRejectsUnknownAndMalformedAssociations(t *testing.T)
 		if err := os.WriteFile(filepath.Join(bundle, "Contents", "Info.plist"), []byte("not a plist"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := resolveApolloBundle(executable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "Info.plist") {
+		if _, err := resolveApolloBundle(executable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "unavailable or malformed") {
 			t.Fatalf("malformed capability metadata accepted: %v", err)
 		}
 	})
