@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # Build the router service image LOCALLY and deploy it staged: no-traffic tagged revision, health check, then
-# shift 100% of traffic. Cloud Build cannot compile cmd/sirsi: it imports the private
+# shift 100% of traffic unless --stage-only requests an explicit zero-traffic
+# handoff. Cloud Build cannot compile cmd/sirsi: it imports the private
 # github.com/SirsiMaster/sirsi-inference module and Cloud Build holds no credential for it (2026-10-18, the first
 # deploy after #1109). So the binary is cross-compiled here, where the module is reachable (a developer module
 # cache, or scripts/ci-private-sdk.sh in CI), and Cloud Build only COPYs it into the distroless image.
 #
 #   stage.sh --context-only DIR      build the image context into DIR and stop (tests, inspection)
+#   stage.sh --stage-only [gcloud run deploy flags...]
 #   stage.sh [gcloud run deploy flags...]
 #
-# Prints PREV=<revision that served before> and NEW=<revision now serving 100%> for receipts. Rollback:
+# Prints PREV and NEW for receipts; stage-only also prints TAG, TURL, and phase.
+# Rollback:
 #   gcloud run services update-traffic sirsi-router --to-revisions PREV=100 --region R --project P
 set -euo pipefail
 ROOT=$(git rev-parse --show-toplevel)
@@ -39,8 +42,28 @@ if [ "${1:-}" = --context-only ]; then
   build_context "$2"; exit 0
 fi
 
+STAGE_ONLY=0
+if [ "${1:-}" = --stage-only ]; then
+  STAGE_ONLY=1
+  shift
+fi
+if [ "$STAGE_ONLY" = 1 ]; then
+  for arg in "$@"; do
+    case "$arg" in
+      --no-traffic|--no-traffic=*|--traffic|--traffic=*|--to-latest|--to-revisions|--to-revisions=*|\
+      --tag|--tag=*|--update-tags|--update-tags=*|--remove-tags|--remove-tags=*|--clear-tags|--clear-tags=*|--revision-suffix|--revision-suffix=*)
+        echo "stage: $arg is reserved in --stage-only mode" >&2
+        exit 2
+        ;;
+    esac
+  done
+fi
 RP=(--project="$PROJECT" --region="$REGION")
 PREV=$(bash "$ROOT/scripts/router-service/traffic-target.sh" "${RP[@]}") || exit 1
+if [ "$STAGE_ONLY" = 1 ] && [ -z "$PREV" ]; then
+  echo "stage: --stage-only requires an existing service; refusing first deployment" >&2
+  exit 1
+fi
 CTX=$(mktemp -d); trap "rm -rf \"$CTX\"" EXIT
 build_context "$CTX"
 # Building may take minutes. Refuse if the serving state changed during it.
@@ -91,6 +114,14 @@ for _ in 1 2 3; do
 done
 CURRENT_STAGED=$(staged_target) || { echo "stage: staged tag or serving traffic changed; refusing traffic shift" >&2; exit 1; }
 [ "$CURRENT_STAGED" = "$STAGED" ] || { echo "stage: staged target changed after health checks; refusing traffic shift" >&2; exit 1; }
+if [ "$STAGE_ONLY" = 1 ]; then
+  echo "PREV=$PREV"
+  echo "NEW=$NEW"
+  echo "TAG=$TAG"
+  echo "TURL=$TURL"
+  echo "PHASE=zero-traffic"
+  exit 0
+fi
 gcloud run services update-traffic sirsi-router "${RP[@]}" --to-revisions "$NEW=100" --quiet
 gcloud run services update-traffic sirsi-router "${RP[@]}" --remove-tags "$TAG" --quiet >/dev/null
 echo "PREV=$PREV"; echo "NEW=$NEW"
