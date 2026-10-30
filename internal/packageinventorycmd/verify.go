@@ -5,6 +5,7 @@ package packageinventorycmd
 import (
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -24,6 +25,7 @@ type Inputs struct {
 	PkgInfo              string
 	LaunchAgent          string
 	BrandLogo            string
+	ApolloCapability     string
 	ApolloProfile        string
 	RequireCodeSignature bool
 }
@@ -32,11 +34,28 @@ func Verify(inputs Inputs) (packageinventory.Report, error) {
 	if inputs.App == "" || inputs.Version == "" || inputs.Build == "" || inputs.InfoPlist == "" || inputs.PkgInfo == "" || inputs.LaunchAgent == "" || inputs.BrandLogo == "" {
 		return packageinventory.Report{}, errors.New("app, version, build, info-plist, pkg-info, launch-agent, and brand-logo are required")
 	}
+	if inputs.ApolloCapability == "" {
+		return packageinventory.Report{}, errors.New("explicit --apollo-capability is required")
+	}
 	info, infoErr := ReadCanonicalFile(inputs.InfoPlist)
 	if infoErr != nil {
 		return packageinventory.Report{}, infoErr
 	}
-	if validateErr := validateInfoPlist(info, inputs.Version, inputs.Build); validateErr != nil {
+	var apolloProfile []byte
+	if inputs.ApolloProfile != "" {
+		if !filepath.IsAbs(inputs.ApolloProfile) || filepath.Clean(inputs.ApolloProfile) != inputs.ApolloProfile {
+			return packageinventory.Report{}, errors.New("Apollo profile requires a canonical absolute path")
+		}
+		var err error
+		apolloProfile, err = ReadCanonicalFile(inputs.ApolloProfile)
+		if err != nil {
+			return packageinventory.Report{}, fmt.Errorf("read protected Apollo profile: %w", err)
+		}
+		if len(apolloProfile) == 0 || len(apolloProfile) > 64<<10 {
+			return packageinventory.Report{}, errors.New("Apollo profile exceeds bounded canonical input")
+		}
+	}
+	if validateErr := validateInfoPlist(info, inputs.Version, inputs.Build, inputs.ApolloCapability, len(apolloProfile) != 0); validateErr != nil {
 		return packageinventory.Report{}, validateErr
 	}
 	pkgInfo, pkgInfoErr := ReadCanonicalFile(inputs.PkgInfo)
@@ -51,20 +70,10 @@ func Verify(inputs Inputs) (packageinventory.Report, error) {
 	if brandLogoErr != nil {
 		return packageinventory.Report{}, brandLogoErr
 	}
-	var apolloProfile []byte
-	if inputs.ApolloProfile != "" {
-		var err error
-		apolloProfile, err = ReadCanonicalFile(inputs.ApolloProfile)
-		if err != nil {
-			return packageinventory.Report{}, err
-		}
-		if len(apolloProfile) == 0 || len(apolloProfile) > 64<<10 {
-			return packageinventory.Report{}, errors.New("Apollo profile exceeds bounded canonical input")
-		}
-	}
 	return packageinventory.Verify(inputs.App, packageinventory.Expectations{
 		Version: inputs.Version, Build: inputs.Build, InfoPlist: info,
-		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo, ApolloProfile: apolloProfile,
+		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo,
+		ApolloCapability: inputs.ApolloCapability, ApolloProfile: apolloProfile,
 		RequireCodeSignature: inputs.RequireCodeSignature,
 	})
 }
@@ -158,7 +167,67 @@ func openParent(path string) (int, string, error) {
 	return fd, leaf, nil
 }
 
-func validateInfoPlist(data []byte, version, build string) error {
+func validateInfoPlist(data []byte, version, build, expectedApolloCapability string, profilePresent bool) error {
+	values, err := infoPlistStringValues(data)
+	if err != nil {
+		return err
+	}
+	if values["CFBundleIdentifier"] != "ai.sirsi.pantheon" {
+		return errors.New("Info.plist bundle identifier mismatch")
+	}
+	if values["CFBundleShortVersionString"] != version {
+		return errors.New("Info.plist version does not match --version")
+	}
+	if values["CFBundleVersion"] != build {
+		return errors.New("Info.plist build does not match --build")
+	}
+	actualCapability, declared := values[packageinventory.ApolloCapabilityInfoKey]
+	switch expectedApolloCapability {
+	case packageinventory.ApolloCapabilityEnabled:
+		if !declared || actualCapability != packageinventory.ApolloCapabilityEnabled || !profilePresent {
+			return errors.New("Info.plist Apollo capability/profile mismatch for enabled package")
+		}
+	case packageinventory.ApolloCapabilityDisabled:
+		if !declared || actualCapability != packageinventory.ApolloCapabilityDisabled || profilePresent {
+			return errors.New("Info.plist Apollo capability/profile mismatch for disabled package")
+		}
+	case packageinventory.ApolloCapabilityLegacyDevelopment:
+		if declared && ((actualCapability != packageinventory.ApolloCapabilityEnabled && actualCapability != packageinventory.ApolloCapabilityDisabled) ||
+			(actualCapability == packageinventory.ApolloCapabilityEnabled) != profilePresent) {
+			return errors.New("legacy development Info.plist Apollo capability/profile mismatch")
+		}
+		if !declared && !profilePresent {
+			return nil
+		}
+		if !declared && profilePresent {
+			// Historical local builds could include the profile before the signed
+			// capability key existed. Keep that development-only layout readable.
+			return nil
+		}
+	default:
+		return errors.New("expected Apollo capability must be enabled, disabled, or legacy-development")
+	}
+	return nil
+}
+
+// ApolloCapabilityFromInfoPlist returns only an explicit signed capability.
+// Missing metadata remains unavailable; it is never interpreted as disabled.
+func ApolloCapabilityFromInfoPlist(data []byte) (string, error) {
+	values, err := infoPlistStringValues(data)
+	if err != nil {
+		return "", err
+	}
+	if values["CFBundleIdentifier"] != "ai.sirsi.pantheon" {
+		return "", errors.New("installed Apollo bundle identity is unavailable or malformed")
+	}
+	capability, ok := values[packageinventory.ApolloCapabilityInfoKey]
+	if !ok || (capability != packageinventory.ApolloCapabilityEnabled && capability != packageinventory.ApolloCapabilityDisabled) {
+		return "", errors.New("installed Apollo capability metadata is unavailable or malformed")
+	}
+	return capability, nil
+}
+
+func infoPlistStringValues(data []byte) (map[string]string, error) {
 	decoder := xml.NewDecoder(strings.NewReader(string(data)))
 	values := make(map[string]string)
 	seen := make(map[string]struct{})
@@ -174,48 +243,39 @@ func validateInfoPlist(data []byte, version, build string) error {
 			break
 		}
 		if tokenErr != nil {
-			return errors.New("Info.plist is not valid XML")
+			return nil, errors.New("Info.plist is not valid XML")
 		}
 		start, ok := token.(xml.StartElement)
 		if !ok || start.Name.Local != "key" {
 			continue
 		}
 		if keyErr := decoder.DecodeElement(&key, &start); keyErr != nil || key == "" {
-			return errors.New("Info.plist contains an invalid key")
+			return nil, errors.New("Info.plist contains an invalid key")
 		}
 		if _, exists := seen[key]; exists {
-			return errors.New("Info.plist contains duplicate keys")
+			return nil, errors.New("Info.plist contains duplicate keys")
 		}
 		seen[key] = struct{}{}
 		valueStart, valueStartErr := nextPlistValueStart(decoder)
 		if valueStartErr != nil {
-			return valueStartErr
+			return nil, valueStartErr
 		}
 		if valueStart.Name.Local != "string" {
-			if _, needed := required[key]; needed {
-				return errors.New("Info.plist required identity value is not a string")
+			if _, needed := required[key]; needed || key == packageinventory.ApolloCapabilityInfoKey {
+				return nil, errors.New("Info.plist required identity/capability value is not a string")
 			}
 			if skipErr := decoder.Skip(); skipErr != nil {
-				return errors.New("Info.plist contains an invalid typed value")
+				return nil, errors.New("Info.plist contains an invalid typed value")
 			}
 			continue
 		}
 		var value string
 		if valueErr := decoder.DecodeElement(&value, &valueStart); valueErr != nil {
-			return errors.New("Info.plist contains an invalid string")
+			return nil, errors.New("Info.plist contains an invalid string")
 		}
 		values[key] = value
 	}
-	if values["CFBundleIdentifier"] != "ai.sirsi.pantheon" {
-		return errors.New("Info.plist bundle identifier mismatch")
-	}
-	if values["CFBundleShortVersionString"] != version {
-		return errors.New("Info.plist version does not match --version")
-	}
-	if values["CFBundleVersion"] != build {
-		return errors.New("Info.plist build does not match --build")
-	}
-	return nil
+	return values, nil
 }
 
 // nextPlistValueStart permits XML formatting whitespace between a plist key

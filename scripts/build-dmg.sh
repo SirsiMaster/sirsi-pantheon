@@ -57,6 +57,32 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$MODE" ]] || { echo "ERROR: choose --development or --release explicitly" >&2; exit 2; }
+if [[ "$MODE" == "release" ]]; then
+    [[ "${PANTHEON_APOLLO_CAPABILITY:-}" == "enabled" || "${PANTHEON_APOLLO_CAPABILITY:-}" == "disabled" ]] || {
+        echo "ERROR: release requires PANTHEON_APOLLO_CAPABILITY=enabled|disabled" >&2
+        exit 2
+    }
+    APOLLO_CAPABILITY="$PANTHEON_APOLLO_CAPABILITY"
+else
+    # Local builds remain profile-optional; the resulting signed Info.plist
+    # still records which capability the developer bundle actually contains.
+    APOLLO_CAPABILITY="${PANTHEON_APOLLO_CAPABILITY:-disabled}"
+    [[ "$APOLLO_CAPABILITY" == "enabled" || "$APOLLO_CAPABILITY" == "disabled" ]] || {
+        echo "ERROR: development Apollo capability must be enabled or disabled" >&2
+        exit 2
+    }
+fi
+if [[ "$APOLLO_CAPABILITY" == "enabled" ]]; then
+    [[ -n "${PANTHEON_APOLLO_PROFILE:-}" && "$PANTHEON_APOLLO_PROFILE" = /* && -f "$PANTHEON_APOLLO_PROFILE" && ! -L "$PANTHEON_APOLLO_PROFILE" ]] || {
+        echo "ERROR: enabled Apollo capability requires an absolute regular non-symlink profile" >&2
+        exit 1
+    }
+else
+    [[ -z "${PANTHEON_APOLLO_PROFILE:-}" ]] || {
+        echo "ERROR: disabled Apollo capability forbids PANTHEON_APOLLO_PROFILE" >&2
+        exit 1
+    }
+fi
 REMOTE_SIGNING=false
 if [[ "$MODE" == "release" && "${PANTHEON_SIGNING_EXECUTION:-}" == "remote-service" ]]; then
     [[ -x "${PANTHEON_SIGN_CLIENT:-}" ]] || {
@@ -130,10 +156,9 @@ cp "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" "${BUNDLE_DIR}/Contents/Re
 # documentation.  Keep its contracts alongside the app they describe.
 cp -R "${PROJECT_ROOT}/contracts/stacklab" "${BUNDLE_DIR}/Contents/Resources/StackLab"
 # Private fleet profiles are deliberate build inputs, never source-tree
-# discoveries or post-signature edits. Bind their exact bytes in inventory.
+# discoveries or post-signature edits. Bind their exact bytes before signing.
 APOLLO_PROFILE_ARGS=()
 if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
-    [[ "$PANTHEON_APOLLO_PROFILE" = /* && -f "$PANTHEON_APOLLO_PROFILE" && ! -L "$PANTHEON_APOLLO_PROFILE" ]] || { echo "ERROR: Apollo profile must be an absolute regular file" >&2; exit 1; }
     mkdir -p "${BUNDLE_DIR}/Contents/Resources/Apollo"
     cp "$PANTHEON_APOLLO_PROFILE" "${BUNDLE_DIR}/Contents/Resources/Apollo/native-profile.json"
     # Standard installed app resources must remain readable after Installer
@@ -142,10 +167,12 @@ if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
     chmod 0644 "${BUNDLE_DIR}/Contents/Resources/Apollo/native-profile.json"
     APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
 fi
+APOLLO_INVENTORY_ARGS=(--apollo-capability "$APOLLO_CAPABILITY" "${APOLLO_PROFILE_ARGS[@]}")
 # Never ship the historical template version from the source plist.  The
 # package and both executables are built from the requested release version.
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${BUNDLE_DIR}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "${BUNDLE_DIR}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :SirsiApolloNativeCapability ${APOLLO_CAPABILITY}" "${BUNDLE_DIR}/Contents/Info.plist"
 # AppleDouble sidecars are transport metadata, never product resources.  They
 # can appear when a source tree crosses volumes; remove them before signing so
 # a DMG and PKG cannot silently ship hidden duplicate payload entries.
@@ -159,6 +186,17 @@ fi
 # bundle before signing: every directory traversable, resources world-readable,
 # and only the two exact MacOS entry points executable. Refuse links/types first.
 python3 -B "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "${BUNDLE_DIR}"
+# Verify the independently selected capability and exact profile before either
+# local codesign or the remote signing client can receive the app.
+"${BUILD_DIR}/sirsi" package-inventory \
+    --app "${BUNDLE_DIR}" \
+    --version "${VERSION}" \
+    --build "${VERSION}" \
+    --info-plist "${BUNDLE_DIR}/Contents/Info.plist" \
+    --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
+    --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
+    --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
+    "${APOLLO_INVENTORY_ARGS[@]}"
 # Signature metadata created from here must not inherit a private builder umask.
 umask 022
 
@@ -201,7 +239,8 @@ echo "Verifying assembled Pantheon.app payload..."
     --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
     --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
-    --require-code-signature ${APOLLO_PROFILE_ARGS[@]+"${APOLLO_PROFILE_ARGS[@]}"}
+    --require-code-signature \
+    "${APOLLO_INVENTORY_ARGS[@]}"
 
 # --- Stage + create the DMG ---
 echo "Creating DMG..."

@@ -168,6 +168,47 @@ func TestApolloProfileRequiresExactExplicitCanonicalBytes(t *testing.T) {
 	}
 }
 
+func TestApolloCapabilityRequiresIndependentProfilePairing(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		capability  string
+		profile     []byte
+		wantErrText string
+	}{
+		{"enabled without profile", ApolloCapabilityEnabled, nil, "requires an explicit profile"},
+		{"disabled with profile", ApolloCapabilityDisabled, []byte(`{"schema":"sirsi.apollo.native-profile.v2"}`), "forbids a profile"},
+		{"unknown capability", "auto", nil, "explicit Apollo capability is required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, expected := makeBundle(t)
+			expected.ApolloCapability = tc.capability
+			expected.ApolloProfile = tc.profile
+			_, err := Verify(app, expected)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErrText) {
+				t.Fatalf("capability/profile combination accepted or unrelated error: %v", err)
+			}
+		})
+	}
+
+	app, expected := makeBundle(t)
+	dir := filepath.Join(app, "Contents/Resources/Apollo")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	profile := []byte(`{"schema":"sirsi.apollo.native-profile.v2"}`)
+	if err := os.WriteFile(filepath.Join(dir, "native-profile.json"), profile, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	expected.ApolloCapability = ApolloCapabilityEnabled
+	expected.ApolloProfile = profile
+	if _, err := Verify(app, expected); err != nil {
+		t.Fatalf("enabled exact profile rejected: %v", err)
+	}
+}
+
 func TestVerifyRejectsSymlinkedPayload(t *testing.T) {
 	app, expected := makeBundle(t)
 	sirsi := filepath.Join(app, "Contents", "MacOS", "sirsi")
@@ -457,7 +498,7 @@ func makeBundle(t *testing.T) (string, Expectations) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return app, Expectations{Version: "0.23.9-beta", Build: "20260908", InfoPlist: info, PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo}
+	return app, Expectations{Version: "0.23.9-beta", Build: "20260908", InfoPlist: info, PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo, ApolloCapability: ApolloCapabilityLegacyDevelopment}
 }
 
 func TestVerifyRejectsNonPublicModesIncludingRoot(t *testing.T) {

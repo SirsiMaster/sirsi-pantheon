@@ -1,6 +1,7 @@
 package packageinventorycmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,7 +10,7 @@ import (
 
 func TestVerifyRejectsDeclaredVersionBuildMismatch(t *testing.T) {
 	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
-	_, err := Verify(Inputs{App: app, Version: "0.23.9-beta", Build: "wrong", InfoPlist: info, PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo})
+	_, err := Verify(Inputs{App: app, Version: "0.23.9-beta", Build: "wrong", InfoPlist: info, PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo, ApolloCapability: "legacy-development"})
 	if err == nil || !strings.Contains(err.Error(), "build") {
 		t.Fatalf("mismatched build accepted: %v", err)
 	}
@@ -28,7 +29,7 @@ func TestValidateInfoPlistAcceptsTypedOptionalValues(t *testing.T) {
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	</dict></plist>`)
-	if err := validateInfoPlist(info, "0.24.14", "0.24.14"); err != nil {
+	if err := validateInfoPlist(info, "0.24.14", "0.24.14", "legacy-development", false); err != nil {
 		t.Fatalf("typed optional plist values rejected: %v", err)
 	}
 }
@@ -41,8 +42,48 @@ func TestValidateInfoPlistRejectsDuplicateOptionalKey(t *testing.T) {
 	<key>LSUIElement</key><true/>
 	<key>LSUIElement</key><false/>
 	</dict></plist>`)
-	if err := validateInfoPlist(info, "0.24.14", "0.24.14"); err == nil || !strings.Contains(err.Error(), "duplicate") {
+	if err := validateInfoPlist(info, "0.24.14", "0.24.14", "legacy-development", false); err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Fatalf("duplicate optional plist key accepted: %v", err)
+	}
+}
+
+func TestApolloCapabilityPlistReleaseStatesAreClosed(t *testing.T) {
+	base := `<?xml version="1.0"?><plist><dict><key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string><key>CFBundleShortVersionString</key><string>0.24.147</string><key>CFBundleVersion</key><string>0.24.147</string>%s</dict></plist>`
+	for _, tc := range []struct {
+		name, capability, declaration string
+		profile                       bool
+		wantErr                       string
+	}{
+		{"enabled complete", "enabled", `<key>SirsiApolloNativeCapability</key><string>enabled</string>`, true, ""},
+		{"disabled complete", "disabled", `<key>SirsiApolloNativeCapability</key><string>disabled</string>`, false, ""},
+		{"enabled missing key", "enabled", "", true, "mismatch"},
+		{"disabled missing key", "disabled", "", false, "mismatch"},
+		{"enabled missing profile", "enabled", `<key>SirsiApolloNativeCapability</key><string>enabled</string>`, false, "mismatch"},
+		{"disabled conflicting profile", "disabled", `<key>SirsiApolloNativeCapability</key><string>disabled</string>`, true, "mismatch"},
+		{"unknown declaration", "enabled", `<key>SirsiApolloNativeCapability</key><string>automatic</string>`, true, "mismatch"},
+		{"missing expected mode", "", `<key>SirsiApolloNativeCapability</key><string>disabled</string>`, false, "expected Apollo capability"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := []byte(fmt.Sprintf(base, tc.declaration))
+			err := validateInfoPlist(info, "0.24.147", "0.24.147", tc.capability, tc.profile)
+			if tc.wantErr == "" && err != nil {
+				t.Fatalf("valid state rejected: %v", err)
+			}
+			if tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Fatalf("invalid state accepted or unrelated refusal: %v", err)
+			}
+		})
+	}
+}
+
+func TestApolloCapabilityRuntimeParserDoesNotInferMissingAsDisabled(t *testing.T) {
+	info := []byte(`<?xml version="1.0"?><plist><dict><key>CFBundleIdentifier</key><string>ai.sirsi.pantheon</string></dict></plist>`)
+	if _, err := ApolloCapabilityFromInfoPlist(info); err == nil || !strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("missing capability was treated as disabled: %v", err)
+	}
+	info = []byte(`<?xml version="1.0"?><plist><dict><key>SirsiApolloNativeCapability</key><string>disabled</string><key>SirsiApolloNativeCapability</key><string>enabled</string></dict></plist>`)
+	if _, err := ApolloCapabilityFromInfoPlist(info); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("duplicate capability accepted: %v", err)
 	}
 }
 
