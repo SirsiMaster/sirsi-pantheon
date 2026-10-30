@@ -176,7 +176,7 @@ func ReadCanonicalFile(path string) ([]byte, error) {
 // group or other. The profile remains read-only data; no caller executes it.
 func ReadProtectedApolloProfile(path string) ([]byte, error) {
 	return readCanonicalFile(path, maxCanonicalApolloProfile, func(st unix.Stat_t) error {
-		if !apolloProfileDescriptorAllowed(st.Uid, st.Mode, uint32(os.Getuid())) {
+		if !apolloProfileDescriptorAllowed(st.Uid, uint32(st.Mode), uint32(os.Getuid())) {
 			return errors.New("Apollo profile owner or write permissions are unsafe")
 		}
 		return nil
