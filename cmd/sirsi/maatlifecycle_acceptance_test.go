@@ -51,8 +51,9 @@ func maatLifecycleTestReceiptBytes(t *testing.T, receipt maat.LifecycleReceipt) 
 	if receipt.Kind != "evaluation" {
 		return raw
 	}
-	// The strict source receipt decoder requires the explicit empty boundary
-	// member even though encoding/json omits it due to `omitempty`.
+	// The strict source receipt decoder requires explicit empty boundary and
+	// host_binding members even though encoding/json omits them due to
+	// `omitempty` for commit subjects.
 	// A selected sample can legitimately have a different subject head from the
 	// evaluation's top-level run head. Add the required wire member to each
 	// serialized sample subject, not to a guessed occurrence of the run head.
@@ -62,7 +63,7 @@ func maatLifecycleTestReceiptBytes(t *testing.T, receipt maat.LifecycleReceipt) 
 	}
 	for head, expected := range subjectHeads {
 		needle := []byte(`"head_sha":"` + head + `"}`)
-		replacement := []byte(`"head_sha":"` + head + `","boundary":""}`)
+		replacement := []byte(`"head_sha":"` + head + `","boundary":"","host_binding":""}`)
 		if count := bytes.Count(raw, needle); count != expected {
 			t.Fatalf("expected %d exact sample subject(s) with head %s, found %d", expected, head, count)
 		}

@@ -161,14 +161,14 @@ func TestQualificationStrictReceiptKeysRequiredAndDigests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Shared historical subject tags omit an empty boundary, but the strict
-	// source-v2 wire contract requires it for every actual sample subject.
+	// The strict source-v2 wire contract requires explicit empty boundary and
+	// host_binding members for every actual commit sample subject.
 	for _, sample := range receipt.Samples {
 		needle := []byte(`"head_sha":"` + sample.Screen.Subject.HeadSHA + `"}`)
 		if sample.Screen.Subject.Boundary != "" || bytes.Count(raw, needle) != 1 {
-			t.Fatal("expected one exact empty-boundary fixture subject per sample")
+			t.Fatal("expected one exact commit fixture subject with empty boundary and host binding per sample")
 		}
-		raw = bytes.Replace(raw, needle, []byte(`"head_sha":"`+sample.Screen.Subject.HeadSHA+`","boundary":""}`), 1)
+		raw = bytes.Replace(raw, needle, []byte(`"head_sha":"`+sample.Screen.Subject.HeadSHA+`","boundary":"","host_binding":""}`), 1)
 	}
 	if _, err := DecodeLifecycleReceipt(raw); err != nil {
 		t.Fatal(err)
@@ -176,6 +176,10 @@ func TestQualificationStrictReceiptKeysRequiredAndDigests(t *testing.T) {
 	missingBoundary := bytes.Replace(raw, []byte(`,"boundary":""`), nil, 1)
 	if _, err := DecodeLifecycleReceipt(missingBoundary); err == nil || !strings.Contains(err.Error(), `required field "boundary" missing`) {
 		t.Fatalf("missing sample boundary was not refused: %v", err)
+	}
+	missingHostBinding := bytes.Replace(raw, []byte(`,"host_binding":""`), nil, 1)
+	if _, err := DecodeLifecycleReceipt(missingHostBinding); err == nil || !strings.Contains(err.Error(), `required field "host_binding" missing`) {
+		t.Fatalf("missing sample host binding was not refused: %v", err)
 	}
 	for _, bad := range [][]byte{append(append([]byte{}, raw...), []byte(" {}")...), bytes.Replace(raw, []byte(`"schema":`), []byte(`"Schema":`), 1), bytes.Replace(raw, []byte(`"kind":"evaluation"`), []byte(`"kind":"evaluation","kind":"policy"`), 1), bytes.Replace(raw, []byte(`"kind":"evaluation",`), nil, 1), bytes.Replace(raw, []byte(`"minimum_pass_samples":1`), []byte(`"minimum_pass_samples":0`), 1)} {
 		if _, err := DecodeLifecycleReceipt(bad); err == nil {
@@ -330,17 +334,7 @@ func TestInstalledLifecycleEmptyInventoryAndOpaqueAuthorityKeepFixtureUnqualifie
 	}
 	profile, fixtures := lifecycleFixtures()
 	evaluation := fixtures["evaluation"]
-	raw, err := json.Marshal(evaluation.Receipt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The strict source-screen wire contract requires the empty boundary key,
-	// while encoding/json omits that field because its Go tag is omitempty.
-	for _, sample := range evaluation.Receipt.Samples {
-		needle := []byte(`"head_sha":"` + sample.Screen.Subject.HeadSHA + `"}`)
-		replacement := []byte(`"head_sha":"` + sample.Screen.Subject.HeadSHA + `","boundary":""}`)
-		raw = bytes.ReplaceAll(raw, needle, replacement)
-	}
+	raw := lifecycleReceiptRawFixture(t, evaluation.Receipt)
 	record := LifecycleRawRecord{ID: evaluation.ID, Issuer: evaluation.Issuer, RawInstructions: raw}
 	if _, err := VerifyInstalledLifecycleRecord(context.Background(), InstalledEngineAuthority{}, record, nil); err == nil {
 		t.Fatal("zero-value caller authority admitted an inert fixture")
@@ -428,7 +422,7 @@ func lifecycleReceiptRawFixture(t *testing.T, receipt LifecycleReceipt) []byte {
 	}
 	for _, sample := range receipt.Samples {
 		needle := []byte(`"head_sha":"` + sample.Screen.Subject.HeadSHA + `"}`)
-		replacement := []byte(`"head_sha":"` + sample.Screen.Subject.HeadSHA + `","boundary":""}`)
+		replacement := []byte(`"head_sha":"` + sample.Screen.Subject.HeadSHA + `","boundary":"","host_binding":""}`)
 		raw = bytes.ReplaceAll(raw, needle, replacement)
 	}
 	return raw
