@@ -39,10 +39,10 @@ if [ "${1:-}" = --context-only ]; then
   build_context "$2"; exit 0
 fi
 
+RP=(--project="$PROJECT" --region="$REGION")
+PREV=$(bash "$ROOT/scripts/router-service/traffic-target.sh" "${RP[@]}") || exit 1
 CTX=$(mktemp -d); trap "rm -rf \"$CTX\"" EXIT
 build_context "$CTX"
-RP=(--project="$PROJECT" --region="$REGION")
-PREV=$(gcloud run services describe sirsi-router "${RP[@]}" --format="value(status.traffic[0].revisionName)" 2>/dev/null || true)
 if [ -z "$PREV" ]; then
   # First deploy: a new service cannot start with --no-traffic.
   gcloud run deploy sirsi-router --source "$CTX" "${RP[@]}" --quiet "$@"
