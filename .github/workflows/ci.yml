@@ -58,6 +58,9 @@ jobs:
       - name: router staged rollback traffic selection
         run: bash scripts/router-service/traffic-target.test.sh
 
+      - name: router staged tag and traffic shift binding
+        run: bash scripts/router-service/staged-tag.test.sh
+
       - name: ADR number uniqueness
         run: bash scripts/check-adr-numbers.sh
 
