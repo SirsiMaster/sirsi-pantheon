@@ -7,10 +7,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"strings"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
 type itemFixture map[string]routerstore.Item

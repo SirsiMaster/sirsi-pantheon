@@ -7,11 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 )
 
 type lifecycleCommandResolver struct{ value maat.LifecycleEvidence }

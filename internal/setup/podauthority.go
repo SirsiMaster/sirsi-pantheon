@@ -333,10 +333,6 @@ func maatPodCodesignCommand(ctx context.Context, path string) *exec.Cmd {
 	return packagedengine.VerificationCommand(ctx, path)
 }
 
-func validateInstalledPodEngine(path string) error {
-	return packagedengine.ValidateCurrent(path)
-}
-
 func validateCanonicalDirectory(path string) error {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return errors.New("must be canonical absolute path")

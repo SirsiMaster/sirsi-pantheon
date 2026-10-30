@@ -1,9 +1,10 @@
 package casebook
 
 import (
-	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"strings"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 )
 
 func TestLifecycleProjectionNeverPromotesStoredDeterminationToAcceptance(t *testing.T) {

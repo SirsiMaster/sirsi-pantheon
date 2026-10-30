@@ -4,9 +4,10 @@ package maat
 
 import (
 	"fmt"
-	"golang.org/x/sys/unix"
 	"io"
 	"os"
+
+	"golang.org/x/sys/unix"
 )
 
 func readLifecycleJournal(path string) ([]byte, error) {
