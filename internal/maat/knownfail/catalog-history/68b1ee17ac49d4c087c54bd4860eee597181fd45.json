@@ -1,0 +1,59 @@
+{
+  "schema": "sirsi.maat.known-failures.v1",
+  "entries": [
+    {
+      "id": "codex-symlinked-writable-root",
+      "title": "codex executor rejects a writable root that contains a symlink component",
+      "signature": "writable root .* contains symlink component",
+      "cause": "A codex consumer lists ~/.sirsi/relay (a symlink to /var/sirsipantheon/relay) in writable_roots or --add-dir; every sandboxed command fails, dispatches make no progress and the lane quarantines.",
+      "status": "resolved",
+      "fix": {"kind": "guide", "text": "List only the real path /var/sirsipantheon/relay in the consumer command; restart the lane loop.", "fixed_in": "0.24.65", "ref": "agents.json SSA consumer; memory reference_codex_rejects_symlinked_writable_root"},
+      "guard": {"kind": "test", "ref": "TestRegistryConsumersAvoidSymlinkedRelayRoot"}
+    },
+    {
+      "id": "session-shared-fallback-agent",
+      "title": "task complete/release refused: caller's session does not own this lease",
+      "signature": "caller's session does not own this lease",
+      "cause": "Consumers without SIRSI_AGENT_ID authenticated as the hostname and shared one session cache file, so the session that claimed was not the one that completed.",
+      "status": "resolved",
+      "fix": {"kind": "guide", "text": "Upgrade to 0.24.66 or later (per-thread session cache; dispatch-contract agent id). Meanwhile set SIRSI_AGENT_ID and SIRSI_THREAD_ID on the command line.", "fixed_in": "0.24.66", "ref": "#954 #947 #950"},
+      "guard": {"kind": "test", "ref": "TestSessionCacheIsPerThreadForSharedAgentID"}
+    },
+    {
+      "id": "ps-denied-thread-anchor",
+      "title": "thread registration fails: fork/exec /bin/ps operation not permitted",
+      "signature": "fork/exec /bin/ps: operation not permitted",
+      "cause": "A sandboxed worker cannot run ps, so the durable anchor cannot be resolved and registration fails.",
+      "status": "resolved",
+      "fix": {"kind": "guide", "text": "Upgrade to 0.24.67 or later (sysctl lookup, then immediate-parent fallback).", "fixed_in": "0.24.67", "ref": "ps-free anchor"},
+      "guard": {"kind": "test", "ref": "TestLookupAnchorProcessFallsBackWhenPSDenied"}
+    },
+    {
+      "id": "spool-timeout-full-ledger-read",
+      "title": "relay: no response within 30s on ListAll / GetState / ListTasks",
+      "signature": "no response within 30s|OUTCOME UNKNOWN",
+      "cause": "router ledger and router status read all 13,000+ items (6-20 s per call on the service); concurrent callers exceeded the spool wait.",
+      "status": "resolved",
+      "fix": {"kind": "guide", "text": "Upgrade to 0.24.68 or later (ListActive/CountClosed). Do not blind-retry a mutation: re-query first.", "fixed_in": "0.24.68", "ref": "ListActive"},
+      "guard": {"kind": "test", "ref": "TestListActiveExcludesUnrelatedHistoryKeepsDependencies"}
+    },
+    {
+      "id": "registry-working-tree-drift",
+      "title": "identity is not fully declared / lane flips to WATCH_ONLY after a registry edit",
+      "signature": "identity is not fully declared",
+      "cause": "agents.json was read from a shared working tree, so another session's branch or uncommitted edit changed who the lanes are.",
+      "status": "resolved",
+      "fix": {"kind": "guide", "text": "Run `sirsi router registry sync` to pin the host to origin/main; change the registry only through a PR.", "fixed_in": "0.24.68", "ref": "registry sync"},
+      "guard": {"kind": "test", "ref": "TestRegistryReadsOriginSnapshotOnceSynced"}
+    },
+    {
+      "id": "claim-refused-no-claimable-task",
+      "title": "task claim refused: no claimable task in the ledger",
+      "signature": "no claimable task in the ledger",
+      "cause": "The row is blocked_by a dependency or free-text reason, holds a live lease, or is at the retry ceiling.",
+      "status": "resolved",
+      "fix": {"kind": "guide", "text": "Run `sirsi router task why <agent> <task-id>`; clear blocked_by with `task update --blocked-by \"\"` when true; `task reset-attempts` only after the cause is fixed.", "fixed_in": "0.24.68", "ref": "task why"},
+      "guard": {"kind": "test", "ref": "TestTaskEligibilityExplainsEveryRefusal"}
+    }
+  ]
+}

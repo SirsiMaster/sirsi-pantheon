@@ -1220,6 +1220,9 @@ struct MaatKnownFailureProposalsView: View {
             Text("Recorded \(proposal.createdAtUTC)")
                 .sirsiFont(.caption2)
                 .foregroundStyle(.tertiary)
+            Text(proposal.catalogRelationLabel)
+                .sirsiFont(.caption2)
+                .foregroundStyle(.secondary)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -3862,16 +3865,26 @@ struct MaatKnownFailureProposal: Decodable, Identifiable {
     let status: String
     let createdAtUTC: String
     let catalogSHA256: String
+    let catalogRelation: String?
 
     enum CodingKeys: String, CodingKey {
         case schema, id, title, signature, cause, status
         case createdAtUTC = "created_at_utc"
         case catalogSHA256 = "catalog_sha256"
+        case catalogRelation = "catalog_relation"
     }
 
     var titleOrID: String {
         let normalized = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return normalized.isEmpty ? id : normalized
+    }
+
+    var catalogRelationLabel: String {
+        switch catalogRelation {
+        case .some("current"): "Recorded against the current known-failure catalog"
+        case .some("historical"): "Recorded against a prior catalog · review against current catalog"
+        default: "Catalog generation unavailable"
+        }
     }
 }
 
