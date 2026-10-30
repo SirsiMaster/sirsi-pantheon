@@ -11,6 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - Correct Apollo inventory test fixtures for pre-create receipt-open errors, executable engine modes, and canonical protected-profile paths. Refs: `internal/packageinventorycmd/verify_test.go`; PANTHEON_RULES.md A16; ADR-032.
 - Select a fresh private pre-sign Apollo digest receipt per supported DMG build, share it with the paired PKG, and refuse PKG receipt recapture. Refs: `scripts/new-apollo-digest-receipt.sh`; `scripts/build-dmg.sh`; `scripts/build-pkg.sh`; Makefile; `.github/workflows/release.yml`; `scripts/PACKAGING.md`; PANTHEON_RULES.md A7/A12/A16; ADR-032.
 - Reuse the test's existing error binding after canonicalizing the unsafe-profile fixture root. Refs: `internal/packageinventorycmd/verify_test.go`; PANTHEON_RULES.md A16; ADR-032.
+- Build all three successful adapter fixtures from the complete pinned Stack Lab payload and canonical modes; keep verifier allowlist enforcement unchanged. Refs: `internal/packageinventorycmd/verify_test.go`; `internal/packageinventory/inventory_test.go`; PANTHEON_RULES.md A16; ADR-032.
 
 ## [0.24.147] — 2026-10-30
 

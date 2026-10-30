@@ -166,7 +166,7 @@ func TestReleaseInventoryRequiresFrozenDigests(t *testing.T) {
 }
 
 func TestSignedDevelopmentInventoryKeepsStructureOnlyContract(t *testing.T) {
-	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
+	app, info, pkgInfo, launchAgent, brandLogo := makeCompleteCommandBundle(t)
 	infoBytes := []byte(strings.Replace(string(mustReadFile(t, info)), "</dict>",
 		"<key>SirsiApolloNativeCapability</key><string>disabled</string></dict>", 1))
 	if err := os.WriteFile(info, infoBytes, 0o644); err != nil {
@@ -187,6 +187,7 @@ func TestSignedDevelopmentInventoryKeepsStructureOnlyContract(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	normalizeAdapterFixtureModes(t, app)
 	_, err := Verify(Inputs{App: app, Version: "0.23.9-beta", Build: "20260908", InfoPlist: info,
 		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo,
 		ApolloCapability: "disabled", RequireCodeSignature: true})
@@ -321,8 +322,7 @@ func TestFrozenApolloInputDigestsRejectReferenceAndCandidateSubstitution(t *test
 }
 
 func TestVerifyFreezesInitialInfoDigestBeforeMatchingCandidateCanChange(t *testing.T) {
-	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
-	makeCommandBundleEnginesExecutable(t, app)
+	app, info, pkgInfo, launchAgent, brandLogo := makeCompleteCommandBundle(t)
 	inputs := Inputs{App: app, Version: "0.23.9-beta", Build: "20260908", InfoPlist: info,
 		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo, ApolloCapability: "legacy-development"}
 	_, frozen, err := VerifyWithFrozenDigests(inputs)
@@ -361,8 +361,7 @@ func mustReadFile(t *testing.T, path string) []byte {
 }
 
 func TestVerifyFreezesInitialProfileDigestBeforeMatchingCandidateCanChange(t *testing.T) {
-	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
-	makeCommandBundleEnginesExecutable(t, app)
+	app, info, pkgInfo, launchAgent, brandLogo := makeCompleteCommandBundle(t)
 	infoBytes := mustReadFile(t, info)
 	infoBytes = []byte(strings.Replace(string(infoBytes), "</dict>", "<key>SirsiApolloNativeCapability</key><string>enabled</string></dict>", 1))
 	if err := os.WriteFile(info, infoBytes, 0o644); err != nil {
@@ -387,6 +386,7 @@ func TestVerifyFreezesInitialProfileDigestBeforeMatchingCandidateCanChange(t *te
 	if err := os.WriteFile(profileResource, profileBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	normalizeAdapterFixtureModes(t, app)
 	inputs := Inputs{App: app, Version: "0.23.9-beta", Build: "20260908", InfoPlist: info,
 		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo,
 		ApolloCapability: "enabled", ApolloProfile: profilePath}
@@ -548,12 +548,57 @@ func makeCommandBundle(t *testing.T) (string, string, string, string, string) {
 	return app, info, pkgInfo, launchAgent, brandLogo
 }
 
-func makeCommandBundleEnginesExecutable(t *testing.T, app string) {
+func makeCompleteCommandBundle(t *testing.T) (string, string, string, string, string) {
 	t.Helper()
-	for _, name := range []string{"sirsi", "sirsi-menubar"} {
-		path := filepath.Join(app, "Contents", "MacOS", name)
-		if err := os.Chmod(path, 0o755); err != nil {
+	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
+	stackLabDir := filepath.Join(app, "Contents", "Resources", "StackLab")
+	if err := os.MkdirAll(filepath.Join(stackLabDir, "v2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{
+		"anubis-trash-receipt-v1.json":                 []byte(`{"schema":"sirsi.stacklab.recipe.v1","id":"stacklab.recipe.anubis-trash-receipt"}`),
+		"apollo-sne-telemetry-v1.json":                 []byte(`{"schema":"sirsi.stacklab.apollo-telemetry.v1"}`),
+		"maat-system-one-recipe-v1.json":               []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"maat-pod-authority-service-recipe-v1.json":    []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"maat-wing-v1.json":                            []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
+		"mercury-consumer-recipe-v1.json":              []byte(`{"schema":"sirsi.stacklab.recipe.v1","id":"stacklab.recipe.mercury-consumer"}`),
+		"model-router-generation-requirements-v1.json": []byte(`{"schema":"stacklab.module.model-router-generation-requirements.v1","component":"model-router-generation-requirements-v1"}`),
+		"model-router-v1-recipe-v1.json":               []byte(`{"schema":"sirsi.stacklab.recipe.v1","id":"stacklab.recipe.model-router-v1"}`),
+		"native-stacklab-surface-recipe-v1.json":       []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"pantheon-native-workspace-v1.json":            []byte(`{"schema":"sirsi.stacklab.recipe.v1","id":"stacklab.recipe.pantheon-native-workspace"}`),
+		"pantheon.pt-wing-001-wing-v1.json":            []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
+		"pantheon-release-artifact-recipe-v1.json":     []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"ra-horus-fabric-recipe-v1.json":               []byte(`{"schema":"sirsi.stacklab.recipe.v1"}`),
+		"ra-horus-fabric-wing-v1.json":                 []byte(`{"schema":"sirsi.stacklab.wing.v1"}`),
+		"v2/PROVENANCE.md":                             []byte("Stack Lab provenance\n"),
+		"v2/wing.schema.json":                          []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema"}`),
+	}
+	for relative, contents := range files {
+		path := filepath.Join(stackLabDir, filepath.FromSlash(relative))
+		if err := os.WriteFile(path, contents, 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+	normalizeAdapterFixtureModes(t, app)
+	return app, info, pkgInfo, launchAgent, brandLogo
+}
+
+func normalizeAdapterFixtureModes(t *testing.T, app string) {
+	t.Helper()
+	err := filepath.WalkDir(app, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return os.Chmod(path, 0o755)
+		}
+		mode := os.FileMode(0o644)
+		if path == filepath.Join(app, "Contents", "MacOS", "sirsi") || path == filepath.Join(app, "Contents", "MacOS", "sirsi-menubar") {
+			mode = 0o755
+		}
+		return os.Chmod(path, mode)
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
