@@ -20,6 +20,9 @@ func newRouterFabricCommand(read func(context.Context) (ledger.FabricBoard, erro
 		if err != nil {
 			return fmt.Errorf("fabric unavailable: %w", err)
 		}
+		if err := cmd.Context().Err(); err != nil {
+			return fmt.Errorf("fabric unavailable: %w", err)
+		}
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(value)
 	}}
 }

@@ -16,3 +16,7 @@ acquisition ceiling is unchanged.
 The stage report contains no task, registry, thread, host-health or database
 payload. The error still unwraps to its context cause so callers can classify
 `context.Canceled` and `context.DeadlineExceeded` with `errors.Is`.
+If another read error races cancellation, callers can also classify that
+original error with `errors.Is`; the public message remains limited to the
+fixed stage and elapsed duration. The command checks cancellation again before
+writing JSON, so a canceled read that returned a board does not publish it.

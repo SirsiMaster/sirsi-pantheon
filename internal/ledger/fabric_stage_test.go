@@ -3,9 +3,95 @@ package ledger
 import (
 	"context"
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
+
+func newFinalizerFixture(read func(context.Context) (FabricRead, error)) (*FabricGenerationProducer, *fabricOperation, context.CancelFunc) {
+	p := NewFabricGenerationProducerContext(context.Background(), read, "fixture")
+	ctx, cancel := context.WithCancel(context.Background())
+	trace := &fabricStageTrace{}
+	ctx = context.WithValue(ctx, fabricStageTraceKey{}, trace)
+	waiter := &fabricWaiter{ctx: context.Background()}
+	op := &fabricOperation{ctx: ctx, cancel: cancel, done: make(chan struct{}), waiters: map[*fabricWaiter]struct{}{waiter: {}}, trace: trace, unfiltered: true}
+	p.previous = map[string]string{"lane\x00task-000": "in-progress"}
+	p.events = []FabricTransition{{At: "2026-10-25T12:00:00Z", Agent: "lane", TaskID: "prior", From: "pending", To: "blocked"}}
+	p.completed, p.sequence, p.seeded, p.instance = 7, 11, true, "prior-instance"
+	p.active = op
+	return p, op, cancel
+}
+
+func assertFinalizerFailurePreservesBaseline(t *testing.T, p *FabricGenerationProducer, op *fabricOperation, wantStage FabricStage, wantCauses ...error) {
+	t.Helper()
+	if op.generation != nil || op.err == nil {
+		t.Fatalf("failed finalization published a generation: generation=%v err=%v", op.generation, op.err)
+	}
+	var attributed *FabricStageError
+	if !errors.As(op.err, &attributed) || attributed.Stage != wantStage {
+		t.Fatalf("finalized error lost stage %q: %v", wantStage, op.err)
+	}
+	for _, cause := range wantCauses {
+		if !errors.Is(op.err, cause) {
+			t.Fatalf("finalized error lost cause %v: %v", cause, op.err)
+		}
+	}
+	if !strings.HasPrefix(op.err.Error(), "fabric cancellation observed during stage "+string(wantStage)+" after ") {
+		t.Fatalf("finalized public error is not fixed-stage text: %v", op.err)
+	}
+	if strings.Contains(op.err.Error(), "private-sentinel-payload") {
+		t.Fatalf("finalized public error exposed source payload: %v", op.err)
+	}
+	if p.sequence != 11 || !p.seeded || p.completed != 7 || p.instance != "prior-instance" ||
+		!reflect.DeepEqual(p.previous, map[string]string{"lane\x00task-000": "in-progress"}) ||
+		!reflect.DeepEqual(p.events, []FabricTransition{{At: "2026-10-25T12:00:00Z", Agent: "lane", TaskID: "prior", From: "pending", To: "blocked"}}) {
+		t.Fatalf("failed finalization changed prior history: sequence=%d seeded=%v completed=%d previous=%v events=%v", p.sequence, p.seeded, p.completed, p.previous, p.events)
+	}
+}
+
+func TestFabricFinalizerAttributesBareCancellationAfterProjection(t *testing.T) {
+	p, op, cancel := newFinalizerFixture(func(context.Context) (FabricRead, error) {
+		return fabricStatusRead("done"), nil
+	})
+	defer p.Close()
+	p.runFabricOperation(op, func(FabricRead) error {
+		cancel()
+		return nil
+	})
+	assertFinalizerFailurePreservesBaseline(t, p, op, FabricStageProjection, context.Canceled)
+}
+
+func TestFabricFinalizerPreservesContextAndSentinelRace(t *testing.T) {
+	sentinel := errors.New("private-sentinel-payload")
+	var cancel context.CancelFunc
+	p, op, stop := newFinalizerFixture(func(context.Context) (FabricRead, error) {
+		cancel()
+		return FabricRead{}, sentinel
+	})
+	cancel = stop
+	defer p.Close()
+	p.runFabricOperation(op, nil)
+	assertFinalizerFailurePreservesBaseline(t, p, op, FabricStageSnapshot, context.Canceled, sentinel)
+}
+
+func TestFabricFinalizerRetainsExistingStageError(t *testing.T) {
+	sentinel := errors.New("private-sentinel-payload")
+	var cancel context.CancelFunc
+	want := &FabricStageError{Stage: FabricStageNodeStatus, Elapsed: 17 * time.Millisecond, Cause: sentinel}
+	p, op, stop := newFinalizerFixture(func(context.Context) (FabricRead, error) {
+		cancel()
+		return FabricRead{}, want
+	})
+	cancel = stop
+	defer p.Close()
+	p.runFabricOperation(op, nil)
+	assertFinalizerFailurePreservesBaseline(t, p, op, FabricStageNodeStatus, context.Canceled, sentinel)
+	var got *FabricStageError
+	if !errors.As(op.err, &got) || got.Elapsed != want.Elapsed {
+		t.Fatalf("finalizer replaced the existing stage timing: got=%+v want=%+v", got, want)
+	}
+}
 
 func TestFabricReadStageDeadlineAttribution(t *testing.T) {
 	for _, stage := range []FabricStage{

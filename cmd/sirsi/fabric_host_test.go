@@ -103,6 +103,26 @@ func TestRouterFabricDeadlineKeepsJSONStdoutEmpty(t *testing.T) {
 	}
 }
 
+func TestRouterFabricRechecksCancellationBeforeJSON(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := &bytes.Buffer{}
+	cmd := newRouterFabricCommand(func(got context.Context) (ledger.FabricBoard, error) {
+		if got != ctx {
+			return ledger.FabricBoard{}, errors.New("command context was not propagated")
+		}
+		cancel()
+		return ledger.FabricFrom(ledger.Snapshot{GeneratedAt: "2026-10-25T12:00:00Z"}, nil, "fixture"), nil
+	})
+	cmd.SetContext(ctx)
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	err := cmd.Execute()
+	if !errors.Is(err, context.Canceled) || out.Len() != 0 {
+		t.Fatalf("canceled command must refuse JSON: err=%v stdout=%q", err, out.String())
+	}
+}
+
 func TestFabricHostEngineMachineBinding(t *testing.T) {
 	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {

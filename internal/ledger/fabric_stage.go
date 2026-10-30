@@ -70,11 +70,36 @@ func (t *fabricStageTrace) wrap(err error) error {
 	if err == nil || (!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)) {
 		return err
 	}
+	var attributed *FabricStageError
+	if errors.As(err, &attributed) {
+		return err
+	}
 	stage, elapsed := t.snapshot()
 	if stage == "" {
 		return err
 	}
 	return &FabricStageError{Stage: stage, Elapsed: elapsed, Cause: err}
+}
+
+func (t *fabricStageTrace) finalize(err, contextErr error) error {
+	if contextErr == nil {
+		return t.wrap(err)
+	}
+	var attributed *FabricStageError
+	if errors.As(err, &attributed) {
+		if errors.Is(err, contextErr) {
+			return err
+		}
+		return &FabricStageError{
+			Stage:   attributed.Stage,
+			Elapsed: attributed.Elapsed,
+			Cause:   errors.Join(contextErr, err),
+		}
+	}
+	if err != nil && !errors.Is(err, contextErr) {
+		contextErr = errors.Join(contextErr, err)
+	}
+	return t.wrap(contextErr)
 }
 
 // FabricReadStage marks a fixed, low-cardinality acquisition stage. The trace

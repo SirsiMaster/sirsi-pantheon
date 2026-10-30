@@ -245,14 +245,13 @@ func (p *FabricGenerationProducer) runFabricOperation(op *fabricOperation, valid
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// Cancellation and successful commit are linearized at this lock boundary.
-	if e := op.ctx.Err(); e != nil && err == nil {
-		err = op.trace.wrap(e)
-	}
+	contextErr := op.ctx.Err()
 	if p.active != op || op.abandoned || liveFabricWaiters(op) == 0 {
-		if err == nil {
-			err = op.trace.wrap(context.Canceled)
+		if contextErr == nil {
+			contextErr = context.Canceled
 		}
 	}
+	err = op.trace.finalize(err, contextErr)
 	if err == nil {
 		p.previous, p.events, p.completed, p.seeded = candidate.previous, candidate.events, candidate.completed, true
 		p.instance = candidate.instance

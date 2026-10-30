@@ -16,5 +16,6 @@ Fabric reads propagate their operation context through snapshot, node-status,
 operational-agent, and runtime-classification stages. `FabricReadStage` records
 only a fixed stage code and monotonic elapsed duration on the active producer
 operation; deadline attribution describes the stage active when cancellation
-was observed, not a measured share of the total acquisition budget. Keep public
-errors payload-free and preserve the wrapped context cause.
+was observed, not a measured share of the total acquisition budget. Finalize
+the worker result with both the context cause and any distinct original error;
+the public stage error stays payload-free while unwrapping both causes.
