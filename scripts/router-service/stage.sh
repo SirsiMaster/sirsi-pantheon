@@ -52,14 +52,20 @@ if [ -z "$PREV" ]; then
   echo "PREV="; echo "NEW=$(gcloud run services describe sirsi-router "${RP[@]}" --format="value(status.latestReadyRevisionName)")"
   exit 0
 fi
-TAG="stg-$(git -C "$ROOT" rev-parse --short=8 HEAD)"
-gcloud run deploy sirsi-router --source "$CTX" "${RP[@]}" --no-traffic --tag "$TAG" --quiet "$@"
+# A fresh revision identity binds the deployment request to the tag readback.
+# Cloud Run revision names are service name + suffix; revisions are immutable.
+nonce=$(openssl rand -hex 12) || { echo "stage: cannot generate revision nonce" >&2; exit 1; }
+[[ "$nonce" =~ ^[0-9a-f]{24}$ ]] || { echo "stage: invalid revision nonce" >&2; exit 1; }
+SUFFIX="stg-$(git -C "$ROOT" rev-parse --short=8 HEAD)-$nonce"
+TAG="$SUFFIX"
+EXPECTED="sirsi-router-$SUFFIX"
+gcloud run deploy sirsi-router --source "$CTX" "${RP[@]}" --no-traffic --quiet "$@" --tag "$TAG" --revision-suffix "$SUFFIX"
 # Bind the URL actually probed to its tagged revision, while confirming the
 # original serving target remains intact. Never use global latestReady here.
 staged_target() {
   local service target
   service=$(gcloud run services describe sirsi-router "${RP[@]}" --format=json) || return 1
-  target=$(jq -ser --arg tag "$TAG" --arg prev "$PREV" '
+  target=$(jq -ser --arg tag "$TAG" --arg prev "$PREV" --arg expected "$EXPECTED" '
     if length != 1 or .[0].metadata.name != "sirsi-router" or (.[0].status.traffic | type) != "array" then error("invalid service") else .[0].status.traffic end
     | if all(.[]; type == "object" and
         (((.percent | type) == "number" and .percent >= 0 and .percent <= 100 and (.percent | floor) == .percent)
@@ -70,7 +76,7 @@ staged_target() {
     | if ($serving | length) == 1 and $serving[0].percent == 100 and $serving[0].revisionName == $prev
       and ($staged | length) == 1 and ($staged[0].percent // 0) == 0
       and ($staged[0].revisionName | type == "string" and test("^[a-z]([-a-z0-9]*[a-z0-9])?$"))
-      and $staged[0].revisionName != $prev
+      and $staged[0].revisionName == $expected and $expected != $prev
       and ($staged[0].url | type == "string" and test("^https://[a-z0-9][a-z0-9.-]*[a-z0-9]$"))
       then [$staged[0].revisionName, $staged[0].url] | @tsv else error("ambiguous staged or serving traffic") end
   ' <<<"$service") || return 1
@@ -88,3 +94,4 @@ CURRENT_STAGED=$(staged_target) || { echo "stage: staged tag or serving traffic 
 gcloud run services update-traffic sirsi-router "${RP[@]}" --to-revisions "$NEW=100" --quiet
 gcloud run services update-traffic sirsi-router "${RP[@]}" --remove-tags "$TAG" --quiet >/dev/null
 echo "PREV=$PREV"; echo "NEW=$NEW"
+echo "RACE=readbacks are not atomic with health probes or traffic update; single publisher required"
