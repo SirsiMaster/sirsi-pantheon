@@ -29,8 +29,14 @@ struct MaatWorkspaceRecoveryFrame: View {
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Ma'at")
-            localMemory
-            if let localDiagnostics { localDiagnostics }
+            MaybeScroll {
+                VStack(spacing: 0) {
+                    localMemory
+                    if let localDiagnostics { localDiagnostics }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 220)
             content
         }
     }

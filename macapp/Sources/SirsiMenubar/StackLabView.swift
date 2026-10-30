@@ -8,6 +8,7 @@ import SwiftUI
 // makes an incomplete registry actionable instead of leaving an operator with
 // a command and no route through the product.
 struct StackLabDoctorView: View {
+    @EnvironmentObject private var nav: Nav
     @ObservedObject var engine: SirsiEngine
     @State private var report: StackLabReport?
     @State private var loadError: String?
@@ -71,26 +72,28 @@ struct StackLabDoctorView: View {
     }
 
     private func failureState(_ error: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .sirsiFont(24, weight: .semibold)
-                .foregroundStyle(.orange)
-            Text("Stack Lab needs a fresh read")
-                .sirsiFont(.headline)
-            Text(error)
-                .sirsiFont(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Try again") { Task { await load() } }
-                .buttonStyle(.borderedProminent)
-                .tint(gold)
-            NavLink { MaatWorkspaceView(engine: engine) } label: {
-                Label("Open Ma'at evidence", systemImage: "checkmark.seal")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .sirsiFont(24, weight: .semibold)
+                    .foregroundStyle(.orange)
+                Text("Stack Lab needs a fresh read")
+                    .sirsiFont(.headline)
+                Text(error)
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Try again") { Task { await load() } }
+                    .buttonStyle(ResultActionButtonStyle(prominent: true))
+                Button { nav.push(MaatWorkspaceView(engine: engine)) } label: {
+                    Label("Open Ma'at evidence", systemImage: "checkmark.seal")
+                }
+                .buttonStyle(ResultActionButtonStyle(prominent: false))
             }
-            .buttonStyle(.bordered)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func reportBody(_ report: StackLabReport) -> some View {

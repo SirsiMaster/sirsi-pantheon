@@ -194,9 +194,18 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                VStack { unavailableState(loadError); screenImportControl; LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),appUpdate:engine.maatCaseOperations.appUpdate) }
+                MaybeScroll {
+                    VStack(spacing: 12) {
+                        unavailableState(loadError)
+                        screenImportControl
+                        LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),appUpdate:engine.maatCaseOperations.appUpdate)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             } else {
-                unavailableState("Pantheon did not receive a Ma'at Casebook projection. No System One result was inferred.")
+                MaybeScroll {
+                    unavailableState("Pantheon did not receive a Ma'at Casebook projection. No System One result was inferred.")
+                }
             }
         }
         .task {
@@ -266,7 +275,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
             }
             .buttonStyle(.bordered)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
     }
 

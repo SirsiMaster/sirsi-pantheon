@@ -232,7 +232,8 @@
         "cmd/sirsi/maattriage_request_discovery_test.go",
         "macapp/Tests/SirsiMenubarTests/MaatDiagnosticCorrelationFixture.swift",
         "macapp/Tests/SirsiMenubarTests/MaatDiagnosticCorrelationTests.swift",
-        "internal/maat/memory_app_diagnostic_composition_test.go"
+        "internal/maat/memory_app_diagnostic_composition_test.go",
+        "macapp/Tests/SirsiMenubarTests/FeaturePanelViewportTests.swift"
       ],
       "inputs": [
         "one complete local Doctor report",
@@ -379,7 +380,8 @@
         "cmd/sirsi/update_app_darwin_test.go",
         "cmd/sirsi/selfupdate_schema_test.go",
         "internal/maat/memory_diagnostic_test.go",
-        "internal/maat/memory_app_diagnostic_composition_test.go"
+        "internal/maat/memory_app_diagnostic_composition_test.go",
+        "macapp/Tests/SirsiMenubarTests/FeaturePanelViewportTests.swift"
       ],
       "inputs": [
         "typed local failure signature",

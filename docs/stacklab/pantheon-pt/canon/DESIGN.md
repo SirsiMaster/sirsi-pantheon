@@ -47,6 +47,11 @@ Repair sheets reserve a usable viewport before loading completes (minimum
 while the header and recheck control remain outside that scroll region. These
 constraints belong to the sheet hosts, not embedded navigation destinations.
 
+Long recovery and unavailable states also retain a scrolling path to their last
+control. The [feature-panel viewport contract](NATIVE_PANEL_VIEWPORTS.md) records
+the Ma’at, access-guide, Apollo, Stack Lab and Osiris composition, native test
+requirements, and the distinction between opening coverage and installed proof.
+
 The application provides real macOS Pantheon, File, Edit, View, Window and Help
 menus. File selects a Git project through the existing project workflow and
 closes the existing window. Edit commands use the native first responder.
