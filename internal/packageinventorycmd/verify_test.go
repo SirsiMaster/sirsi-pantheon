@@ -1,12 +1,48 @@
 package packageinventorycmd
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestHashCanonicalFileUsesStableNoFollowDescriptor(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "bundle", "Contents", "MacOS")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "sirsi")
+	content := []byte("synthetic engine bytes")
+	if err := os.WriteFile(path, content, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("%x", sha256.Sum256(content))
+	got, err := HashCanonicalFile(path)
+	if err != nil || got != want {
+		t.Fatalf("stable descriptor hash=%q err=%v, want %q", got, err, want)
+	}
+	linked := filepath.Join(dir, "sirsi-hardlink")
+	if err := os.Link(path, linked); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := HashCanonicalFile(path); err == nil || !strings.Contains(err.Error(), "singly-linked") {
+		t.Fatalf("hard-linked engine accepted: %v", err)
+	}
+	symlinkedParent := filepath.Join(root, "Contents")
+	if err := os.Symlink(filepath.Join(root, "bundle", "Contents"), symlinkedParent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := HashCanonicalFile(filepath.Join(symlinkedParent, "MacOS", "sirsi")); err == nil {
+		t.Fatal("symlinked engine ancestor accepted")
+	}
+}
 
 func TestVerifyRejectsDeclaredVersionBuildMismatch(t *testing.T) {
 	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)

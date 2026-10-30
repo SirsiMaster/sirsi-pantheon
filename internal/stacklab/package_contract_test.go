@@ -103,7 +103,7 @@ func TestPackageBuildersUseOneCanonicalInventory(t *testing.T) {
 	if strings.Contains(string(dmg), "go build -ldflags=\"${GO_LDFLAGS}\" -o \"${BUILD_DIR}/sirsi-menubar\"") {
 		t.Fatal("DMG builder retains a Go menubar fallback instead of failing closed on the canonical Swift payload")
 	}
-	if strings.Index(string(dmg), `"${BUILD_DIR}/sirsi" package-inventory`) < 0 || strings.Index(string(dmg), `"${BUILD_DIR}/sirsi" package-inventory`) > strings.Index(string(dmg), "# --- Code signing ---") {
+	if !strings.Contains(string(dmg), `"${BUILD_DIR}/sirsi" package-inventory`) || strings.Index(string(dmg), `"${BUILD_DIR}/sirsi" package-inventory`) > strings.Index(string(dmg), "# --- Code signing ---") {
 		t.Fatal("DMG builder must inventory capability/profile before signing")
 	}
 
@@ -125,7 +125,7 @@ func TestPackageBuildersUseOneCanonicalInventory(t *testing.T) {
 	if strings.Contains(string(pkg), "/usr/bin/xattr -cr") {
 		t.Fatal("PKG builder must not broadly erase protected macOS metadata; AppleDouble scans are the transport-metadata authority")
 	}
-	if strings.Index(string(pkg), `"${BUILD_DIR}/sirsi" package-inventory`) < 0 || strings.Index(string(pkg), `"${BUILD_DIR}/sirsi" package-inventory`) > strings.Index(string(pkg), "COPYFILE_DISABLE=1 /usr/bin/pkgbuild") {
+	if !strings.Contains(string(pkg), `"${BUILD_DIR}/sirsi" package-inventory`) || strings.Index(string(pkg), `"${BUILD_DIR}/sirsi" package-inventory`) > strings.Index(string(pkg), "COPYFILE_DISABLE=1 /usr/bin/pkgbuild") {
 		t.Fatal("PKG builder must inventory capability/profile before package signing")
 	}
 }

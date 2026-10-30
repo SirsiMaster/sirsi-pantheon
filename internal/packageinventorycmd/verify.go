@@ -3,6 +3,9 @@
 package packageinventorycmd
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -16,6 +19,7 @@ import (
 )
 
 const maxCanonicalInput = 32 << 20
+const maxCanonicalHashInput = 1 << 30
 
 type Inputs struct {
 	App                  string
@@ -131,6 +135,63 @@ func ReadCanonicalFile(path string) ([]byte, error) {
 		return nil, errors.New("file parent identity changed during read")
 	}
 	return data, nil
+}
+
+// HashCanonicalFile hashes one bounded regular file through the same retained,
+// no-follow component walk as ReadCanonicalFile. Two descriptor reads and
+// before/after file, name, and parent checks reject a changing hash source.
+func HashCanonicalFile(path string) (string, error) {
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return "", errors.New("canonical hash input path must be absolute and clean")
+	}
+	parentFD, leaf, err := openParent(path)
+	if err != nil {
+		return "", err
+	}
+	defer unix.Close(parentFD)
+	var parentBefore unix.Stat_t
+	if err := unix.Fstat(parentFD, &parentBefore); err != nil {
+		return "", err
+	}
+	fd, err := unix.Openat(parentFD, leaf, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return "", err
+	}
+	file := os.NewFile(uintptr(fd), path)
+	if file == nil {
+		unix.Close(fd)
+		return "", errors.New("cannot retain canonical hash descriptor")
+	}
+	defer file.Close()
+	var before unix.Stat_t
+	if err := unix.Fstat(fd, &before); err != nil || before.Mode&unix.S_IFMT != unix.S_IFREG || before.Nlink != 1 || before.Size <= 0 || before.Size > maxCanonicalHashInput {
+		return "", errors.New("canonical hash input must be a bounded singly-linked regular file")
+	}
+	first := sha256.New()
+	n, err := io.Copy(first, io.LimitReader(file, maxCanonicalHashInput+1))
+	if err != nil || n != before.Size || n > maxCanonicalHashInput {
+		return "", errors.New("canonical hash input changed size or could not be read")
+	}
+	if _, err := unix.Seek(fd, 0, 0); err != nil {
+		return "", err
+	}
+	second := sha256.New()
+	confirmed, err := io.Copy(second, io.LimitReader(file, maxCanonicalHashInput+1))
+	if err != nil || confirmed != n || !bytes.Equal(first.Sum(nil), second.Sum(nil)) {
+		return "", errors.New("canonical hash input changed during confirmation read")
+	}
+	var after, named, parentAfter unix.Stat_t
+	if unix.Fstat(fd, &after) != nil || !sameHashSnapshot(before, after) ||
+		unix.Fstatat(parentFD, leaf, &named, unix.AT_SYMLINK_NOFOLLOW) != nil || !sameHashSnapshot(before, named) ||
+		unix.Fstat(parentFD, &parentAfter) != nil || !sameHashSnapshot(parentBefore, parentAfter) {
+		return "", errors.New("canonical hash input or retained parent changed during inspection")
+	}
+	return hex.EncodeToString(first.Sum(nil)), nil
+}
+
+func sameHashSnapshot(a, b unix.Stat_t) bool {
+	return a.Dev == b.Dev && a.Ino == b.Ino && a.Mode == b.Mode && a.Nlink == b.Nlink &&
+		a.Uid == b.Uid && a.Gid == b.Gid && a.Size == b.Size && a.Mtim == b.Mtim && a.Ctim == b.Ctim
 }
 
 func openParent(path string) (int, string, error) {

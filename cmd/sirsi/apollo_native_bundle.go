@@ -1,18 +1,14 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/packageinventory"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/packageinventorycmd"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
-	"golang.org/x/sys/unix"
 )
 
 const managedPantheonApp = "/Applications/Pantheon.app"
@@ -95,36 +91,9 @@ func currentApolloBundle() (installedApolloBundle, error) {
 		packageinventorycmd.ReadCanonicalFile, apolloNativeFileSHA256, os.Lstat)
 }
 
-// apolloNativeFileSHA256 hashes a canonical regular file without executing it
-// or following a final symlink. Identity is rechecked after the bounded read.
+// apolloNativeFileSHA256 binds file bytes through the package-inventory
+// component walker. This is file identity evidence, not later process-image
+// launch attestation.
 func apolloNativeFileSHA256(path string) (string, error) {
-	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
-		return "", errors.New("canonical absolute Apollo engine path required")
-	}
-	parent, err := filepath.EvalSymlinks(filepath.Dir(path))
-	if err != nil || parent != filepath.Dir(path) {
-		return "", errors.New("linked Apollo engine parent refused")
-	}
-	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return "", err
-	}
-	file := os.NewFile(uintptr(fd), path)
-	if file == nil {
-		unix.Close(fd)
-		return "", errors.New("cannot retain Apollo engine descriptor")
-	}
-	defer file.Close()
-	var before, after, named unix.Stat_t
-	if unix.Fstat(fd, &before) != nil || before.Mode&unix.S_IFMT != unix.S_IFREG || before.Nlink != 1 || before.Size <= 0 || before.Size > 1<<30 {
-		return "", errors.New("bounded singly-linked Apollo engine required")
-	}
-	h := sha256.New()
-	n, err := io.Copy(h, io.LimitReader(file, (1<<30)+1))
-	if err != nil || n != before.Size || unix.Fstat(fd, &after) != nil || unix.Lstat(path, &named) != nil ||
-		before.Dev != after.Dev || before.Ino != after.Ino || before.Size != after.Size || before.Mtim != after.Mtim ||
-		after.Dev != named.Dev || after.Ino != named.Ino || after.Mode != named.Mode {
-		return "", errors.New("Apollo engine changed during identity read")
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return packageinventorycmd.HashCanonicalFile(path)
 }
