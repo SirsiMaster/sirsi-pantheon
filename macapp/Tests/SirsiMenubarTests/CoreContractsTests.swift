@@ -32,6 +32,32 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertTrue(StackLabReadFailure.message(for: empty).contains("exit 1"))
     }
 
+    func testStackLabMissingGitHubCLIDiagnosticStaysUnknownWithStaticGuidance() {
+        let raw = #"{"diagnostic":{"code":"missing_gh"}}"#
+        let read = SirsiEngine.JSONCommandRead(data: Data(raw.utf8), exitStatus: 1, timedOut: false, launchError: nil)
+
+        XCTAssertNil(StackLabReport.decode(read.data))
+        let guidance = StackLabReadFailure.message(for: read)
+        XCTAssertTrue(guidance.contains("brew install gh"))
+        XCTAssertTrue(guidance.contains("No registry result was inferred"))
+    }
+
+    func testStackLabUnknownAndMalformedDiagnosticsNeverDecodeAsCleanReports() {
+        let payloads = [
+            #"{"diagnostic":{"code":"future_error"},"roster":[]}"#,
+            #"{"diagnostic":{"code":null}}"#,
+            #"{"diagnostic":null,"roster":[]}"#,
+            #"{"diagnostic":{"detail":"bad"}}"#,
+        ]
+
+        for raw in payloads {
+            let data = Data(raw.utf8)
+            XCTAssertNil(StackLabReport.decode(data), "diagnostic payload became a report: \(raw)")
+            let read = SirsiEngine.JSONCommandRead(data: data, exitStatus: 1, timedOut: false, launchError: nil)
+            XCTAssertTrue(StackLabReadFailure.message(for: read).contains("did not infer a registry result"))
+        }
+    }
+
     func testFleetWorkspaceMetadataDescribesWorkerLanesNotMachineInventory() {
         let fleet = PantheonWorkspace.fleet
         XCTAssertEqual(fleet.detail, "Worker lanes, task progress, and supervision states")
