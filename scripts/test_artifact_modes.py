@@ -147,9 +147,106 @@ class ArtifactModesTests(unittest.TestCase):
         dmg = (scripts / "build-dmg.sh").read_text()
         pkg = (scripts / "build-pkg.sh").read_text()
         self.assertLess(dmg.index('artifact_modes.py" --bundle "${BUNDLE_DIR}"'), dmg.index("# --- Code signing ---"))
+        self.assertLess(dmg.index('"${BUILD_DIR}/sirsi" package-inventory'), dmg.index("# --- Code signing ---"))
         self.assertIn('artifact_modes.py" --bundle "${BUNDLE_DIR}" --check', dmg)
         self.assertLess(pkg.index('artifact_modes.py" --payload "$PAYLOAD_ROOT"'), pkg.index('COPYFILE_DISABLE=1 /usr/bin/pkgbuild'))
+        self.assertLess(pkg.index('"${BUILD_DIR}/sirsi" package-inventory'), pkg.index('COPYFILE_DISABLE=1 /usr/bin/pkgbuild'))
         self.assertIn('artifact_modes.py" --payload "$EXPANDED_ROOT/Payload" --check', pkg)
+
+    def test_apollo_digest_selection_is_fresh_for_repeated_same_version_builds(self):
+        selector = Path(__file__).with_name("new-apollo-digest-receipt.sh")
+        same_build_output = self.root / "0.24.147-arm64"
+        selected = []
+        for _ in range(2):
+            result = subprocess.run(
+                ["/bin/bash", str(selector), str(same_build_output)],
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            receipt = Path(result.stdout.strip())
+            self.assertTrue(receipt.is_absolute())
+            self.assertFalse(receipt.exists())
+            self.assertTrue(receipt.parent.is_dir())
+            selected.append(receipt)
+        self.assertNotEqual(selected[0], selected[1])
+
+    def test_supported_paired_builders_share_one_selected_receipt_without_pkg_recapture(self):
+        root = Path(__file__).resolve().parent.parent
+        makefile = (root / "Makefile").read_text()
+        workflow = (root / ".github/workflows/release.yml").read_text()
+        dmg = (root / "scripts/build-dmg.sh").read_text()
+        pkg = (root / "scripts/build-pkg.sh").read_text()
+
+        def target_block(name):
+            lines = makefile.splitlines()
+            start = next(i for i, line in enumerate(lines) if line == name + ":")
+            block = [lines[start]]
+            for line in lines[start + 1:]:
+                if line and not line[0].isspace():
+                    break
+                block.append(line)
+            return "\n".join(block)
+
+        for name in ("dmg-dev", "release-dmg"):
+            with self.subTest(target=name):
+                block = target_block(name)
+                self.assertEqual(block.count("new-apollo-digest-receipt.sh"), 1)
+                self.assertEqual(block.count('PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt"'), 1)
+                self.assertIn("scripts/build-dmg.sh", block)
+
+        for name in ("pkg-dev", "release-pkg"):
+            with self.subTest(target=name):
+                block = target_block(name)
+                self.assertEqual(block.count("new-apollo-digest-receipt.sh"), 1)
+                self.assertEqual(block.count('PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt"'), 2)
+                self.assertIn("scripts/build-dmg.sh", block)
+                self.assertIn("scripts/build-pkg.sh", block)
+
+        self.assertIn('PANTHEON_APOLLO_DIGEST_RECEIPT="$(bash scripts/new-apollo-digest-receipt.sh "$RUNNER_TEMP")"', workflow)
+        self.assertIn("export PANTHEON_APOLLO_DIGEST_RECEIPT", workflow)
+        self.assertLess(workflow.index("new-apollo-digest-receipt.sh"), workflow.index("scripts/build-dmg.sh --release"))
+        self.assertLess(workflow.index("scripts/build-dmg.sh --release"), workflow.index("scripts/build-pkg.sh --release"))
+        self.assertIn('--write-frozen-digests "$FROZEN_APOLLO_DIGESTS"', dmg)
+        self.assertNotIn("--write-frozen-digests", pkg)
+        self.assertNotIn('apollo-input-digests-${VERSION}-${ARCH}.txt', dmg + pkg)
+        self.assertIn("PKG requires an existing regular pre-sign digest receipt", pkg)
+
+    def test_release_apollo_capability_requires_explicit_profile_pairing(self):
+        scripts = Path(__file__).resolve().parent
+        for name in ("build-dmg.sh", "build-pkg.sh"):
+            source = (scripts / name).read_text()
+            self.assertIn("release requires PANTHEON_APOLLO_CAPABILITY=enabled|disabled", source)
+            self.assertIn("enabled Apollo capability requires an absolute regular non-symlink profile", source)
+            self.assertIn("disabled Apollo capability forbids PANTHEON_APOLLO_PROFILE", source)
+            self.assertIn("--apollo-capability", source)
+            self.assertIn('elif [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]', source)
+        inventory = (scripts / "../internal/packageinventorycmd/verify.go").resolve().read_text()
+        self.assertIn("Info.plist Apollo capability/profile mismatch", inventory)
+
+    def test_release_profile_refusals_happen_before_any_signer_or_profile_read(self):
+        scripts = Path(__file__).resolve().parent
+        regular = self.root / "synthetic-profile.json"
+        regular.write_text('{"fixture":true}')
+        symlink = self.root / "profile-link.json"
+        symlink.symlink_to(regular)
+        cases = (
+            ("missing capability", {}, "release requires PANTHEON_APOLLO_CAPABILITY"),
+            ("missing enabled profile", {"PANTHEON_APOLLO_CAPABILITY": "enabled"}, "requires an absolute regular non-symlink profile"),
+            ("symlinked enabled profile", {"PANTHEON_APOLLO_CAPABILITY": "enabled", "PANTHEON_APOLLO_PROFILE": str(symlink)}, "requires an absolute regular non-symlink profile"),
+            ("disabled with supplied profile", {"PANTHEON_APOLLO_CAPABILITY": "disabled", "PANTHEON_APOLLO_PROFILE": str(regular)}, "disabled Apollo capability forbids"),
+        )
+        for script in ("build-dmg.sh", "build-pkg.sh"):
+            for name, variables, expected in cases:
+                with self.subTest(script=script, case=name):
+                    env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(self.root), "TMPDIR": str(self.root), **variables}
+                    result = subprocess.run(
+                        ["/bin/bash", str(scripts / script), "--release", "--version", "0.24.147-fixture"],
+                        env=env, capture_output=True, text=True, timeout=10, check=False,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(expected, result.stderr)
+                    self.assertNotIn("codesign", result.stderr)
+                    self.assertNotIn("pkgbuild", result.stderr)
 
     def test_private_previous_bundle_uses_native_upgrade_not_merge(self):
         # Native Installer semantics are pkgbuild(1)'s contract, not a mock OS.

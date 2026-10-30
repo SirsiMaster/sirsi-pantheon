@@ -3,6 +3,9 @@
 VERSION := $(shell cat VERSION)
 BUILD_DIR ?= bin
 INSTALL_DIR ?= $(HOME)/.local/bin
+# Release packaging defaults to the capability declared by published v147.
+# Opt into native capability explicitly and provide its protected profile.
+PANTHEON_APOLLO_CAPABILITY ?= disabled
 # Release builds strip debug symbols (-s) and DWARF tables (-w) → ~13MB core binary.
 # Use `make build-debug` for full 20MB binary with symbols for dlv/pprof.
 GO_LDFLAGS ?= -s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=v$(VERSION)
@@ -103,6 +106,7 @@ bundle-dev: build build-menubar
 	@# the source plist's historical template version survive into a local app.
 	@/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" Pantheon.app/Contents/Info.plist
 	@/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(VERSION)" Pantheon.app/Contents/Info.plist
+	@/usr/libexec/PlistBuddy -c "Set :SirsiApolloNativeCapability disabled" Pantheon.app/Contents/Info.plist
 	@codesign --force --deep --sign - Pantheon.app
 	@test -x Pantheon.app/Contents/MacOS/sirsi
 	@test -x Pantheon.app/Contents/MacOS/sirsi-menubar
@@ -114,6 +118,7 @@ bundle-dev: build build-menubar
 		--pkg-info "$(abspath cmd/sirsi-menubar/bundle/PkgInfo)" \
 		--launch-agent "$(abspath cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist)" \
 		--brand-logo "$(abspath docs/assets/sirsi-logo-white.png)" \
+		--apollo-capability disabled \
 		--require-code-signature
 	@echo "✅ Pantheon.app development bundle created (ad-hoc signed; not for distribution)"
 
@@ -122,11 +127,13 @@ dmg: dmg-dev
 
 dmg-dev:
 	@echo "📦 Creating development DMG..."
-	scripts/build-dmg.sh --development --version $(VERSION) --arch $(shell uname -m)
+	@set -e; receipt="$$(bash scripts/new-apollo-digest-receipt.sh "$(BUILD_DIR)")"; \
+		PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt" scripts/build-dmg.sh --development --version $(VERSION) --arch $(shell uname -m)
 
 release-dmg:
 	@echo "📦 Creating commercial release DMG..."
-	scripts/build-dmg.sh --release --version $(VERSION) --arch $(shell uname -m)
+	@set -e; receipt="$$(bash scripts/new-apollo-digest-receipt.sh "$(BUILD_DIR)")"; \
+		PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt" PANTHEON_APOLLO_CAPABILITY="$(PANTHEON_APOLLO_CAPABILITY)" scripts/build-dmg.sh --release --version $(VERSION) --arch $(shell uname -m)
 
 # --- macOS PKG Installer ---
 # Produces an installer from the same assembled Pantheon.app as the DMG.
@@ -134,13 +141,15 @@ pkg: pkg-dev
 
 pkg-dev:
 	@echo "📦 Creating development PKG..."
-	scripts/build-dmg.sh --development --version $(VERSION) --arch $(shell uname -m)
-	scripts/build-pkg.sh --development --version $(VERSION) --arch $(shell uname -m) --app Pantheon.app
+	@set -e; receipt="$$(bash scripts/new-apollo-digest-receipt.sh "$(BUILD_DIR)")"; \
+		PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt" scripts/build-dmg.sh --development --version $(VERSION) --arch $(shell uname -m); \
+		PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt" scripts/build-pkg.sh --development --version $(VERSION) --arch $(shell uname -m) --app Pantheon.app
 
 release-pkg:
 	@echo "📦 Creating commercial release PKG..."
-	scripts/build-dmg.sh --release --version $(VERSION) --arch $(shell uname -m)
-	scripts/build-pkg.sh --release --version $(VERSION) --arch $(shell uname -m) --app Pantheon.app
+	@set -e; receipt="$$(bash scripts/new-apollo-digest-receipt.sh "$(BUILD_DIR)")"; \
+		PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt" PANTHEON_APOLLO_CAPABILITY="$(PANTHEON_APOLLO_CAPABILITY)" scripts/build-dmg.sh --release --version $(VERSION) --arch $(shell uname -m); \
+		PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt" PANTHEON_APOLLO_CAPABILITY="$(PANTHEON_APOLLO_CAPABILITY)" scripts/build-pkg.sh --release --version $(VERSION) --arch $(shell uname -m) --app Pantheon.app
 
 # --- Horus Auto-Publish ---
 # Generates docs/build-log.html and docs/case-studies.html

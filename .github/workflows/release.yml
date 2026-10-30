@@ -164,6 +164,7 @@ jobs:
           GOMAXPROCS: "1"
           GOFLAGS: "-p=1"
           PANTHEON_BUILD_JOBS: "1"
+          PANTHEON_APOLLO_CAPABILITY: disabled
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
           DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -183,6 +184,8 @@ jobs:
           "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon \
             --register-executor --work "pantheon-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --cpu-cores 1 --timeout 1500 -- /bin/bash -euo pipefail -c '
+              PANTHEON_APOLLO_DIGEST_RECEIPT="$(bash scripts/new-apollo-digest-receipt.sh "$RUNNER_TEMP")"
+              export PANTHEON_APOLLO_DIGEST_RECEIPT
               bash scripts/ci-private-sdk.sh scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
               bash scripts/ci-private-sdk.sh scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app Pantheon.app
             '

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -28,6 +29,7 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 	pkgInfo := []byte("APPL????")
 	launchAgent := []byte("Label=ai.sirsi.pantheon\n")
 	brandLogo := []byte("canonical Sirsi application-mark bytes\n")
+	receiptPath := filepath.Join(root, "frozen-digests.txt")
 	files := map[string][]byte{
 		"Contents/Info.plist":                                                      info,
 		"Contents/PkgInfo":                                                         pkgInfo,
@@ -83,6 +85,8 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 		"--pkg-info", filepath.Join(app, "Contents/PkgInfo"),
 		"--launch-agent", filepath.Join(app, "Contents/Resources/ai.sirsi.pantheon.plist"),
 		"--brand-logo", filepath.Join(app, "Contents/Resources/sirsi-logo-white.png"),
+		"--apollo-capability", "legacy-development",
+		"--write-frozen-digests", receiptPath,
 	}
 	code := run(args, &out, &errOut)
 	if code != 0 {
@@ -94,6 +98,10 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 	}
 	if report.Schema != packageinventory.Schema || !report.PythonFree || report.EngineCount != 2 {
 		t.Fatalf("unexpected report: %s", out.String())
+	}
+	receipt, err := os.ReadFile(receiptPath)
+	if err != nil || string(receipt) != fmt.Sprintf("info_sha256=%x\napollo_profile_sha256=absent\n", sha256.Sum256(info)) {
+		t.Fatalf("standalone inventory did not write the exact initial digest pair: receipt=%q err=%v", receipt, err)
 	}
 	if len(report.Entries) != 27 {
 		t.Fatalf("inventory contains %d entries, want complete 27-entry unsigned payload", len(report.Entries))
@@ -145,6 +153,86 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 				t.Fatalf("missing contract: code=%d stdout=%s stderr=%s", code, rejectedOut.String(), rejectedErr.String())
 			}
 		})
+	}
+
+	// Developer callers use the legacy capability contract with an ad-hoc
+	// signed bundle and no release digest flags. Preserve signature-structure
+	// inventory through the standalone CLI.
+	signatureDir := filepath.Join(app, "Contents", "_CodeSignature")
+	if err := os.Mkdir(signatureDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(signatureDir, "CodeResources"), []byte("fixture signature layout"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	engine := standaloneMachOFixture()
+	for _, path := range []string{
+		filepath.Join(app, "Contents", "MacOS", "sirsi"),
+		filepath.Join(app, "Contents", "MacOS", "sirsi-menubar"),
+	} {
+		if err := os.WriteFile(path, engine, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	signedArgs := append([]string(nil), args[:len(args)-2]...)
+	signedArgs = append(signedArgs, "--require-code-signature")
+	var signedOut, signedErr bytes.Buffer
+	if code := run(signedArgs, &signedOut, &signedErr); code != 0 {
+		t.Fatalf("legacy signed development inventory without frozen flags failed: code=%d stdout=%s stderr=%s", code, signedOut.String(), signedErr.String())
+	}
+	var signedReport packageinventory.Report
+	if err := json.Unmarshal(signedOut.Bytes(), &signedReport); err != nil {
+		t.Fatal(err)
+	}
+	if signedReport.EngineCount != 2 || len(signedReport.Entries) != 29 {
+		t.Fatalf("signed development inventory omitted signature or engines: engines=%d entries=%d", signedReport.EngineCount, len(signedReport.Entries))
+	}
+}
+
+func standaloneMachOFixture() []byte {
+	const headerSize = 32
+	const dylibHeaderSize = 24
+	const loadDylib = 0xc
+	name := "/usr/lib/libSystem.B.dylib"
+	commandSize := dylibHeaderSize + len(name) + 1
+	for commandSize%8 != 0 {
+		commandSize++
+	}
+	data := make([]byte, headerSize+commandSize)
+	binary.LittleEndian.PutUint32(data[0:], 0xfeedfacf)
+	binary.LittleEndian.PutUint32(data[4:], 0x0100000c)
+	binary.LittleEndian.PutUint32(data[12:], 2)
+	binary.LittleEndian.PutUint32(data[16:], 1)
+	binary.LittleEndian.PutUint32(data[20:], uint32(commandSize))
+	binary.LittleEndian.PutUint32(data[headerSize:], loadDylib)
+	binary.LittleEndian.PutUint32(data[headerSize+4:], uint32(commandSize))
+	binary.LittleEndian.PutUint32(data[headerSize+8:], dylibHeaderSize)
+	copy(data[headerSize+dylibHeaderSize:], name)
+	return data
+}
+
+func TestRunRequiresIndependentApolloCapabilityArgument(t *testing.T) {
+	args := []string{
+		"--app", "/fixture/Pantheon.app", "--version", "0.24.147", "--build", "0.24.147",
+		"--info-plist", "/fixture/Info.plist", "--pkg-info", "/fixture/PkgInfo",
+		"--launch-agent", "/fixture/LaunchAgent.plist", "--brand-logo", "/fixture/logo.png",
+	}
+	var out, errOut bytes.Buffer
+	if code := run(args, &out, &errOut); code != 1 || out.Len() != 0 || !strings.Contains(errOut.String(), "explicit --apollo-capability is required") {
+		t.Fatalf("missing independent expectation did not fail closed: code=%d stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+}
+
+func TestRunRequiresFrozenDigestsOnlyForExplicitReleaseVerification(t *testing.T) {
+	args := []string{
+		"--app", "/fixture/Pantheon.app", "--version", "0.24.147", "--build", "0.24.147",
+		"--info-plist", "/fixture/Info.plist", "--pkg-info", "/fixture/PkgInfo",
+		"--launch-agent", "/fixture/LaunchAgent.plist", "--brand-logo", "/fixture/logo.png",
+		"--apollo-capability", "disabled", "--require-code-signature", "--require-frozen-digests",
+	}
+	var out, errOut bytes.Buffer
+	if code := run(args, &out, &errOut); code != 1 || out.Len() != 0 || !strings.Contains(errOut.String(), "requires frozen Info.plist and Apollo profile digests") {
+		t.Fatalf("release standalone inventory accepted without frozen digests: code=%d stdout=%s stderr=%s", code, out.String(), errOut.String())
 	}
 }
 
