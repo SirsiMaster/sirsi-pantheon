@@ -132,6 +132,25 @@ func strictCodexAnchor() (int, string, error) {
 	return pid, start, nil
 }
 
+// A declared identity must match the session's markers. A MISSING marker is
+// named as missing: registration could not write it (2026-10-30: a sandboxed
+// Codex session was denied ~/.claude/run and was told its agent "differs").
+func attendedEnsureBindingErr(declaredAgent, markerAgent, declaredThread, markerThread string) error {
+	if declaredAgent != "" && markerAgent == "" {
+		return fmt.Errorf("attended ensure found no session agent marker; registration could not write ~/.claude/run/agent-by-session (register where that path is writable)")
+	}
+	if declaredAgent != "" && declaredAgent != markerAgent {
+		return fmt.Errorf("attended ensure caller agent differs from session binding")
+	}
+	if declaredThread != "" && markerThread == "" {
+		return fmt.Errorf("attended ensure found no session thread marker; registration could not write ~/.claude/run/thread-by-session (register where that path is writable)")
+	}
+	if declaredThread != "" && declaredThread != markerThread {
+		return fmt.Errorf("attended ensure explicit runtime thread differs from session binding")
+	}
+	return nil
+}
+
 // The command's only injected dependency is native kernel observation. Marker,
 // resolver, normal registration/readback and fenced heartbeat stay real.
 func runAttendedEnsure(root, explicit string, upd router.HeartbeatUpdate, observe func() (int, string, error)) (*router.Thread, error) {
@@ -144,12 +163,10 @@ func runAttendedEnsure(root, explicit string, upd router.HeartbeatUpdate, observ
 	}
 	session := router.CurrentSessionID()
 	agent := router.ReadSessionAgentMarker(session)
-	if declared := strings.TrimSpace(os.Getenv("SIRSI_AGENT_ID")); declared != "" && declared != agent {
-		return nil, fmt.Errorf("attended ensure caller agent differs from session binding")
-	}
 	thread := router.ReadSessionThreadMarker(session)
-	if declared := strings.TrimSpace(os.Getenv("SIRSI_THREAD_ID")); declared != "" && declared != thread {
-		return nil, fmt.Errorf("attended ensure explicit runtime thread differs from session binding")
+	if err := attendedEnsureBindingErr(strings.TrimSpace(os.Getenv("SIRSI_AGENT_ID")), agent,
+		strings.TrimSpace(os.Getenv("SIRSI_THREAD_ID")), thread); err != nil {
+		return nil, err
 	}
 	load := func(id string) (*router.Thread, error) {
 		store, err := routerstore.Resolve()

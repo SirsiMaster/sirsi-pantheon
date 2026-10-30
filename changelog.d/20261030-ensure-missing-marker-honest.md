@@ -1,0 +1,2 @@
+### Fixed
+- **`sirsi thread heartbeat --ensure` names a missing session marker as missing.** When registration could not write `~/.claude/run/agent-by-session` (as happened to a sandboxed Codex session on 2026-10-30), the ensure refusal said the caller agent "differs from session binding", which sent the lane looking for an identity conflict that did not exist. It now says no marker was found and that registration must run where that path is writable. The refusal itself is unchanged; it still fails closed. The same applies to the thread marker. Refs: ADR-079.
