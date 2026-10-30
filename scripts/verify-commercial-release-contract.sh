@@ -18,6 +18,7 @@ cask_package="$root/internal/caskrelease/cask.go"
 package_inventory="$root/internal/packageinventory/inventory.go"
 package_inventory_cmd="$root/cmd/sirsi/packageinventorycmd.go"
 package_inventory_adapter="$root/internal/packageinventorycmd/verify.go"
+apollo_receipt_selector="$root/scripts/new-apollo-digest-receipt.sh"
 bootstrap="$root/scripts/install.sh"
 bootstrap_test="$root/scripts/install.test.sh"
 notary_helper="$root/scripts/notarize-release-artifact.sh"
@@ -25,9 +26,31 @@ notary_helper_test="$root/scripts/notarize-release-artifact.test.sh"
 publisher="$root/scripts/publish-release-assets.py"
 publisher_test="$root/scripts/test_release_publication.py"
 
-for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package" "$package_inventory" "$package_inventory_cmd" "$package_inventory_adapter" "$bootstrap" "$bootstrap_test" "$notary_helper" "$notary_helper_test" "$publisher" "$publisher_test"; do
+for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package" "$package_inventory" "$package_inventory_cmd" "$package_inventory_adapter" "$apollo_receipt_selector" "$bootstrap" "$bootstrap_test" "$notary_helper" "$notary_helper_test" "$publisher" "$publisher_test"; do
     [[ -f "$file" ]] || { echo "missing release-contract source: $file" >&2; exit 1; }
 done
+for required in 'new-apollo-digest-receipt.sh' 'PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt"'; do
+    /usr/bin/grep -Fq -- "$required" "$makefile" || {
+        echo "Make targets do not select and share a fresh Apollo digest receipt: $required" >&2
+        exit 1
+    }
+done
+/usr/bin/grep -Fq 'PANTHEON_APOLLO_DIGEST_RECEIPT="$(bash scripts/new-apollo-digest-receipt.sh "$RUNNER_TEMP")"' "$workflow" || {
+    echo "release workflow does not select one fresh Apollo digest receipt for its paired builders" >&2
+    exit 1
+}
+/usr/bin/grep -Fq 'export PANTHEON_APOLLO_DIGEST_RECEIPT' "$workflow" || {
+    echo "release workflow does not pass the selected Apollo receipt to both builders" >&2
+    exit 1
+}
+/usr/bin/grep -Fq 'PKG requires an existing regular pre-sign digest receipt' "$pkg" || {
+    echo "PKG builder does not refuse a missing selected pre-sign receipt" >&2
+    exit 1
+}
+if /usr/bin/grep -Fq -- '--write-frozen-digests' "$pkg"; then
+    echo "PKG builder must not recapture a built candidate as its pre-sign receipt" >&2
+    exit 1
+fi
 
 # Casks are owned by the release workflow's remote-tap transaction. A tracked
 # local mirror becomes an unreviewed second publication source and can mislead

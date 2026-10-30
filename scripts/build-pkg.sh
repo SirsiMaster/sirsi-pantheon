@@ -108,25 +108,17 @@ if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
     APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
 fi
 APOLLO_INVENTORY_ARGS=(--apollo-capability "$APOLLO_CAPABILITY" "${APOLLO_PROFILE_ARGS[@]}")
-# Use the same caller-owned receipt selected by build-dmg; never clean up a
-# preexisting pathname because it may no longer name our original inode.
-FROZEN_APOLLO_DIGESTS="${PANTHEON_APOLLO_DIGEST_RECEIPT:-${BUILD_DIR}/apollo-input-digests-${VERSION}-${ARCH}.txt}"
-if [[ ! -f "$FROZEN_APOLLO_DIGESTS" ]]; then
-    if [[ "$MODE" == "release" ]]; then
-        echo "ERROR: release PKG requires the pre-sign digest receipt from build-dmg.sh" >&2
-        exit 1
-    fi
-    "${BUILD_DIR}/sirsi" package-inventory \
-        --app "$APP_PATH" \
-        --version "$VERSION" \
-        --build "$VERSION" \
-        --info-plist "$APP_PATH/Contents/Info.plist" \
-        --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
-        --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
-        --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
-        "${APOLLO_INVENTORY_ARGS[@]}" \
-        --write-frozen-digests "$FROZEN_APOLLO_DIGESTS"
-fi
+# Consume only the exact pre-sign receipt selected by the paired producer.
+# Never recapture an already-built (and potentially signed) candidate here.
+FROZEN_APOLLO_DIGESTS="${PANTHEON_APOLLO_DIGEST_RECEIPT:-}"
+[[ -n "$FROZEN_APOLLO_DIGESTS" && "$FROZEN_APOLLO_DIGESTS" = /* ]] || {
+    echo "ERROR: PKG requires the caller-selected pre-sign digest receipt" >&2
+    exit 1
+}
+[[ -f "$FROZEN_APOLLO_DIGESTS" && ! -L "$FROZEN_APOLLO_DIGESTS" ]] || {
+    echo "ERROR: PKG requires an existing regular pre-sign digest receipt from build-dmg.sh" >&2
+    exit 1
+}
 read -r FROZEN_INFO_SHA256 FROZEN_PROFILE_SHA256 < <(python3 - "$FROZEN_APOLLO_DIGESTS" <<'PY'
 import re, sys
 values = {}

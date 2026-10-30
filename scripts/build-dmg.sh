@@ -174,9 +174,13 @@ if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
     APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
 fi
 APOLLO_INVENTORY_ARGS=(--apollo-capability "$APOLLO_CAPABILITY" "${APOLLO_PROFILE_ARGS[@]}")
-# Callers may provide a fresh build-owned receipt path shared with build-pkg.
+# The supported caller selects a fresh path shared with the paired PKG build.
 # The writer is create-only; stale paths remain untouched for reconciliation.
-FROZEN_APOLLO_DIGESTS="${PANTHEON_APOLLO_DIGEST_RECEIPT:-${BUILD_DIR}/apollo-input-digests-${VERSION}-${ARCH}.txt}"
+FROZEN_APOLLO_DIGESTS="${PANTHEON_APOLLO_DIGEST_RECEIPT:-}"
+[[ -n "$FROZEN_APOLLO_DIGESTS" && "$FROZEN_APOLLO_DIGESTS" = /* ]] || {
+    echo "ERROR: caller must select an absolute fresh PANTHEON_APOLLO_DIGEST_RECEIPT path" >&2
+    exit 1
+}
 # Never ship the historical template version from the source plist.  The
 # package and both executables are built from the requested release version.
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${BUNDLE_DIR}/Contents/Info.plist"

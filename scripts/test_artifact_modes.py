@@ -153,6 +153,64 @@ class ArtifactModesTests(unittest.TestCase):
         self.assertLess(pkg.index('"${BUILD_DIR}/sirsi" package-inventory'), pkg.index('COPYFILE_DISABLE=1 /usr/bin/pkgbuild'))
         self.assertIn('artifact_modes.py" --payload "$EXPANDED_ROOT/Payload" --check', pkg)
 
+    def test_apollo_digest_selection_is_fresh_for_repeated_same_version_builds(self):
+        selector = Path(__file__).with_name("new-apollo-digest-receipt.sh")
+        same_build_output = self.root / "0.24.147-arm64"
+        selected = []
+        for _ in range(2):
+            result = subprocess.run(
+                ["/bin/bash", str(selector), str(same_build_output)],
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            receipt = Path(result.stdout.strip())
+            self.assertTrue(receipt.is_absolute())
+            self.assertFalse(receipt.exists())
+            self.assertTrue(receipt.parent.is_dir())
+            selected.append(receipt)
+        self.assertNotEqual(selected[0], selected[1])
+
+    def test_supported_paired_builders_share_one_selected_receipt_without_pkg_recapture(self):
+        root = Path(__file__).resolve().parent.parent
+        makefile = (root / "Makefile").read_text()
+        workflow = (root / ".github/workflows/release.yml").read_text()
+        dmg = (root / "scripts/build-dmg.sh").read_text()
+        pkg = (root / "scripts/build-pkg.sh").read_text()
+
+        def target_block(name):
+            lines = makefile.splitlines()
+            start = next(i for i, line in enumerate(lines) if line == name + ":")
+            block = [lines[start]]
+            for line in lines[start + 1:]:
+                if line and not line[0].isspace():
+                    break
+                block.append(line)
+            return "\n".join(block)
+
+        for name in ("dmg-dev", "release-dmg"):
+            with self.subTest(target=name):
+                block = target_block(name)
+                self.assertEqual(block.count("new-apollo-digest-receipt.sh"), 1)
+                self.assertEqual(block.count('PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt"'), 1)
+                self.assertIn("scripts/build-dmg.sh", block)
+
+        for name in ("pkg-dev", "release-pkg"):
+            with self.subTest(target=name):
+                block = target_block(name)
+                self.assertEqual(block.count("new-apollo-digest-receipt.sh"), 1)
+                self.assertEqual(block.count('PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt"'), 2)
+                self.assertIn("scripts/build-dmg.sh", block)
+                self.assertIn("scripts/build-pkg.sh", block)
+
+        self.assertIn('PANTHEON_APOLLO_DIGEST_RECEIPT="$(bash scripts/new-apollo-digest-receipt.sh "$RUNNER_TEMP")"', workflow)
+        self.assertIn("export PANTHEON_APOLLO_DIGEST_RECEIPT", workflow)
+        self.assertLess(workflow.index("new-apollo-digest-receipt.sh"), workflow.index("scripts/build-dmg.sh --release"))
+        self.assertLess(workflow.index("scripts/build-dmg.sh --release"), workflow.index("scripts/build-pkg.sh --release"))
+        self.assertIn('--write-frozen-digests "$FROZEN_APOLLO_DIGESTS"', dmg)
+        self.assertNotIn("--write-frozen-digests", pkg)
+        self.assertNotIn('apollo-input-digests-${VERSION}-${ARCH}.txt', dmg + pkg)
+        self.assertIn("PKG requires an existing regular pre-sign digest receipt", pkg)
+
     def test_release_apollo_capability_requires_explicit_profile_pairing(self):
         scripts = Path(__file__).resolve().parent
         for name in ("build-dmg.sh", "build-pkg.sh"):

@@ -10,8 +10,6 @@ canonical `sirsi` CLI:
 
 ```bash
 make dmg-dev
-# Or directly:
-scripts/build-dmg.sh --development --version 0.24.14 --arch arm64
 ```
 
 Output: `bin/SirsiPantheon-VERSION-dev-ARCH.dmg`
@@ -20,8 +18,10 @@ Build an installer from that exact application bundle:
 
 ```bash
 make pkg-dev
-# Or after building the DMG/app bundle:
-scripts/build-pkg.sh --development --version 0.24.14 --arch arm64 --app Pantheon.app
+# Or directly, selecting once for both producer and consumer:
+receipt="$(bash scripts/new-apollo-digest-receipt.sh "$PWD/bin")"
+PANTHEON_APOLLO_DIGEST_RECEIPT="$receipt" scripts/build-dmg.sh --development --version 0.24.14 --arch arm64
+PANTHEON_APOLLO_DIGEST_RECEIPT="$receipt" scripts/build-pkg.sh --development --version 0.24.14 --arch arm64 --app Pantheon.app
 ```
 
 Output: `bin/SirsiPantheon-VERSION-dev-ARCH.pkg`
@@ -30,6 +30,11 @@ Development artifacts are ad-hoc/unsigned local package work. They are not
 commercial releases or release candidates. The native profile remains optional
 for development: supplying `PANTHEON_APOLLO_PROFILE` opts that local bundle into
 the enabled capability; omitting it records disabled in the app Info.plist.
+Each supported Make target selects a fresh private digest-receipt path. The PKG
+builder requires that exact existing pre-sign receipt and does not recapture
+the built app. Direct paired invocations must pass one path from
+`scripts/new-apollo-digest-receipt.sh` to both commands; old and incomplete
+receipts are retained.
 
 ## macOS commercial release artifacts
 
@@ -47,7 +52,9 @@ published v147, whose app contains no native Apollo profile. To intentionally
 produce a native-enabled release, declare `PANTHEON_APOLLO_CAPABILITY=enabled`
 and provide the protected absolute regular profile path in
 `PANTHEON_APOLLO_PROFILE`. Direct release-script calls require the capability
-variable; disabled releases reject a supplied profile. The Go inventory checks
+variable and one fresh shared receipt selected by
+`scripts/new-apollo-digest-receipt.sh`; disabled releases reject a supplied
+profile. The Go inventory checks
 the independent expected mode and exact profile before signing, after app
 signing, and against the expanded PKG. Release-mode signed-payload checks also
 require the Info.plist/profile digest pair captured by the initial pre-sign

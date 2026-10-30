@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 - Protect Apollo profile reads with owner and write-mode checks. Commercial release verification explicitly requires the exact pre-sign Info.plist/profile digest pair through post-sign and expanded-PKG inspection; development signed inventory retains its signature-structure contract. Create the digest receipt exclusively, check full writes and close errors, and retain incomplete receipts for reconciliation without unlinking a pathname. Reject matching post-capture changes to both the reference and candidate; the release workflow remains explicitly native-disabled. This is source verification, not release or installed-runtime certification. Refs: ADR-032; PANTHEON_RULES.md A7/A11/A12/A13/A16; `scripts/PACKAGING.md`; `docs/stacklab/pantheon-pt/canon/CERTIFICATION.md`.
 - Convert Darwin's narrower stat mode type before applying the shared Apollo profile permission policy. Refs: `internal/packageinventorycmd/verify.go`; PANTHEON_RULES.md A12/A16; ADR-032.
+- Correct Apollo inventory test fixtures for pre-create receipt-open errors, executable engine modes, and canonical protected-profile paths. Refs: `internal/packageinventorycmd/verify_test.go`; PANTHEON_RULES.md A16; ADR-032.
+- Select a fresh private pre-sign Apollo digest receipt per supported DMG build, share it with the paired PKG, and refuse PKG receipt recapture. Refs: `scripts/new-apollo-digest-receipt.sh`; `scripts/build-dmg.sh`; `scripts/build-pkg.sh`; Makefile; `.github/workflows/release.yml`; `scripts/PACKAGING.md`; PANTHEON_RULES.md A7/A12/A16; ADR-032.
 
 ## [0.24.147] — 2026-10-30
 

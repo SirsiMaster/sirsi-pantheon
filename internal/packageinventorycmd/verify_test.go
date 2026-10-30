@@ -58,8 +58,9 @@ func TestWriteFrozenDigestsChecksFullWriteAndCloseFailures(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			file := &frozenReceiptWriterFixture{writeCount: tc.writeCount, writeErr: tc.writeErr, closeErr: tc.closeErr}
+			path := filepath.Join(t.TempDir(), "apollo-digests.fixture")
 			var openCalled bool
-			err := writeFrozenDigestsWith(filepath.Join(string(filepath.Separator), "tmp", "apollo-digests.fixture"), digests,
+			err := writeFrozenDigestsWith(path, digests,
 				func(path string, flags int, mode os.FileMode) (frozenDigestReceiptFile, error) {
 					openCalled = true
 					if flags&(os.O_CREATE|os.O_EXCL) != (os.O_CREATE|os.O_EXCL) || mode != 0o600 {
@@ -76,6 +77,15 @@ func TestWriteFrozenDigestsChecksFullWriteAndCloseFailures(t *testing.T) {
 			if tc.wantErr == nil {
 				if err != nil || string(file.contents) != "info_sha256="+digests.InfoPlist+"\napollo_profile_sha256="+digests.ApolloProfile+"\n" {
 					t.Fatalf("complete receipt result err=%v contents=%q", err, file.contents)
+				}
+				return
+			}
+			if tc.openErr != nil {
+				if err == nil || !strings.Contains(err.Error(), "create-only") || strings.Contains(err.Error(), "retained for reconciliation") || !errors.Is(err, tc.wantErr) {
+					t.Fatalf("receipt open failure=%v, want create-only open error without post-create reconciliation", err)
+				}
+				if _, statErr := os.Lstat(path); !os.IsNotExist(statErr) {
+					t.Fatalf("failed receipt open left an artifact: lstat err=%v", statErr)
 				}
 				return
 			}
@@ -220,11 +230,15 @@ func TestVerifyUsesIndependentExpectedCapabilityNotBundleSelfDeclaration(t *test
 
 func TestVerifyRejectsUnsafeApolloProfileInput(t *testing.T) {
 	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
-	profileTarget := filepath.Join(t.TempDir(), "profile.json")
+	profileRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileTarget := filepath.Join(profileRoot, "profile.json")
 	if err := os.WriteFile(profileTarget, []byte(`{"fixture":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	profileLink := filepath.Join(t.TempDir(), "profile-link.json")
+	profileLink := filepath.Join(profileRoot, "profile-link.json")
 	if err := os.Symlink(profileTarget, profileLink); err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +272,11 @@ func TestApolloProfileDescriptorProtection(t *testing.T) {
 		})
 	}
 
-	path := filepath.Join(t.TempDir(), "profile.json")
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "profile.json")
 	if err := os.WriteFile(path, []byte(`{"fixture":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -304,6 +322,7 @@ func TestFrozenApolloInputDigestsRejectReferenceAndCandidateSubstitution(t *test
 
 func TestVerifyFreezesInitialInfoDigestBeforeMatchingCandidateCanChange(t *testing.T) {
 	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
+	makeCommandBundleEnginesExecutable(t, app)
 	inputs := Inputs{App: app, Version: "0.23.9-beta", Build: "20260908", InfoPlist: info,
 		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo, ApolloCapability: "legacy-development"}
 	_, frozen, err := VerifyWithFrozenDigests(inputs)
@@ -343,6 +362,7 @@ func mustReadFile(t *testing.T, path string) []byte {
 
 func TestVerifyFreezesInitialProfileDigestBeforeMatchingCandidateCanChange(t *testing.T) {
 	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
+	makeCommandBundleEnginesExecutable(t, app)
 	infoBytes := mustReadFile(t, info)
 	infoBytes = []byte(strings.Replace(string(infoBytes), "</dict>", "<key>SirsiApolloNativeCapability</key><string>enabled</string></dict>", 1))
 	if err := os.WriteFile(info, infoBytes, 0o644); err != nil {
@@ -351,7 +371,11 @@ func TestVerifyFreezesInitialProfileDigestBeforeMatchingCandidateCanChange(t *te
 	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), infoBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	profilePath := filepath.Join(t.TempDir(), "native-profile.json")
+	profileRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(profileRoot, "native-profile.json")
 	profileBytes := []byte(`{"fixture":"initial"}`)
 	if err := os.WriteFile(profilePath, profileBytes, 0o600); err != nil {
 		t.Fatal(err)
@@ -522,4 +546,14 @@ func makeCommandBundle(t *testing.T) (string, string, string, string, string) {
 		}
 	}
 	return app, info, pkgInfo, launchAgent, brandLogo
+}
+
+func makeCommandBundleEnginesExecutable(t *testing.T, app string) {
+	t.Helper()
+	for _, name := range []string{"sirsi", "sirsi-menubar"} {
+		path := filepath.Join(app, "Contents", "MacOS", name)
+		if err := os.Chmod(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
