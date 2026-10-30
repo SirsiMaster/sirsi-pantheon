@@ -83,6 +83,9 @@ FIRST='{"metadata":{"name":"sirsi-router"},"status":{"traffic":[{"revisionName":
 
 # Stage-only retains the verified tagged revision at zero traffic and emits the
 # identity tuple needed for a separately owned promotion decision.
+FIRST="$original_first"
+FINAL="$FIRST"
+export FIRST FINAL
 reset_fixture
 bash "$ROOT/scripts/router-service/stage.sh" --stage-only >"$tmp/out" 2>"$tmp/err"
 stage_only_revision=$(<"$REV_FILE")
