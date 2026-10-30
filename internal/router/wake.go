@@ -1558,6 +1558,10 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 				})
 			}
 		} else if !quotaBlocked && consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
+			// An exit seen only here (after the scoring check above) is next
+			// tick's to score and refresh; replacing it now would skip the
+			// #636 progress backoff and dispatch under a stale configuration.
+			(run == nil || scored) &&
 			time.Now().After(nextDispatchAllowed) &&
 			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) &&
 			!measurementWindowOpen(agentID, depth) && !attendedSessionOwnsInbox(routerRoot, agentID, depth) &&
