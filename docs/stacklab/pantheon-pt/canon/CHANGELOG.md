@@ -2,6 +2,7 @@
 
 ## 2026-10-30 — v0.24.148 release candidate
 
+- Bind the expected Apollo capability and protected profile across signing and package verification; the official release remains native-Apollo-disabled.
 - Bound Fabric runtime classification and propagate cancellation with fixed-stage deadline attribution; remote work already dispatched is not retracted.
 - An attended lane without a live session reports needs-owner instead of a wakeable consumer (ADR-079 D4).
 - Router send and ping report no live consumer for attended or no-grant holds without a fresh attended session.
