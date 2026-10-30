@@ -1,3 +1,0 @@
-- Keep Ma'at proposals pinned to their exact catalog bytes while reading proposals from the current catalog or the trusted historical catalog at `68b1ee17ac49d4c087c54bd4860eee597181fd45`. Classify current versus historical only in the read projection, preserve original local bytes, and continue refusing unknown or malformed provenance. Historical proposals remain local evidence for current Stack Lab review and do not affect fabric matching or promotion authority.
-
-Refs: `internal/maat/knownfail/proposal.go`; `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`; `contracts/stacklab/maat-system-one-recipe-v1.json`.

@@ -1,5 +1,12 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-30 — v0.24.147 release candidate
+
+- Keep Ma'at proposals pinned to their exact catalog bytes while reading proposals from the current catalog or the trusted historical catalog at `68b1ee17ac49d4c087c54bd4860eee597181fd45`. Classify current versus historical only in the read projection, preserve original local bytes, and continue refusing unknown or malformed provenance. Historical proposals remain local evidence for current Stack Lab review and do not affect fabric matching or promotion authority.
+- Refs: `internal/maat/knownfail/proposal.go`; `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`; `contracts/stacklab/maat-system-one-recipe-v1.json`.
+- ADR-062 G3 two-host contention on Postgres: PASS.
+- G3 harness: serve logs no longer record the host's scratch path.
+
 ## 2026-10-29 — v0.24.146 release candidate
 
 - Keep long Ma’at recovery, access guidance, Apollo and Stack Lab failures, and Osiris fallback content scrollable; size recovery actions to their wrapped labels and open the actual Stack Lab Doctor from its catalog route.

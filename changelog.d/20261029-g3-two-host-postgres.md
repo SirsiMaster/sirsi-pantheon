@@ -1,2 +1,0 @@
-### Evidence
-- **ADR-062 G3 two-host contention on Postgres: PASS.** This repeats the 10-26 run with the test service on a disposable PostgreSQL 16 store (production roles and schema from v0.24.143). M1 and M5 raced 1,000 rounds at 204 ms (2× p99), and every round had exactly one winner. The negative control saw two winners in 50 of 50 rounds. Store readback shows 1,000 tasks leased exactly once. See `docs/evidence/ADR-062-G3-TWO-HOST-CONTENTION-PG-20261029.md`. Refs: ADR-062.

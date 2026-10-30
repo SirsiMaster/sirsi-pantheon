@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.147] — 2026-10-30
+
+- Keep Ma'at proposals pinned to their exact catalog bytes while reading proposals from the current catalog or the trusted historical catalog at `68b1ee17ac49d4c087c54bd4860eee597181fd45`. Classify current versus historical only in the read projection, preserve original local bytes, and continue refusing unknown or malformed provenance. Historical proposals remain local evidence for current Stack Lab review and do not affect fabric matching or promotion authority.
+
+- Refs: `internal/maat/knownfail/proposal.go`; `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`; `contracts/stacklab/maat-system-one-recipe-v1.json`.
+
+- **ADR-062 G3 two-host contention on Postgres: PASS.** This repeats the 10-26 run with the test service on a disposable PostgreSQL 16 store (production roles and schema from v0.24.143). M1 and M5 raced 1,000 rounds at 204 ms (2× p99), and every round had exactly one winner. The negative control saw two winners in 50 of 50 rounds. Store readback shows 1,000 tasks leased exactly once. See `docs/evidence/ADR-062-G3-TWO-HOST-CONTENTION-PG-20261029.md`. Refs: ADR-062.
+
+- **G3 harness: serve logs no longer record the host's scratch path.** `run.sh` now rewrites the absolute run directory to `<run>` in every `*.serve.log` once the test servers have stopped. The 2026-10-26 raw logs stay as recorded, because they are pinned by `SHA256SUMS`. This addresses Mercury's non-blocking note on #1222. Refs: ADR-062.
+
 ## [0.24.146] — 2026-10-29
 
 - Keep long Ma’at recovery, access guidance, Apollo and Stack Lab failures, and Osiris fallback content scrollable; size recovery actions to their wrapped labels and open the actual Stack Lab Doctor from its catalog route.
