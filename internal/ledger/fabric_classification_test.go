@@ -22,7 +22,7 @@ func TestClassifyFabricAgentsBoundedAndComplete(t *testing.T) {
 	var active, maximum atomic.Int32
 	var mu sync.Mutex
 	calls := make(map[string]int, len(agents))
-	started := make(chan struct{}, fabricClassificationWorkers)
+	started := make(chan struct{}, len(agents))
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	defer releaseOnce.Do(func() { close(release) })
