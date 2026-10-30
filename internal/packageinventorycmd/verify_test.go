@@ -242,7 +242,7 @@ func TestVerifyRejectsUnsafeApolloProfileInput(t *testing.T) {
 	if err := os.Symlink(profileTarget, profileLink); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Verify(Inputs{App: app, Version: "0.23.9-beta", Build: "20260908", InfoPlist: info,
+	_, err = Verify(Inputs{App: app, Version: "0.23.9-beta", Build: "20260908", InfoPlist: info,
 		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo,
 		ApolloCapability: "enabled", ApolloProfile: profileLink})
 	if err == nil || !strings.Contains(err.Error(), "protected Apollo profile") {
