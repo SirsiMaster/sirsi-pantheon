@@ -32,12 +32,12 @@ func TestReleaseNativePayloadPublicModeRecipe(t *testing.T) {
 			continue
 		}
 		found++
-		for _, path := range []string{"scripts/build-pkg.sh", "scripts/artifact_modes.py", "scripts/pantheon-pkg-components.plist", "scripts/package_info_contract.py", "internal/packageinventory/inventory.go"} {
+		for _, path := range []string{"scripts/build-dmg.sh", "scripts/build-pkg.sh", "scripts/artifact_modes.py", "scripts/pantheon-pkg-components.plist", "scripts/package_info_contract.py", "internal/packageinventory/inventory.go", "internal/packageinventorycmd/verify.go", "cmd/sirsi/apollo_native_bundle.go"} {
 			if !strings.Contains("\n"+strings.Join(component.Source, "\n")+"\n", "\n"+path+"\n") {
 				t.Errorf("mode recipe missing source %s", path)
 			}
 		}
-		for _, path := range []string{"scripts/test_artifact_modes.py", "scripts/test_package_info_contract.py", "cmd/sirsi-package-inventory/main_test.go"} {
+		for _, path := range []string{"scripts/test_artifact_modes.py", "scripts/test_package_info_contract.py", "cmd/sirsi-package-inventory/main_test.go", "cmd/sirsi/apollo_native_bundle_test.go", "cmd/sirsi/apollo_app_test.go", "internal/packageinventorycmd/verify_test.go"} {
 			if !strings.Contains("\n"+strings.Join(component.Tests, "\n")+"\n", "\n"+path+"\n") {
 				t.Errorf("mode recipe missing test %s", path)
 			}
@@ -72,6 +72,7 @@ func TestPackageBuildersUseOneCanonicalInventory(t *testing.T) {
 		}
 		for _, required := range []string{
 			"package-inventory",
+			"--apollo-capability",
 			"--require-code-signature",
 			"cmd/sirsi-menubar/bundle/PkgInfo",
 			"cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist",
@@ -79,6 +80,9 @@ func TestPackageBuildersUseOneCanonicalInventory(t *testing.T) {
 			if !strings.Contains(string(bytes), required) {
 				t.Fatalf("%s does not bind canonical package identity through %q", script, required)
 			}
+		}
+		if !strings.Contains(string(bytes), "release requires PANTHEON_APOLLO_CAPABILITY=enabled|disabled") {
+			t.Fatalf("%s does not fail closed without an explicit release capability", script)
 		}
 	}
 
@@ -99,6 +103,9 @@ func TestPackageBuildersUseOneCanonicalInventory(t *testing.T) {
 	if strings.Contains(string(dmg), "go build -ldflags=\"${GO_LDFLAGS}\" -o \"${BUILD_DIR}/sirsi-menubar\"") {
 		t.Fatal("DMG builder retains a Go menubar fallback instead of failing closed on the canonical Swift payload")
 	}
+	if strings.Index(string(dmg), `"${BUILD_DIR}/sirsi" package-inventory`) < 0 || strings.Index(string(dmg), `"${BUILD_DIR}/sirsi" package-inventory`) > strings.Index(string(dmg), "# --- Code signing ---") {
+		t.Fatal("DMG builder must inventory capability/profile before signing")
+	}
 
 	pkg, err := os.ReadFile(filepath.Join(root, "scripts", "build-pkg.sh"))
 	if err != nil {
@@ -117,5 +124,8 @@ func TestPackageBuildersUseOneCanonicalInventory(t *testing.T) {
 	}
 	if strings.Contains(string(pkg), "/usr/bin/xattr -cr") {
 		t.Fatal("PKG builder must not broadly erase protected macOS metadata; AppleDouble scans are the transport-metadata authority")
+	}
+	if strings.Index(string(pkg), `"${BUILD_DIR}/sirsi" package-inventory`) < 0 || strings.Index(string(pkg), `"${BUILD_DIR}/sirsi" package-inventory`) > strings.Index(string(pkg), "COPYFILE_DISABLE=1 /usr/bin/pkgbuild") {
+		t.Fatal("PKG builder must inventory capability/profile before package signing")
 	}
 }

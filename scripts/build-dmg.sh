@@ -66,7 +66,13 @@ if [[ "$MODE" == "release" ]]; then
 else
     # Local builds remain profile-optional; the resulting signed Info.plist
     # still records which capability the developer bundle actually contains.
-    APOLLO_CAPABILITY="${PANTHEON_APOLLO_CAPABILITY:-disabled}"
+    if [[ -n "${PANTHEON_APOLLO_CAPABILITY:-}" ]]; then
+        APOLLO_CAPABILITY="$PANTHEON_APOLLO_CAPABILITY"
+    elif [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
+        APOLLO_CAPABILITY="enabled"
+    else
+        APOLLO_CAPABILITY="disabled"
+    fi
     [[ "$APOLLO_CAPABILITY" == "enabled" || "$APOLLO_CAPABILITY" == "disabled" ]] || {
         echo "ERROR: development Apollo capability must be enabled or disabled" >&2
         exit 2

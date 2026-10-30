@@ -83,6 +83,7 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 		"--pkg-info", filepath.Join(app, "Contents/PkgInfo"),
 		"--launch-agent", filepath.Join(app, "Contents/Resources/ai.sirsi.pantheon.plist"),
 		"--brand-logo", filepath.Join(app, "Contents/Resources/sirsi-logo-white.png"),
+		"--apollo-capability", "legacy-development",
 	}
 	code := run(args, &out, &errOut)
 	if code != 0 {
@@ -145,6 +146,18 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 				t.Fatalf("missing contract: code=%d stdout=%s stderr=%s", code, rejectedOut.String(), rejectedErr.String())
 			}
 		})
+	}
+}
+
+func TestRunRequiresIndependentApolloCapabilityArgument(t *testing.T) {
+	args := []string{
+		"--app", "/fixture/Pantheon.app", "--version", "0.24.147", "--build", "0.24.147",
+		"--info-plist", "/fixture/Info.plist", "--pkg-info", "/fixture/PkgInfo",
+		"--launch-agent", "/fixture/LaunchAgent.plist", "--brand-logo", "/fixture/logo.png",
+	}
+	var out, errOut bytes.Buffer
+	if code := run(args, &out, &errOut); code != 1 || out.Len() != 0 || !strings.Contains(errOut.String(), "explicit --apollo-capability is required") {
+		t.Fatalf("missing independent expectation did not fail closed: code=%d stdout=%s stderr=%s", code, out.String(), errOut.String())
 	}
 }
 

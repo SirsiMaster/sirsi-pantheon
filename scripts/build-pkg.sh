@@ -35,6 +35,36 @@ done
 [[ -n "$VERSION" ]] || { echo "ERROR: --version is required" >&2; exit 2; }
 [[ -n "$MODE" ]] || { echo "ERROR: choose --development or --release explicitly" >&2; exit 2; }
 [[ "$(uname -s)" == "Darwin" ]] || { echo "ERROR: PKG creation requires macOS" >&2; exit 1; }
+if [[ "$MODE" == "release" ]]; then
+    [[ "${PANTHEON_APOLLO_CAPABILITY:-}" == "enabled" || "${PANTHEON_APOLLO_CAPABILITY:-}" == "disabled" ]] || {
+        echo "ERROR: release requires PANTHEON_APOLLO_CAPABILITY=enabled|disabled" >&2
+        exit 2
+    }
+    APOLLO_CAPABILITY="$PANTHEON_APOLLO_CAPABILITY"
+else
+    if [[ -n "${PANTHEON_APOLLO_CAPABILITY:-}" ]]; then
+        APOLLO_CAPABILITY="$PANTHEON_APOLLO_CAPABILITY"
+    elif [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
+        APOLLO_CAPABILITY="enabled"
+    else
+        APOLLO_CAPABILITY="disabled"
+    fi
+    [[ "$APOLLO_CAPABILITY" == "enabled" || "$APOLLO_CAPABILITY" == "disabled" ]] || {
+        echo "ERROR: development Apollo capability must be enabled or disabled" >&2
+        exit 2
+    }
+fi
+if [[ "$APOLLO_CAPABILITY" == "enabled" ]]; then
+    [[ -n "${PANTHEON_APOLLO_PROFILE:-}" && "$PANTHEON_APOLLO_PROFILE" = /* && -f "$PANTHEON_APOLLO_PROFILE" && ! -L "$PANTHEON_APOLLO_PROFILE" ]] || {
+        echo "ERROR: enabled Apollo capability requires an absolute regular non-symlink profile" >&2
+        exit 1
+    }
+else
+    [[ -z "${PANTHEON_APOLLO_PROFILE:-}" ]] || {
+        echo "ERROR: disabled Apollo capability forbids PANTHEON_APOLLO_PROFILE" >&2
+        exit 1
+    }
+fi
 [[ -d "$APP_PATH" && ! -L "$APP_PATH" ]] || { echo "ERROR: expected a real Pantheon.app at $APP_PATH" >&2; exit 1; }
 [[ -x "$APP_PATH/Contents/MacOS/sirsi" ]] || { echo "ERROR: Pantheon.app is missing sirsi" >&2; exit 1; }
 [[ -x "$APP_PATH/Contents/MacOS/sirsi-menubar" ]] || { echo "ERROR: Pantheon.app is missing sirsi-menubar" >&2; exit 1; }
@@ -72,6 +102,25 @@ else
 fi
 
 mkdir -p "$BUILD_DIR"
+[[ -x "${BUILD_DIR}/sirsi" ]] || { echo "ERROR: source-built package inventory CLI is unavailable" >&2; exit 1; }
+APOLLO_PROFILE_ARGS=()
+if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
+    APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
+fi
+APOLLO_INVENTORY_ARGS=(--apollo-capability "$APOLLO_CAPABILITY" "${APOLLO_PROFILE_ARGS[@]}")
+# Reject capability/profile drift before pkgbuild or the package signer sees
+# this candidate. The expected capability is a separate CLI argument, not
+# inferred from the copied Info.plist.
+"${BUILD_DIR}/sirsi" package-inventory \
+    --app "$APP_PATH" \
+    --version "$VERSION" \
+    --build "$VERSION" \
+    --info-plist "$APP_PATH/Contents/Info.plist" \
+    --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
+    --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
+    --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
+    --require-code-signature \
+    "${APOLLO_INVENTORY_ARGS[@]}"
 PAYLOAD_ROOT="$(mktemp -d /private/tmp/pantheon-pkg-payload.XXXXXX)"
 PAYLOAD_ROOT_ID="$(/usr/bin/stat -f '%d:%i' "$PAYLOAD_ROOT")"
 
@@ -157,10 +206,6 @@ fi
 # verifier is invoked from the source-built CLI, never from the candidate
 # payload, and opens the expanded app descriptor-relatively without executing
 # an entry inside it.
-APOLLO_PROFILE_ARGS=()
-if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
-    APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
-fi
 "${PROJECT_ROOT}/bin/sirsi" package-inventory \
     --app "$EXPANDED_ROOT/Payload/Applications/Pantheon.app" \
     --version "$VERSION" \
@@ -169,7 +214,8 @@ fi
     --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
     --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
-    --require-code-signature ${APOLLO_PROFILE_ARGS[@]+"${APOLLO_PROFILE_ARGS[@]}"}
+    --require-code-signature \
+    "${APOLLO_INVENTORY_ARGS[@]}"
 
 # pkgutil intentionally exits nonzero for an unsigned package. That is useful
 # local-development evidence. In commercial release mode signature,

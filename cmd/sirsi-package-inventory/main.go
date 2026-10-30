@@ -30,7 +30,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&pkgInfoPath, "pkg-info", "", "canonical PkgInfo path")
 	flags.StringVar(&launchAgentPath, "launch-agent", "", "canonical LaunchAgent plist path")
 	flags.StringVar(&brandLogoPath, "brand-logo", "", "canonical Sirsi application-mark PNG path")
-	flags.StringVar(&apolloCapability, "apollo-capability", "legacy-development", "independent Apollo native capability expectation")
+	flags.StringVar(&apolloCapability, "apollo-capability", "", "required independent Apollo native capability expectation")
 	flags.StringVar(&apolloProfilePath, "apollo-profile", "", "exact protected Apollo native profile input")
 	flags.BoolVar(&requireCodeSignature, "require-code-signature", false, "require the _CodeSignature payload")
 	if err := flags.Parse(args); err != nil {

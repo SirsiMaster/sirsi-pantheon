@@ -16,6 +16,35 @@ func TestVerifyRejectsDeclaredVersionBuildMismatch(t *testing.T) {
 	}
 }
 
+func TestVerifyUsesIndependentExpectedCapabilityNotBundleSelfDeclaration(t *testing.T) {
+	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
+	for _, capability := range []string{"enabled", "disabled"} {
+		_, err := Verify(Inputs{App: app, Version: "0.23.9-beta", Build: "20260908", InfoPlist: info,
+			PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo, ApolloCapability: capability})
+		if err == nil || !strings.Contains(err.Error(), "Info.plist Apollo capability/profile mismatch") {
+			t.Fatalf("expected capability %q trusted the bundle's self-supplied plist bytes: %v", capability, err)
+		}
+	}
+}
+
+func TestVerifyRejectsUnsafeApolloProfileInput(t *testing.T) {
+	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
+	profileTarget := filepath.Join(t.TempDir(), "profile.json")
+	if err := os.WriteFile(profileTarget, []byte(`{"fixture":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profileLink := filepath.Join(t.TempDir(), "profile-link.json")
+	if err := os.Symlink(profileTarget, profileLink); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Verify(Inputs{App: app, Version: "0.23.9-beta", Build: "20260908", InfoPlist: info,
+		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo,
+		ApolloCapability: "enabled", ApolloProfile: profileLink})
+	if err == nil || !strings.Contains(err.Error(), "protected Apollo profile") {
+		t.Fatalf("symlinked Apollo profile accepted or unrelated refusal: %v", err)
+	}
+}
+
 func TestValidateInfoPlistAcceptsTypedOptionalValues(t *testing.T) {
 	info := []byte(`<?xml version="1.0"?><plist><dict>
 	<key>CFBundleIdentifier</key>

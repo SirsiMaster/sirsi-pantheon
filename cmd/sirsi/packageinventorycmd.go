@@ -59,7 +59,7 @@ func init() {
 	packageInventoryCmd.Flags().StringVar(&packageInventoryPkgInfo, "pkg-info", "", "canonical PkgInfo path")
 	packageInventoryCmd.Flags().StringVar(&packageInventoryLaunchAgent, "launch-agent", "", "canonical LaunchAgent path")
 	packageInventoryCmd.Flags().StringVar(&packageInventoryBrandLogo, "brand-logo", "", "canonical Sirsi application-mark PNG path")
-	packageInventoryCmd.Flags().StringVar(&packageInventoryApolloCapability, "apollo-capability", "legacy-development", "independent expected Apollo native capability: enabled, disabled, or legacy-development")
+	packageInventoryCmd.Flags().StringVar(&packageInventoryApolloCapability, "apollo-capability", "", "required independent expected Apollo native capability: enabled, disabled, or legacy-development")
 	packageInventoryCmd.Flags().StringVar(&packageInventoryApolloProfile, "apollo-profile", "", "exact protected Apollo native profile input")
 	packageInventoryCmd.Flags().BoolVar(&packageInventoryRequireCodeSignature, "require-code-signature", false, "require the _CodeSignature payload")
 	rootCmd.AddCommand(packageInventoryCmd)

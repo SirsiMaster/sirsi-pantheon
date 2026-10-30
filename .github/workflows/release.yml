@@ -164,6 +164,7 @@ jobs:
           GOMAXPROCS: "1"
           GOFLAGS: "-p=1"
           PANTHEON_BUILD_JOBS: "1"
+          PANTHEON_APOLLO_CAPABILITY: disabled
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
           DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
           APPLE_ID: ${{ secrets.APPLE_ID }}

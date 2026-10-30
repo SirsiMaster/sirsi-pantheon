@@ -147,9 +147,48 @@ class ArtifactModesTests(unittest.TestCase):
         dmg = (scripts / "build-dmg.sh").read_text()
         pkg = (scripts / "build-pkg.sh").read_text()
         self.assertLess(dmg.index('artifact_modes.py" --bundle "${BUNDLE_DIR}"'), dmg.index("# --- Code signing ---"))
+        self.assertLess(dmg.index('"${BUILD_DIR}/sirsi" package-inventory'), dmg.index("# --- Code signing ---"))
         self.assertIn('artifact_modes.py" --bundle "${BUNDLE_DIR}" --check', dmg)
         self.assertLess(pkg.index('artifact_modes.py" --payload "$PAYLOAD_ROOT"'), pkg.index('COPYFILE_DISABLE=1 /usr/bin/pkgbuild'))
+        self.assertLess(pkg.index('"${BUILD_DIR}/sirsi" package-inventory'), pkg.index('COPYFILE_DISABLE=1 /usr/bin/pkgbuild'))
         self.assertIn('artifact_modes.py" --payload "$EXPANDED_ROOT/Payload" --check', pkg)
+
+    def test_release_apollo_capability_requires_explicit_profile_pairing(self):
+        scripts = Path(__file__).resolve().parent
+        for name in ("build-dmg.sh", "build-pkg.sh"):
+            source = (scripts / name).read_text()
+            self.assertIn("release requires PANTHEON_APOLLO_CAPABILITY=enabled|disabled", source)
+            self.assertIn("enabled Apollo capability requires an absolute regular non-symlink profile", source)
+            self.assertIn("disabled Apollo capability forbids PANTHEON_APOLLO_PROFILE", source)
+            self.assertIn("--apollo-capability", source)
+            self.assertIn('elif [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]', source)
+        inventory = (scripts / "../internal/packageinventorycmd/verify.go").resolve().read_text()
+        self.assertIn("Info.plist Apollo capability/profile mismatch", inventory)
+
+    def test_release_profile_refusals_happen_before_any_signer_or_profile_read(self):
+        scripts = Path(__file__).resolve().parent
+        regular = self.root / "synthetic-profile.json"
+        regular.write_text('{"fixture":true}')
+        symlink = self.root / "profile-link.json"
+        symlink.symlink_to(regular)
+        cases = (
+            ("missing capability", {}, "release requires PANTHEON_APOLLO_CAPABILITY"),
+            ("missing enabled profile", {"PANTHEON_APOLLO_CAPABILITY": "enabled"}, "requires an absolute regular non-symlink profile"),
+            ("symlinked enabled profile", {"PANTHEON_APOLLO_CAPABILITY": "enabled", "PANTHEON_APOLLO_PROFILE": str(symlink)}, "requires an absolute regular non-symlink profile"),
+            ("disabled with supplied profile", {"PANTHEON_APOLLO_CAPABILITY": "disabled", "PANTHEON_APOLLO_PROFILE": str(regular)}, "disabled Apollo capability forbids"),
+        )
+        for script in ("build-dmg.sh", "build-pkg.sh"):
+            for name, variables, expected in cases:
+                with self.subTest(script=script, case=name):
+                    env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(self.root), "TMPDIR": str(self.root), **variables}
+                    result = subprocess.run(
+                        ["/bin/bash", str(scripts / script), "--release", "--version", "0.24.147-fixture"],
+                        env=env, capture_output=True, text=True, timeout=10, check=False,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(expected, result.stderr)
+                    self.assertNotIn("codesign", result.stderr)
+                    self.assertNotIn("pkgbuild", result.stderr)
 
     def test_private_previous_bundle_uses_native_upgrade_not_merge(self):
         # Native Installer semantics are pkgbuild(1)'s contract, not a mock OS.

@@ -80,6 +80,10 @@ done
 
 /usr/bin/grep -Fq 'scripts/build-dmg.sh --release' "$workflow" || { echo "release workflow does not request release DMG mode" >&2; exit 1; }
 /usr/bin/grep -Fq 'scripts/build-pkg.sh --release' "$workflow" || { echo "release workflow does not request release PKG mode" >&2; exit 1; }
+/usr/bin/grep -Fq 'PANTHEON_APOLLO_CAPABILITY: disabled' "$workflow" || {
+    echo "release workflow does not explicitly declare the published native-disabled Apollo capability" >&2
+    exit 1
+}
 /usr/bin/grep -Fq 'DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG' "$workflow" || {
     echo "release workflow does not fail closed when installer signing is unavailable" >&2
     exit 1
@@ -133,7 +137,44 @@ for file in "$dmg" "$pkg"; do
         echo "package builder does not invoke canonical payload inventory: $file" >&2
         exit 1
     }
+    /usr/bin/grep -Fq 'release requires PANTHEON_APOLLO_CAPABILITY=enabled|disabled' "$file" || {
+        echo "release builder does not require an explicit Apollo capability: $file" >&2
+        exit 1
+    }
+    /usr/bin/grep -Fq -- '--apollo-capability' "$file" || {
+        echo "release builder does not pass an independent Apollo capability expectation: $file" >&2
+        exit 1
+    }
 done
+inventory_lines() {
+    /usr/bin/grep -nF 'package-inventory \' "$1" | /usr/bin/cut -d: -f1
+}
+dmg_inventory_lines="$(inventory_lines "$dmg")"
+pkg_inventory_lines="$(inventory_lines "$pkg")"
+pre_sign_inventory="$(printf '%s\n' "$dmg_inventory_lines" | /usr/bin/sed -n '1p')"
+post_sign_inventory="$(printf '%s\n' "$dmg_inventory_lines" | /usr/bin/sed -n '2p')"
+pre_pkg_inventory="$(printf '%s\n' "$pkg_inventory_lines" | /usr/bin/sed -n '1p')"
+expanded_pkg_inventory="$(printf '%s\n' "$pkg_inventory_lines" | /usr/bin/sed -n '2p')"
+app_signing="$(/usr/bin/grep -n '^# --- Code signing ---' "$dmg" | /usr/bin/head -1 | /usr/bin/cut -d: -f1)"
+app_packaging="$(/usr/bin/grep -n '^# --- Stage + create the DMG ---' "$dmg" | /usr/bin/head -1 | /usr/bin/cut -d: -f1)"
+pkg_signing="$(/usr/bin/grep -n 'COPYFILE_DISABLE=1 /usr/bin/pkgbuild' "$pkg" | /usr/bin/head -1 | /usr/bin/cut -d: -f1)"
+pkg_expansion="$(/usr/bin/grep -n '/usr/sbin/pkgutil --expand-full' "$pkg" | /usr/bin/head -1 | /usr/bin/cut -d: -f1)"
+[[ -n "$pre_sign_inventory" && -n "$app_signing" && "$pre_sign_inventory" -lt "$app_signing" ]] || {
+    echo "DMG builder does not inventory Apollo capability before signing" >&2
+    exit 1
+}
+[[ -n "$post_sign_inventory" && -n "$app_packaging" && "$post_sign_inventory" -gt "$app_signing" && "$post_sign_inventory" -lt "$app_packaging" ]] || {
+    echo "DMG builder does not inventory the signed Apollo payload before DMG assembly" >&2
+    exit 1
+}
+[[ -n "$pre_pkg_inventory" && -n "$pkg_signing" && "$pre_pkg_inventory" -lt "$pkg_signing" ]] || {
+    echo "PKG builder does not inventory Apollo capability before package signing" >&2
+    exit 1
+}
+[[ -n "$expanded_pkg_inventory" && -n "$pkg_expansion" && "$expanded_pkg_inventory" -gt "$pkg_expansion" ]] || {
+    echo "PKG builder does not inventory Apollo capability in the expanded installer payload" >&2
+    exit 1
+}
 for target in dmg-dev pkg-dev release-dmg release-pkg; do
     /usr/bin/grep -Eq "^${target}:" "$makefile" || { echo "Makefile target missing: $target" >&2; exit 1; }
 done
