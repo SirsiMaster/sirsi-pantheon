@@ -19,3 +19,9 @@ operation; deadline attribution describes the stage active when cancellation
 was observed, not a measured share of the total acquisition budget. Finalize
 the worker result with both the context cause and any distinct original error;
 the public stage error stays payload-free while unwrapping both causes.
+
+Runtime classification uses at most four workers for the existing independent
+per-agent reads. It joins every started read before returning, chooses failures
+in snapshot order, and returns no operational map when any read fails or the
+operation is canceled. This bounds concurrency without changing the Fabric RPC
+or its authority.

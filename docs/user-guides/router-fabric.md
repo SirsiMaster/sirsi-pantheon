@@ -20,3 +20,7 @@ If another read error races cancellation, callers can also classify that
 original error with `errors.Is`; the public message remains limited to the
 fixed stage and elapsed duration. The command checks cancellation again before
 writing JSON, so a canceled read that returned a board does not publish it.
+
+Runtime lane classification reuses the existing passive per-agent reads with
+up to four workers. The command waits for started reads to finish and returns
+no partial board if any classification fails or the context is canceled.

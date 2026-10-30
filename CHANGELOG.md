@@ -10,6 +10,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 - Normalize canceled Fabric worker results before sealing so stage attribution retains both the context cause and any distinct source error; check command cancellation before publishing JSON. Refs: docs/design/FABRIC_SURFACE_UNIFICATION.md; docs/user-guides/router-fabric.md; ADR-037; ADR-050; PANTHEON_RULES.md A16/A21/A35.
 
+- Bound runtime lane classification to four concurrent calls over the existing per-agent Fabric read, preserving ordered error selection, cancellation joins, and all-or-nothing board output. Refs: docs/design/FABRIC_SURFACE_UNIFICATION.md; docs/user-guides/router-fabric.md; ADR-037; ADR-038; ADR-050; ADR-054; PANTHEON_RULES.md A16/A21/A35.
+
 ## [0.24.147] — 2026-10-30
 
 - Keep Ma'at proposals pinned to their exact catalog bytes while reading proposals from the current catalog or the trusted historical catalog at `68b1ee17ac49d4c087c54bd4860eee597181fd45`. Classify current versus historical only in the read projection, preserve original local bytes, and continue refusing unknown or malformed provenance. Historical proposals remain local evidence for current Stack Lab review and do not affect fabric matching or promotion authority.

@@ -272,27 +272,20 @@ func ReadFabricContext(ctx context.Context, repoRoot string, now time.Time) (Fab
 			seen[id] = true
 		}
 	}
-	operational := map[string]routerstore.LaneOperationalState{}
+	var operational map[string]routerstore.LaneOperationalState
 	err = FabricReadStage(ctx, FabricStageRuntimeClassification, func() error {
-		for _, agent := range snap.Agents {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			blocked, declared := unavailable[agent.AgentID]
-			var value routerstore.LaneOperationalState
-			if contextual, ok := f.Store().(interface {
+		store := f.Store()
+		classify := fabricLaneClassifier(func(ctx context.Context, agent string, wakeRoutable bool, recentWithin time.Duration) (routerstore.LaneOperationalState, error) {
+			if contextual, ok := store.(interface {
 				ClassifyLaneContext(context.Context, string, bool, time.Duration) (routerstore.LaneOperationalState, error)
 			}); ok {
-				value, err = contextual.ClassifyLaneContext(ctx, agent.AgentID, declared && !blocked, 5*time.Minute)
-			} else {
-				value, err = f.Store().ClassifyLane(agent.AgentID, declared && !blocked, 5*time.Minute)
+				return contextual.ClassifyLaneContext(ctx, agent, wakeRoutable, recentWithin)
 			}
-			if err != nil {
-				return fmt.Errorf("fabric runtime unavailable: %w", err)
-			}
-			operational[agent.AgentID] = value
-		}
-		return nil
+			return store.ClassifyLane(agent, wakeRoutable, recentWithin)
+		})
+		var err error
+		operational, err = classifyFabricAgents(ctx, snap.Agents, unavailable, classify)
+		return err
 	})
 	if err != nil {
 		return FabricRead{}, err
