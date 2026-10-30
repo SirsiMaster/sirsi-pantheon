@@ -199,14 +199,25 @@ func ReadFabricContext(ctx context.Context, repoRoot string, now time.Time) (Fab
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	snap, threads, err := buildWithThreadsContext(ctx, repoRoot, "", now, DefaultStaleAfter)
+	var snap Snapshot
+	var threads *router.ThreadRegistry
+	err := FabricReadStage(ctx, FabricStageSnapshot, func() error {
+		var err error
+		snap, threads, err = buildWithThreadsContext(ctx, repoRoot, "", now, DefaultStaleAfter)
+		return err
+	})
 	if err != nil {
 		return FabricRead{}, err
 	}
 	// Fabric observes metadata; model/auth commands belong to explicit diagnostics.
 	// Inconclusive is neither authenticated nor a login failure or blocked work.
-	ns, err := router.CollectNodeStatusContext(ctx, repoRoot, nil, func(string, string) (bool, bool, string) {
-		return false, false, "not probed during passive Fabric read; use explicit auth diagnostics"
+	var ns *router.NodeStatus
+	err = FabricReadStage(ctx, FabricStageNodeStatus, func() error {
+		var err error
+		ns, err = router.CollectNodeStatusContext(ctx, repoRoot, nil, func(string, string) (bool, bool, string) {
+			return false, false, "not probed during passive Fabric read; use explicit auth diagnostics"
+		})
+		return err
 	})
 	if err != nil {
 		return FabricRead{}, err
@@ -214,28 +225,40 @@ func ReadFabricContext(ctx context.Context, repoRoot string, now time.Time) (Fab
 	if ns == nil {
 		return FabricRead{}, fmt.Errorf("fabric node status unavailable")
 	}
-	f, err := dispatch.Open(repoRoot)
-	if err != nil {
-		return FabricRead{}, err
-	}
-	defer f.Close()
-	reg, err := router.LoadRegistry(filepath.Join(repoRoot, ".agents", "idea-router"))
-	if err != nil {
-		return FabricRead{}, err
-	}
-	if reg == nil {
-		return FabricRead{}, fmt.Errorf("fabric registry unavailable")
-	}
-	unavailable := router.UnroutableFromRuntime(reg, threads, now)
-	metadata := captureFabricMetadata(reg, threads, ns)
+	var f *dispatch.Facade
+	var reg *router.Registry
+	var unavailable map[string]bool
+	var metadata FabricMetadata
 	var ids []string
-	if contextual, ok := f.Store().(interface {
-		OperationalAgentsContext(context.Context) ([]string, error)
-	}); ok {
-		ids, err = contextual.OperationalAgentsContext(ctx)
-	} else {
-		ids, err = f.Store().OperationalAgents()
-	}
+	defer func() {
+		if f != nil {
+			f.Close()
+		}
+	}()
+	err = FabricReadStage(ctx, FabricStageOperationalAgents, func() error {
+		var err error
+		f, err = dispatch.Open(repoRoot)
+		if err != nil {
+			return err
+		}
+		reg, err = router.LoadRegistry(filepath.Join(repoRoot, ".agents", "idea-router"))
+		if err != nil {
+			return err
+		}
+		if reg == nil {
+			return fmt.Errorf("fabric registry unavailable")
+		}
+		unavailable = router.UnroutableFromRuntime(reg, threads, now)
+		metadata = captureFabricMetadata(reg, threads, ns)
+		if contextual, ok := f.Store().(interface {
+			OperationalAgentsContext(context.Context) ([]string, error)
+		}); ok {
+			ids, err = contextual.OperationalAgentsContext(ctx)
+		} else {
+			ids, err = f.Store().OperationalAgents()
+		}
+		return err
+	})
 	if err != nil {
 		return FabricRead{}, err
 	}
@@ -250,23 +273,29 @@ func ReadFabricContext(ctx context.Context, repoRoot string, now time.Time) (Fab
 		}
 	}
 	operational := map[string]routerstore.LaneOperationalState{}
-	for _, agent := range snap.Agents {
-		if err := ctx.Err(); err != nil {
-			return FabricRead{}, err
+	err = FabricReadStage(ctx, FabricStageRuntimeClassification, func() error {
+		for _, agent := range snap.Agents {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			blocked, declared := unavailable[agent.AgentID]
+			var value routerstore.LaneOperationalState
+			if contextual, ok := f.Store().(interface {
+				ClassifyLaneContext(context.Context, string, bool, time.Duration) (routerstore.LaneOperationalState, error)
+			}); ok {
+				value, err = contextual.ClassifyLaneContext(ctx, agent.AgentID, declared && !blocked, 5*time.Minute)
+			} else {
+				value, err = f.Store().ClassifyLane(agent.AgentID, declared && !blocked, 5*time.Minute)
+			}
+			if err != nil {
+				return fmt.Errorf("fabric runtime unavailable: %w", err)
+			}
+			operational[agent.AgentID] = value
 		}
-		blocked, declared := unavailable[agent.AgentID]
-		var value routerstore.LaneOperationalState
-		if contextual, ok := f.Store().(interface {
-			ClassifyLaneContext(context.Context, string, bool, time.Duration) (routerstore.LaneOperationalState, error)
-		}); ok {
-			value, err = contextual.ClassifyLaneContext(ctx, agent.AgentID, declared && !blocked, 5*time.Minute)
-		} else {
-			value, err = f.Store().ClassifyLane(agent.AgentID, declared && !blocked, 5*time.Minute)
-		}
-		if err != nil {
-			return FabricRead{}, fmt.Errorf("fabric runtime unavailable: %w", err)
-		}
-		operational[agent.AgentID] = value
+		return nil
+	})
+	if err != nil {
+		return FabricRead{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return FabricRead{}, err

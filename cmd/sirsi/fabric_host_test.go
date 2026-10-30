@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -45,7 +46,7 @@ func TestRouterFabricCommandUsesSelectedWriterAndRefusesUnavailable(t *testing.T
 		out := &bytes.Buffer{}
 		calls := 0
 		cause := errors.New("inert unavailable")
-		cmd := newRouterFabricCommand(func() (ledger.FabricBoard, error) {
+		cmd := newRouterFabricCommand(func(context.Context) (ledger.FabricBoard, error) {
 			calls++
 			if fail {
 				return ledger.FabricBoard{}, cause
@@ -80,6 +81,25 @@ func TestRouterFabricCommandUsesSelectedWriterAndRefusesUnavailable(t *testing.T
 				t.Fatalf("selected writer must contain exactly one JSON value: %v", err)
 			}
 		}
+	}
+}
+
+func TestRouterFabricDeadlineKeepsJSONStdoutEmpty(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), -time.Second)
+	defer cancel()
+	out := &bytes.Buffer{}
+	cmd := newRouterFabricCommand(func(got context.Context) (ledger.FabricBoard, error) {
+		if got != ctx {
+			return ledger.FabricBoard{}, errors.New("command context was not propagated")
+		}
+		return ledger.FabricBoard{}, &ledger.FabricStageError{Stage: ledger.FabricStageNodeStatus, Elapsed: time.Millisecond, Cause: context.DeadlineExceeded}
+	})
+	cmd.SetContext(ctx)
+	cmd.SetOut(out)
+	cmd.SetErr(&bytes.Buffer{})
+	err := cmd.Execute()
+	if !errors.Is(err, context.DeadlineExceeded) || out.Len() != 0 {
+		t.Fatalf("deadline result must preserve its cause and omit JSON: err=%v stdout=%q", err, out.String())
 	}
 }
 
