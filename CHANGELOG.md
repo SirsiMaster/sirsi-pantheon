@@ -8,6 +8,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.148] — 2026-10-30
 
+- Propagate Fabric command cancellation through existing ledger/runtime reads and report bounded deadline attribution without read payloads. Limit independent per-agent runtime classification to four workers. A deadline may return while acquisition remains active; cancellation does not retract remote work already dispatched. Refs: docs/design/FABRIC_SURFACE_UNIFICATION.md; docs/user-guides/router-fabric.md.
+
+- An attended lane without a live session now reports needs-owner rather than incorrectly advertising a wakeable consumer (ADR-079 D4).
+
+- Router send and ping now report no live consumer when an attended or no-grant hold has no fresh attended session.
+
 - Add `maat status --id ID --json` using server-side exact MaatRead selection with a 64KiB response ceiling. Preserve whole-history status compatibility; unknown is not released, duplicate/oversized rows fail closed, old servers refuse without broad fallback. No admission or reservation mutation; delegated pod IDs refuse unsupported canonical fallback.
 
 - Keep terminal wake failures unresolved when a legacy completion contains only a whitespace-padded no-result marker. Filter in SQLite/PostgreSQL without returning result bodies. Refs: ADR-061; docs/stacklab/LANE_CURRENT_WAKE_FAILURES.md.
