@@ -10,7 +10,9 @@ cat >"$tmp/bin/gcloud" <<'MOCK'
 printf '%s\n' "$*" >>"$CALLS"
 case "$*" in
   'run services list '*) [ "${LIST_ERROR:-0}" = 0 ] || exit 1; printf '%s\n' "$LIST" ;;
-  'run services describe sirsi-router '*) [ "${DESCRIBE_ERROR:-0}" = 0 ] || exit 1; printf '%s\n' "$SERVICE" ;;
+  'run services describe sirsi-router '*)
+    [ "${DESCRIBE_ERROR:-0}" = 0 ] || exit 1
+    if [ "${CHANGE_AFTER_BUILD:-0}" = 1 ] && [ -e "$BUILD_DONE" ]; then printf '%s\n' "$CHANGED_SERVICE"; else printf '%s\n' "$SERVICE"; fi ;;
   *) echo 'unexpected mutating gcloud call' >&2; exit 88 ;;
 esac
 MOCK
@@ -38,6 +40,25 @@ SERVICE='{"metadata":{"name":"sirsi-router"},"status":{"traffic":[{"revisionName
 expect_failure
 # The actual stage entry point must refuse before build or any mutating call.
 if bash "$ROOT/scripts/router-service/stage.sh" >"$tmp/out" 2>"$tmp/err"; then echo 'stage accepted split traffic' >&2; exit 1; fi
+grep -q 'cannot identify a single 100% serving revision' "$tmp/err" || { echo 'stage failed for an unexpected reason' >&2; exit 1; }
+# Exercise a change during the build with fake git cleanliness and fake go.
+# The real git is still used for all other reads; gcloud refuses any write.
+export REAL_GIT="$(command -v git)" BUILD_DONE="$tmp/build-done" CHANGE_AFTER_BUILD=1
+export CHANGED_SERVICE='{"metadata":{"name":"sirsi-router"},"status":{"traffic":[{"revisionName":"newer","percent":100}]}}'
+cat >"$tmp/bin/git" <<'MOCK'
+#!/usr/bin/env bash
+if [ "${1:-}" = -C ] && [ "${3:-}" = status ]; then exit 0; fi
+exec "$REAL_GIT" "$@"
+MOCK
+cat >"$tmp/bin/go" <<'MOCK'
+#!/usr/bin/env bash
+touch "$BUILD_DONE"
+MOCK
+chmod +x "$tmp/bin/git" "$tmp/bin/go"
+SERVICE='{"metadata":{"name":"sirsi-router"},"status":{"traffic":[{"revisionName":"current","percent":100}]}}'
+if bash "$ROOT/scripts/router-service/stage.sh" >"$tmp/out" 2>"$tmp/err"; then echo 'stage accepted traffic change during build' >&2; exit 1; fi
+grep -q 'serving traffic changed during build' "$tmp/err" || { echo 'stage failed before drift check' >&2; exit 1; }
+unset CHANGE_AFTER_BUILD
 SERVICE='{"metadata":{"name":"sirsi-router"},"status":{"traffic":[]}}'
 expect_failure
 SERVICE='{"metadata":{"name":"sirsi-router"},"status":{"traffic":[{"revisionName":"a"}]}}'

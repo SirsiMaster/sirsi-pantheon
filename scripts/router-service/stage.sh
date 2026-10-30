@@ -43,6 +43,9 @@ RP=(--project="$PROJECT" --region="$REGION")
 PREV=$(bash "$ROOT/scripts/router-service/traffic-target.sh" "${RP[@]}") || exit 1
 CTX=$(mktemp -d); trap "rm -rf \"$CTX\"" EXIT
 build_context "$CTX"
+# Building may take minutes. Refuse if the serving state changed during it.
+CURRENT=$(bash "$ROOT/scripts/router-service/traffic-target.sh" "${RP[@]}") || exit 1
+[ "$CURRENT" = "$PREV" ] || { echo "stage: serving traffic changed during build; refusing deployment" >&2; exit 1; }
 if [ -z "$PREV" ]; then
   # First deploy: a new service cannot start with --no-traffic.
   gcloud run deploy sirsi-router --source "$CTX" "${RP[@]}" --quiet "$@"
