@@ -40,7 +40,12 @@ Diagnostic repair actions use a content-sized gold surface with dark text. Both
 the action title and supporting command wrap at narrow widths and 150 percent
 text size; a native single-line bezel must not crop this two-line content.
 The control retains its Button semantics, pressed/disabled states and existing
-evidence-bound confirmation before execution.
+evidence-bound confirmation before execution. Result apply and follow-up actions
+use the same natural-height rule, including wrapped consequence descriptions.
+Repair sheets reserve a usable viewport before loading completes (minimum
+560 by 460 points, preferred 680 by 640); longer reports scroll inside the panel
+while the header and recheck control remain outside that scroll region. These
+constraints belong to the sheet hosts, not embedded navigation destinations.
 
 The application provides real macOS Pantheon, File, Edit, View, Window and Help
 menus. File selects a Git project through the existing project workflow and
