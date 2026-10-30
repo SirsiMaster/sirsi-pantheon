@@ -111,8 +111,12 @@ func (s *SQLiteStore) laneWakeFailures(agent string) (int, int, error) {
 	var latest time.Time
 	// Item closed is a terminal transition timestamp, not a mutable metadata touch.
 	// Empty/default results and unfenced legacy/admin-only rows are not success.
+	// The two-argument trim is supported by SQLite and PostgreSQL. Pass the
+	// Unicode White_Space set used by strings.TrimSpace as data, keeping result
+	// bodies in the database rather than transferring them to this projection.
+	const completionWhitespace = "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
 	rows, err := s.db.Query(`SELECT closed FROM items WHERE to_agent=? AND status='completed'
- AND attempts>0 AND TRIM(result)<>'' AND result<>'(completed without result)'`, agent)
+ AND attempts>0 AND TRIM(result, ?) NOT IN ('', '(completed without result)')`, agent, completionWhitespace)
 	if err != nil {
 		return 0, 0, fmt.Errorf("routerstore: lane item completion evidence: %w", err)
 	}
