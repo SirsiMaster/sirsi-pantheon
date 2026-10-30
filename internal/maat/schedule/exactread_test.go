@@ -18,8 +18,22 @@ func TestExactReservationBoundsAndPodRefusal(t *testing.T) {
 		t.Fatal("read wrote state")
 	}
 	p := &PodRoutingStore{StateStore: s}
-	if _, e := NewLedger(p).ExactReservation("pod:p:1:id"); e == nil || !strings.Contains(e.Error(), "fallback refused") {
+	if _, e := p.MaatRead("reservation", "pod:p:1:id"); e == nil || !strings.Contains(e.Error(), "fallback refused") {
 		t.Fatal(e)
+	}
+}
+
+func TestExactReservationRejectsCanonicalPodProjection(t *testing.T) {
+	s := newFakeStore()
+	const id = "pod:p:1:id"
+	b, _ := json.Marshal(map[string]any{"reservations": []Reservation{{ID: id, Status: StatusReleased}}})
+	s.kv[stateKey] = string(b)
+	rows, err := NewLedger(s).ExactReservation(id)
+	if err == nil || !strings.Contains(err.Error(), "fallback refused") || len(rows) != 0 {
+		t.Fatalf("canonical pod projection must be refused: rows=%+v err=%v", rows, err)
+	}
+	if s.kv[stateKey] != string(b) {
+		t.Fatal("read changed state")
 	}
 }
 

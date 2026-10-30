@@ -14,6 +14,12 @@ func (l *Ledger) ExactReservation(id string) ([]Reservation, error) {
 	if id == "" || len(id) > 256 || strings.TrimSpace(id) != id || strings.IndexFunc(id, unicode.IsControl) >= 0 {
 		return nil, fmt.Errorf("maat: exact reservation ID required (1..256 bytes, no surrounding whitespace/control characters)")
 	}
+	// A canonical projection is not evidence of the delegated pod authority's
+	// current state. This must precede both remote dispatch and local reads so
+	// direct server callers cannot bypass the pod-routing wrapper.
+	if strings.HasPrefix(id, "pod:") {
+		return nil, fmt.Errorf("maat: exact delegated reservation read not supported; canonical fallback refused")
+	}
 	if a, ok := l.store.(AtomicScheduler); ok {
 		return a.MaatRead("reservation", id)
 	}

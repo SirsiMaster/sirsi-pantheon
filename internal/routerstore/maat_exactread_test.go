@@ -47,3 +47,40 @@ func TestMaatExactReadLargeHistoryRemote(t *testing.T) {
 	_, err = f.client("cloud-a").MaatRead("reservation", "exact805f")
 	wantLaneScope(t, "no new scoped read grant", err)
 }
+
+func TestMaatExactReadRejectsPodProjectionEveryPath(t *testing.T) {
+	store, remote := remoteHarness(t)
+	s := store.(*SQLiteStore)
+	const id = "pod:p:1:id"
+	b, err := json.Marshal(map[string]any{"reservations": []schedule.Reservation{{ID: id, Status: schedule.StatusReleased}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.withTx(func(tx *txHandle) error { return (maatTransactionState{tx}).SetState(maatReservationsKey, string(b)) }); err != nil {
+		t.Fatal(err)
+	}
+	checks := []struct {
+		name string
+		read func() ([]schedule.Reservation, error)
+	}{
+		{"server store", func() ([]schedule.Reservation, error) { return s.MaatRead("reservation", id) }},
+		{"plain client", func() ([]schedule.Reservation, error) { return schedule.NewLedger(remote).ExactReservation(id) }},
+		{"direct RPC", func() ([]schedule.Reservation, error) {
+			var rows []schedule.Reservation
+			err := remote.call("MaatRead", []any{"reservation", id}, &rows)
+			return rows, err
+		}},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			rows, err := check.read()
+			if err == nil || !strings.Contains(err.Error(), "fallback refused") || len(rows) != 0 {
+				t.Fatalf("canonical pod projection must be refused: rows=%+v err=%v", rows, err)
+			}
+		})
+	}
+	after, _, err := s.GetState(maatReservationsKey)
+	if err != nil || after != string(b) {
+		t.Fatalf("read changed state: %v", err)
+	}
+}
