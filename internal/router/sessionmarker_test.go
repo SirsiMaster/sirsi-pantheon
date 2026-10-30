@@ -15,7 +15,7 @@ func TestCurrentSessionIDProviderBindings(t *testing.T) {
 		{"codex session", "", "codex-native", "", "codex-native"},
 		{"codex thread", "", "", "codex-native", "codex-native"},
 		{"matching codex aliases", "", "codex-native", "codex-native", "codex-native"},
-		{"conflicting codex aliases refuse", "", "one-session", "another-session", ""},
+		{"current codex thread preferred to shared root", "", "parent-root", "current-thread", "current-thread"},
 		{"trimmed matching aliases", " ", " native-session ", "native-session", "native-session"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -29,23 +29,63 @@ func TestCurrentSessionIDProviderBindings(t *testing.T) {
 	}
 }
 
-func TestCheckedSessionIdentityRejectsConflictingAliases(t *testing.T) {
+func TestCheckedCurrentSessionIDPrefersThreadAndFallsBackToRoot(t *testing.T) {
 	t.Setenv(SessionIDEnv, "")
 	t.Setenv("CODEX_SESSION_ID", "parent-session")
-	t.Setenv("CODEX_THREAD_ID", "helper-session")
-	if sid, err := CheckedCurrentSessionID(); err == nil || sid != "" {
-		t.Fatalf("ambiguous native identity accepted: %q %v", sid, err)
+	t.Setenv("CODEX_THREAD_ID", "current-thread")
+	if sid, err := CheckedCurrentSessionID(); err != nil || sid != "current-thread" {
+		t.Fatalf("current Codex thread = %q, %v; want current-thread", sid, err)
 	}
-	if CurrentSessionID() != "" {
-		t.Fatal("compatibility result must remain empty, not select either session")
+	if CurrentSessionID() != "current-thread" {
+		t.Fatal("compatibility resolver must use the current thread")
 	}
-	t.Setenv("CODEX_SESSION_ID", "helper-session")
-	if sid, err := CheckedCurrentSessionID(); err != nil || sid != "helper-session" {
-		t.Fatalf("matching actual identity rejected: %q %v", sid, err)
+	t.Setenv("CODEX_THREAD_ID", "")
+	if sid, err := CheckedCurrentSessionID(); err != nil || sid != "parent-session" {
+		t.Fatalf("legacy root-session fallback = %q, %v", sid, err)
 	}
 	t.Setenv(SessionIDEnv, "explicit-claude-session")
+	t.Setenv("CODEX_THREAD_ID", "current-thread")
 	if sid, err := CheckedCurrentSessionID(); err != nil || sid != "explicit-claude-session" {
 		t.Fatalf("existing explicit Claude binding changed: %q %v", sid, err)
+	}
+}
+
+func TestCodexCurrentThreadDoesNotAdoptRootOrSiblingMarkers(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(SessionIDEnv, "")
+	t.Setenv("CODEX_SESSION_ID", "parent-root")
+	t.Setenv("CODEX_THREAD_ID", "current-thread")
+	for _, marker := range []struct{ id, agent, thread string }{
+		{"parent-root", "codex-parent", "parent-thread"},
+		{"sibling-thread", "codex-sibling", "sibling-thread-record"},
+	} {
+		if err := WriteSessionAgentMarker(marker.id, marker.agent); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteSessionThreadMarker(marker.id, marker.thread); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := CurrentSessionID(); got != "current-thread" {
+		t.Fatalf("current marker key = %q, want current-thread", got)
+	}
+	if got := ReadSessionAgentMarker(CurrentSessionID()); got != "" {
+		t.Fatalf("current thread adopted foreign agent marker %q", got)
+	}
+	if got := ReadSessionThreadMarker(CurrentSessionID()); got != "" {
+		t.Fatalf("current thread adopted foreign thread marker %q", got)
+	}
+	if err := WriteSessionAgentMarker(CurrentSessionID(), "codex-current"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSessionThreadMarker(CurrentSessionID(), "registered-current-thread"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadSessionAgentMarker(CurrentSessionID()); got != "codex-current" {
+		t.Fatalf("current agent marker = %q", got)
+	}
+	if got := ReadSessionThreadMarker(CurrentSessionID()); got != "registered-current-thread" {
+		t.Fatalf("current thread marker = %q", got)
 	}
 }
 

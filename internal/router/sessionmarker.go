@@ -14,7 +14,6 @@
 package router
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -58,31 +57,30 @@ func sanitizeSessionID(s string) string {
 	return sessionIDUnsafe.ReplaceAllString(strings.TrimSpace(s), "_")
 }
 
-// CurrentSessionID returns the provider session id, never an agent name or PID.
-// Preserve Claude's existing explicit session binding. In a Codex-only context,
-// accept either supported native alias, but refuse conflicting alias values:
-// selecting one would silently attribute work to a different conversation.
+// CurrentSessionID returns the provider's current marker key, never an agent
+// name or PID. For Codex, that is the current thread when available; the shared
+// root session id is only a legacy fallback.
 func CurrentSessionID() string {
 	session, _ := CheckedCurrentSessionID()
 	return session
 }
 
-// CheckedCurrentSessionID is the registration variant: an ambiguous attended
-// identity must fail before writing any thread or session marker. Read-only
-// compatibility callers retain CurrentSessionID's empty-on-conflict result.
+// CheckedCurrentSessionID is the registration variant. Claude retains priority.
+// Codex exposes a shared root CODEX_SESSION_ID and a current-execution
+// CODEX_THREAD_ID; marker lookup and registration use the thread when present,
+// falling back to the root session id only for older contexts without a thread.
+// The provider ID selects a marker key; it does not establish registration or
+// authorize an operation. See openai/codex@8801b9a8:
+// codex-rs/core/src/exec_env.rs and unified_exec/process_manager.rs.
 func CheckedCurrentSessionID() (string, error) {
 	if sid := strings.TrimSpace(os.Getenv(SessionIDEnv)); sid != "" {
 		return sid, nil
 	}
-	session := strings.TrimSpace(os.Getenv("CODEX_SESSION_ID"))
 	thread := strings.TrimSpace(os.Getenv("CODEX_THREAD_ID"))
-	if session != "" && thread != "" && session != thread {
-		return "", errors.New("conflicting native Codex session aliases; reconcile the actual runtime identity before registration")
+	if thread != "" {
+		return thread, nil
 	}
-	if session != "" {
-		return session, nil
-	}
-	return thread, nil
+	return strings.TrimSpace(os.Getenv("CODEX_SESSION_ID")), nil
 }
 
 // WriteSessionAgentMarker records that sessionID resolves to agentID. No-op when
