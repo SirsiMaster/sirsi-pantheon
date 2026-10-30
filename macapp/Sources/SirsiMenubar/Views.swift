@@ -901,56 +901,58 @@ struct FDAGuideView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-        BackBar(title: "Full Disk Access")
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Grant Full Disk Access")
-                .sirsiFont(.headline).foregroundStyle(gold)
-            Text("\(guide.appName) cannot grant its own access. A folder denial may involve permissions or privacy restrictions; it does not prove Full Disk Access is missing. Review access yourself in macOS:")
-                .sirsiFont(.callout).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            BackBar(title: "Full Disk Access")
+            MaybeScroll {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Grant Full Disk Access")
+                        .sirsiFont(.headline).foregroundStyle(gold)
+                    Text("\(guide.appName) cannot grant its own access. A folder denial may involve permissions or privacy restrictions; it does not prove Full Disk Access is missing. Review access yourself in macOS:")
+                        .sirsiFont(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(steps, id: \.0) { step in
-                    HStack(alignment: .top, spacing: 10) {
-                        Text(step.0)
-                            .sirsiFont(12, weight: .bold)
-                            .frame(width: 20, height: 20)
-                            .background(Circle().fill(gold.opacity(0.20)))
-                            .foregroundStyle(gold)
-                        Text(step.1).sirsiFont(12)
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(steps, id: \.0) { step in
+                            HStack(alignment: .top, spacing: 10) {
+                                Text(step.0)
+                                    .sirsiFont(12, weight: .bold)
+                                    .frame(width: 20, height: 20)
+                                    .background(Circle().fill(gold.opacity(0.20)))
+                                    .foregroundStyle(gold)
+                                Text(step.1).sirsiFont(12)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+
+                    VStack(spacing: 8) {
+                        Button {
+                            guide.openSettings(open: { _ = NSWorkspace.shared.open($0) },
+                                               reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) })
+                        } label: {
+                            Label("Open Full Disk Access", systemImage: "lock.open")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(ResultActionButtonStyle(prominent: true))
+
+                        Button {
+                            revealAppInFinder()
+                        } label: {
+                            Label("Reveal \(guide.appName) in Finder", systemImage: "folder")
+                        }
+                        .buttonStyle(ResultActionButtonStyle(prominent: false))
+                    }
+
+                    if returnToTrash {
+                        Text("Return to Trash, then explicitly start a fresh browse. Access is not confirmed until that read succeeds. Old selections and approvals are discarded. If macOS requires a relaunch, do so yourself; Pantheon will not restart automatically.")
+                            .sirsiFont(12).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                        Button("Back to Trash") { returnToOrigin(using: nav) }.buttonStyle(.bordered)
                     }
                 }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            VStack(spacing: 8) {
-                Button {
-                    guide.openSettings(open: { _ = NSWorkspace.shared.open($0) },
-                                       reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) })
-                } label: {
-                    Label("Open Full Disk Access", systemImage: "lock.open")
-                        .frame(maxWidth: .infinity)
-                }.buttonStyle(.borderedProminent).tint(gold)
-
-                Button {
-                    revealAppInFinder()
-                } label: {
-                    Label("Reveal \(guide.appName) in Finder", systemImage: "folder")
-                        .frame(maxWidth: .infinity)
-                }.buttonStyle(.bordered)
-            }
-
-            if returnToTrash {
-                Text("Return to Trash, then explicitly start a fresh browse. Access is not confirmed until that read succeeds. Old selections and approvals are discarded. If macOS requires a relaunch, do so yourself; Pantheon will not restart automatically.")
-                    .sirsiFont(12).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Back to Trash") { returnToOrigin(using: nav) }.buttonStyle(.bordered)
-            }
-
-            Spacer()
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .navigationTitle("Full Disk Access")
     }
@@ -3461,23 +3463,25 @@ struct RiskView: View {
                 }
                 .listStyle(.inset)
             } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    Label("Choose a project to resolve checkpoint status", systemImage: "folder.badge.questionmark")
-                        .sirsiFont(.callout, weight: .semibold)
-                        .foregroundStyle(gold)
-                    Text(rawFallback?.isEmpty == false
-                         ? rawFallback!
-                         : "Pantheon could not read checkpoint risk yet.")
-                        .sirsiFont(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Use the project selector above to choose the Git project you want Pantheon to protect. It will recheck automatically and offer an in-app checkpoint when there is work at risk.")
-                        .sirsiFont(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                MaybeScroll {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Choose a project to resolve checkpoint status", systemImage: "folder.badge.questionmark")
+                            .sirsiFont(.callout, weight: .semibold)
+                            .foregroundStyle(gold)
+                        Text(rawFallback?.isEmpty == false
+                             ? rawFallback!
+                             : "Pantheon could not read checkpoint risk yet.")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Use the project selector above to choose the Git project you want Pantheon to protect. It will recheck automatically and offer an in-app checkpoint when there is work at risk.")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
             }
             Divider()
             HStack {

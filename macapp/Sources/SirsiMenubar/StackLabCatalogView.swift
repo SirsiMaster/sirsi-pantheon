@@ -5,6 +5,7 @@ import SwiftUI
 // Go projection; this view does not enumerate the filesystem or infer remote
 // registry status. The doctor remains the authority for remote canonicality.
 struct StackLabCatalogView: View {
+    @EnvironmentObject private var nav: Nav
     @ObservedObject var engine: SirsiEngine
     @State private var catalog: StackLabCatalog?
     @State private var loadError: String?
@@ -52,38 +53,55 @@ struct StackLabCatalogView: View {
     }
 
     private func failureState(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .sirsiFont(24, weight: .semibold)
-                .foregroundStyle(.orange)
-            Text("Stack Lab needs your next step")
-                .sirsiFont(.headline)
-            Text(message)
-                .sirsiFont(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 6) {
-                recoveryStep("1", "Refresh this selected project if its files were just updated.")
-                recoveryStep("2", "Use Change above if this is not the repository you meant to inspect.")
-                recoveryStep("3", "Run Stack Lab Doctor to identify the exact record and continue its Ma'at evidence route when source repair needs review.")
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.08)))
-            HStack(spacing: 10) {
-                Button("Refresh selected project") { Task { await load() } }
-                    .buttonStyle(.borderedProminent)
-                    .tint(gold)
-                    .accessibilityHint("Reads the currently selected project's Stack Lab catalog again without changing it.")
-                NavLink { StackLabView(engine: engine) } label: {
-                    Label("Open Stack Lab Doctor", systemImage: "stethoscope")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .sirsiFont(24, weight: .semibold)
+                    .foregroundStyle(.orange)
+                Text("Stack Lab needs your next step")
+                    .sirsiFont(.headline)
+                Text(message)
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    recoveryStep("1", "Refresh this selected project if its files were just updated.")
+                    recoveryStep("2", "Use Change above if this is not the repository you meant to inspect.")
+                    recoveryStep("3", "Run Stack Lab Doctor to identify the exact record and continue its Ma'at evidence route when source repair needs review.")
                 }
-                .buttonStyle(.bordered)
-                .accessibilityHint("Checks the selected project's canonical Stack Lab records and routes unresolved findings to Ma'at evidence.")
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.08)))
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        refreshCatalogButton
+                        openDoctorButton
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    VStack(alignment: .leading, spacing: 8) {
+                        refreshCatalogButton
+                        openDoctorButton
+                    }
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var refreshCatalogButton: some View {
+        Button("Refresh selected project") { Task { await load() } }
+            .buttonStyle(ResultActionButtonStyle(prominent: true))
+            .accessibilityHint("Reads the currently selected project's Stack Lab catalog again without changing it.")
+    }
+
+    private var openDoctorButton: some View {
+        Button { nav.push(StackLabDoctorView(engine: engine)) } label: {
+            Label("Open Stack Lab Doctor", systemImage: "stethoscope")
+        }
+        .buttonStyle(ResultActionButtonStyle(prominent: false))
+        .accessibilityHint("Checks the selected project's canonical Stack Lab records and routes unresolved findings to Ma'at evidence.")
     }
 
     private func recoveryStep(_ number: String, _ detail: String) -> some View {
