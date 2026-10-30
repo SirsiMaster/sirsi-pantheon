@@ -25,7 +25,7 @@ func TestResolveApolloBundleUsesExplicitCapabilityAndProfilePair(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bundle, executable, profile := makeApolloBundleFixture(t, tc.capability, tc.profile)
-			resolved, err := resolveApolloBundle(executable, filepath.Join(t.TempDir(), "managed", "sirsi"), filepath.Join(t.TempDir(), "Pantheon.app"), packageinventorycmd.ReadCanonicalFile, apolloNativeFileSHA256, os.Lstat)
+			resolved, err := resolveApolloBundle(executable, filepath.Join(t.TempDir(), "managed", "sirsi"), filepath.Join(t.TempDir(), "Pantheon.app"), packageinventorycmd.ReadCanonicalFile, packageinventorycmd.ReadProtectedApolloProfile, apolloNativeFileSHA256, os.Lstat)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("invalid bundle state accepted or unrelated refusal: %v", err)
@@ -50,7 +50,7 @@ func TestResolveApolloBundleRejectsUnknownAndMalformedAssociations(t *testing.T)
 	managedApp := filepath.Join(t.TempDir(), "Applications", "Pantheon.app")
 	t.Run("unknown executable layout", func(t *testing.T) {
 		loose := filepath.Join(t.TempDir(), "loose", "sirsi")
-		if _, err := resolveApolloBundle(loose, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "layout unavailable") {
+		if _, err := resolveApolloBundle(loose, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, packageinventorycmd.ReadProtectedApolloProfile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "layout unavailable") {
 			t.Fatalf("unknown executable layout accepted: %v", err)
 		}
 	})
@@ -59,13 +59,13 @@ func TestResolveApolloBundleRejectsUnknownAndMalformedAssociations(t *testing.T)
 		if err := os.Remove(filepath.Join(bundle, "Contents", "Info.plist")); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := resolveApolloBundle(executable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "Info.plist unavailable") {
+		if _, err := resolveApolloBundle(executable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, packageinventorycmd.ReadProtectedApolloProfile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "Info.plist unavailable") {
 			t.Fatalf("missing Info.plist accepted as disabled: %v", err)
 		}
 	})
 	t.Run("enabled metadata without profile is unavailable", func(t *testing.T) {
 		_, executable, _ := makeApolloBundleFixture(t, packageinventory.ApolloCapabilityEnabled, false)
-		if _, err := resolveApolloBundle(executable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "profile unavailable") {
+		if _, err := resolveApolloBundle(executable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, packageinventorycmd.ReadProtectedApolloProfile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "profile unavailable") {
 			t.Fatalf("enabled metadata without profile accepted: %v", err)
 		}
 	})
@@ -78,7 +78,7 @@ func TestResolveApolloBundleRejectsUnknownAndMalformedAssociations(t *testing.T)
 		if err := os.Symlink(target, profile); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := resolveApolloBundle(executable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "unsafe") {
+		if _, err := resolveApolloBundle(executable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, packageinventorycmd.ReadProtectedApolloProfile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "unsafe") {
 			t.Fatalf("symlinked installed profile accepted: %v", err)
 		}
 	})
@@ -87,7 +87,7 @@ func TestResolveApolloBundleRejectsUnknownAndMalformedAssociations(t *testing.T)
 		if err := os.WriteFile(filepath.Join(bundle, "Contents", "Info.plist"), []byte("not a plist"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := resolveApolloBundle(executable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "unavailable or malformed") {
+		if _, err := resolveApolloBundle(executable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, packageinventorycmd.ReadProtectedApolloProfile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "unavailable or malformed") {
 			t.Fatalf("malformed capability metadata accepted: %v", err)
 		}
 	})
@@ -120,14 +120,14 @@ func TestResolveManagedApolloCLIRequiresAppEngineIdentity(t *testing.T) {
 	if err := os.WriteFile(info, nativeCapabilityInfo("disabled"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := resolveApolloBundle(managedExecutable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, apolloNativeFileSHA256, os.Lstat)
+	resolved, err := resolveApolloBundle(managedExecutable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, packageinventorycmd.ReadProtectedApolloProfile, apolloNativeFileSHA256, os.Lstat)
 	if err != nil || resolved.InfoPlist != info || resolved.Capability != packageinventory.ApolloCapabilityDisabled {
 		t.Fatalf("byte-identical managed CLI did not resolve its app metadata: bundle=%+v err=%v", resolved, err)
 	}
 	if err := os.WriteFile(appEngine, []byte("different engine bytes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := resolveApolloBundle(managedExecutable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "does not match") {
+	if _, err := resolveApolloBundle(managedExecutable, managedExecutable, managedApp, packageinventorycmd.ReadCanonicalFile, packageinventorycmd.ReadProtectedApolloProfile, apolloNativeFileSHA256, os.Lstat); err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("managed CLI accepted an unrelated app bundle: %v", err)
 	}
 }

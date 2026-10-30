@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Protect Apollo profile reads with owner and write-mode checks. Commercial release verification explicitly requires the exact pre-sign Info.plist/profile digest pair through post-sign and expanded-PKG inspection; development signed inventory retains its signature-structure contract. Create the digest receipt exclusively, check full writes and close errors, and retain incomplete receipts for reconciliation without unlinking a pathname. Reject matching post-capture changes to both the reference and candidate; the release workflow remains explicitly native-disabled. This is source verification, not release or installed-runtime certification. Refs: ADR-032; PANTHEON_RULES.md A7/A11/A12/A13/A16; `scripts/PACKAGING.md`; `docs/stacklab/pantheon-pt/canon/CERTIFICATION.md`.
+
 ## [0.24.147] — 2026-10-30
 
 - Keep Ma'at proposals pinned to their exact catalog bytes while reading proposals from the current catalog or the trusted historical catalog at `68b1ee17ac49d4c087c54bd4860eee597181fd45`. Classify current versus historical only in the read projection, preserve original local bytes, and continue refusing unknown or malformed provenance. Historical proposals remain local evidence for current Stack Lab review and do not affect fabric matching or promotion authority.

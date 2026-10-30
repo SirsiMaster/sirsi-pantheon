@@ -108,6 +108,46 @@ if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
     APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
 fi
 APOLLO_INVENTORY_ARGS=(--apollo-capability "$APOLLO_CAPABILITY" "${APOLLO_PROFILE_ARGS[@]}")
+# Use the same caller-owned receipt selected by build-dmg; never clean up a
+# preexisting pathname because it may no longer name our original inode.
+FROZEN_APOLLO_DIGESTS="${PANTHEON_APOLLO_DIGEST_RECEIPT:-${BUILD_DIR}/apollo-input-digests-${VERSION}-${ARCH}.txt}"
+if [[ ! -f "$FROZEN_APOLLO_DIGESTS" ]]; then
+    if [[ "$MODE" == "release" ]]; then
+        echo "ERROR: release PKG requires the pre-sign digest receipt from build-dmg.sh" >&2
+        exit 1
+    fi
+    "${BUILD_DIR}/sirsi" package-inventory \
+        --app "$APP_PATH" \
+        --version "$VERSION" \
+        --build "$VERSION" \
+        --info-plist "$APP_PATH/Contents/Info.plist" \
+        --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
+        --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
+        --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
+        "${APOLLO_INVENTORY_ARGS[@]}" \
+        --write-frozen-digests "$FROZEN_APOLLO_DIGESTS"
+fi
+read -r FROZEN_INFO_SHA256 FROZEN_PROFILE_SHA256 < <(python3 - "$FROZEN_APOLLO_DIGESTS" <<'PY'
+import re, sys
+values = {}
+for line in open(sys.argv[1], encoding="ascii"):
+    key, sep, value = line.rstrip("\n").partition("=")
+    if not sep or key in values:
+        raise SystemExit("invalid frozen Apollo digest receipt")
+    values[key] = value
+if set(values) != {"info_sha256", "apollo_profile_sha256"}:
+    raise SystemExit("incomplete frozen Apollo digest receipt")
+if not re.fullmatch(r"[0-9a-f]{64}", values["info_sha256"]):
+    raise SystemExit("invalid frozen Info.plist digest")
+if values["apollo_profile_sha256"] != "absent" and not re.fullmatch(r"[0-9a-f]{64}", values["apollo_profile_sha256"]):
+    raise SystemExit("invalid frozen Apollo profile digest")
+print(values["info_sha256"], values["apollo_profile_sha256"])
+PY
+)
+FROZEN_APOLLO_ARGS=(--expected-info-sha256 "$FROZEN_INFO_SHA256" --expected-apollo-profile-sha256 "$FROZEN_PROFILE_SHA256")
+if [[ "$MODE" == "release" ]]; then
+    FROZEN_APOLLO_ARGS+=(--require-frozen-digests)
+fi
 # Reject capability/profile drift before pkgbuild or the package signer sees
 # this candidate. The expected capability is a separate CLI argument, not
 # inferred from the copied Info.plist.
@@ -120,7 +160,8 @@ APOLLO_INVENTORY_ARGS=(--apollo-capability "$APOLLO_CAPABILITY" "${APOLLO_PROFIL
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
     --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
     --require-code-signature \
-    "${APOLLO_INVENTORY_ARGS[@]}"
+    "${APOLLO_INVENTORY_ARGS[@]}" \
+    "${FROZEN_APOLLO_ARGS[@]}"
 PAYLOAD_ROOT="$(mktemp -d /private/tmp/pantheon-pkg-payload.XXXXXX)"
 PAYLOAD_ROOT_ID="$(/usr/bin/stat -f '%d:%i' "$PAYLOAD_ROOT")"
 
@@ -215,7 +256,8 @@ fi
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
     --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
     --require-code-signature \
-    "${APOLLO_INVENTORY_ARGS[@]}"
+    "${APOLLO_INVENTORY_ARGS[@]}" \
+    "${FROZEN_APOLLO_ARGS[@]}"
 
 # pkgutil intentionally exits nonzero for an unsigned package. That is useful
 # local-development evidence. In commercial release mode signature,

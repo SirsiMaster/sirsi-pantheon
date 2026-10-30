@@ -2,12 +2,105 @@ package packageinventorycmd
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type frozenReceiptWriterFixture struct {
+	writeCount int
+	writeErr   error
+	closeErr   error
+	contents   []byte
+	closed     bool
+}
+
+func (f *frozenReceiptWriterFixture) Write(contents []byte) (int, error) {
+	f.contents = append([]byte(nil), contents...)
+	if f.writeCount < 0 {
+		return len(contents), f.writeErr
+	}
+	return f.writeCount, f.writeErr
+}
+
+func (f *frozenReceiptWriterFixture) Close() error {
+	f.closed = true
+	return f.closeErr
+}
+
+func TestWriteFrozenDigestsChecksFullWriteAndCloseFailures(t *testing.T) {
+	digests := FrozenDigests{
+		InfoPlist:     strings.Repeat("a", 64),
+		ApolloProfile: strings.Repeat("b", 64),
+	}
+	openFailure := errors.New("fixture open failure")
+	writeFailure := errors.New("fixture write failure")
+	closeFailure := errors.New("fixture close failure")
+	for _, tc := range []struct {
+		name       string
+		writeCount int
+		openErr    error
+		writeErr   error
+		closeErr   error
+		wantErr    error
+	}{
+		{name: "complete write", writeCount: -1},
+		{name: "open error", writeCount: -1, openErr: openFailure, wantErr: openFailure},
+		{name: "short write", writeCount: 1, wantErr: io.ErrShortWrite},
+		{name: "write error", writeCount: 1, writeErr: writeFailure, wantErr: writeFailure},
+		{name: "close error", writeCount: -1, closeErr: closeFailure, wantErr: closeFailure},
+		{name: "write and close errors", writeCount: 1, writeErr: writeFailure, closeErr: closeFailure, wantErr: writeFailure},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			file := &frozenReceiptWriterFixture{writeCount: tc.writeCount, writeErr: tc.writeErr, closeErr: tc.closeErr}
+			var openCalled bool
+			err := writeFrozenDigestsWith(filepath.Join(string(filepath.Separator), "tmp", "apollo-digests.fixture"), digests,
+				func(path string, flags int, mode os.FileMode) (frozenDigestReceiptFile, error) {
+					openCalled = true
+					if flags&(os.O_CREATE|os.O_EXCL) != (os.O_CREATE|os.O_EXCL) || mode != 0o600 {
+						t.Fatalf("receipt open flags=%#x mode=%#o", flags, mode)
+					}
+					if tc.openErr != nil {
+						return nil, tc.openErr
+					}
+					return file, nil
+				})
+			if !openCalled || file.closed != (tc.openErr == nil) {
+				t.Fatalf("receipt I/O open/close mismatch: open=%t close=%t openErr=%v", openCalled, file.closed, tc.openErr)
+			}
+			if tc.wantErr == nil {
+				if err != nil || string(file.contents) != "info_sha256="+digests.InfoPlist+"\napollo_profile_sha256="+digests.ApolloProfile+"\n" {
+					t.Fatalf("complete receipt result err=%v contents=%q", err, file.contents)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "retained for reconciliation") || !errors.Is(err, tc.wantErr) {
+				t.Fatalf("receipt failure=%v, want retained reconciliation error wrapping %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestWriteFrozenDigestsUsesCreateOnlyReceiptPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "frozen-digests.txt")
+	original := []byte("preexisting receipt")
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := WriteFrozenDigests(path, FrozenDigests{InfoPlist: strings.Repeat("a", 64), ApolloProfile: ApolloProfileAbsent})
+	if err == nil || !strings.Contains(err.Error(), "create-only") {
+		t.Fatalf("existing receipt was not refused: %v", err)
+	}
+	retained, readErr := os.ReadFile(path)
+	if readErr != nil || string(retained) != string(original) {
+		t.Fatalf("preexisting receipt changed or disappeared: bytes=%q err=%v", retained, readErr)
+	}
+}
 
 func TestHashCanonicalFileUsesStableNoFollowDescriptor(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
@@ -52,6 +145,68 @@ func TestVerifyRejectsDeclaredVersionBuildMismatch(t *testing.T) {
 	}
 }
 
+func TestReleaseInventoryRequiresFrozenDigests(t *testing.T) {
+	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
+	_, err := Verify(Inputs{App: app, Version: "0.23.9-beta", Build: "20260908", InfoPlist: info,
+		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo,
+		ApolloCapability: "disabled", RequireCodeSignature: true, RequireFrozenDigests: true})
+	if err == nil || !strings.Contains(err.Error(), "release inventory requires frozen Info.plist and Apollo profile digests") {
+		t.Fatalf("release inventory accepted without its frozen digest pair: %v", err)
+	}
+}
+
+func TestSignedDevelopmentInventoryKeepsStructureOnlyContract(t *testing.T) {
+	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
+	infoBytes := []byte(strings.Replace(string(mustReadFile(t, info)), "</dict>",
+		"<key>SirsiApolloNativeCapability</key><string>disabled</string></dict>", 1))
+	if err := os.WriteFile(info, infoBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), infoBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(app, "Contents", "_CodeSignature"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "Contents", "_CodeSignature", "CodeResources"), []byte("fixture signature layout"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	engine := minimalSignedMachOFixture()
+	for _, path := range []string{filepath.Join(app, "Contents", "MacOS", "sirsi"), filepath.Join(app, "Contents", "MacOS", "sirsi-menubar")} {
+		if err := os.WriteFile(path, engine, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := Verify(Inputs{App: app, Version: "0.23.9-beta", Build: "20260908", InfoPlist: info,
+		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo,
+		ApolloCapability: "disabled", RequireCodeSignature: true})
+	if err != nil {
+		t.Fatalf("signed development inventory without release digest flags failed: %v", err)
+	}
+}
+
+func minimalSignedMachOFixture() []byte {
+	const headerSize = 32
+	const dylibHeaderSize = 24
+	const loadDylib = 0xc
+	name := "/usr/lib/libSystem.B.dylib"
+	commandSize := dylibHeaderSize + len(name) + 1
+	for commandSize%8 != 0 {
+		commandSize++
+	}
+	data := make([]byte, headerSize+commandSize)
+	binary.LittleEndian.PutUint32(data[0:], 0xfeedfacf)
+	binary.LittleEndian.PutUint32(data[4:], 0x0100000c)
+	binary.LittleEndian.PutUint32(data[12:], 2)
+	binary.LittleEndian.PutUint32(data[16:], 1)
+	binary.LittleEndian.PutUint32(data[20:], uint32(commandSize))
+	binary.LittleEndian.PutUint32(data[headerSize:], loadDylib)
+	binary.LittleEndian.PutUint32(data[headerSize+4:], uint32(commandSize))
+	binary.LittleEndian.PutUint32(data[headerSize+8:], dylibHeaderSize)
+	copy(data[headerSize+dylibHeaderSize:], name)
+	return data
+}
+
 func TestVerifyUsesIndependentExpectedCapabilityNotBundleSelfDeclaration(t *testing.T) {
 	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
 	for _, capability := range []string{"enabled", "disabled"} {
@@ -78,6 +233,157 @@ func TestVerifyRejectsUnsafeApolloProfileInput(t *testing.T) {
 		ApolloCapability: "enabled", ApolloProfile: profileLink})
 	if err == nil || !strings.Contains(err.Error(), "protected Apollo profile") {
 		t.Fatalf("symlinked Apollo profile accepted or unrelated refusal: %v", err)
+	}
+}
+
+func TestApolloProfileDescriptorProtection(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		mode  os.FileMode
+		owner uint32
+		ok    bool
+	}{
+		{name: "private owner readable", mode: 0o600, owner: uint32(os.Getuid()), ok: true},
+		{name: "root owned readable", mode: 0o640, owner: 0, ok: true},
+		{name: "group writable", mode: 0o620, owner: uint32(os.Getuid())},
+		{name: "other writable", mode: 0o602, owner: uint32(os.Getuid())},
+		{name: "world writable", mode: 0o666, owner: uint32(os.Getuid())},
+		{name: "foreign owner", mode: 0o600, owner: uint32(os.Getuid()) + 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := apolloProfileDescriptorAllowed(tc.owner, uint32(tc.mode.Perm()), uint32(os.Getuid()))
+			if got != tc.ok {
+				t.Fatalf("profile descriptor policy=%t, want %t", got, tc.ok)
+			}
+		})
+	}
+
+	path := filepath.Join(t.TempDir(), "profile.json")
+	if err := os.WriteFile(path, []byte(`{"fixture":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadProtectedApolloProfile(path); err != nil {
+		t.Fatalf("private profile rejected: %v", err)
+	}
+	for _, mode := range []os.FileMode{0o666, 0o620, 0o602} {
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReadProtectedApolloProfile(path); err == nil || !strings.Contains(err.Error(), "owner or write permissions") {
+			t.Fatalf("unsafe mode %04o accepted or unrelated refusal: %v", mode, err)
+		}
+		if mode == 0o666 {
+			if _, err := ReadCanonicalFile(path); err != nil {
+				t.Fatalf("generic canonical reader changed its permissive mode contract: %v", err)
+			}
+		}
+	}
+}
+
+func TestFrozenApolloInputDigestsRejectReferenceAndCandidateSubstitution(t *testing.T) {
+	initialInfo := []byte("initial Info.plist")
+	initialProfile := []byte("initial protected profile")
+	infoDigest := fmt.Sprintf("%x", sha256.Sum256(initialInfo))
+	profileDigest := fmt.Sprintf("%x", sha256.Sum256(initialProfile))
+	if err := verifyFrozenDigest("Info.plist", []byte("substituted Info.plist"), infoDigest); err == nil {
+		t.Fatal("changed Info.plist reference and candidate passed frozen initial digest")
+	}
+	if err := verifyFrozenProfileDigest([]byte("substituted profile"), true, profileDigest); err == nil {
+		t.Fatal("changed profile reference and candidate passed frozen initial digest")
+	}
+	if err := verifyFrozenDigest("Info.plist", initialInfo, infoDigest); err != nil {
+		t.Fatalf("unchanged initial Info.plist rejected: %v", err)
+	}
+	if err := verifyFrozenProfileDigest(initialProfile, true, profileDigest); err != nil {
+		t.Fatalf("unchanged initial profile rejected: %v", err)
+	}
+	if err := verifyFrozenProfileDigest(nil, false, ApolloProfileAbsent); err != nil {
+		t.Fatalf("frozen disabled-profile absence rejected: %v", err)
+	}
+}
+
+func TestVerifyFreezesInitialInfoDigestBeforeMatchingCandidateCanChange(t *testing.T) {
+	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
+	inputs := Inputs{App: app, Version: "0.23.9-beta", Build: "20260908", InfoPlist: info,
+		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo, ApolloCapability: "legacy-development"}
+	_, frozen, err := VerifyWithFrozenDigests(inputs)
+	if err != nil {
+		t.Fatalf("initial inventory failed: %v", err)
+	}
+	if frozen.InfoPlist != fmt.Sprintf("%x", sha256.Sum256(mustReadFile(t, info))) || frozen.ApolloProfile != ApolloProfileAbsent {
+		t.Fatalf("initial digest pair=%+v, want exact Info.plist digest and absent profile", frozen)
+	}
+
+	changed, err := os.ReadFile(info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed = append(changed, '\n')
+	if err := os.WriteFile(info, changed, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), changed, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inputs.ExpectedInfoSHA256 = frozen.InfoPlist
+	inputs.ExpectedProfileSHA256 = frozen.ApolloProfile
+	if _, err := Verify(inputs); err == nil || !strings.Contains(err.Error(), "frozen pre-sign digest") {
+		t.Fatalf("matching changed reference and candidate bypassed initial digest: %v", err)
+	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestVerifyFreezesInitialProfileDigestBeforeMatchingCandidateCanChange(t *testing.T) {
+	app, info, pkgInfo, launchAgent, brandLogo := makeCommandBundle(t)
+	infoBytes := mustReadFile(t, info)
+	infoBytes = []byte(strings.Replace(string(infoBytes), "</dict>", "<key>SirsiApolloNativeCapability</key><string>enabled</string></dict>", 1))
+	if err := os.WriteFile(info, infoBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), infoBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(t.TempDir(), "native-profile.json")
+	profileBytes := []byte(`{"fixture":"initial"}`)
+	if err := os.WriteFile(profilePath, profileBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profileResource := filepath.Join(app, "Contents", "Resources", "Apollo", "native-profile.json")
+	if err := os.MkdirAll(filepath.Dir(profileResource), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(profileResource, profileBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inputs := Inputs{App: app, Version: "0.23.9-beta", Build: "20260908", InfoPlist: info,
+		PkgInfo: pkgInfo, LaunchAgent: launchAgent, BrandLogo: brandLogo,
+		ApolloCapability: "enabled", ApolloProfile: profilePath}
+	_, frozen, err := VerifyWithFrozenDigests(inputs)
+	if err != nil {
+		t.Fatalf("initial inventory failed: %v", err)
+	}
+	if frozen.ApolloProfile != fmt.Sprintf("%x", sha256.Sum256(profileBytes)) {
+		t.Fatalf("initial profile digest=%q", frozen.ApolloProfile)
+	}
+	changed := []byte(`{"fixture":"changed"}`)
+	if err := os.WriteFile(profilePath, changed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(profileResource, changed, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inputs.ExpectedInfoSHA256 = frozen.InfoPlist
+	inputs.ExpectedProfileSHA256 = frozen.ApolloProfile
+	if _, err := Verify(inputs); err == nil || !strings.Contains(err.Error(), "frozen pre-sign digest") {
+		t.Fatalf("matching changed profile reference and candidate bypassed initial digest: %v", err)
 	}
 }
 

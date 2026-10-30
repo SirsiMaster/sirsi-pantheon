@@ -145,16 +145,32 @@ for file in "$dmg" "$pkg"; do
         echo "release builder does not pass an independent Apollo capability expectation: $file" >&2
         exit 1
     }
+    /usr/bin/grep -Fq 'FROZEN_APOLLO_ARGS+=(--require-frozen-digests)' "$file" || {
+        echo "release builder does not enable explicit frozen-digest verification: $file" >&2
+        exit 1
+    }
 done
-inventory_lines() {
-    /usr/bin/grep -nF 'package-inventory \' "$1" | /usr/bin/cut -d: -f1
+inventory_start_for() {
+	/usr/bin/awk -v first="$2" -v second="${3:-}" -v third="${4:-}" '
+	function continued(line) { return substr(line, length(line), 1) == "\\" }
+	index($0, "package-inventory") && continued($0) { start=NR; block=$0; active=1; next }
+	active {
+		block=block "\n" $0
+		if (!continued($0)) {
+			if (index(block, first) && (second == "" || index(block, second)) && (third == "" || index(block, third))) {
+				print start
+				exit
+			}
+			active=0
+			block=""
+		}
+	}
+	' "$1"
 }
-dmg_inventory_lines="$(inventory_lines "$dmg")"
-pkg_inventory_lines="$(inventory_lines "$pkg")"
-pre_sign_inventory="$(printf '%s\n' "$dmg_inventory_lines" | /usr/bin/sed -n '1p')"
-post_sign_inventory="$(printf '%s\n' "$dmg_inventory_lines" | /usr/bin/sed -n '2p')"
-pre_pkg_inventory="$(printf '%s\n' "$pkg_inventory_lines" | /usr/bin/sed -n '1p')"
-expanded_pkg_inventory="$(printf '%s\n' "$pkg_inventory_lines" | /usr/bin/sed -n '2p')"
+pre_sign_inventory="$(inventory_start_for "$dmg" '--write-frozen-digests')"
+post_sign_inventory="$(inventory_start_for "$dmg" '--require-code-signature' '"${FROZEN_APOLLO_ARGS[@]}"')"
+pre_pkg_inventory="$(inventory_start_for "$pkg" '--app "$APP_PATH"' '--require-code-signature' '"${FROZEN_APOLLO_ARGS[@]}"')"
+expanded_pkg_inventory="$(inventory_start_for "$pkg" '--app "$EXPANDED_ROOT/Payload/Applications/Pantheon.app"' '--require-code-signature' '"${FROZEN_APOLLO_ARGS[@]}"')"
 app_signing="$(/usr/bin/grep -n '^# --- Code signing ---' "$dmg" | /usr/bin/head -1 | /usr/bin/cut -d: -f1)"
 app_packaging="$(/usr/bin/grep -n '^# --- Stage + create the DMG ---' "$dmg" | /usr/bin/head -1 | /usr/bin/cut -d: -f1)"
 pkg_signing="$(/usr/bin/grep -n 'COPYFILE_DISABLE=1 /usr/bin/pkgbuild' "$pkg" | /usr/bin/head -1 | /usr/bin/cut -d: -f1)"

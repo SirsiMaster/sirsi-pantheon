@@ -174,6 +174,9 @@ if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
     APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
 fi
 APOLLO_INVENTORY_ARGS=(--apollo-capability "$APOLLO_CAPABILITY" "${APOLLO_PROFILE_ARGS[@]}")
+# Callers may provide a fresh build-owned receipt path shared with build-pkg.
+# The writer is create-only; stale paths remain untouched for reconciliation.
+FROZEN_APOLLO_DIGESTS="${PANTHEON_APOLLO_DIGEST_RECEIPT:-${BUILD_DIR}/apollo-input-digests-${VERSION}-${ARCH}.txt}"
 # Never ship the historical template version from the source plist.  The
 # package and both executables are built from the requested release version.
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${BUNDLE_DIR}/Contents/Info.plist"
@@ -202,7 +205,29 @@ python3 -B "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "${BUNDLE_DIR}"
     --pkg-info "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/PkgInfo" \
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
     --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
-    "${APOLLO_INVENTORY_ARGS[@]}"
+    "${APOLLO_INVENTORY_ARGS[@]}" \
+    --write-frozen-digests "$FROZEN_APOLLO_DIGESTS"
+read -r FROZEN_INFO_SHA256 FROZEN_PROFILE_SHA256 < <(python3 - "$FROZEN_APOLLO_DIGESTS" <<'PY'
+import re, sys
+values = {}
+for line in open(sys.argv[1], encoding="ascii"):
+    key, sep, value = line.rstrip("\n").partition("=")
+    if not sep or key in values:
+        raise SystemExit("invalid frozen Apollo digest receipt")
+    values[key] = value
+if set(values) != {"info_sha256", "apollo_profile_sha256"}:
+    raise SystemExit("incomplete frozen Apollo digest receipt")
+if not re.fullmatch(r"[0-9a-f]{64}", values["info_sha256"]):
+    raise SystemExit("invalid frozen Info.plist digest")
+if values["apollo_profile_sha256"] != "absent" and not re.fullmatch(r"[0-9a-f]{64}", values["apollo_profile_sha256"]):
+    raise SystemExit("invalid frozen Apollo profile digest")
+print(values["info_sha256"], values["apollo_profile_sha256"])
+PY
+)
+FROZEN_APOLLO_ARGS=(--expected-info-sha256 "$FROZEN_INFO_SHA256" --expected-apollo-profile-sha256 "$FROZEN_PROFILE_SHA256")
+if [[ "$MODE" == "release" ]]; then
+    FROZEN_APOLLO_ARGS+=(--require-frozen-digests)
+fi
 # Signature metadata created from here must not inherit a private builder umask.
 umask 022
 
@@ -246,7 +271,8 @@ echo "Verifying assembled Pantheon.app payload..."
     --launch-agent "${PROJECT_ROOT}/cmd/sirsi-menubar/bundle/ai.sirsi.pantheon.plist" \
     --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
     --require-code-signature \
-    "${APOLLO_INVENTORY_ARGS[@]}"
+    "${APOLLO_INVENTORY_ARGS[@]}" \
+    "${FROZEN_APOLLO_ARGS[@]}"
 
 # --- Stage + create the DMG ---
 echo "Creating DMG..."

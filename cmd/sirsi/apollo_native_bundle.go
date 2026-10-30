@@ -21,15 +21,16 @@ type installedApolloBundle struct {
 }
 
 type apolloBundleRead func(string) ([]byte, error)
+type apolloBundleProfileRead func(string) ([]byte, error)
 type apolloBundleHash func(string) (string, error)
 type apolloBundleLstat func(string) (os.FileInfo, error)
 
 // resolveApolloBundle accepts only the app-embedded CLI or the canonical
 // managed-PKG CLI. The managed copy may use app resources only when both
 // executables are the same bytes; it never searches PATH or a caller location.
-func resolveApolloBundle(executable, managedExecutable, managedApp string, read apolloBundleRead, hash apolloBundleHash, lstat apolloBundleLstat) (installedApolloBundle, error) {
+func resolveApolloBundle(executable, managedExecutable, managedApp string, read apolloBundleRead, readProfile apolloBundleProfileRead, hash apolloBundleHash, lstat apolloBundleLstat) (installedApolloBundle, error) {
 	var result installedApolloBundle
-	if !filepath.IsAbs(executable) || filepath.Clean(executable) != executable || read == nil || hash == nil || lstat == nil {
+	if !filepath.IsAbs(executable) || filepath.Clean(executable) != executable || read == nil || readProfile == nil || hash == nil || lstat == nil {
 		return result, errors.New("installed Apollo bundle identity unavailable")
 	}
 	bundle := ""
@@ -71,7 +72,7 @@ func resolveApolloBundle(executable, managedExecutable, managedApp string, read 
 	if profileErr != nil || profileInfo == nil || !profileInfo.Mode().IsRegular() || profileInfo.Mode()&os.ModeSymlink != 0 {
 		return installedApolloBundle{}, errors.New("enabled installed Apollo profile unavailable or unsafe")
 	}
-	result.ProfileBytes, err = read(result.Profile)
+	result.ProfileBytes, err = readProfile(result.Profile)
 	if err != nil || len(result.ProfileBytes) == 0 || len(result.ProfileBytes) > 64<<10 {
 		return installedApolloBundle{}, errors.New("enabled installed Apollo profile unavailable or outside its size bound")
 	}
@@ -88,7 +89,7 @@ func currentApolloBundle() (installedApolloBundle, error) {
 		return installedApolloBundle{}, errors.New("canonicalize installed sirsi executable")
 	}
 	return resolveApolloBundle(executable, setup.LegacyAppEngine, managedPantheonApp,
-		packageinventorycmd.ReadCanonicalFile, apolloNativeFileSHA256, os.Lstat)
+		packageinventorycmd.ReadCanonicalFile, packageinventorycmd.ReadProtectedApolloProfile, apolloNativeFileSHA256, os.Lstat)
 }
 
 // apolloNativeFileSHA256 binds file bytes through the package-inventory

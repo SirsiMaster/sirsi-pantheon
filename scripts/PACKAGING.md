@@ -49,7 +49,10 @@ and provide the protected absolute regular profile path in
 `PANTHEON_APOLLO_PROFILE`. Direct release-script calls require the capability
 variable; disabled releases reject a supplied profile. The Go inventory checks
 the independent expected mode and exact profile before signing, after app
-signing, and against the expanded PKG.
+signing, and against the expanded PKG. Release-mode signed-payload checks also
+require the Info.plist/profile digest pair captured by the initial pre-sign
+inventory. Developer signed-app checks may validate signature structure without
+the release-only frozen-digest flag.
 
 ## Supported installation and upgrades
 
