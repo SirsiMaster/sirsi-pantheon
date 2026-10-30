@@ -2,6 +2,10 @@
 
 ## 2026-10-29 — v0.24.146 release candidate
 
+- Keep long Ma’at recovery, access guidance, Apollo and Stack Lab failures, and Osiris fallback content scrollable; size recovery actions to their wrapped labels and open the actual Stack Lab Doctor from its catalog route.
+
+- Include the native viewport regressions in the Stack Lab native-workspace and Ma’at recovery component recipes.
+
 - Keep synthetic CLI subprocess registrations independent of inherited Codex/Claude session aliases and explicit thread environment; test-only private canaries verify that registration does not rewrite unrelated fixture markers. Preserve explicit fixture inputs and existing production identity policy.
 - Reject new authenticated task claims with empty or mismatched caller thread
   before consuming an attempt, and commit the session owner atomically with the
