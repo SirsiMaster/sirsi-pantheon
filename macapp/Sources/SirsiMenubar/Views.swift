@@ -1567,11 +1567,14 @@ struct FindingView: View {
             Text("Project: \(approval?.directory.path ?? "unavailable")")
         }
         .sheet(isPresented: $showConfirmedFix) {
-            if let approval {
-                ResultView(engine: engine, title: observedFinding.check, args: approval.args,
-                           reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
-                           authorizeExecution: { approved(repairArgs) })
+            Group {
+                if let approval {
+                    ResultView(engine: engine, title: observedFinding.check, args: approval.args,
+                               reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
+                               authorizeExecution: { approved(repairArgs) })
+                }
             }
+            .modifier(ResultPanelLayout())
         }
         .confirmationDialog("Run this bounded repair in Pantheon?", isPresented: $confirmLegacyRepair, titleVisibility: .visible) {
             Button("Run repair") { if let args = legacyNativeRepairArgs, approved(args) { showLegacyRepair = true } }
@@ -1582,13 +1585,16 @@ struct FindingView: View {
             Text("Project: \(approval?.directory.path ?? "unavailable")")
         }
         .sheet(isPresented: $showLegacyRepair) {
-            if let approval {
-                ResultView(engine: engine, title: observedFinding.check, args: approval.args,
-                           reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
-                           authorizeExecution: { legacyNativeRepairArgs.map { approved($0) } ?? false })
-            } else {
-                EmptyView()
+            Group {
+                if let approval {
+                    ResultView(engine: engine, title: observedFinding.check, args: approval.args,
+                               reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
+                               authorizeExecution: { legacyNativeRepairArgs.map { approved($0) } ?? false })
+                } else {
+                    EmptyView()
+                }
             }
+            .modifier(ResultPanelLayout())
         }
     }
 
@@ -4098,29 +4104,16 @@ struct ResultView: View {
                     currentDirectory: SirsiEngine.workingDirectory(for: actual))
                 if actionApproval != nil { pendingApply = a }
             } label: { actionLabel(a, prominent: true) }
-                .buttonStyle(.borderedProminent).tint(gold).disabled(applying)
+                .buttonStyle(ResultActionButtonStyle(prominent: true)).disabled(applying)
         } else {
             Button { Task { await runFollow(a) } } label: { actionLabel(a, prominent: false) }
-                .buttonStyle(.bordered).disabled(applying)
+                .buttonStyle(ResultActionButtonStyle(prominent: false)).disabled(applying)
         }
     }
 
     @ViewBuilder private func actionLabel(_ a: CRAction, prominent: Bool) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: a.isApply ? "bolt.fill" : "arrow.right.circle")
-            VStack(alignment: .leading, spacing: 1) {
-                Text(a.label).sirsiFont(12, weight: .semibold)
-                if let d = a.description, !d.isEmpty {
-                    // Wrap, never clip mid-sentence — a half-shown consequence is
-                    // worse than a taller button.
-                    Text(d).sirsiFont(.caption2)
-                        .foregroundStyle(prominent ? Color.white.opacity(0.85) : Color.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-            Spacer()
-        }.frame(maxWidth: .infinity).padding(.vertical, 2)
+        ResultActionLabel(title: a.label, detail: a.description, prominent: prominent,
+                          systemImage: a.isApply ? "bolt.fill" : "arrow.right.circle")
     }
 
     @ViewBuilder private var rawScroll: some View {

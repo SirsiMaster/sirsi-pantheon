@@ -16,8 +16,8 @@
   "components": [
     {
       "id": "native-workspace-shell",
-      "source": ["macapp/Sources/SirsiMenubar/PantheonDesktopView.swift", "macapp/Sources/SirsiMenubar/WorkspaceSession.swift", "macapp/Sources/SirsiMenubar/ObservationFreshness.swift", "macapp/Sources/SirsiMenubar/ControlCenter.swift", "macapp/Sources/SirsiMenubar/Views.swift", "macapp/Sources/SirsiMenubar/DiagnosticRepairAction.swift"],
-      "tests": ["macapp/Tests/SirsiMenubarTests/WorkspaceTests.swift", "macapp/Tests/SirsiMenubarTests/WorkspaceSessionTests.swift", "macapp/Tests/SirsiMenubarTests/ObservationFreshnessTests.swift", "macapp/Tests/SirsiMenubarTests/DiagnosticRepairActionTests.swift", "macapp/check-font-scaling.sh"],
+      "source": ["macapp/Sources/SirsiMenubar/PantheonDesktopView.swift", "macapp/Sources/SirsiMenubar/WorkspaceSession.swift", "macapp/Sources/SirsiMenubar/ObservationFreshness.swift", "macapp/Sources/SirsiMenubar/ControlCenter.swift", "macapp/Sources/SirsiMenubar/Views.swift", "macapp/Sources/SirsiMenubar/DiagnosticRepairAction.swift", "macapp/Sources/SirsiMenubar/ResultPresentation.swift"],
+      "tests": ["macapp/Tests/SirsiMenubarTests/WorkspaceTests.swift", "macapp/Tests/SirsiMenubarTests/WorkspaceSessionTests.swift", "macapp/Tests/SirsiMenubarTests/ObservationFreshnessTests.swift", "macapp/Tests/SirsiMenubarTests/DiagnosticRepairActionTests.swift", "macapp/Tests/SirsiMenubarTests/ResultPresentationTests.swift", "macapp/Tests/SirsiMenubarTests/ResultScrollViewportTests.swift", "macapp/check-font-scaling.sh"],
       "inputs": ["canonical engine observations", "explicit workspace selection"],
       "outputs": ["consistent sidebar and header", "searchable workflows", "observation and recovery routes"],
       "writes": ["local workspace preference"],
