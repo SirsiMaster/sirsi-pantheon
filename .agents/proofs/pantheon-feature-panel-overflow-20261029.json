@@ -52,6 +52,18 @@
       "role": "stacklab-canon",
       "read_at": "2026-10-29",
       "notes": "Authored and reviewed this source-composition and explicit partial-qualification record in this corrective batch."
+    },
+    {
+      "path": "contracts/stacklab/pantheon-native-workspace-v1.json",
+      "role": "stacklab-recipe",
+      "read_at": "2026-10-29",
+      "notes": "Read existing native workspace and Ma\u2019at recovery component boundaries; added the actual viewport fixture path without changing source/effect/upgrade authority."
+    },
+    {
+      "path": "contracts/stacklab/maat-system-one-recipe-v1.json",
+      "role": "stacklab-recipe",
+      "read_at": "2026-10-29",
+      "notes": "Read existing native workspace and Ma\u2019at recovery component boundaries; added the actual viewport fixture path without changing source/effect/upgrade authority."
     }
   ],
   "requirements_trace": [
@@ -69,6 +81,18 @@
       ],
       "evidence": [
         "Astra source review closed three scoped NavLink styling findings; native production compilation passed. Native86dbffc5: two geometry tests passed, one AX-dependent test skipped only after independent Text/Button oracle unavailable."
+      ]
+    },
+    {
+      "doc": "contracts/stacklab/pantheon-native-workspace-v1.json",
+      "section": "native-workspace-shell.tests",
+      "claim": "Native and Ma\u2019at recipe test indexes name the shipped viewport regression fixture.",
+      "files_changed": [
+        "contracts/stacklab/pantheon-native-workspace-v1.json",
+        "contracts/stacklab/maat-system-one-recipe-v1.json"
+      ],
+      "evidence": [
+        "JSON decode readback; application and native fixture source bytes unchanged from85eb5257."
       ]
     }
   ],
