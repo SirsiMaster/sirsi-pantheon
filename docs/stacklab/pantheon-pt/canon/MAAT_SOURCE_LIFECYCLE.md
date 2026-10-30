@@ -37,8 +37,11 @@ bounded runner: editable scope -> explicit preview -> frozen exact scope/profile
 digest confirmation -> one record -> retained operation receipt. It never runs
 automatically on load, refresh or remount. Failed preview/readback retains the
 original operation receipt and requires a new explicit preview. Legacy comparison
-metrics are named accordingly, not “Calibrated”. Casebook's shared optional event
-and reason propagate to existing CLI/MCP/TUI/dashboard projections.
+metrics are named accordingly, not “Calibrated”. The lifecycle control appears
+beside source import in both the normal System One view and its history-error
+view; the Decisions view's separate control is not a substitute. Casebook's
+shared optional event and reason propagate to existing CLI/MCP/TUI/dashboard
+projections.
 
 ## Atomic history and failure bounds
 
