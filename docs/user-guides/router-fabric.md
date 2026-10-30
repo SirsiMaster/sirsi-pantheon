@@ -22,5 +22,11 @@ fixed stage and elapsed duration. The command checks cancellation again before
 writing JSON, so a canceled read that returned a board does not publish it.
 
 Runtime lane classification reuses the existing passive per-agent reads with
-up to four workers. The command waits for started reads to finish and returns
-no partial board if any classification fails or the context is canceled.
+up to four workers. The classification helper joins its started callbacks
+before returning a result, and the command refuses to publish a partial board
+if classification fails or the context is canceled. A command deadline can
+return the caller before the acquisition worker finishes; the active producer
+operation remains occupied until that worker exits. Context cancellation stops
+client-side waiting where supported, but does not retract remote work already
+dispatched. The legacy non-contextual fallback may also remain active until its
+call returns.

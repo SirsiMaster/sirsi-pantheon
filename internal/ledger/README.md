@@ -21,7 +21,11 @@ the worker result with both the context cause and any distinct original error;
 the public stage error stays payload-free while unwrapping both causes.
 
 Runtime classification uses at most four workers for the existing independent
-per-agent reads. It joins every started read before returning, chooses failures
-in snapshot order, and returns no operational map when any read fails or the
-operation is canceled. This bounds concurrency without changing the Fabric RPC
-or its authority.
+per-agent reads. The classification helper joins every started callback before
+returning its result, chooses failures in snapshot order, and returns no
+operational map when any read fails or its context is canceled. The command's
+producer waiter can return at its deadline while the acquisition worker remains
+active; that operation stays occupied until the worker exits. Context cancellation
+does not retract remote work already dispatched, and the legacy non-contextual
+fallback can remain active until its call returns. This bounds concurrency
+without changing the Fabric RPC or its authority.
