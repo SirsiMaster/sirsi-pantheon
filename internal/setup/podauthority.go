@@ -4,7 +4,6 @@ package setup
 
 import (
 	"bytes"
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -15,7 +14,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -327,10 +325,6 @@ func CurrentPackagedMaatEngine() (string, error) {
 // executing the candidate payload. Output and runtime are bounded.
 func VerifyPackagedMaatEngine(path string) error {
 	return packagedengine.Verify(path)
-}
-
-func maatPodCodesignCommand(ctx context.Context, path string) *exec.Cmd {
-	return packagedengine.VerificationCommand(ctx, path)
 }
 
 func validateCanonicalDirectory(path string) error {
