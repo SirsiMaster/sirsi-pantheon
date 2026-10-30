@@ -1,3 +1,0 @@
-Correct stale model-router traceability: typed streaming, JSON-object, and determinism request/capability paths and routed streaming are present in source. Keep production-backend JSON/determinism behavior and real/installed handoff explicitly unqualified; label retained qualification by its donor source identity rather than implying a fresh current-main run.
-
-Refs: `docs/stacklab/MODEL_ROUTER_V1_TRACEABILITY.md`, `contracts/stacklab/model-router-v1-recipe-v1.json`, `contracts/stacklab/model-router-generation-requirements-v1.json`, `internal/modelrouter/router.go`, `internal/provider/requirements.go`, `internal/provider/provider.go`, `cmd/sirsi/ask.go`
