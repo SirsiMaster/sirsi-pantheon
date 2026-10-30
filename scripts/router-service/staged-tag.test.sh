@@ -14,6 +14,7 @@ exec "$REAL_GIT" "$@"
 MOCK
 cat >"$tmp/bin/go" <<'MOCK'
 #!/usr/bin/env bash
+printf 'go %s\n' "$*" >>"$CALLS"
 exit 0
 MOCK
 cat >"$tmp/bin/curl" <<'MOCK'
@@ -26,7 +27,7 @@ cat >"$tmp/bin/gcloud" <<'MOCK'
 #!/usr/bin/env bash
 printf 'gcloud %s\n' "$*" >>"$CALLS"
 case "$*" in
-  'run services list '*) printf '%s\n' '[{"metadata":{"name":"sirsi-router"}}]' ;;
+  'run services list '*) if [ "${SERVICE_ABSENT:-0}" = 1 ]; then printf '%s\n' '[]'; else printf '%s\n' '[{"metadata":{"name":"sirsi-router"}}]'; fi ;;
   'run services describe sirsi-router '*)
     if [ ! -e "$DEPLOYED" ]; then printf '%s\n' "$BEFORE"
     else
@@ -55,6 +56,7 @@ bash "$ROOT/scripts/router-service/stage.sh" >"$tmp/out" 2>"$tmp/err"
 expected=$(<"$REV_FILE")
 grep -q "^NEW=$expected$" "$tmp/out"
 grep -q -- "--to-revisions $expected=100" "$CALLS"
+grep -q -- '--remove-tags ' "$CALLS"
 ! grep -q -- '--to-revisions other-latest=100' "$CALLS"
 [ "$(grep -c '^curl ' "$CALLS")" = 3 ]
 grep -q 'https://staged.example.run.app/v1/healthz' "$CALLS"
@@ -78,4 +80,30 @@ if grep -q '^curl ' "$CALLS"; then echo 'probed a tag retargeted before first re
 FIRST=${original_first//__revision__/previous}; export FIRST; refuse
 FIRST=${original_first//https:\/\/staged.example.run.app/http:\/\/staged.example.run.app}; export FIRST; refuse
 FIRST='{"metadata":{"name":"sirsi-router"},"status":{"traffic":[{"revisionName":"previous","percent":100},{"tag":"__tag__","revisionName":"__revision__","url":"https://staged.example.run.app"},{"tag":"__tag__","revisionName":"other","url":"https://other.example.run.app"}]}}'; export FIRST; refuse
-echo 'PASS: staged tag binds probe and shift; changed target refused'
+
+# Stage-only retains the verified tagged revision at zero traffic and emits the
+# identity tuple needed for a separately owned promotion decision.
+reset_fixture
+bash "$ROOT/scripts/router-service/stage.sh" --stage-only >"$tmp/out" 2>"$tmp/err"
+stage_only_revision=$(<"$REV_FILE")
+stage_only_tag=$(<"$TAG_FILE")
+grep -q "^PREV=previous$" "$tmp/out"
+grep -q "^NEW=$stage_only_revision$" "$tmp/out"
+grep -q "^TAG=$stage_only_tag$" "$tmp/out"
+grep -q '^TURL=https://staged.example.run.app$' "$tmp/out"
+grep -q '^PHASE=zero-traffic$' "$tmp/out"
+! grep -q 'run services update-traffic' "$CALLS" || { echo 'stage-only changed traffic or removed its tag' >&2; exit 1; }
+[ "$(grep -c '^curl ' "$CALLS")" = 3 ] || { echo 'stage-only skipped health probes' >&2; exit 1; }
+
+# First-service stage-only refusal occurs after listing, before build/deploy.
+reset_fixture
+SERVICE_ABSENT=1; export SERVICE_ABSENT
+if bash "$ROOT/scripts/router-service/stage.sh" --stage-only >"$tmp/out" 2>"$tmp/err"; then
+  echo 'expected first-service stage-only refusal' >&2; exit 1
+fi
+grep -q 'requires an existing service' "$tmp/err"
+! grep -q '^go ' "$CALLS" || { echo 'built before refusing first-service stage-only' >&2; exit 1; }
+! grep -q 'run deploy sirsi-router' "$CALLS" || { echo 'deployed first service in stage-only mode' >&2; exit 1; }
+! grep -q '^curl ' "$CALLS" || { echo 'probed a nonexistent first-service tag' >&2; exit 1; }
+unset SERVICE_ABSENT
+echo 'PASS: staged tag binding, stage-only handoff, and first-service refusal'
