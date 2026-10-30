@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.148] — 2026-10-30
 
+- Use Codex's current thread ID for its session marker, retaining the root session ID only as a legacy fallback and preserving existing identity and compare-and-swap checks. Add inert coverage for separate child threads sharing a root session.
+
+- Add an explicit router `stage.sh --stage-only` mode that retains the verified zero-traffic revision and tag for separate compatibility testing and operator-controlled promotion. It refuses first-service use and caller-supplied traffic or revision overrides.
+
 - Bind the release's expected Apollo capability and protected profile bytes across app signing and expanded-PKG verification. The DMG and paired PKG share a fresh per-build receipt; missing receipts and changed or insecure profile inputs fail closed. The official release remains native-Apollo-disabled. Refs: docs/evidence/APOLLO_NATIVE_PACKAGE_COMPOSITION_20261015.md; scripts/PACKAGING.md.
 
 - Propagate Fabric command cancellation through existing ledger/runtime reads and report bounded deadline attribution without read payloads. Limit independent per-agent runtime classification to four workers. A deadline may return while acquisition remains active; cancellation does not retract remote work already dispatched. Refs: docs/design/FABRIC_SURFACE_UNIFICATION.md; docs/user-guides/router-fabric.md.
