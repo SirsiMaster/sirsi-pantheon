@@ -10,7 +10,7 @@ import (
 )
 
 func TestResolveGitHubCLIFromUsesPathBeforeMacOSFallback(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	pathDir := filepath.Join(root, "path")
 	fallbackDir := filepath.Join(root, "fallback")
 	if err := os.MkdirAll(pathDir, 0o700); err != nil {
@@ -34,7 +34,7 @@ func TestResolveGitHubCLIFromUsesPathBeforeMacOSFallback(t *testing.T) {
 }
 
 func TestResolveGitHubCLIFromUsesMacOSFallbackAndCanonicalSymlink(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	binDir := filepath.Join(root, "Cellar", "gh", "bin")
 	if err := os.MkdirAll(binDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestResolveGitHubCLIFromUsesMacOSFallbackAndCanonicalSymlink(t *testing.T) 
 }
 
 func TestResolveGitHubCLIFromSkipsCurrentDirectoryAndUsesMacOSFallback(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	originalDir, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestResolveGitHubCLIFromSkipsCurrentDirectoryAndUsesMacOSFallback(t *testin
 }
 
 func TestResolveGitHubCLIFromLimitsFallbackToMacOSAndRejectsInvalidFiles(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	nonExecutable := filepath.Join(root, "gh")
 	if err := os.WriteFile(nonExecutable, []byte("not executable"), 0o600); err != nil {
 		t.Fatal(err)
@@ -152,4 +152,13 @@ func writeExecutable(t *testing.T, path string) {
 	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func canonicalTempDir(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
 }
