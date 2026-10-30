@@ -82,7 +82,8 @@ final class CoreContractsTests: XCTestCase {
           "cause":"an ambient checkout is incomplete",
           "status":"proposed",
           "created_at_utc":"2026-10-05T20:00:00Z",
-          "catalog_sha256":"abc123"
+          "catalog_sha256":"e8a1b1a1e295f3ff02eef4342d4bd315555960d561458687c8ee1be034b2b178",
+          "catalog_relation":"historical"
         }]
         """#
 
@@ -91,6 +92,25 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(proposals?.count, 1)
         XCTAssertEqual(proposals?.first?.id, "catalog-root-missing")
         XCTAssertEqual(proposals?.first?.titleOrID, "Catalog root missing")
+        XCTAssertEqual(proposals?.first?.catalogRelationLabel,
+                       "Recorded against a prior catalog · review against current catalog")
+    }
+
+    func testKnownFailureProposalWithoutCatalogProjectionIsNotLabeledCurrent() throws {
+        let raw = #"[{"schema":"sirsi.maat.known-failure-proposal.v1","id":"legacy","signature":"x","cause":"y","status":"proposed","created_at_utc":"2026-10-05T20:00:00Z","catalog_sha256":"e8a1b1a1e295f3ff02eef4342d4bd315555960d561458687c8ee1be034b2b178"}]"#
+
+        let proposal = try XCTUnwrap(MaatKnownFailureProposalsView.decode(raw)?.first)
+
+        XCTAssertNil(proposal.catalogRelation)
+        XCTAssertEqual(proposal.catalogRelationLabel, "Catalog generation unavailable")
+    }
+
+    func testKnownFailureProposalCurrentProjectionLabelsCurrent() throws {
+        let raw = #"[{"schema":"sirsi.maat.known-failure-proposal.v1","id":"current","signature":"x","cause":"y","status":"proposed","created_at_utc":"2026-10-30T12:00:00Z","catalog_sha256":"80145ab40c50d156607fc3155e7840f194398f7674d42f7bdc39b553586473d8","catalog_relation":"current"}]"#
+
+        let proposal = try XCTUnwrap(MaatKnownFailureProposalsView.decode(raw)?.first)
+
+        XCTAssertEqual(proposal.catalogRelationLabel, "Recorded against the current known-failure catalog")
     }
 
     func testActivityResolutionAlwaysClosesAnAmbiguousOrFailedOutcome() {
