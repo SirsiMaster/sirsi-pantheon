@@ -44,3 +44,8 @@ the finite independent census; diagram counts are not installed acceptance.
 The inventory is regenerated from the committed141 composition named in
 CERTIFICATION. Final-head digest equality, publication and installed evidence
 remain separate acceptance steps.
+
+The [Ma’at source lifecycle](MAAT_SOURCE_LIFECYCLE.md) records the bounded
+receipt, replay, owner-adoption, custody, and qualification limits. It is
+source-level contract documentation, not evidence of empirical calibration,
+installed acceptance, or gate activation.

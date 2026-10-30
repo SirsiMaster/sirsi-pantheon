@@ -1420,6 +1420,7 @@ struct MaatKnownFailureProposalsView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            MaatLifecycleControl(engine: engine)
             Button("Try again") { Task { await load() } }
                 .buttonStyle(.borderedProminent)
                 .tint(gold)
@@ -1447,6 +1448,7 @@ struct MaatKnownFailureProposalsView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            MaatLifecycleControl(engine: engine)
             NavLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
                 Label("Run Ma'at audit", systemImage: "checkmark.seal")
                     .padding(.horizontal, 12)
@@ -1464,6 +1466,7 @@ struct MaatKnownFailureProposalsView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(casebook.summary, history: casebook.history)
+                    MaatLifecycleControl(engine: engine)
                     if loading {
                         HStack {
                             Label("Searching retained history…", systemImage: "arrow.clockwise")
