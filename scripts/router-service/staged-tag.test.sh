@@ -95,6 +95,23 @@ grep -q '^PHASE=zero-traffic$' "$tmp/out"
 ! grep -q 'run services update-traffic' "$CALLS" || { echo 'stage-only changed traffic or removed its tag' >&2; exit 1; }
 [ "$(grep -c '^curl ' "$CALLS")" = 3 ] || { echo 'stage-only skipped health probes' >&2; exit 1; }
 
+# Caller-supplied traffic, tag, and revision identity overrides are rejected
+# before any service read, build, or deploy in stage-only mode.
+for conflicting_flag in --no-traffic=false --traffic=100 --to-latest --tag=caller-tag --revision-suffix=caller-suffix; do
+  reset_fixture
+  if bash "$ROOT/scripts/router-service/stage.sh" --stage-only "$conflicting_flag" >"$tmp/out" 2>"$tmp/err"; then
+    echo "expected stage-only refusal for $conflicting_flag" >&2; exit 1
+  fi
+  grep -q 'reserved in --stage-only mode' "$tmp/err"
+  [ ! -e "$CALLS" ] || { echo "performed work before rejecting $conflicting_flag" >&2; exit 1; }
+done
+reset_fixture
+if bash "$ROOT/scripts/router-service/stage.sh" --stage-only --tag caller-tag >"$tmp/out" 2>"$tmp/err"; then
+  echo 'expected stage-only refusal for split --tag argument' >&2; exit 1
+fi
+grep -q 'reserved in --stage-only mode' "$tmp/err"
+[ ! -e "$CALLS" ] || { echo 'performed work before rejecting split --tag argument' >&2; exit 1; }
+
 # First-service stage-only refusal occurs after listing, before build/deploy.
 reset_fixture
 SERVICE_ABSENT=1; export SERVICE_ABSENT

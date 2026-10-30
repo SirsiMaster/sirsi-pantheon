@@ -47,6 +47,17 @@ if [ "${1:-}" = --stage-only ]; then
   STAGE_ONLY=1
   shift
 fi
+if [ "$STAGE_ONLY" = 1 ]; then
+  for arg in "$@"; do
+    case "$arg" in
+      --no-traffic|--no-traffic=*|--traffic|--traffic=*|--to-latest|--to-revisions|--to-revisions=*|\
+      --tag|--tag=*|--update-tags|--update-tags=*|--remove-tags|--remove-tags=*|--clear-tags|--clear-tags=*|--revision-suffix|--revision-suffix=*)
+        echo "stage: $arg is reserved in --stage-only mode" >&2
+        exit 2
+        ;;
+    esac
+  done
+fi
 RP=(--project="$PROJECT" --region="$REGION")
 PREV=$(bash "$ROOT/scripts/router-service/traffic-target.sh" "${RP[@]}") || exit 1
 if [ "$STAGE_ONLY" = 1 ] && [ -z "$PREV" ]; then
