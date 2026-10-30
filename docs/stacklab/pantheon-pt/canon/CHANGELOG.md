@@ -2,6 +2,7 @@
 
 ## 2026-10-30 — v0.24.148 release candidate
 
+- Bound Fabric runtime classification and propagate cancellation with fixed-stage deadline attribution; remote work already dispatched is not retracted.
 - An attended lane without a live session reports needs-owner instead of a wakeable consumer (ADR-079 D4).
 - Router send and ping report no live consumer for attended or no-grant holds without a fresh attended session.
 - Add `maat status --id ID --json` using server-side exact MaatRead selection with a 64KiB response ceiling. Preserve whole-history status compatibility; unknown is not released, duplicate/oversized rows fail closed, old servers refuse without broad fallback. No admission or reservation mutation; delegated pod IDs refuse unsupported canonical fallback.
