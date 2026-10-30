@@ -1,0 +1,5 @@
+router serve: no declared recipient registry; preserving legacy inbox admission (actor-only guard not configured)
+router serve: listening on 100.88.242.95:18764 (store: postgres://…@127.0.0.1:55433/g3?sslmode=disable)
+router serve: no declared recipient registry; preserving legacy inbox admission (actor-only guard not configured)
+router serve: TEST DELAY 204ms injected on every call (SIRSI_ROUTER_SERVE_TEST_DELAY) — evidence runs only
+router serve: listening on 100.88.242.95:18762 (store: postgres://…@127.0.0.1:55433/g3?sslmode=disable)
