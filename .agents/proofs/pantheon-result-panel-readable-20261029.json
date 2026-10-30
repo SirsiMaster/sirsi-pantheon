@@ -91,7 +91,7 @@
     },
     {
       "name": "native-layout-and-scroll",
-      "command": "bash macapp/check-font-scaling.sh && swift test --package-path macapp --scratch-path OWNED_EVIDENCE/swift-scratch --jobs 1 --filter ResultPresentationTests|ResultScrollViewportTests|DiagnosticRepairActionTests",
+      "command": "bash macapp/check-font-scaling.sh && swift test --package-path macapp --scratch-path OWNED_EVIDENCE/swift-scratch --jobs 1 --filter 'ResultPresentationTests|ResultScrollViewportTests|DiagnosticRepairActionTests'",
       "status": "passed",
       "evidence": "Native0fc9c4f2bdc74cc58d6e2fe9db89ee36 success0: app/testtargetcompiled;6focusedtests0failures;966scaled/0unscaledfontsites; retainedprimary/secondary100/150andnarrowPNGscaptures."
     },
