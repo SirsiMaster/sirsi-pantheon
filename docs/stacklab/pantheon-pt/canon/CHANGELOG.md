@@ -1,5 +1,41 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-29 — v0.24.146 release candidate
+
+- Keep synthetic CLI subprocess registrations independent of inherited Codex/Claude session aliases and explicit thread environment; test-only private canaries verify that registration does not rewrite unrelated fixture markers. Preserve explicit fixture inputs and existing production identity policy.
+- Reject new authenticated task claims with empty or mismatched caller thread
+  before consuming an attempt, and commit the session owner atomically with the
+  executable lease. Preserve existing release ownership and same-worker remint
+  fences; do not transfer old threadless leases to a newly registered caller.
+- Add read-only Ma'at retained-aggregate billing reporting with explicit unknown,
+  reported and delayed states. Preserve integer net cost and measured zero;
+  never invent available budget, credits or enforcement from absent export.
+  Strict JSON and timestamp fixtures reject ambiguous or malformed evidence.
+- Repair panels open with a usable viewport before their results load. Primary and secondary result actions wrap their titles and consequences on content-sized surfaces, preserving confirmation and execution behavior.
+- Retained qualification records use the exact quoted multi-suite Swift test filter for reproduction.
+- Keep diagnostic repair actions fully readable at enlarged text sizes: their gold surface grows with the title and wrapping command, with dark high-contrast text instead of a clipped single-line native bezel.
+- Refs: docs/stacklab/pantheon-pt/canon/DESIGN.md; macapp/Tests/SirsiMenubarTests/DiagnosticRepairActionTests.swift.
+- Reconcile the provider-quota runbook with its integrated source and v0.24.143 ancestry. Preserve the October20 qualification checkpoint as history; do not infer loaded-controller adoption, provider recovery, or three-home synchronization from a package release.
+- Link the later completed protected Test job to all seven actual quota test passes and exact unchanged source/test blobs. Keep race/short qualification distinct from non-short or native-provider/runtime outcomes; no baseline rerun required.
+- Refs: ADR-061; docs/provider-quota-retry-hold.md
+- Persist a successfully observed canonical loss/change of pod authority in its existing private journal. Refuse new admission, renewal, live guard read and nonce-liveness replay after that observation, including an offline reopen with the old finite cache. Preserve owned release/invalidation and reservation history/sequence; transport outages alone do not revoke a finite delegation. No credentials, listener, deployment or release authority is added. Refs: ADR-120, PANTHEON_RULES A16/A35.
+- Reconcile ADR-120's command, journal, canonical state and native mTLS descriptions with implemented source while retaining Proposed status and the unqualified automatic-renewal/offline acceptance boundaries. Runtime integration, independent review, normal publication and three-home synchronization remain open.
+- Replace obsolete missing-Git publication status in the existing Ma'at failure-memory contract with the pinned published-source fact. Preserve unverified independent/runtime enforcement and current human-mirror/Workspace synchronization obligations; do not create a competing contract or mirror.
+- Observe local Darwin process groups through errno-checked libproc calls with
+  same-executor positive controls and zombie-aware metadata, instead of spawning
+  sandbox-denied ps during cleanup. Preserve uncertainty/debt and exact owned
+  child signaling/reap fences; no missing read is treated as absence.
+- Refuse CCD reap/archive before mutations when initial process observation fails, is partial/malformed or cannot establish a runner's session attribution. Preserve successful no-match behavior and existing archive grace/retention/live-session rules; do not treat process visibility failures as proof of absence.
+- Typed installed Apollo 2.2.6 Qwen loopback bridge for `apollo chat`, with explicit
+  model/precision/mode binding, pinned app bytes, bounded response identity checks,
+  and no proxy, redirect, retry or fallback. Catalog exposes the installed binding
+  separately without changing Gemma or the signed native fleet route. Source
+  fixtures do not establish signed adoption or actual installed-command proof.
+- Refs: docs/user-guides/apollo-installed-qwen.md; PANTHEON_RULES.md A16/A21/A35;
+  docs/evidence/APOLLO_NATIVE_PACKAGE_COMPOSITION_20261015.md; Rail103939.
+- ADR-062 G3 two-host contention: PASS.
+- ADR-062 G7 cross-host consumers: PASS.
+
 ## 2026-10-29 — v0.24.145 release candidate
 
 - Preserve provider session and surface identity for shared-runtime registrations; refuse a pinned thread belonging to another subject.
