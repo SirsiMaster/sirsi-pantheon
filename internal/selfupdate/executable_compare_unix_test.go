@@ -268,6 +268,6 @@ func TestSameExecutableStopsWhenDigestContextIsCancelled(t *testing.T) {
 		return realDigest(ctx, file, size)
 	}
 	if sameExecutableWith(ctx, left, right, ops) {
-		t.Fatal("cancelled byte comparison was treated as equivalent")
+		t.Fatal("canceled byte comparison was treated as equivalent")
 	}
 }
