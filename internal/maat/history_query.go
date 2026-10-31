@@ -73,6 +73,7 @@ type HistoryMatchState struct {
 	RepairOutcome        *Decision
 	RepairAttempt        *Decision
 	SystemOneSourceCount int
+	EvidenceMatchCount   int
 }
 
 // HistoryCandidate is one selected journal row with its physical byte offset.
@@ -81,6 +82,7 @@ type HistoryCandidate struct {
 	Decision             Decision
 	Offset               int64
 	SystemOneSourceCount int
+	EvidenceMatchCount   int
 }
 
 // HistoryLinks contains only the bounded relationships needed to project the
@@ -131,6 +133,7 @@ type historyLinkRef struct {
 	ResolutionHash       string        `json:"resolution_hash,omitempty"`
 	OwnerAcceptance      bool          `json:"owner_acceptance,omitempty"`
 	SystemOneSourceCount int           `json:"system_one_source_count,omitempty"`
+	EvidenceMatchCount   int           `json:"evidence_match_count,omitempty"`
 	Acceptance           *historyOrder `json:"acceptance,omitempty"`
 	Review               *historyOrder `json:"review,omitempty"`
 	RepairOutcome        *historyOrder `json:"repair_outcome,omitempty"`
@@ -168,6 +171,7 @@ type historyCursor struct {
 	PendingRepairOutcome        *historyOrder         `json:"pending_repair_outcome,omitempty"`
 	PendingRepairAttempt        *historyOrder         `json:"pending_repair_attempt,omitempty"`
 	PendingSystemOneSourceCount int                   `json:"pending_system_one_source_count,omitempty"`
+	PendingEvidenceMatchCount   int                   `json:"pending_evidence_match_count,omitempty"`
 }
 
 // QueryHistory scans one fixed journal snapshot with bounded page/link state.
@@ -356,10 +360,11 @@ func scanHistoryLinksReader(ctx context.Context, deadline time.Time, reader *buf
 		if json.Unmarshal(line, &decision) != nil || validateDecision(decision) != nil {
 			continue
 		}
-		if decision.Kind == "system one screen" {
-			evidenceHash := historyKeyHash(decision.Evidence)
-			for index := range state.Links {
-				if state.Links[index].EvidenceHash == evidenceHash {
+		evidenceHash := historyKeyHash(decision.Evidence)
+		for index := range state.Links {
+			if state.Links[index].EvidenceHash == evidenceHash {
+				state.Links[index].EvidenceMatchCount++
+				if decision.Kind == "system one screen" {
 					state.Links[index].SystemOneSourceCount++
 				}
 			}
@@ -397,13 +402,9 @@ func scanHistoryLinksReader(ctx context.Context, deadline time.Time, reader *buf
 }
 
 func retainHistoryRepairLink(link *historyLinkRef, decision Decision, order historyOrder) {
-	// Keep only the effective relationship: acceptance wins over outcome,
-	// which wins over attempt. The cursor still retains at most two linked
-	// row references per candidate, including the existing hidden-review link.
-	if link.Acceptance != nil {
-		link.RepairOutcome, link.RepairAttempt = nil, nil
-		return
-	}
+	// Retain one repair relationship even when an owner acceptance exists; a
+	// typed acceptance can fail source/host validation at projection time. Each
+	// candidate keeps only its selected acceptance, review, and repair refs.
 	if link.EvidenceHash == "" || decision.Resource != "binary-drift" || decision.OriginEvidence == "" || historyKeyHash(decision.OriginEvidence) != link.EvidenceHash {
 		return
 	}
@@ -421,9 +422,9 @@ func retainHistoryRepairLink(link *historyLinkRef, decision Decision, order hist
 }
 
 func selectedHistoryRepair(acceptance, outcome, attempt *historyOrder) (*historyOrder, string) {
-	if acceptance != nil {
-		return nil, ""
-	}
+	// A typed acceptance may later fail host/source validation. Retain the
+	// independent repair relationship through materialization; a valid accepted
+	// resolution takes precedence in the projector.
 	if outcome != nil {
 		return outcome, "diagnostic verified repair"
 	}
@@ -501,8 +502,11 @@ func scanPendingHistoryLinksReader(ctx context.Context, deadline time.Time, read
 		if json.Unmarshal(bytes.TrimSpace(line), &decision) != nil || validateDecision(decision) != nil {
 			continue
 		}
-		if decision.Kind == "system one screen" && historyKeyHash(decision.Evidence) == state.Pending.EvidenceHash {
-			state.PendingSystemOneSourceCount++
+		if historyKeyHash(decision.Evidence) == state.Pending.EvidenceHash {
+			state.PendingEvidenceMatchCount++
+			if decision.Kind == "system one screen" {
+				state.PendingSystemOneSourceCount++
+			}
 		}
 		if decision.Kind == "diagnostic owner acceptance" && decision.ResolutionFor != "" && historyKeyHash(decision.ResolutionFor) == state.Pending.EvidenceHash {
 			state.PendingAccepted = true
@@ -592,6 +596,7 @@ func materializeHistoryPage(ctx context.Context, deadline time.Time, file *os.Fi
 		}
 		matchState := HistoryMatchState{}
 		matchState.SystemOneSourceCount = link.SystemOneSourceCount
+		matchState.EvidenceMatchCount = link.EvidenceMatchCount
 		if ref.OwnerAcceptance && link.Review != nil && decision.ResolutionFor != "" {
 			review, reviewBytes, err := readHistoryDecisionAtCount(file, link.Review.Offset)
 			bytesRead += reviewBytes
@@ -640,7 +645,7 @@ func materializeHistoryPage(ctx context.Context, deadline time.Time, file *os.Fi
 			return false, bytesRead, rowsRead, context.DeadlineExceeded
 		}
 		page.Candidates = append(page.Candidates, HistoryCandidate{
-			Decision: decision, Offset: ref.Order.Offset, SystemOneSourceCount: link.SystemOneSourceCount,
+			Decision: decision, Offset: ref.Order.Offset, SystemOneSourceCount: link.SystemOneSourceCount, EvidenceMatchCount: link.EvidenceMatchCount,
 		})
 	}
 	offsets := make([]int64, 0, len(acceptanceDecisions))
@@ -996,10 +1001,10 @@ func validateHistoryCursor(state *historyCursor, limit int, fileSize int64) erro
 		if state.Pending == nil || state.ResumeOffset <= 0 || state.Pending.Order.Offset < 0 || state.Pending.Order.Offset >= fileSize || state.Pending.Order.Time == "" || state.Pending.Order.Size <= 0 || state.Pending.Order.Size > maxHistoryRecordBytes+1 {
 			return fmt.Errorf("maat decision history: invalid continuation")
 		}
-		if state.PendingSystemOneSourceCount < 0 || (state.Pending.EvidenceHash != "" && !validHistoryDigest(state.Pending.EvidenceHash)) || (state.Pending.ResolutionHash != "" && !validHistoryDigest(state.Pending.ResolutionHash)) || state.PendingAccepted != (state.PendingAcceptance != nil) || (state.PendingReviewed && !state.Pending.OwnerAcceptance) {
+		if state.PendingSystemOneSourceCount < 0 || state.PendingEvidenceMatchCount < 0 || (state.Pending.EvidenceHash != "" && !validHistoryDigest(state.Pending.EvidenceHash)) || (state.Pending.ResolutionHash != "" && !validHistoryDigest(state.Pending.ResolutionHash)) || state.PendingAccepted != (state.PendingAcceptance != nil) || (state.PendingReviewed && !state.Pending.OwnerAcceptance) {
 			return fmt.Errorf("maat decision history: invalid continuation")
 		}
-	} else if state.Pending != nil || state.PendingSystemOneSourceCount != 0 || (state.ResumeOffset != 0 && state.Phase != "batch-links" && state.Phase != "batch-finalize") || state.PendingAcceptance != nil || state.PendingRepairOutcome != nil || state.PendingRepairAttempt != nil || state.PendingAccepted || state.PendingReviewed {
+	} else if state.Pending != nil || state.PendingSystemOneSourceCount != 0 || state.PendingEvidenceMatchCount != 0 || (state.ResumeOffset != 0 && state.Phase != "batch-links" && state.Phase != "batch-finalize") || state.PendingAcceptance != nil || state.PendingRepairOutcome != nil || state.PendingRepairAttempt != nil || state.PendingAccepted || state.PendingReviewed {
 		return fmt.Errorf("maat decision history: invalid continuation")
 	}
 	if state.PendingAcceptance != nil && (state.PendingAcceptance.Offset < 0 || state.PendingAcceptance.Offset >= fileSize || state.PendingAcceptance.Time == "" || state.PendingAcceptance.Size <= 0 || state.PendingAcceptance.Size > maxHistoryRecordBytes+1) {
@@ -1026,7 +1031,7 @@ func validateHistoryCursor(state *historyCursor, limit int, fileSize int64) erro
 		if !validHistoryRepairRef(link.RepairOutcome, fileSize) || !validHistoryRepairRef(link.RepairAttempt, fileSize) {
 			return fmt.Errorf("maat decision history: invalid continuation")
 		}
-		if link.SystemOneSourceCount < 0 || (link.Acceptance != nil && (link.Acceptance.Offset < 0 || link.Acceptance.Offset >= fileSize || link.Acceptance.Time == "" || link.Acceptance.Size <= 0 || link.Acceptance.Size > maxHistoryRecordBytes+1)) || (link.Review != nil && (link.Review.Offset < 0 || link.Review.Offset >= fileSize || link.Review.Time == "" || link.Review.Size <= 0 || link.Review.Size > maxHistoryRecordBytes+1)) || (link.EvidenceHash != "" && !validHistoryDigest(link.EvidenceHash)) || (link.ResolutionHash != "" && !validHistoryDigest(link.ResolutionHash)) {
+		if link.SystemOneSourceCount < 0 || link.EvidenceMatchCount < 0 || (link.Acceptance != nil && (link.Acceptance.Offset < 0 || link.Acceptance.Offset >= fileSize || link.Acceptance.Time == "" || link.Acceptance.Size <= 0 || link.Acceptance.Size > maxHistoryRecordBytes+1)) || (link.Review != nil && (link.Review.Offset < 0 || link.Review.Offset >= fileSize || link.Review.Time == "" || link.Review.Size <= 0 || link.Review.Size > maxHistoryRecordBytes+1)) || (link.EvidenceHash != "" && !validHistoryDigest(link.EvidenceHash)) || (link.ResolutionHash != "" && !validHistoryDigest(link.ResolutionHash)) {
 			return fmt.Errorf("maat decision history: invalid continuation")
 		}
 	}
@@ -1052,7 +1057,7 @@ func validHistoryRepairRef(ref *historyOrder, fileSize int64) bool {
 }
 
 func exclusiveHistoryOutcome(acceptance, outcome, attempt *historyOrder) bool {
-	return (acceptance == nil || (outcome == nil && attempt == nil)) && (outcome == nil || attempt == nil)
+	return outcome == nil || attempt == nil
 }
 
 func validHistoryDigest(value string) bool {

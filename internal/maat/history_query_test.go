@@ -89,6 +89,67 @@ func appendHistoryFixtures(t *testing.T, journal *FileDecisionJournal, decisions
 	}
 }
 
+func TestQueryHistoryCountsExactEvidenceAcrossKindsOutsideSelectedWindow(t *testing.T) {
+	journal := &FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
+	target := historyFixtureScreen(t, "2026-10-20T00:00:00Z", "screen:collision")
+	rows := []Decision{target}
+	for index := 0; index < 105; index++ {
+		rows = append(rows, historyFixtureScreen(t,
+			time.Date(2026, 10, 21, 0, index, 0, 0, time.UTC).Format(time.RFC3339Nano),
+			"screen:outside-window:"+strconv.Itoa(index)))
+	}
+	rows = append(rows, Decision{Time: "2026-10-01T00:00:00Z", Host: "fixture", Kind: "reservation",
+		Requester: "fixture", Assessed: "same exact evidence under another kind", Determination: "grant",
+		Why: "inert collision", Evidence: target.Evidence})
+	appendHistoryFixtures(t, journal, rows...)
+	page, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "all-kind-collision", Limit: 1,
+		Match: func(decision Decision) bool { return decision.Evidence == target.Evidence }})
+	if err != nil || page.Coverage != HistoryCoverageComplete || len(page.Candidates) != 1 {
+		t.Fatalf("targeted history page: coverage=%q candidates=%d err=%v", page.Coverage, len(page.Candidates), err)
+	}
+	if page.Candidates[0].SystemOneSourceCount != 1 || page.Candidates[0].EvidenceMatchCount != 2 {
+		t.Fatalf("exact evidence counts omitted the old different-kind collision: %+v", page.Candidates[0])
+	}
+}
+
+func TestQueryHistoryRetainsRepairLinksWhenTypedAcceptanceIsRejected(t *testing.T) {
+	for _, pending := range []bool{false, true} {
+		kind, determination := "diagnostic verified repair", "resolved"
+		if pending {
+			kind, determination = "diagnostic repair attempt", "started"
+		}
+		t.Run(kind, func(t *testing.T) {
+			journal := &FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
+			source := historyFixtureScreen(t, "2026-10-31T12:00:00Z", "screen:rejected-acceptance")
+			acceptance, err := BuildBinaryDriftInactiveDisposition("fixture owner", BinaryDriftInactiveDisposition{
+				OriginEvidence: source.Evidence, Host: "wrong-host",
+				ObservedFromUTC:    time.Date(2026, 10, 31, 12, 0, 1, 0, time.UTC),
+				ObservedThroughUTC: time.Date(2026, 10, 31, 12, 0, 2, 0, time.UTC),
+				ObservationSHA256:  strings.Repeat("b", 64),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			repair := Decision{Time: "2026-10-31T12:00:03Z", Host: "fixture", Kind: kind, Requester: "fixture",
+				Resource: "binary-drift", Determination: determination, Why: "inert retained repair", Evidence: "repair:" + kind, OriginEvidence: source.Evidence}
+			appendHistoryFixtures(t, journal, source, acceptance, repair)
+			page, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "rejected-typed-" + kind, Limit: 1,
+				MatchState: func(_ Decision, state HistoryMatchState) bool {
+					return state.RepairOutcome != nil || state.RepairAttempt != nil
+				}})
+			if err != nil || page.Coverage != HistoryCoverageComplete || len(page.Candidates) != 1 {
+				t.Fatalf("rejected typed acceptance suppressed paged repair state: page=%+v err=%v", page, err)
+			}
+			if pending && (len(page.Links.RepairAttempts) != 1 || page.Links.RepairAttempts[0].Evidence != repair.Evidence) {
+				t.Fatalf("pending attempt missing after rejected acceptance: %+v", page.Links)
+			}
+			if !pending && (len(page.Links.RepairOutcomes) != 1 || page.Links.RepairOutcomes[0].Evidence != repair.Evidence) {
+				t.Fatalf("verified outcome missing after rejected acceptance: %+v", page.Links)
+			}
+		})
+	}
+}
+
 func TestQueryHistoryScopesBeforePageLimitAndFindsOldSystemOne(t *testing.T) {
 	journal := &FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
 	old := historyFixtureScreen(t, "2026-09-01T00:00:00Z", "screen:old")

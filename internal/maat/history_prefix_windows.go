@@ -41,7 +41,7 @@ func finishPendingHistoryCandidate(ctx context.Context, deadline time.Time, file
 	}
 	rowsRead := 1
 	bytesRead := candidateBytes
-	matchState := HistoryMatchState{Resolved: state.PendingAccepted, Hidden: state.PendingReviewed, SystemOneSourceCount: state.PendingSystemOneSourceCount}
+	matchState := HistoryMatchState{Resolved: state.PendingAccepted, Hidden: state.PendingReviewed, SystemOneSourceCount: state.PendingSystemOneSourceCount, EvidenceMatchCount: state.PendingEvidenceMatchCount}
 	if state.PendingAcceptance != nil {
 		if err := ctx.Err(); err != nil {
 			return false, bytesRead, rowsRead, err
@@ -233,6 +233,7 @@ func (j *FileDecisionJournal) queryHistoryWindowsLegacy(query HistoryQuery) (His
 			pending.PendingRepairOutcome = link.RepairOutcome
 			pending.PendingRepairAttempt = link.RepairAttempt
 			pending.PendingSystemOneSourceCount = link.SystemOneSourceCount
+			pending.PendingEvidenceMatchCount = link.EvidenceMatchCount
 			bundleBytes, bundleRows := ref.Order.Size, 1
 			if link.Acceptance != nil {
 				bundleBytes += link.Acceptance.Size
@@ -316,6 +317,7 @@ func (j *FileDecisionJournal) queryHistoryWindowsLegacy(query HistoryQuery) (His
 			state.PendingRepairOutcome = nil
 			state.PendingRepairAttempt = nil
 			state.PendingSystemOneSourceCount = 0
+			state.PendingEvidenceMatchCount = 0
 			state.Phase = "scan"
 			continue
 		}

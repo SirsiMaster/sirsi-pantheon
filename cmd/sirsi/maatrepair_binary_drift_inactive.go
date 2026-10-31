@@ -55,6 +55,9 @@ func recordMaatBinaryDriftInactiveDispositionWith(
 	if drift == nil || !drift.Healthy {
 		return maatBinaryDriftInactiveDispositionReceipt{}, errors.New("Ma'at binary-drift disposition: binary drift remains active or unavailable")
 	}
+	if !inactiveDriftReportComplete(drift) {
+		return maatBinaryDriftInactiveDispositionReceipt{}, errors.New("Ma'at binary-drift disposition: fresh observation contains an unavailable or unstamped sibling")
+	}
 	finding := pantheonBinaryDriftFinding(drift)
 	if finding.Check != maatRepairBinaryDriftCheck || finding.Severity != guard.SeverityOK || finding.Resolution != guard.ResolutionInfo {
 		return maatBinaryDriftInactiveDispositionReceipt{}, errors.New("Ma'at binary-drift disposition: fresh observation is not a canonical inactive finding")
@@ -82,4 +85,18 @@ func recordMaatBinaryDriftInactiveDispositionWith(
 		ObservedFromUTC: observation.ObservedFromUTC, ObservedThroughUTC: observation.ObservedThroughUTC,
 		FindingState: "no longer active", RepairPerformed: false,
 	}, nil
+}
+
+// inactiveDriftReportComplete closes the narrower disposition boundary: the
+// general drift report may be healthy while an individual sibling probe failed.
+func inactiveDriftReportComplete(drift *selfupdate.DriftReport) bool {
+	if drift == nil {
+		return false
+	}
+	for _, sibling := range drift.Siblings {
+		if strings.TrimSpace(sibling.Err) != "" || strings.TrimSpace(sibling.Version) == "" || strings.TrimSpace(sibling.Version) == "dev" {
+			return false
+		}
+	}
+	return true
 }

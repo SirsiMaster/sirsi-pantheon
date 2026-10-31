@@ -11,6 +11,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
+	modversion "github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
 
 func binaryDriftInactiveFixture(t *testing.T, host string, mixed bool) (*maat.FileDecisionJournal, string) {
@@ -131,6 +132,29 @@ func TestRecordBinaryDriftInactiveDispositionRefusesActiveUnknownWrongHostAndMix
 			rows, _, readErr := journal.RecentTolerant(10)
 			if readErr != nil || len(rows) != 1 {
 				t.Fatalf("refused action appended a disposition: rows=%d err=%v", len(rows), readErr)
+			}
+		})
+	}
+}
+
+func TestRecordBinaryDriftInactiveDispositionRejectsUnusableBuildReportSiblings(t *testing.T) {
+	for _, sibling := range []selfupdate.Sibling{
+		{Info: modversion.Info{Binary: "sirsi", Version: ""}, Err: "fixture probe error"},
+		{Info: modversion.Info{Binary: "sirsi", Version: ""}},
+		{Info: modversion.Info{Binary: "sirsi", Version: "dev"}},
+	} {
+		t.Run(sibling.Err+"/"+sibling.Version, func(t *testing.T) {
+			report := selfupdate.BuildReport(modversion.Info{Binary: "sirsi", Version: "1.2.3"}, []selfupdate.Sibling{sibling}, "")
+			if !report.Healthy {
+				t.Fatal("fixture no longer demonstrates BuildReport's healthy-but-unusable sibling shape")
+			}
+			journal, evidence := binaryDriftInactiveFixture(t, "fixture-host", false)
+			if _, err := runInactiveDispositionFixture(journal, evidence, "fixture-host", report, nil); err == nil {
+				t.Fatal("inactive disposition accepted an unusable sibling observation")
+			}
+			rows, _, err := journal.RecentTolerant(10)
+			if err != nil || len(rows) != 1 {
+				t.Fatalf("unusable observation appended a disposition: rows=%d err=%v", len(rows), err)
 			}
 		})
 	}

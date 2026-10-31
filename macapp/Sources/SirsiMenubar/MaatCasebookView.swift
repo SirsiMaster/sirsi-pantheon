@@ -2879,10 +2879,10 @@ private struct MaatCaseDetailView: View {
                     .sirsiFont(.caption)
                     .foregroundStyle(receipt.succeeded ? .green : .orange)
             }
-            if action.kind == "maat_repair", action.actionID == "binary-drift", operationInFlight {
-                ProgressView("Applying the reviewed updater…")
+            if let progress = operationRecord?.progress {
+                ProgressView(progress.title)
                     .sirsiFont(.caption)
-                Text("This operation stays locked until the owned updater exits and Ma’at records a fresh verification or an explicit failure. The updater is bounded to two minutes before verification.")
+                Text(progress.detail)
                     .sirsiFont(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -3050,7 +3050,10 @@ private struct MaatCaseDetailView: View {
         guard let action = entry.nextAction else { return }
         guard action.kind != "owner_acceptance" || !confirmedNote.isEmpty else { return }
         let key = operationKey
-        guard operations.begin(key) else { recordBinaryDriftInactive = false; return }
+        let priorIntent = operations.record(for: key)?.intent
+        let intent: MaatOperationIntent = recordBinaryDriftInactive ? .inactiveDisposition
+            : (priorIntent ?? (action.kind == "maat_repair" && action.actionID == "binary-drift" ? .binaryDriftUpdater : .standard))
+        guard operations.begin(key, intent: intent) else { recordBinaryDriftInactive = false; return }
         guard let generation = operations.record(for: key)?.generation else { recordBinaryDriftInactive = false; return }
 
         let read = await MaatOperationPreflight.readCompleteExactHistory(evidence: entry.evidence,
