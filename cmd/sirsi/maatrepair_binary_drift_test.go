@@ -395,6 +395,7 @@ func binaryDriftFileCaseFixture(t *testing.T) (*maat.FileDecisionJournal, maat.D
 	path := filepath.Join(t.TempDir(), "decisions.jsonl")
 	journal := &maat.FileDecisionJournal{Path: path}
 	decision := inMemory.decisions[0]
+	decision.Time = "2026-10-01T12:00:00Z"
 	if err := journal.Append(decision); err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +406,7 @@ func appendBinaryDriftFillerDecisions(t *testing.T, journal *maat.FileDecisionJo
 	t.Helper()
 	for i := 0; i < count; i++ {
 		if err := journal.Append(maat.Decision{
-			Time: "2026-10-24T12:01:00Z", Host: "fixture", Kind: "knowledge owner review",
+			Time: "2026-10-02T12:01:00Z", Host: "fixture", Kind: "knowledge owner review",
 			Requester: "maat", Resource: "fixture", Assessed: "retained fixture", Determination: "accepted", Why: "fixture row",
 			Evidence: fmt.Sprintf("filler:%d", i),
 		}); err != nil {
@@ -414,11 +415,33 @@ func appendBinaryDriftFillerDecisions(t *testing.T, journal *maat.FileDecisionJo
 	}
 }
 
+func assertRecentBinaryDriftEvidenceCount(t *testing.T, journal *maat.FileDecisionJournal, evidence string, want int) {
+	t.Helper()
+	rows, err := journal.Recent(100)
+	if err != nil {
+		t.Fatalf("read recent journal window: %v", err)
+	}
+	if len(rows) != 100 {
+		t.Fatalf("Recent(100) returned %d rows, want 100", len(rows))
+	}
+	matches := 0
+	for _, row := range rows {
+		if row.Evidence == evidence {
+			matches++
+		}
+	}
+	if matches != want {
+		t.Fatalf("Recent(100) exact-evidence count = %d, want %d", matches, want)
+	}
+}
+
 func TestMaatBinaryDriftValidationFindsExactCaseBeyondRecentWindow(t *testing.T) {
 	journal, _, evidence := binaryDriftFileCaseFixture(t)
 	appendBinaryDriftFillerDecisions(t, journal, 105)
-	if rows, err := journal.Recent(100); err != nil || len(rows) != 100 {
-		t.Fatalf("recent window = %d rows, %v", len(rows), err)
+	assertRecentBinaryDriftEvidenceCount(t, journal, evidence, 0)
+	row, matches, err := journal.FindUniqueByEvidence(evidence)
+	if err != nil || matches != 1 || row.Evidence != evidence {
+		t.Fatalf("full retained exact-evidence lookup = %+v, matches=%d, err=%v", row, matches, err)
 	}
 	if err := validateMaatBinaryDriftCase(journal, evidence); err != nil {
 		t.Fatalf("valid retained case outside recent window refused: %v", err)
@@ -428,9 +451,11 @@ func TestMaatBinaryDriftValidationFindsExactCaseBeyondRecentWindow(t *testing.T)
 func TestMaatBinaryDriftValidationRefusesDuplicateAcrossRecentBoundary(t *testing.T) {
 	journal, decision, evidence := binaryDriftFileCaseFixture(t)
 	appendBinaryDriftFillerDecisions(t, journal, 100)
+	decision.Time = "2026-10-03T12:00:00Z"
 	if err := journal.Append(decision); err != nil {
 		t.Fatal(err)
 	}
+	assertRecentBinaryDriftEvidenceCount(t, journal, evidence, 1)
 	if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "multiple journal rows") {
 		t.Fatalf("duplicate exact case across recent boundary = %v, want ambiguity refusal", err)
 	}
@@ -440,12 +465,13 @@ func TestMaatBinaryDriftValidationRefusesDifferentKindEvidenceDuplicateAcrossRec
 	journal, _, evidence := binaryDriftFileCaseFixture(t)
 	appendBinaryDriftFillerDecisions(t, journal, 100)
 	if err := journal.Append(maat.Decision{
-		Time: "2026-10-24T12:02:00Z", Host: "fixture", Kind: "knowledge owner review",
+		Time: "2026-10-03T12:00:00Z", Host: "fixture", Kind: "knowledge owner review",
 		Requester: "maat", Resource: "fixture", Assessed: "unrelated typed row", Determination: "accepted", Why: "duplicate evidence fixture",
 		Evidence: evidence,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	assertRecentBinaryDriftEvidenceCount(t, journal, evidence, 1)
 	if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "multiple journal rows") {
 		t.Fatalf("different-kind same-evidence row across recent boundary = %v, want ambiguity refusal", err)
 	}
