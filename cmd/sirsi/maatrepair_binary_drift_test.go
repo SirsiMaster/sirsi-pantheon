@@ -374,6 +374,98 @@ func TestMaatBinaryDriftRefusesSeparateOwnerDecisionForOriginalCase(t *testing.T
 	}
 }
 
+func binaryDriftFileCaseFixture(t *testing.T) (*maat.FileDecisionJournal, maat.Decision, string) {
+	t.Helper()
+	inMemory, evidence, _, _ := installMaatBinaryDriftFixture(t)
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	journal := &maat.FileDecisionJournal{Path: path}
+	decision := inMemory.decisions[0]
+	if err := journal.Append(decision); err != nil {
+		t.Fatal(err)
+	}
+	return journal, decision, evidence
+}
+
+func appendBinaryDriftFillerDecisions(t *testing.T, journal *maat.FileDecisionJournal, count int) {
+	t.Helper()
+	for i := 0; i < count; i++ {
+		if err := journal.Append(maat.Decision{
+			Time: "2026-10-24T12:01:00Z", Host: "fixture", Kind: "knowledge owner review",
+			Requester: "maat", Resource: "fixture", Assessed: "retained fixture", Determination: "accepted", Why: "fixture row",
+			Evidence: fmt.Sprintf("filler:%d", i),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestMaatBinaryDriftValidationFindsExactCaseBeyondRecentWindow(t *testing.T) {
+	journal, _, evidence := binaryDriftFileCaseFixture(t)
+	appendBinaryDriftFillerDecisions(t, journal, 105)
+	if rows, err := journal.Recent(100); err != nil || len(rows) != 100 {
+		t.Fatalf("recent window = %d rows, %v", len(rows), err)
+	}
+	if err := validateMaatBinaryDriftCase(journal, evidence); err != nil {
+		t.Fatalf("valid retained case outside recent window refused: %v", err)
+	}
+}
+
+func TestMaatBinaryDriftValidationRefusesDuplicateAcrossRecentBoundary(t *testing.T) {
+	journal, decision, evidence := binaryDriftFileCaseFixture(t)
+	appendBinaryDriftFillerDecisions(t, journal, 100)
+	if err := journal.Append(decision); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "multiple journal rows") {
+		t.Fatalf("duplicate exact case across recent boundary = %v, want ambiguity refusal", err)
+	}
+}
+
+func TestMaatBinaryDriftValidationRejectsMalformedTailAfterExactMatch(t *testing.T) {
+	journal, _, evidence := binaryDriftFileCaseFixture(t)
+	f, err := os.OpenFile(journal.Path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("{malformed retained tail}\n"); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "malformed strict-lookup history") {
+		t.Fatalf("malformed tail after exact match = %v, want fail-closed journal error", err)
+	}
+}
+
+func TestMaatBinaryDriftValidationPreservesMissingHostAndDigestRefusals(t *testing.T) {
+	t.Run("missing", func(t *testing.T) {
+		journal, _, evidence := installMaatBinaryDriftFixture(t)
+		missing := "maat-system-one:sha256=" + strings.Repeat("c", 64)
+		if missing == evidence {
+			t.Fatal("fixture evidence unexpectedly equals missing reference")
+		}
+		if err := validateMaatBinaryDriftCase(journal, missing); err == nil || !strings.Contains(err.Error(), "exact retained System One case is unavailable") {
+			t.Fatalf("missing exact case = %v", err)
+		}
+	})
+	t.Run("wrong host", func(t *testing.T) {
+		journal, evidence, _, _ := installMaatBinaryDriftFixture(t)
+		journal.decisions[0].SystemOne.Subject.Repo = "local-host-" + strings.Repeat("d", 64)
+		if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "not this host's diagnostic screen") {
+			t.Fatalf("wrong-host exact case = %v", err)
+		}
+	})
+	t.Run("digest mismatch", func(t *testing.T) {
+		journal, evidence, _, _ := installMaatBinaryDriftFixture(t)
+		journal.decisions[0].SystemOne.Findings[0].Claim += " changed after recording"
+		if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "digest does not match") {
+			t.Fatalf("mutated verdict digest = %v", err)
+		}
+	})
+}
+
 func TestMaatBinaryDriftDurableAttemptBlocksSameCaseReplay(t *testing.T) {
 	journal, evidence, _, _ := installMaatBinaryDriftFixture(t)
 	journal.decisions = append(journal.decisions, maat.Decision{Kind: "diagnostic repair attempt", OriginEvidence: evidence, Evidence: "diagnostic-repair-attempt:sha256=" + strings.Repeat("a", 64)})

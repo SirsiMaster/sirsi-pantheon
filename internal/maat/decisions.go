@@ -489,6 +489,24 @@ func (j *FileDecisionJournal) FindByEvidence(kind, evidence string) (Decision, b
 	return found, ok, err
 }
 
+// FindUniqueByEvidence strictly scans the complete retained journal and keeps
+// at most one matching row in memory. The match count lets authorization paths
+// preserve duplicate refusal without relying on a recent-window projection.
+func (j *FileDecisionJournal) FindUniqueByEvidence(kind, evidence string) (Decision, int, error) {
+	var found Decision
+	matches := 0
+	_, err := j.scanStrict(func(d Decision) bool {
+		if d.Kind == kind && d.Evidence == evidence {
+			matches++
+			if matches == 1 {
+				found = d
+			}
+		}
+		return false // scanStrict must validate the entire retained tail.
+	})
+	return found, matches, err
+}
+
 // HasOriginDecision reports whether a strict retained row matches the exact
 // origin tuple. It is used alongside FindByEvidence to distinguish an
 // unresolved attempt from one with a later terminal repair receipt.

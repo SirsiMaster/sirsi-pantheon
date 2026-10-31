@@ -543,6 +543,14 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertNil(maatCasebookRepairArguments(actionID: "brew upgrade sirsi-pantheon"))
     }
 
+    func testMaatBinaryDriftPreviewErrorPresentationStripsANSI() {
+        let raw = "\u{001B}[1;38;2;242;84;91m𓁵\u{001B}[m Ma'at binary-drift recovery: exact retained System One case is unavailable; refresh Casebook\u{001B}[m\n"
+        XCTAssertEqual(
+            SirsiEngine.stripANSI(raw),
+            "𓁵 Ma'at binary-drift recovery: exact retained System One case is unavailable; refresh Casebook\n"
+        )
+    }
+
     func testMaatBinaryDriftRecoveryReviewsDispatchOnlyToTheirTypedNativeCommands() {
         let evidence = "maat-system-one:sha256:fixture"
         XCTAssertEqual(
