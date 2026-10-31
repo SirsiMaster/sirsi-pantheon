@@ -90,6 +90,106 @@ func TestProbeBinaryContextBoundsChildRetainingStdout(t *testing.T) {
 	}
 }
 
+func TestProbeBinaryUsesLongerBudgetOnlyForMenubar(t *testing.T) {
+	t.Run("menubar survives cold-start delay beyond CLI budget", func(t *testing.T) {
+		path, pidFile := delayedVersionFixture(t, "sirsi-menubar")
+		started := time.Now()
+		info, err := probeBinary(path)
+		if err != nil || info.Binary != "sirsi-menubar" || info.Version != "1.2.3" {
+			t.Fatalf("delayed native version identity = %+v, %v", info, err)
+		}
+		if elapsed := time.Since(started); elapsed <= probeTimeout {
+			t.Fatalf("native fixture did not exercise the longer budget: %s", elapsed)
+		}
+		assertProbeFixtureChildExited(t, pidFile)
+	})
+
+	for _, binary := range []string{"sirsi", "custom-sirsi-menubar"} {
+		t.Run(binary+" keeps the shorter budget", func(t *testing.T) {
+			path, pidFile := delayedVersionFixture(t, binary)
+			started := time.Now()
+			if _, err := probeBinary(path); err == nil {
+				t.Fatalf("%s probe accepted a response delayed beyond its 200 ms budget", binary)
+			}
+			if elapsed := time.Since(started); elapsed >= menubarProbeTimeout {
+				t.Fatalf("%s probe exceeded the native-only budget: %s", binary, elapsed)
+			}
+			cleanupProbeFixtureChild(t, pidFile)
+		})
+	}
+}
+
+func TestProbeBinaryContextParentDeadlineStillBoundsMenubar(t *testing.T) {
+	path, pidFile := delayedVersionFixture(t, "sirsi-menubar")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	if _, err := probeBinaryContext(ctx, path); err == nil || ctx.Err() == nil {
+		t.Fatalf("short parent deadline did not refuse delayed native probe: err=%v context=%v", err, ctx.Err())
+	}
+	if elapsed := time.Since(started); elapsed >= menubarProbeTimeout {
+		t.Fatalf("native probe outlived its parent deadline and bounded pipe cleanup: %s", elapsed)
+	}
+	cleanupProbeFixtureChild(t, pidFile)
+}
+
+func delayedVersionFixture(t *testing.T, binary string) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	path := filepath.Join(root, binary)
+	pidFile := filepath.Join(root, "sleep.pid")
+	body := "#!/bin/sh\n/bin/sleep 0.35 &\nchild=$!\nprintf '%s\\n' \"$child\" > " + strconv.Quote(pidFile) +
+		"\nwait \"$child\"\nprintf '{\"binary\":\"" + binary + "\",\"version\":\"1.2.3\"}\\n'\n"
+	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupProbeFixtureChild(t, pidFile) })
+	return path, pidFile
+}
+
+func cleanupProbeFixtureChild(t *testing.T, pidFile string) {
+	t.Helper()
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			t.Errorf("read owned probe child PID: %v", err)
+		}
+		return
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 1 {
+		t.Errorf("invalid owned probe child PID %q", strings.TrimSpace(string(data)))
+		return
+	}
+	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		t.Errorf("stop owned probe child %d: %v", pid, err)
+		return
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(pid, 0); err == syscall.ESRCH {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Errorf("owned probe child %d did not exit after bounded cleanup", pid)
+}
+
+func assertProbeFixtureChildExited(t *testing.T, pidFile string) {
+	t.Helper()
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("read owned probe child PID: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 1 {
+		t.Fatalf("invalid owned probe child PID %q", strings.TrimSpace(string(data)))
+	}
+	if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
+		t.Fatalf("delayed probe child %d remains after successful response (kill error %v)", pid, err)
+	}
+}
+
 func TestProbeBinaryContextHonorsCancellation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "stalled")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\nexec /bin/sleep 10\n"), 0o700); err != nil {
