@@ -42,6 +42,7 @@ struct PantheonDesktopView: View {
                 .id(section)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .environmentObject(nav)
+                .environment(\.workspaceScrollPosition, session.scrollPosition(for: section))
                 .environment(\.openPantheonWorkspace, select)
                 .environment(\.openPantheonOwnerActions, {
                     session.open(.maat, detail: OwnerActionsListView(engine: engine))

@@ -306,12 +306,114 @@ struct MaybeList<Content: View>: View {
 // rendering the identical stack directly for visual regression proof.
 struct MaybeScroll<Content: View>: View {
     @Environment(\.snapshotMode) private var snapshotMode
+    @Environment(\.workspaceScrollPosition) private var workspaceScrollPosition
     @ViewBuilder let content: Content
     var body: some View {
         if snapshotMode {
             content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else if let workspaceScrollPosition {
+            ScrollView {
+                content.background(alignment: .topLeading) {
+                    WorkspaceScrollOffsetProbe(position: workspaceScrollPosition)
+                        .frame(width: 0, height: 0)
+                }
+            }
         } else {
             ScrollView { content }
+        }
+    }
+}
+
+// Keep the exact native offset on macOS 13 without persisting it or retaining
+// an inactive SwiftUI workspace tree.
+private struct WorkspaceScrollOffsetProbe: NSViewRepresentable {
+    @Binding var position: CGFloat
+
+    func makeCoordinator() -> Coordinator { Coordinator(position: $position) }
+
+    func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.position = $position
+        context.coordinator.connect(to: view)
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.disconnect()
+    }
+
+    final class Coordinator {
+        var position: Binding<CGFloat>
+        private weak var scrollView: NSScrollView?
+        private var observers: [NSObjectProtocol] = []
+        private var connectionScheduled = false
+        private var active = false
+        private var restored = false
+
+        init(position: Binding<CGFloat>) { self.position = position }
+
+        func connect(to probe: NSView) {
+            active = true
+            guard !connectionScheduled else { return }
+            connectionScheduled = true
+            DispatchQueue.main.async { [weak self, weak probe] in
+                guard let self else { return }
+                self.connectionScheduled = false
+                guard self.active else { return }
+                guard let scrollView = probe?.enclosingScrollView else { return }
+                if self.scrollView !== scrollView {
+                    self.removeObservers()
+                    self.scrollView = scrollView
+                    self.observe(scrollView)
+                }
+                self.restoreOrCapture()
+            }
+        }
+
+        func disconnect() {
+            active = false
+            removeObservers()
+            scrollView = nil
+        }
+
+        private func removeObservers() {
+            observers.forEach { NotificationCenter.default.removeObserver($0) }
+            observers.removeAll()
+        }
+
+        private func observe(_ scrollView: NSScrollView) {
+            let clip = scrollView.contentView
+            clip.postsBoundsChangedNotifications = true
+            observers.append(NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification, object: clip, queue: .main
+            ) { [weak self] _ in self?.restoreOrCapture() })
+            if let document = scrollView.documentView {
+                document.postsFrameChangedNotifications = true
+                observers.append(NotificationCenter.default.addObserver(
+                    forName: NSView.frameDidChangeNotification, object: document, queue: .main
+                ) { [weak self] _ in self?.restoreOrCapture() })
+            }
+        }
+
+        private func restoreOrCapture() {
+            guard let scrollView, let document = scrollView.documentView else { return }
+            let clip = scrollView.contentView
+            let current = max(0, clip.bounds.origin.y)
+            if !restored {
+                let saved = max(0, position.wrappedValue)
+                if saved > 0 {
+                    let maximum = max(0, document.frame.height - clip.bounds.height)
+                    guard maximum >= saved || current > 0 else { return }
+                    let target = min(saved, maximum)
+                    restored = true
+                    clip.scroll(to: CGPoint(x: clip.bounds.origin.x, y: target))
+                    scrollView.reflectScrolledClipView(clip)
+                    position.wrappedValue = target
+                    return
+                }
+                restored = true
+            }
+            position.wrappedValue = current
         }
     }
 }

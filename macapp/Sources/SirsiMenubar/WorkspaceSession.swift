@@ -7,6 +7,8 @@ final class PantheonWorkspaceSession: ObservableObject {
     static let selectionKey = "pantheon.workspace"
     private let defaults: UserDefaults
     private let stacks: [PantheonWorkspace: Nav]
+    // Viewport offsets live only as long as this window-owned session.
+    private var scrollOffsets: [PantheonWorkspace: CGFloat] = [:]
     private var observations: [AnyCancellable] = []
     private let apolloRootDraft = ApolloPlannerDraft()
     @Published private(set) var section: PantheonWorkspace
@@ -32,6 +34,16 @@ final class PantheonWorkspaceSession: ObservableObject {
     var navigation: Nav { navigation(for: section) }
     func navigation(for workspace: PantheonWorkspace) -> Nav { stacks[workspace]! }
 
+    func scrollPosition(for workspace: PantheonWorkspace) -> Binding<CGFloat> {
+        Binding(
+            get: { self.scrollOffsets[workspace] ?? 0 },
+            set: { value in
+                guard value.isFinite else { return }
+                self.scrollOffsets[workspace] = max(0, value)
+            }
+        )
+    }
+
     func select(_ workspace: PantheonWorkspace) {
         guard section != workspace else { return }
         section = workspace
@@ -41,5 +53,16 @@ final class PantheonWorkspaceSession: ObservableObject {
     func open<Detail: View>(_ workspace: PantheonWorkspace, detail: Detail) {
         select(workspace)
         navigation(for: workspace).push(detail)
+    }
+}
+
+private struct WorkspaceScrollPositionKey: EnvironmentKey {
+    static let defaultValue: Binding<CGFloat>? = nil
+}
+
+extension EnvironmentValues {
+    var workspaceScrollPosition: Binding<CGFloat>? {
+        get { self[WorkspaceScrollPositionKey.self] }
+        set { self[WorkspaceScrollPositionKey.self] = newValue }
     }
 }

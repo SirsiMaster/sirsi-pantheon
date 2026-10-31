@@ -258,21 +258,21 @@ replays repair or silently selects a new machine.
 
 ```mermaid
 flowchart TD
-  START[App starts] --> LOAD[Read selection-only persisted section]
+  START[App starts] --> LOAD[Read persisted selected section]
   LOAD --> VALID{Known section?}
   VALID -->|yes| SEL[Select section]
   VALID -->|no| DEF[Use default section]
-  SEL --> STACK[Maintain independent in-memory stack per section]
+  SEL --> STACK[Maintain independent in-memory stack and scroll offset per section]
   DEF --> STACK
-  STACK --> NAV[User navigates within section]
+  STACK --> NAV[User navigates or scrolls within section]
   NAV --> HEAD[Publish current section header and destination]
 ```
 
 ```mermaid
 flowchart LR
   PREF[(Persisted selected section)] -->|identifier only| SESSION[WorkspaceSession]
-  SESSION -->|in-memory stacks| SECTIONS[Section navigation state]
-  SECTIONS -->|header/destination| VIEW[Native views]
+  SESSION -->|in-memory stacks and vertical offsets| SECTIONS[Section navigation state]
+  SECTIONS -->|header, destination and offset| VIEW[Native views]
   SESSION -. no operation consent or evidence persistence .-> X[Authority remains in engine]
 ```
 
@@ -287,8 +287,9 @@ stateDiagram-v2
   Defaulted --> StackA: default section selected
 ```
 
-Recovery: invalid selection defaults; section stacks are session-local and do
-not imply durable restoration of an operation.
+Recovery: invalid selection defaults; section stacks and scroll offsets are
+window-session-local. Only the selected section persists, and no operation or
+confirmation is restored.
 
 <a id="pt-p17"></a>
 ## PT-P17 — Native observation freshness
@@ -586,13 +587,13 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant App as Pantheon app
-  participant Pref as selection preference
+  participant Pref as selected-workspace preference
   participant Session as WorkspaceSession
   participant View as section view
-  App->>Pref: read selected section only
+  App->>Pref: read selected section
   Pref-->>Session: valid identifier or missing/invalid value
   Session->>Session: select known section or documented default
-  Session-->>View: independent in-memory destination stack
+  Session-->>View: independent in-memory destination stack and scroll offset
   View-->>Session: navigation event
   Session-->>View: updated destination/header
 ```

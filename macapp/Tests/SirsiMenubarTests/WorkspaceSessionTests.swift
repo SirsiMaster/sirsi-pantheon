@@ -28,6 +28,28 @@ final class WorkspaceSessionTests: XCTestCase {
         XCTAssertFalse(session.navigation(for: .maat).atRoot)
     }
 
+    func testScrollPositionsRemainPerWorkspaceAndWindowSessionLocal() {
+        let store = defaults()
+        let session = PantheonWorkspaceSession(defaults: store)
+        session.scrollPosition(for: .maat).wrappedValue = 684.5
+        session.scrollPosition(for: .horus).wrappedValue = 92
+
+        session.select(.horus)
+        XCTAssertEqual(session.scrollPosition(for: .horus).wrappedValue, 92)
+        session.select(.maat)
+        XCTAssertEqual(session.scrollPosition(for: .maat).wrappedValue, 684.5)
+
+        session.scrollPosition(for: .maat).wrappedValue = -.infinity
+        XCTAssertEqual(session.scrollPosition(for: .maat).wrappedValue, 684.5)
+        session.scrollPosition(for: .maat).wrappedValue = -10
+        XCTAssertEqual(session.scrollPosition(for: .maat).wrappedValue, 0)
+
+        let restored = PantheonWorkspaceSession(defaults: store)
+        XCTAssertEqual(restored.section, .maat)
+        XCTAssertEqual(restored.scrollPosition(for: .maat).wrappedValue, 0,
+                       "scroll offsets stay in the window session rather than persisting across launches")
+    }
+
     func testRestoreKeepsOnlySectionIdentityWithoutReplayingDrilldowns() {
         let store = defaults()
         let first = PantheonWorkspaceSession(defaults: store)
