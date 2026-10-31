@@ -199,7 +199,11 @@ func TestApolloCapabilityRequiresIndependentProfilePairing(t *testing.T) {
 		t.Fatal(err)
 	}
 	profile := []byte(`{"schema":"sirsi.apollo.native-profile.v2"}`)
-	if err := os.WriteFile(filepath.Join(dir, "native-profile.json"), profile, 0o644); err != nil {
+	profilePath := filepath.Join(dir, "native-profile.json")
+	if err := os.WriteFile(profilePath, profile, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(profilePath, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	expected.ApolloCapability = ApolloCapabilityEnabled

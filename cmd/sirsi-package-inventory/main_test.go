@@ -162,7 +162,14 @@ func TestRunEmitsNonExecutingInventory(t *testing.T) {
 	if err := os.Mkdir(signatureDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(signatureDir, "CodeResources"), []byte("fixture signature layout"), 0o644); err != nil {
+	if err := os.Chmod(signatureDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	codeResources := filepath.Join(signatureDir, "CodeResources")
+	if err := os.WriteFile(codeResources, []byte("fixture signature layout"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(codeResources, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	engine := standaloneMachOFixture()

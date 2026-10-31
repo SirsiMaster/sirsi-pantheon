@@ -1,6 +1,48 @@
 # Changelog — Pantheon PT canon
 
-## 2026-10-30 — v0.24.149 release candidate
+## 2026-10-31 — v0.24.150 release candidate
+
+- test(core): make Apollo inventory fixture modes umask-independent
+- Set explicit modes on the generated signature directory, CodeResources file,
+  and Apollo profile in the two positive inventory fixtures. A private caller
+  umask can no longer turn these fixtures into unintended negative cases; product
+  mode validation and all existing assertions remain unchanged.
+- Refs: cmd/sirsi-package-inventory/main_test.go;
+  internal/packageinventory/inventory_test.go; scripts/artifact_modes.py;
+  scripts/PACKAGING.md; ADR-032.
+- Carry forward the changes prepared for 0.24.148 and 0.24.149. Both publication
+  attempts failed before commercial packages were published; their historical
+  entries remain marked failed/unpublished. Source preparation and development
+  fixtures do not establish commercial signing, installation, or runtime certification.
+- Ma’at retains the exact-case preview, readable error presentation, source
+  lifecycle observation controls, and neutral labels for historical calibration.
+  The standalone launcher reads only its exact reservation ID after compatible
+  installed-client adoption.
+- Packaging retains explicit Apollo capability/profile binding and one frozen
+  receipt shared by the DMG and PKG. Official packages remain native-Apollo-disabled.
+- Router corrections retain per-Codex-thread session markers, bounded Fabric
+  cancellation, truthful attended-lane availability, and scoring/configuration
+  refresh before wake replacement. The compatible pruned-row guards do not
+  activate pruning or claim the remaining retained-key cure.
+- Native Stack Lab retains the corrected GitHub CLI lookup. Existing installed
+  app, model-profile, service-lifecycle, and full-product acceptance remain separate.
+- Refs: `scripts/PACKAGING.md`, `docs/stacklab/pantheon-pt/canon/CERTIFICATION.md`,
+  `docs/ADR-066-STACK-LAB-WING-AUTHORITY-ORIGIN-IS-TRUTH.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`.
+- fix(core): read frozen Apollo digest receipts safely in Bash 3.2
+- Both release builders now capture and check the receipt parser's exit status
+  before extracting the exact Info.plist and Apollo profile digest pair. The
+  existing two-key schema, lowercase SHA-256 validation, and disabled `absent`
+  profile value remain required; malformed, incomplete, unreadable, or
+  unparseable receipts stop before signing or PKG construction.
+  The inert Bash 3.2 regression exercises both complete reader blocks with valid
+  enabled/disabled receipts and space-containing paths, plus malformed and
+  invalid-profile-digest refusals. Its forced parser-failure control emits a
+  valid-looking pair before exiting nonzero, confirming status propagation.
+- Refs: scripts/PACKAGING.md; scripts/build-dmg.sh; scripts/build-pkg.sh;
+  scripts/test_artifact_modes.py; internal/maat/releasepreflight_test.go;
+  docs/evidence/APOLLO_NATIVE_PACKAGE_COMPOSITION_20261015.md; ADR-032.
+
+## 2026-10-30 — v0.24.149 release candidate — publication failed/unpublished
 
 - Corrected the existing Ma'at binary-drift preview to resolve one exact System One case across the complete bounded journal, refusing duplicates and malformed retained tails, and stripped ANSI styling from the preview error label. Added inert retained-history regressions; native error presentation reuses the existing ANSI stripper and still requires installed-app verification. No updater or host action was run.
 - Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`, `cmd/sirsi/maatrepair_binary_drift.go`, `internal/maat/decisions.go`
@@ -54,7 +96,7 @@
   [primary Entire CLI source fix](https://github.com/entireio/cli/commit/9c18f31b23a62749b804718125b17c236420a28a).
 - Refs: `docs/stacklab/maat/canon/DESIGN.md`, `docs/stacklab/maat/canon/SECURITY_THREAT_MODEL.md`, ADR-009, PANTHEON_RULES.md A16.
 
-## 2026-10-30 — v0.24.148 release candidate
+## 2026-10-30 — v0.24.148 release candidate — publication failed/unpublished
 
 - Add source-lifecycle receipt preview, bounded replay and journal/Casebook observations; preserve unqualified model profiles, the deterministic floor and unauthenticated router attribution.
 - Place lifecycle controls in System One and identify historical calibration as legacy comparison, not verified qualification.

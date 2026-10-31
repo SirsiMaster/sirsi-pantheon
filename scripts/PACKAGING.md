@@ -34,7 +34,9 @@ Each supported Make target selects a fresh private digest-receipt path. The PKG
 builder requires that exact existing pre-sign receipt and does not recapture
 the built app. Direct paired invocations must pass one path from
 `scripts/new-apollo-digest-receipt.sh` to both commands; old and incomplete
-receipts are retained.
+receipts are retained. Both builders validate the complete two-key receipt
+through a checked parser result before continuing; parser failures and malformed
+or incomplete digest pairs stop the build under the supported macOS Bash 3.2.
 
 ## macOS commercial release artifacts
 
