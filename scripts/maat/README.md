@@ -146,15 +146,22 @@ For an existing runtime that supplies the scoped local SOCKS proxy, use:
 
     ~/.local/bin/sirsi-fabric-run m1 --work my-own-work --cpu-cores 1 --timeout 90 -- /usr/bin/true
 
-The helper takes only the enrolled m1/m5/studio target names, uses existing
+For a proven own target, the adjacent selector checks exact enrolled numeric
+endpoint ownership in the kernel, non-loopback UP interface, native UUID and
+real/effective UID against the existing target account. It uses the existing
+normal registered local executor directly, with exact work/CPU/timeout/argv. The
+UUID is executor observation, not invented target enrollment or a grant. Native
+admission/registration remains authoritative. Local failure is terminal.
+
+For remote/unknown targets, the helper takes only enrolled names, uses existing
 strict host pins and public-key-only authentication, quotes every destination
-argv element as data, and retains the caller's own logical lane. Origin SSH is
+argv element as data, and retains the caller's own logical lane. Remote origin SSH is
 supervised as one CPU; the destination's actual local executor independently
 registers/admit/heartbeats/releases with the requested capacity. No credentials
 are copied into another runtime, and no arbitrary destination shell is exposed
 as a new authority. This is cooperative same-user execution attribution, not a
 new command-restricted SSH principal or protection against a malicious owner
-account. Missing pins, keys, helper, proxy or supported managed policy fail
+account. For network routes, missing pins, keys, helper, proxy or supported managed policy fail
 closed. Native destinations retain their own CLI/runtime/identity and the one
 canonical router; no router database is copied.
 
@@ -179,8 +186,10 @@ Native netcat probes use `-G 2` for the TCP connect deadline: `-w` alone is not
 a macOS connect timeout. Actual tunnels use a bounded connect without an idle
 timeout that would kill a healthy quiet SSH session.
 
-Deterministic qualification: `python3 scripts/maat/fabric-endpoints.test.py` and
-`python3 scripts/maat/fabric-run.test.py` under an ordinary CPU-one admission.
+Deterministic qualification: `python3 scripts/maat/fabric-endpoints.test.py`,
+`python3 scripts/maat/fabric-run.test.py`,
+`python3 scripts/maat/fabric-locality.test.py`, and
+`python3 scripts/maat/fabric-self-dispatch.test.py` under an ordinary CPU-one admission.
 Mocks cover six directed peer pairs, relay identity refusal and proxy behavior;
 real `ssh -G` checks parser output only. Native qualification must separately
 show each actual selected route, unchanged strict end/jump pins, a harmless
@@ -233,6 +242,27 @@ This supports managed workers whose sandbox denies spawning `/bin/ps` while
 retaining local ancestry/start verification. A denied, short, disappeared or
 PID-mismatched kernel observation refuses; there is no cached-identity fallback.
 The compatibility start string remains Go `time.ANSIC` in host-local time.
+
+Local process-group cleanup also uses Darwin `proc_listpids(PROC_PGRP_ONLY)`
+and BSD-info metadata in the actual supervisor process. Each call clears and
+checks errno: the libproc wrapper returns zero both on an empty successful
+enumeration and on syscall failure, so zero alone is not absence. Fresh
+same-executor enumeration must include the supervisor's known-live PID, and
+target membership must agree before/after metadata reads. BSD-info group reads
+explicitly include the zombie table so the exact unreaped child remains an
+observable cleanup anchor. Denial, truncation, malformed ABI/status, missing
+member metadata or membership drift retain cleanup debt, never signal or
+release on uncertainty. Darwin does not spawn `ps` or fall back to it after a
+native failure. Non-Darwin retains the existing strict ps parser.
+
+Source/ABI references: Apple's XNU `libsyscall/wrappers/libproc/libproc.c`
+(`proc_listpids`), `bsd/kern/proc_info.c` (group enumeration, zombie-table arg)
+and the installed SDK `sys/proc_info.h`/`sys/proc.h`. Unit controls in
+`test_local_native_group.py` include denial-zero, partial/malformed lists,
+positive-control failure, zombie metadata and a bounded actual own-child
+natural-exit/no-signal check. Candidate source is not installed qualification;
+the runtime custodian must retain fresh normal-admission evidence before
+normal publication/install. No new reconciliation or replay path is added.
 
 Use the installed CLI's `thread heartbeat --thread ID --json` as the exact
 canonical row observation, avoiding the full-list OS reaper. This is an ordinary
@@ -353,10 +383,14 @@ existing workers to manufacture this proof. Installed acceptance remains open.
 
 ### Bounded heartbeat transport recovery
 
-The supervisor reads the exact existing ID through `maat status <resource>`;
-reads never refresh a lease. Only a confirmed reserve/heartbeat response advances
-a monotonic deadline anchored before that request, discounted by the returned
-heartbeat age and bounded by the actual accepted TTL. Each renewal requires
+The supervisor reads an owned existing ID through `maat status --id <full-id>`;
+it supplies no resource positional and accepts only the one returned row with
+that exact ID. An older installed CLI without `status --id` support cannot run
+this recovery path; update through the normal signed rollout before use. There
+is no history-query fallback. Reads never refresh a lease. Only a confirmed
+reserve/heartbeat response advances a monotonic deadline anchored before that
+request, discounted by the returned heartbeat age and bounded by the actual
+accepted TTL. Each renewal requires
 fresh matching active ID/resource/holder/work/executor/share/capacity readback
 and unchanged kernel executor ancestry. A failed mutation is never blindly
 replayed and never triggers reserve, a new ID, or a share promotion.
@@ -385,3 +419,15 @@ Tests mock transport/time for outages and also exercise a harmless real child
 termination/reap and Darwin kernel identity. Run them under ordinary own Ma'at
 admission. They do not qualify deployed long-running Apollo workloads; SSA owns
 independent review, release and installed qualification.
+
+Self-dispatch contract and actual module/fixture/proof boundaries:
+`docs/stacklab/ra/canon/NATIVE_FABRIC_SELF_DISPATCH_V1.md`. `--plan` observes no
+native state and displays locality only conditionally. Actual dispatch emits a
+bounded closed JSON diagnostic to stderr, never payload stdout or a caller-chosen
+path. Main correlates selector parent PID -> exec supervisor -> normal native
+receipt; no new receipt framework is added. `admitted-run.py` is unchanged and
+still derives its own resource/registration/admission under its existing policy.
+
+Metadata cleanup uncertainty is terminal78 (no later route). The configured
+account query shares the bounded owned-child mechanism with ioreg/ifconfig;
+confirmed timeout/error is ordinary unknown, never invented local ownership.

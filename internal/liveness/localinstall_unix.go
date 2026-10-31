@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
+	"golang.org/x/sys/unix"
 )
 
 type limitedLocalOutput struct{ data bytes.Buffer }
@@ -138,6 +139,9 @@ func localDisabled(ctx context.Context, run LocalCommand) (map[string]bool, erro
 // PID: an idle StartInterval job can be loaded without any running process.
 func InspectLocalWatch(ctx context.Context, engine, home string, run LocalCommand) (LocalObservation, error) {
 	result := LocalObservation{Check: "local-watch", State: "observed"}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	if run == nil {
 		run = localCommand
 	}
@@ -149,16 +153,22 @@ func InspectLocalWatch(ctx context.Context, engine, home string, run LocalComman
 		result.State, result.Detail = "not-applicable", "local watch is operator-disabled; deliberate stop preserved"
 		return result, nil
 	}
-	path := filepath.Join(home, "Library", "LaunchAgents", Label+".plist")
-	b, err := readLocalRegular(path, 64*1024)
-	if errors.Is(err, os.ErrNotExist) {
+	b, absent, provenParent, err := readOwnedLocalWatchConfiguration(home)
+	if err == nil && absent {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
 		result.Concern, result.Detail = true, "local metadata watch is not installed"
+		if provenParent {
+			result.WatchPostcondition = "known-absent"
+		}
 		return result, nil
 	}
 	if err != nil {
 		return result, err
 	}
 	configurationDigest := sha256.Sum256(b)
+	result.ConfigurationSHA256 = hex.EncodeToString(configurationDigest[:])
 	b, err = run(ctx, "/usr/bin/plutil", b, "-convert", "json", "-o", "-", "-")
 	if err != nil {
 		return result, err
@@ -191,7 +201,11 @@ func InspectLocalWatch(ctx context.Context, engine, home string, run LocalComman
 			return result, parseErr
 		}
 		if !loaded {
+			if err := ctx.Err(); err != nil {
+				return result, err
+			}
 			result.Concern, result.Detail = true, "exact local metadata schedule is configured and enabled but not loaded"
+			result.WatchPostcondition = "known-unloaded"
 			return result, nil
 		}
 		return result, fmt.Errorf("launchd listed the local watch but its exact loaded state was unavailable: %w", err)
@@ -232,8 +246,12 @@ func InspectLocalWatch(ctx context.Context, engine, home string, run LocalComman
 	if insideArgs || !slices.Equal(loadedArgs, []string{engine, "liveness-watch", "run", "--local"}) || loadedHome != home {
 		return result, errors.New("loaded watch configuration differs from local schedule")
 	}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	result.ConfigurationSHA256 = hex.EncodeToString(configurationDigest[:])
 	result.Detail = "exact local metadata schedule is loaded; no persistent PID required"
+	result.WatchPostcondition = "exact"
 	return result, nil
 }
 
@@ -444,4 +462,79 @@ func InstallLocal(ctx context.Context, engine, home string, run LocalCommand) (s
 		return "", errors.New("local watch installation did not verify")
 	}
 	return "local metadata watch installed and verified; Ma'at recording is local, Ra delivery not attempted", nil
+}
+
+// Retain every directory descriptor used for negative target evidence. A
+// missing parent remains a first-use finding, but cannot attest that a prior
+// direct installation had an authoritative absent-file postcondition.
+func readOwnedLocalWatchConfiguration(home string) ([]byte, bool, bool, error) {
+	if !filepath.IsAbs(home) || filepath.Clean(home) != home {
+		return nil, false, false, errors.New("local watch: exact absolute HOME required")
+	}
+	fd, err := unix.Open(home, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, false, false, err
+	}
+	retained := []int{fd}
+	defer func() {
+		for _, descriptor := range retained {
+			_ = unix.Close(descriptor)
+		}
+	}()
+	verifyDir := func(descriptor int) error {
+		var st unix.Stat_t
+		if err := unix.Fstat(descriptor, &st); err != nil {
+			return err
+		}
+		if st.Mode&unix.S_IFMT != unix.S_IFDIR || st.Uid != uint32(os.Geteuid()) || st.Mode&0o022 != 0 {
+			return errors.New("local watch: expected safe owner directory")
+		}
+		return nil
+	}
+	if err := verifyDir(fd); err != nil {
+		return nil, false, false, err
+	}
+	for _, name := range []string{"Library", "LaunchAgents"} {
+		next, err := unix.Openat(fd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if errors.Is(err, unix.ENOENT) {
+			return nil, true, false, nil
+		}
+		if err != nil {
+			return nil, false, false, err
+		}
+		retained = append(retained, next)
+		fd = next
+		if err := verifyDir(fd); err != nil {
+			return nil, false, false, err
+		}
+	}
+	fileFD, err := unix.Openat(fd, Label+".plist", unix.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if errors.Is(err, unix.ENOENT) {
+		return nil, true, true, nil
+	}
+	if err != nil {
+		return nil, false, false, err
+	}
+	file := os.NewFile(uintptr(fileFD), Label+".plist")
+	defer file.Close()
+	var st unix.Stat_t
+	if err := unix.Fstat(fileFD, &st); err != nil {
+		return nil, false, false, err
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFREG || st.Uid != uint32(os.Geteuid()) || st.Nlink != 1 || st.Mode&0o022 != 0 || st.Size < 0 || st.Size > 64*1024 {
+		return nil, false, false, errors.New("local watch: unsafe owner watch metadata")
+	}
+	before, err := file.Stat()
+	if err != nil {
+		return nil, false, false, err
+	}
+	data, err := io.ReadAll(io.LimitReader(file, 64*1024+1))
+	if err != nil {
+		return nil, false, false, err
+	}
+	after, err := file.Stat()
+	if err != nil || len(data) > 64*1024 || int64(len(data)) != st.Size || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) {
+		return nil, false, false, errors.New("local watch: metadata changed during read")
+	}
+	return data, false, true, nil
 }

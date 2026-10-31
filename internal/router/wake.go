@@ -212,6 +212,10 @@ func ProbeWakeReadiness(cfg AgentConfig) AgentWakeHealth {
 		// "ready" here while the invoker always fails is dishonest readiness
 		// (codex SME #89, finding 3). Wire an adapter before flipping this.
 		h.Detail = "mcp-notification wake is not yet wired in the pull-model CLI — use launchagent or api-call"
+	case WakeSessionMessage:
+		// Reached only when no live session armed the lane (ADR-079 D4): a closed
+		// interactive session cannot be resurrected locally. Say so, not "unsupported".
+		h.Detail = "needs-owner: no live attended session for this session-message lane; a closed interactive session cannot be resurrected locally"
 	case WakeLaunchAgent:
 		label := WakeLaunchAgentLabel(cfg.ID)
 		if !launchAgentInstalled(label) {
@@ -280,7 +284,10 @@ func runLaunchctl(args ...string) error {
 // genuinely blocks; any launchctl invocation the test could reach either returns
 // immediately or hangs the test suite for the full production bound.
 func runBounded(name string, args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), launchctlTimeout)
+	return runBoundedContext(context.Background(), name, args...)
+}
+func runBoundedContext(parent context.Context, name string, args ...string) error {
+	ctx, cancel := context.WithTimeout(parent, launchctlTimeout)
 	defer cancel()
 	err := exec.CommandContext(ctx, name, args...).Run()
 	if ctx.Err() == context.DeadlineExceeded {
@@ -902,6 +909,16 @@ func setAttendedLiveFn(fn func(routerRoot, agentID string) bool) {
 	attendedLiveFn = fn
 }
 
+// wakeLoopConsumerCapable is the capability a wake-loop publishes on its own
+// thread. A declared-attended lane's loop always holds dispatch
+// (attendedSessionOwnsInbox), so it can never consume: claiming capability there
+// made WakePass report the lane armed after its interactive session closed,
+// where ADR-079 D4 requires needs-owner. Only the attended session arms it.
+// Both publication paths (loop start and the post-exit consumer refresh) use it.
+func wakeLoopConsumerCapable(consumer *ResolvedConsumer, attended bool) bool {
+	return consumer != nil && !consumer.Resident && !attended
+}
+
 // declaredAttendedLane reports whether the registry marks agentID attended. Unlike
 // AttendedSessionLive it does not depend on a fresh heartbeat. An unreadable registry
 // reads as not declared (same fail direction as AttendedSessionLive).
@@ -1193,28 +1210,11 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	_ = os.Setenv("SIRSI_THREAD_ID", thr.ThreadID)
 	defer func() { _, _ = CloseThread(routerRoot, thr.ThreadID) }()
 
-	// Resolve the DECLARED consumer once. A loop that cannot dispatch still runs:
-	// its heartbeat is the only liveness signal the fabric has for this agent, and
-	// dropping that would trade a silent inbox for a silent agent. But it now says
-	// so out loud AND records it on its thread record, because "loop running,
-	// inbox never drains" was previously indistinguishable from a healthy steady
-	// state — and worse, its heartbeat marked the lane armed.
-	var consumer *ResolvedConsumer
-	answerRole := false // the lead lane's grant (registry worker_answers); absent = this worker may not answer
-	if reg, rerr := LoadRegistry(routerRoot); rerr != nil {
-		log.Printf("wake-loop %s: registry unreadable, running WATCH-ONLY: %v", agentID, rerr)
-	} else if cfg, lerr := reg.Lookup(agentID); lerr != nil {
-		log.Printf("wake-loop %s: agent not registered, running WATCH-ONLY: %v", agentID, lerr)
-	} else {
-		answerRole = cfg.WorkerAnswers
-		if rc, why := ResolveConsumer(*cfg, routerRoot); rc == nil {
-			log.Printf("wake-loop %s: WATCH-ONLY — this lane has NO consumer: %s", agentID, why)
-		} else {
-			// The consumer inherits this loop's registered thread (Rule of Ra):
-			// the service binds its session to that thread at mint.
-			bindConsumerThread(rc, thr.ThreadID)
-			consumer = rc
-		}
+	// Resolve again only at a joined/scored idle boundary below. Never mutate
+	// a running child's argv, environment, thread binding, or answer grant.
+	consumer, answerRole, configErr := loadWakeConsumer(routerRoot, agentID, thr.ThreadID)
+	if configErr != nil {
+		log.Printf("wake-loop %s: WATCH-ONLY: %v", agentID, configErr)
 	}
 	if thr.AnswerRole != answerRole {
 		thr.AnswerRole = answerRole
@@ -1240,7 +1240,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	// The real fix is the inverse: a resident must PUBLISH AND HEARTBEAT ITS OWN
 	// consumer-capable thread. Liveness you did not observe is not liveness you
 	// can borrow. That is the immediate follow-up, not this PR.
-	capable := consumer != nil && !consumer.Resident
+	capable := wakeLoopConsumerCapable(consumer, declaredAttendedLane(routerRoot, agentID))
 	if thr.ConsumerCapable != capable {
 		thr.ConsumerCapable = capable
 		if err := setThreadConsumerCapable(routerRoot, thr.ThreadID, capable); err != nil {
@@ -1295,7 +1295,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	var nextDispatchAllowed time.Time
 	quarantineLogged := false
 	ceilingLogged := false
-	if consumer != nil && !consumer.Resident {
+	{
 		if adopted := adoptRunningConsumer(routerRoot, agentID); adopted != nil {
 			run = adopted
 			// #642 x #636 C1: a previous process dispatched this run, so its
@@ -1303,6 +1303,9 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			// zero value would make madeProgress(0, depth) false and march a
 			// healthy lane toward quarantine after ten restarts.
 			run.depthAtDispatch = -1
+			// Its exit must be scored and refreshed like any dispatched run's,
+			// never replaced in the same tick under the loaded configuration.
+			scored = false
 			log.Printf("wake-loop %s: adopted already-running consumer pid %d from durable marker (loop restarted)",
 				agentID, adopted.pid)
 		}
@@ -1502,6 +1505,48 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			}
 		}
 
+		// The exit above must be joined and scored under its old configuration.
+		// Refreshing does not clear fruitless/backoff/quota or spawn-ceiling holds.
+		if !run.running() && scored {
+			consumer, answerRole, configErr = loadWakeConsumer(routerRoot, agentID, thr.ThreadID)
+			capable = wakeLoopConsumerCapable(consumer, declaredAttendedLane(routerRoot, agentID))
+			if configErr != nil {
+				lastError = "consumer configuration unavailable: " + configErr.Error()
+				log.Printf("wake-loop %s: WATCH-ONLY: %s", agentID, lastError)
+			}
+			var publicationErr error
+			if thr.AnswerRole != answerRole {
+				publicationErr = setThreadAnswerRole(routerRoot, thr.ThreadID, answerRole)
+				if publicationErr == nil {
+					thr.AnswerRole = answerRole
+				}
+			}
+			if publicationErr == nil && thr.ConsumerCapable != capable {
+				publicationErr = setThreadConsumerCapable(routerRoot, thr.ThreadID, capable)
+				if publicationErr == nil {
+					thr.ConsumerCapable = capable
+				}
+			}
+			lane.ConsumerDeclared = capable
+			if publicationErr == nil && configErr != nil {
+				_, publicationErr = Heartbeat(routerRoot, thr.ThreadID, HeartbeatUpdate{Status: ThreadStatusBlocked, LastError: &lastError, Lane: &lane, ExpectedPID: os.Getpid(), ExpectedStart: thr.StartTime})
+			}
+			if publicationErr != nil {
+				// A temporary registry write barrier holds dispatch just like the
+				// ordinary heartbeat path; it must not kill an idle observer.
+				log.Printf("wake-loop %s: heartbeat FAILED; new dispatch held: %v", agentID, publicationErr)
+				if errors.Is(publicationErr, ErrHeartbeatThreadUnavailable) {
+					return fmt.Errorf("wake-loop %s lost its observer registration: %w", agentID, publicationErr)
+				}
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-tick.C:
+					continue
+				}
+			}
+		}
+
 		// A lane that cannot make progress is a bug to REPORT, not a spawn to retry.
 		if fruitless >= wakeLoopFruitlessQuarantine {
 			if !quarantineLogged {
@@ -1516,6 +1561,10 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 				})
 			}
 		} else if !quotaBlocked && consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
+			// An exit seen only here (after the scoring check above) is next
+			// tick's to score and refresh; replacing it now would skip the
+			// #636 progress backoff and dispatch under a stale configuration.
+			(run == nil || scored) &&
 			time.Now().After(nextDispatchAllowed) &&
 			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) &&
 			!measurementWindowOpen(agentID, depth) && !attendedSessionOwnsInbox(routerRoot, agentID, depth) &&

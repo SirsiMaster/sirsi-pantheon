@@ -50,6 +50,63 @@ class ShellWhitespaceTests(unittest.TestCase):
     def test_empty_input_refused(self):
         self.assertIsNotNone(self.denied(' \n\t'))
 
+    def test_worker_bootstrap_diagnostic_names_actual_executor_not_controller(self):
+        reason = self.denied('python3 workload.py')
+        self.assertIn('--register-executor', reason)
+        self.assertIn("job's actual local runtime", reason)
+        self.assertIn('standalone canonical CLI', reason)
+        self.assertNotIn('--thread <own-thread>', reason)
+
+    def test_actual_compasspoint_envelope_still_refused_atomic_read_allowed(self):
+        self.assertIsNotNone(self.denied('which sirsi 2>/dev/null; echo "---"; sirsi router pull claude-m5-compasspoint 2>&1 | head -100'))
+        self.assertIsNone(self.denied(str(gate.CLI) + ' router pull claude-m5-compasspoint'))
+        self.assertIsNone(self.denied(self.front))
+
+    def test_compasspoint_prompts_scope_owner_task_dispatcher_and_compute_wrapper(self):
+        import json
+        root = Path(__file__).resolve().parents[2]
+        registry = json.loads((root / '.agents/idea-router/agents.json').read_text())
+        prompts = {
+            agent: registry['agents'][agent]['consumer']['prompt']
+            for agent in ['claude-m5-compasspoint', 'codex-compasspoint-contract']
+        }
+        coordination = (
+            'Register the actual session and perform router/task coordination with '
+            'standalone installed CLI calls outside the compute wrapper.'
+        )
+        source_read = (
+            'Read Thoth/canon with standalone permitted source-read commands outside '
+            'the compute wrapper.'
+        )
+        dispatcher = (
+            "The dispatcher binding is {{thread}}; it identifies the wake controller, "
+            "not this child's actual PID or a new runtime to adopt."
+        )
+        payload = (
+            '~/.local/bin/sirsi-maat-run --agent {{agent}} --register-executor '
+            '--work <exact-work> --timeout 300 -- <program> <args>'
+        )
+        for agent, prompt in prompts.items():
+            with self.subTest(agent=agent):
+                self.assertIn(dispatcher, prompt)
+                self.assertIn(coordination, prompt)
+                self.assertIn(source_read, prompt)
+                self.assertIn('Never pass the dispatcher binding as --thread.', prompt)
+                self.assertIn(payload, prompt)
+                self.assertNotIn('your worker thread is {{thread}}', prompt)
+                self.assertNotIn('--thread {{thread}}', prompt)
+                self.assertIn('No account/security changes', prompt)
+        codex_prompt = prompts['codex-compasspoint-contract']
+        self.assertIn('Local payload work still uses ~/.local/bin/sirsi-maat-run.', codex_prompt)
+        for native_fact in (
+            '~/.local/bin/sirsi-fabric-run m1|m5|studio --work <own-work> '
+            '--cpu-cores <needed> --timeout <seconds> -- <argv>',
+            'only through the runtime-provided scoped SOCKS proxy',
+            'Existing host pins and public-key authentication remain mandatory',
+        ):
+            self.assertIn(native_fact, codex_prompt)
+        self.assertIn('already-authorized', prompts['claude-m5-compasspoint'])
+
     def test_exact_compasspoint_null_stderr_source_read(self):
         command = 'cat /Users/thekryptodragon/Development/compasspoint/.thoth/memory.yaml 2>/dev/null | head -150'
         self.assertIsNone(self.denied(command))

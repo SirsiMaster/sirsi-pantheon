@@ -2,6 +2,7 @@ package knownfail
 
 import (
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,40 @@ import (
 )
 
 const proposalSchema = "sirsi.maat.known-failure-proposal.v1"
+
+// Historical catalog evidence is the exact source file at the pinned commit.
+// See COMPONENT_CATALOG.md and TestTrustedHistoricalCatalogSnapshotMatchesPinnedSourceEvidence.
+//
+//go:embed catalog-history/68b1ee17ac49d4c087c54bd4860eee597181fd45.json
+var catalogAt68b1ee17 []byte
+
+const (
+	historicalCatalogCommit68b1ee17 = "68b1ee17ac49d4c087c54bd4860eee597181fd45"
+	historicalCatalogPath68b1ee17   = "internal/maat/knownfail/catalog.json"
+	historicalCatalogBlob68b1ee17   = "325edb6a7017905209515529006fc908c126ce51"
+	historicalCatalogSHA25668b1ee17 = "e8a1b1a1e295f3ff02eef4342d4bd315555960d561458687c8ee1be034b2b178"
+)
+
+type historicalCatalogEvidence struct {
+	commit string
+	path   string
+	blob   string
+	sha256 string
+	bytes  []byte
+}
+
+var trustedHistoricalCatalogs = []historicalCatalogEvidence{{
+	commit: historicalCatalogCommit68b1ee17,
+	path:   historicalCatalogPath68b1ee17,
+	blob:   historicalCatalogBlob68b1ee17,
+	sha256: historicalCatalogSHA25668b1ee17,
+	bytes:  catalogAt68b1ee17,
+}}
+
+const (
+	CatalogRelationCurrent    = "current"
+	CatalogRelationHistorical = "historical"
+)
 
 var proposalID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,80}$`)
 
@@ -30,6 +65,24 @@ type Proposal struct {
 	Status        string `json:"status"`
 	CreatedAtUTC  string `json:"created_at_utc"`
 	CatalogSHA256 string `json:"catalog_sha256"`
+}
+
+// ProposalProjection adds a read-time catalog relation without changing the
+// create-only proposal bytes stored on disk.
+type ProposalProjection struct {
+	Proposal
+	CatalogRelation string `json:"catalog_relation"`
+}
+
+// ProjectProposals classifies only already-validated records. A supplied
+// catalog_relation field is never stored in Proposal or trusted here.
+func ProjectProposals(proposals []Proposal) []ProposalProjection {
+	projected := make([]ProposalProjection, 0, len(proposals))
+	for _, proposal := range proposals {
+		relation, _ := catalogRelation(proposal.CatalogSHA256)
+		projected = append(projected, ProposalProjection{Proposal: proposal, CatalogRelation: relation})
+	}
+	return projected
 }
 
 // DefaultProposalDir is the node-local Ma'at intake.  The environment override
@@ -54,6 +107,19 @@ func CatalogSHA256() string {
 	return hex.EncodeToString(digest[:])
 }
 
+func catalogRelation(pin string) (string, bool) {
+	if pin == CatalogSHA256() {
+		return CatalogRelationCurrent, true
+	}
+	for _, evidence := range trustedHistoricalCatalogs {
+		digest := sha256.Sum256(evidence.bytes)
+		if hex.EncodeToString(digest[:]) == evidence.sha256 && pin == evidence.sha256 {
+			return CatalogRelationHistorical, true
+		}
+	}
+	return "", false
+}
+
 func validateProposal(p Proposal) error {
 	if p.Schema != proposalSchema {
 		return fmt.Errorf("known-failure proposal: unsupported schema %q", p.Schema)
@@ -67,7 +133,12 @@ func validateProposal(p Proposal) error {
 	if _, err := regexp.Compile("(?i)" + p.Signature); err != nil {
 		return fmt.Errorf("known-failure proposal %q: bad signature: %w", p.ID, err)
 	}
-	if p.Status != "proposed" || p.CreatedAtUTC == "" || p.CatalogSHA256 != CatalogSHA256() {
+	createdAt, timestampErr := time.Parse(time.RFC3339, p.CreatedAtUTC)
+	_, utcOffset := createdAt.Zone()
+	if p.Status != "proposed" || timestampErr != nil || utcOffset != 0 {
+		return fmt.Errorf("known-failure proposal %q: invalid provenance", p.ID)
+	}
+	if _, trusted := catalogRelation(p.CatalogSHA256); !trusted {
 		return fmt.Errorf("known-failure proposal %q: invalid provenance", p.ID)
 	}
 	return nil

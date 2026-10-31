@@ -7,6 +7,29 @@
 
 ## 1. Context — why this, why now
 
+### 2026-10-25 DC01 — authenticated claim and durable owner are one commit
+
+Authenticated `ClaimNext` and `ClaimItem` use the same existing claim transaction
+with an additional `lease_sessions` write before commit. The handler injects only
+the session it already authenticated after the existing host, signature, scope
+and registered-thread checks. This is an unexported backend capability, not a new
+wire method, caller-supplied owner field, schema or credential. Both SQLite and
+PostgreSQL share the transaction implementation. A backend without this capability
+refuses authenticated claims before changing any item; it never falls back to a
+separate best-effort owner write. A binding SQL failure rolls back item, owner and
+claim counter. Recovery is an explicit later claim after definitive rollback,
+not an automatic repeated `ClaimNext` after an unknown transport outcome.
+
+Legacy local claims retain their declared unbound behavior, and the existing
+unclaimed CLI `CloseItem` / delegated `close:any` policy is unchanged. MCP still
+uses fenced `CompleteItem`, not the unclaimed close route. Same authenticated
+worker remint remains permitted; copying a live token to another registered
+thread does not transfer ownership. Existing task binding is outside this
+item-only correction. Tests inject an actual binding SQL failure through both
+authenticated HTTP claim methods and verify rollback, explicit recovery,
+copied-token refusal, rightful remint and legacy compatibility. Source checks
+do not establish deployment or installed canonical owned-item completion.
+
 ### 2026-10-24 corrective source addendum — one packaged engine
 
 The owner-directed corrective moves the existing implementation into
@@ -71,7 +94,7 @@ Exposed as MCP **tools** (verbs) and, where it fits, MCP **resources** (the inbo
 | `router_status` | `sirsi router status` | `Store.Counters() (DispatchCounters,error)` (+`GetState`/`Breakers`) | read |
 | `router_ledger` | `sirsi router ledger [agent]` | `ledger.Build(repoRoot,agent,now,staleAfter)` + `Summarize` | read |
 | `router_board` | `sirsi router board`/`workboard` | `router` workboard read model (items + threads) | read |
-| `router_claim` | claim work | `Store.ClaimNext(agent, ttl) (*Lease,error)` | **MUTATE** (+ ownership-bound at claim) |
+| `router_claim` | claim work | `Store.ClaimNext(agent, ttl)` when id absent; existing `Store.ClaimItem(agent,id,ttl)` when supplied | **MUTATE** (+ ownership-bound at claim) |
 | `router_close` | `sirsi router close <id>` | `Facade.CloseItem(actor,id,result)` → `Store.CloseItem(id,result) error` | **MUTATE** |
 | `router_acknowledge` | `sirsi router acknowledge <id>` | `Facade.AckItem(actor,id)` → `Store.AckItem(id) error` | **MUTATE** (recipient-only) |
 | `thread_adopt` | `sirsi thread adopt` | `Store.AdoptTokenMachineID(host,machineID) error` (host injected server-side) | identity, `ruleOfRaExempt` |
@@ -136,3 +159,23 @@ Minimum viable pipeline is P1. P4 depends on rs-44 and is out of scope here.
 - **Reuse, don't fork.** `internal/mcp` (`NewBareServer` + `RegisterTool`) is already generic — the gemma coupling lives only in `cmd/sirsi-gemma`, not the shared server. The in-tree `router_*` handlers in the full Anubis server (`internal/mcp/tools.go`) already route through `dispatch.Open → Facade.Send/Inbox/Show`; `cmd/sirsi-router-mcp` lifts that wiring into a standalone bare server. No framework change needed.
 - rs-44 (scoped read-only tokens) gates P4 (remote transport).
 - A26: this is a router-lane workstream; if implementation spans repos or needs codex-pantheon, route through the Idea Router.
+
+### Optional exact item selection corrective (2026-10-25, source only)
+
+The existing router_claim tool exposes optional string `id` through ClaimItem;
+its closed schema permits no caller-selected agent, TTL, thread or authority.
+Absent id preserves ClaimNext and the15-minute local session-map behavior.
+Its typed ErrNoWork now becomes a friendly non-error empty-inbox reply with no
+local claim; this corrects the prior error reply. Exact-ID errors remain refusals.
+Invalid supplied IDs refuse before facade/RPC access. Exact rejection never
+falls through to oldest-work selection. The actual framed MCP fixtures seed
+older eligible own work and verify exact targeting, legacy omission, unchanged
+foreign/unrelated rows and claim counters, fresh-instance local-map refusal,
+and zero RPC calls for invalid inputs/unregistered use.
+
+At this frontend-only checkpoint no backend session-binding/lease code changed.
+The DC01 addendum above now describes the separately imported atomic backend
+correction. Frontend selection fixtures do not prove durable authenticated
+binding; combined-source qualification, backend adoption and the installed
+own-item lifecycle still require their actual evidence. No new wire operation,
+store or CLI auth path is introduced.

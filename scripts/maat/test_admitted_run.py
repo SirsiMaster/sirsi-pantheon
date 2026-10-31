@@ -199,6 +199,83 @@ class RegistryDeadlineTests(unittest.TestCase):
             native.registration_observation('own')
         self.assertEqual(native.call.call_count, 1)
 
+    def test_uncertain_registration_waits_only_for_the_same_pending_identity(self):
+        native = runner.Native()
+        clock = Clock()
+        calls = []
+        def call(*args, **kwargs):
+            calls.append(args)
+            identity = args[args.index('--thread') + 1]
+            if args[:2] == ('thread', 'register'):
+                raise runner.TransientTransport('HTTP 502 OUTCOME UNKNOWN Bearer secret-do-not-retain')
+            if len(calls) == 2:
+                raise runner.Refused("Control call ('thread', 'heartbeat') failed: thread \"" + identity +
+                                     '\" not registered: heartbeat registration unavailable')
+            return dict(agent_id='lane', pid=os.getpid(), status='active', thread_id=identity)
+        native.call = call
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)):
+            identity = native.register_executor('lane')
+        self.assertEqual([c[:2] for c in calls], [('thread', 'register'), ('thread', 'heartbeat'), ('thread', 'heartbeat')])
+        self.assertTrue(all(c[c.index('--thread') + 1] == identity for c in calls))
+        self.assertEqual(clock.now, 1)
+
+    def test_uncertain_registration_retains_safe_initial_cause_on_refusal(self):
+        native = runner.Native()
+        native.call = mock.Mock(side_effect=[
+            runner.TransientTransport('HTTP 503 OUTCOME UNKNOWN Bearer secret-do-not-retain'),
+            runner.Refused('403 denied')])
+        with self.assertRaises(runner.Refused) as caught:
+            native.register_executor('lane')
+        self.assertIn('http_503,relay_outcome_unknown', str(caught.exception))
+        self.assertIn('403 denied', str(caught.exception))
+        self.assertNotIn('secret-do-not-retain', str(caught.exception))
+        self.assertEqual(native.call.call_count, 2)
+
+    def test_missing_registration_is_not_retried_outside_pending_recovery(self):
+        native = runner.Native()
+        native.call = mock.Mock(side_effect=runner.Refused(
+            "Control call ('thread', 'heartbeat') failed: thread \"own\" not registered: heartbeat registration unavailable"))
+        with self.assertRaises(runner.Refused):
+            native.registration_observation('own')
+        self.assertEqual(native.call.call_count, 1)
+
+    def test_pending_missing_registration_respects_prior_deadline(self):
+        native = runner.Native()
+        native.deadline = 3
+        native.call = mock.Mock(side_effect=runner.Refused(
+            "Control call ('thread', 'heartbeat') failed: thread \"own\" not registered: heartbeat registration unavailable"))
+        clock = Clock()
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)), \
+                self.assertRaises(runner.TransientTransport):
+            native.registration_observation('own', pending_registration=True)
+        self.assertEqual(clock.now, 3)
+        self.assertEqual(native.deadline, 3)
+        self.assertEqual(native.call.call_count, 2)
+
+    def test_uncertain_registration_never_retries_denial_terminal_or_foreign_missing(self):
+        for message in (
+                '403 denied',
+                'thread "own" is closed and cannot be revived by heartbeat',
+                'thread "own" belongs to a different native runtime',
+                "Control call ('thread', 'heartbeat') failed: thread \"foreign\" not registered: heartbeat registration unavailable",
+                "Control call ('thread', 'heartbeat') failed: 403 denied; thread \"own\" not registered: heartbeat registration unavailable",
+                "Control call ('thread', 'heartbeat') failed: unauthorized; thread \"own\" not registered: heartbeat registration unavailable",
+                "Control call ('thread', 'heartbeat') failed: unauthorised; thread \"own\" not registered: heartbeat registration unavailable",
+                "Control call ('thread', 'heartbeat') failed: released; thread \"own\" not registered: heartbeat registration unavailable"):
+            with self.subTest(message=message):
+                native = runner.Native()
+                native.deadline = 3
+                native.call = mock.Mock(side_effect=runner.Refused(message))
+                clock = Clock()
+                with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                        mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)) as sleep, \
+                        self.assertRaises(runner.Refused):
+                    native.registration_observation('own', pending_registration=True)
+                self.assertEqual(native.call.call_count, 1)
+                sleep.assert_not_called()
+
     def test_registration_observation_stops_at_bounded_budget(self):
         native = runner.Native()
         native.call = mock.Mock(side_effect=runner.TransientTransport('HTTP 502'))
@@ -431,12 +508,14 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(code,0)
         self.assertEqual(record['share'],'floor')
 
-    def test_owned_lookup_reads_exact_grant_not_foreign_first_holder(self):
-        native=runner.Native()
-        native.owned_admission='own-grant'
-        native.call=mock.Mock(return_value=[admission(id='foreign'), admission(id='own-grant')])
-        self.assertEqual(native.lookup('m5')['id'], 'own-grant')
-        native.call.assert_called_once_with('maat','status','m5','--json')
+    def test_owned_lookup_uses_exact_id_query_without_resource(self):
+        native = runner.Native()
+        native.owned_admission = 'own-grant'
+        response = mock.Mock(stdout=json.dumps([admission(id='own-grant')]))
+        with mock.patch.object(runner.subprocess, 'run', return_value=response) as run:
+            self.assertEqual(native.lookup('m5')['id'], 'own-grant')
+        self.assertEqual(run.call_args.args[0],
+                         [native.cli, 'maat', 'status', '--id', 'own-grant', '--json'])
 
     def run_case(self, backend, command=None, timeout=2, agent='lane', thread='thread'):
         record = {}
@@ -973,8 +1052,19 @@ class TransportTests(unittest.TestCase):
     def test_readback_requires_single_exact_id(self):
         native = runner.Native()
         native.owned_admission = 'fixture-id'
-        for rows in [None, {}, [], [admission(id='foreign')], [admission(), admission()]]:
-            native.call = mock.Mock(return_value=rows)
+        for payload in ('', '{}', '[]', json.dumps([admission(id='foreign')]),
+                        json.dumps([admission(), admission()]),
+                        json.dumps([admission(), admission(id='foreign')]),
+                        json.dumps([None]), '{malformed'):
+            with self.subTest(payload=payload):
+                response = mock.Mock(stdout=payload)
+                with mock.patch.object(runner.subprocess, 'run', return_value=response) as run:
+                    with self.assertRaises(runner.Refused):
+                        native.lookup('m5')
+                self.assertEqual(run.call_args.args[0],
+                                 [native.cli, 'maat', 'status', '--id', 'fixture-id', '--json'])
+        failure = subprocess.CalledProcessError(1, 'sirsi', stderr='unknown reservation')
+        with mock.patch.object(runner.subprocess, 'run', side_effect=failure):
             with self.assertRaises(runner.Refused):
                 native.lookup('m5')
 

@@ -116,6 +116,9 @@ func openDefaultStoreAt(home string) (*Store, error) {
 		// Closing lockFD below releases the lock even if this best-effort unlock fails.
 		_ = unix.Flock(lockFD, unix.LOCK_UN)
 	}()
+	if err := validateBootstrapLockName(parentFD, lockFD); err != nil {
+		return nil, err
+	}
 	status := inspectStoreAt(parentFD)
 	if status.State != DefaultStoreReady {
 		return nil, fmt.Errorf("maat memory: default store is %s: %s", status.State, status.Detail)
@@ -160,6 +163,9 @@ func initializeDefaultStoreAt(home string) (string, error) {
 		// Closing lockFD below releases the lock even if this best-effort unlock fails.
 		_ = unix.Flock(lockFD, unix.LOCK_UN)
 	}()
+	if err := validateBootstrapLockName(parentFD, lockFD); err != nil {
+		return "", err
+	}
 	status := inspectStoreAt(parentFD)
 	if status.State != DefaultStoreUninitialized {
 		return "", fmt.Errorf("maat memory: initialize refused for %s store: %s", status.State, status.Detail)
@@ -411,16 +417,47 @@ func requireOwnedDirectory(fd int, private bool) error {
 }
 
 func openBootstrapLock(parentFD int, create bool) (int, error) {
-	flags := unix.O_RDWR | unix.O_NOFOLLOW | unix.O_CLOEXEC
-	if create {
-		flags |= unix.O_CREAT
+	return openBootstrapLockWith(parentFD, create, unix.Openat)
+}
+
+// The opener is passed explicitly so tests can place a concurrent creation at
+// the failed-syscall boundary without replacing process-global syscall hooks.
+func openBootstrapLockWith(parentFD int, create bool, openat func(int, string, int, uint32) (int, error)) (int, error) {
+	flags := unix.O_RDWR | unix.O_NONBLOCK | unix.O_NOFOLLOW | unix.O_CLOEXEC
+	var parentBefore unix.Stat_t
+	if err := unix.Fstat(parentFD, &parentBefore); err != nil {
+		return -1, bootstrapLockError("stat parent", parentFD, -1, create, err)
 	}
-	fd, err := unix.Openat(parentFD, defaultLockName, flags, 0o600)
+	if create {
+		flags |= unix.O_CREAT | unix.O_EXCL
+	}
+	fd, err := openat(parentFD, defaultLockName, flags, 0o600)
+	var appeared unix.Stat_t
+	adopting := false
+	if create && (errors.Is(err, unix.EEXIST) || errors.Is(err, unix.ENOENT)) {
+		// A creator may have published the permanent lock by the time a failed
+		// create is inspected. Acquire only that now-existing exact object:
+		// never loop, retry creation, unlink, or treat ENOENT as initialization.
+		var parentNow unix.Stat_t
+		if unix.Fstat(parentFD, &parentNow) == nil && parentBefore.Dev == parentNow.Dev && parentBefore.Ino == parentNow.Ino &&
+			unix.Fstatat(parentFD, defaultLockName, &appeared, unix.AT_SYMLINK_NOFOLLOW) == nil && privateBootstrapLock(appeared) {
+			createErr := err
+			fd, err = openat(parentFD, defaultLockName, flags & ^(unix.O_CREAT|unix.O_EXCL), 0)
+			if err != nil {
+				err = errors.Join(createErr, err)
+			}
+			adopting = true
+		}
+	}
 	if err != nil {
 		return -1, bootstrapLockError("open", parentFD, -1, create, err)
 	}
 	var stat unix.Stat_t
-	if err := unix.Fstat(fd, &stat); err != nil || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 || stat.Uid != uint32(os.Geteuid()) || stat.Mode&0o077 != 0 {
+	var named unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil || !privateBootstrapLock(stat) ||
+		(adopting && (stat.Dev != appeared.Dev || stat.Ino != appeared.Ino)) ||
+		unix.Fstatat(parentFD, defaultLockName, &named, unix.AT_SYMLINK_NOFOLLOW) != nil ||
+		!privateBootstrapLock(named) || named.Dev != stat.Dev || named.Ino != stat.Ino {
 		_ = unix.Close(fd)
 		return -1, errors.New("maat memory: bootstrap lock identity is not private and owner-controlled")
 	}
@@ -430,6 +467,26 @@ func openBootstrapLock(parentFD int, create bool) (int, error) {
 		return -1, failure
 	}
 	return fd, nil
+}
+
+func privateBootstrapLock(stat unix.Stat_t) bool {
+	return stat.Mode&unix.S_IFMT == unix.S_IFREG && stat.Nlink == 1 && stat.Uid == uint32(os.Geteuid()) && stat.Mode&0o077 == 0
+}
+
+// A flock on an unlinked/replaced inode is not authority over the named store.
+// Both readers and initializers check this after locking, before store access.
+func validateBootstrapLockName(parentFD, lockFD int) error {
+	var opened, named unix.Stat_t
+	if err := unix.Fstat(lockFD, &opened); err != nil {
+		return bootstrapLockError("post-lock descriptor stat", parentFD, lockFD, false, err)
+	}
+	if err := unix.Fstatat(parentFD, defaultLockName, &named, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return bootstrapLockError("post-lock name stat", parentFD, lockFD, false, err)
+	}
+	if !privateBootstrapLock(opened) || !privateBootstrapLock(named) || opened.Dev != named.Dev || opened.Ino != named.Ino {
+		return errors.New("maat memory: bootstrap lock name changed before store access")
+	}
+	return nil
 }
 
 // Capture only metadata after a failed syscall, before releasing owned FDs.

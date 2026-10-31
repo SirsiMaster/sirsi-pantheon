@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
@@ -16,9 +17,15 @@ import (
 )
 
 var (
-	selfUpdateConfirm bool
-	selfUpdateJSON    bool
-	readSchemaFn      = routerstore.ReadSchemaVersion
+	selfUpdateConfirm       bool
+	selfUpdateJSON          bool
+	selfUpdateReconcile     bool
+	readSchemaFn            = routerstore.ReadSchemaVersion
+	selfUpdateExecutable    = os.Executable
+	selfUpdateHash          = selfupdate.FileHash
+	selfUpdateDetect        = selfupdate.DetectCLIDrift
+	selfUpdateSchemaGate    = schemaCompatibilityGate
+	selfUpdateConfirmPrompt = confirmFix
 )
 
 // resolveRouterDBPath delegates to routerstore.LocalPath, the single
@@ -83,6 +90,7 @@ fresh inode, codesign it, atomic rename over the old one).
   sirsi self-update            # preview drift (read-only, default)
   sirsi self-update --confirm  # heal the drifted copies (asks [y/N])
   sirsi self-update --json     # machine-readable drift report (read-only)
+  sirsi self-update --reconcile # data-only recovery of retained Ma'at facts
 
 SAFETY: writes ONLY to the known CLI bin dirs (~/.local/bin, ~/go/bin,
 /opt/homebrew/bin, /usr/local/bin) and NEVER inside a .app bundle (Rule A19).
@@ -100,19 +108,22 @@ running, a loud error names the holder PID and exits immediately.`,
 }
 
 func runSelfUpdate(_ *cobra.Command, _ []string) error {
-	self, err := os.Executable()
+	if selfUpdateReconcile {
+		return reconcilePendingRawSelfUpdate()
+	}
+	self, err := selfUpdateExecutable()
 	if err != nil {
 		return fmt.Errorf("locate running binary: %w", err)
 	}
 	if resolved, rerr := filepath.EvalSymlinks(self); rerr == nil {
 		self = resolved
 	}
-	selfHash, err := selfupdate.FileHash(self)
+	selfHash, err := selfUpdateHash(self)
 	if err != nil {
 		return fmt.Errorf("hash running binary: %w", err)
 	}
 
-	targets := selfupdate.DetectCLIDrift(self, selfHash)
+	targets := selfUpdateDetect(self, selfHash)
 
 	// --json is a pure read-only detect — safe for non-interactive callers
 	// (CI, hooks, the menubar tick). It never mutates (gate #1).
@@ -127,7 +138,7 @@ func runSelfUpdate(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	ver := modversion.Current("sirsi").Version
+	ver := maatRawSelfUpdateOps.selfInfo().Version
 	if len(targets) == 0 {
 		output.Success("All CLI copies match the running binary (%s) — nothing to heal.", ver)
 		return nil
@@ -149,59 +160,43 @@ func runSelfUpdate(_ *cobra.Command, _ []string) error {
 	// Version-probe gate: confirm the running binary answers `version --json`.
 	// This is a liveness check on the version protocol, not a store schema gate.
 	// Runs before the interactive prompt for a fast-fail.
-	selfInfo, probeErr := selfupdate.CheckVersionProbe(self)
+	selfInfo, probeErr := maatRawSelfUpdateOps.probe(self)
 	if probeErr != nil {
 		return fmt.Errorf("version-probe gate: %w", probeErr)
 	}
 	if provErr := selfupdate.CheckProvenance(selfInfo); provErr != nil {
 		return fmt.Errorf("provenance gate: %w\n  (install a proper release build via goreleaser or Homebrew, then re-run self-update)", provErr)
 	}
-	if gateErr := schemaCompatibilityGate(selfInfo); gateErr != nil {
+	if gateErr := selfUpdateSchemaGate(selfInfo); gateErr != nil {
 		return fmt.Errorf("schema-compatibility gate: %w", gateErr)
 	}
+	storeStatus := maatRawSelfUpdateOps.storeStatus()
+	if storeStatus.State != maat.DefaultStoreReady {
+		return errors.New("Ma'at self-update requires the existing initialized failure-memory store; no target was changed")
+	}
+	liveSchema, schemaErr := maatRawSelfUpdateOps.schema(selfInfo)
+	if schemaErr != nil {
+		return fmt.Errorf("Ma'at self-update schema-compatibility gate: %w", schemaErr)
+	}
+	manifest, manifestErr := rawSelfUpdateManifest(self, selfHash, targets, storeStatus.StoreUUID, selfInfo, liveSchema, maatRawSelfUpdateOps.now())
+	if manifestErr != nil {
+		return fmt.Errorf("Ma'at self-update reviewed plan: %w", manifestErr)
+	}
+	output.Dim("  Exact reviewed plan: sha256:%s", manifest.PreviewBinding)
 
 	// Apply — explicit --confirm plus an interactive [y/N]. A binary rewrite is
 	// destructive; there is deliberately no --yes auto-confirm for it (gate #2).
-	if !confirmFix(fmt.Sprintf("Replace %d stale CLI copy(ies) with the running binary?", len(targets))) {
+	if !selfUpdateConfirmPrompt(fmt.Sprintf("Replace %d stale CLI copy(ies) from reviewed plan sha256:%s?", len(targets), manifest.PreviewBinding)) {
 		output.Dim("     → aborted; no changes made")
 		return nil
 	}
 
-	// Serialization gate: acquire the install lock before any write.
-	// Nonblocking — if another sirsi self-update is already running, a loud
-	// error names the holder PID and exits immediately rather than queuing.
-	lock, lockErr := selfupdate.AcquireInstallLock()
-	if lockErr != nil {
-		return fmt.Errorf("serialization gate: %w", lockErr)
+	if err := applyRawSelfUpdate(manifest); err != nil {
+		return err
 	}
-	if lock != nil {
-		defer lock.Close()
-	}
-
-	healed, failed := 0, 0
-	for _, t := range targets {
-		if err := selfupdate.SafeReplace(self, t.Path); err != nil {
-			output.Error("     %s: %v", t.Path, err)
-			failed++
-			continue
-		}
-		// SafeReplace verifies convergence against the exact post-codesign staged
-		// artifact. The unsigned source hash is not a valid comparator on macOS
-		// because codesign mutates Mach-O content.
-		output.Success("     healed %s (re-signed, converged)", t.Path)
-		healed++
-	}
-
-	// Running-process restart note — atomic rename means a process already on
-	// the old inode keeps it until it restarts (gate #4).
-	if healed > 0 {
-		output.Dim("\n  Note: any process already running an old copy keeps it until it RESTARTS")
-		output.Dim("  (restart the menubar/daemon, and open a new shell to pick up the healed CLI).")
-	}
-	if failed > 0 {
-		return fmt.Errorf("%d of %d copies failed to heal", failed, len(targets))
-	}
-	output.Success("Healed %d CLI copy(ies).", healed)
+	output.Success("Healed %d CLI copy(ies) with retained Ma'at preflight, attempt, and target postcheck.", len(targets))
+	output.Dim("\n  Note: any process already running an old copy keeps it until it RESTARTS")
+	output.Dim("  (restart the menubar/daemon, and open a new shell to pick up the healed CLI).")
 	return nil
 }
 
@@ -216,4 +211,5 @@ func shortHash(h string) string {
 func init() {
 	selfUpdateCmd.Flags().BoolVar(&selfUpdateConfirm, "confirm", false, "apply the heal (replace stale copies); default is preview only")
 	selfUpdateCmd.Flags().BoolVar(&selfUpdateJSON, "json", false, "machine-readable drift report (read-only, never mutates)")
+	selfUpdateCmd.Flags().BoolVar(&selfUpdateReconcile, "reconcile", false, "complete retained terminal Ma'at projection readback without replacing binaries")
 }

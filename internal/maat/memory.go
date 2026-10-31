@@ -250,17 +250,19 @@ func (i Incident) validate() error {
 }
 
 type PreflightReceipt struct {
-	Schema                 string            `json:"schema"`
-	Action                 Scope             `json:"action"`
-	ActionManifestSHA256   string            `json:"action_manifest_sha256"`
-	RegistrySnapshotSHA256 string            `json:"registry_snapshot_sha256"`
-	EvaluatedGuards        []GuardEvaluation `json:"evaluated_guards"`
-	MeasuredChecks         []CheckOutcome    `json:"measured_checks"`
-	Decision               PreflightDecision `json:"decision"`
-	IncidentKeys           []string          `json:"incident_keys"`
-	RecoveryActions        []RecoveryAction  `json:"recovery_actions"`
-	RecoveryReference      string            `json:"recovery_reference"`
-	EvaluatedAtUTC         time.Time         `json:"evaluated_at_utc"`
+	Schema                  string            `json:"schema"`
+	Action                  Scope             `json:"action"`
+	ActionManifestSHA256    string            `json:"action_manifest_sha256"`
+	RegistrySnapshotSHA256  string            `json:"registry_snapshot_sha256"`
+	EvaluatedGuards         []GuardEvaluation `json:"evaluated_guards"`
+	MeasuredChecks          []CheckOutcome    `json:"measured_checks"`
+	Decision                PreflightDecision `json:"decision"`
+	IncidentKeys            []string          `json:"incident_keys"`
+	RecoveryActions         []RecoveryAction  `json:"recovery_actions"`
+	RecoveryReference       string            `json:"recovery_reference"`
+	EvaluatedAtUTC          time.Time         `json:"evaluated_at_utc"`
+	RegistrySnapshotVersion int               `json:"registry_snapshot_version,omitempty"`
+	localOrigin             *preflightReceiptOrigin
 }
 
 type GuardEvaluation struct{ ID, Version, SHA256 string }
@@ -321,6 +323,9 @@ type Store struct {
 	lockFD       int
 	attemptsFD   int
 	storeUUID    string
+	// Private per-instance interruption seam. Production constructors leave it
+	// nil; fixtures can fail only after the real target's durable readback.
+	beforeWriteCommit func(writeIntent) error
 }
 
 // writeIntent is a tiny, create-only write-ahead record.  It is durable before
@@ -591,6 +596,9 @@ func (s *Store) Transition(predecessorKey string, status IncidentStatus) (Incide
 	if err := json.Unmarshal(data, &predecessor); err != nil || predecessor.validate() != nil || predecessor.Key != predecessorKey || predecessor.Status != IncidentActive {
 		return IncidentTransition{}, errors.New("maat memory: transition predecessor is invalid")
 	}
+	if localManagedWatchIncident(predecessor) {
+		return IncidentTransition{}, errors.New("maat memory: local prevention requires its separate exact owner disposition")
+	}
 	if err := s.verifyEvidence(predecessor.EvidenceSHA256); err != nil {
 		return IncidentTransition{}, fmt.Errorf("maat memory: transition evidence unavailable: %w", err)
 	}
@@ -605,6 +613,19 @@ func (s *Store) Transition(predecessorKey string, status IncidentStatus) (Incide
 		priorBytes, err := readExact(s.transitionFD, name)
 		if err != nil {
 			return IncidentTransition{}, err
+		}
+		var schema struct {
+			Schema string `json:"schema"`
+		}
+		if err := json.Unmarshal(priorBytes, &schema); err != nil {
+			return IncidentTransition{}, err
+		}
+		if schema.Schema == localPreventionEventSchema {
+			var event LocalPreventionEvent
+			if err := decodeLocalRecord(priorBytes, &event); err != nil || event.validate() != nil {
+				return IncidentTransition{}, errors.New("maat memory: invalid local transition")
+			}
+			continue
 		}
 		var prior IncidentTransition
 		if err := json.Unmarshal(priorBytes, &prior); err != nil || prior.Key+".json" != name {
@@ -652,7 +673,23 @@ func (s *Store) preflightBound(action Scope, manifestDigest string, resolve func
 		return PreflightReceipt{}, err
 	}
 	defer s.unlock()
-	return s.preflightBoundLocked(action, manifestDigest, resolve)
+	return s.issuePreflightBoundLocked(action, manifestDigest, resolve)
+}
+
+func (s *Store) issuePreflightBoundLocked(action Scope, manifestDigest string, resolve func(string, string) (memoryGuard, bool)) (PreflightReceipt, error) {
+	receipt, evalErr := s.preflightBoundLocked(action, manifestDigest, resolve)
+	if validDigest(receipt.RegistrySnapshotSHA256) {
+		var identity unix.Stat_t
+		if err := unix.Fstat(s.rootFD, &identity); err != nil {
+			return PreflightReceipt{}, err
+		}
+		canonical, err := json.Marshal(receipt)
+		if err != nil {
+			return PreflightReceipt{}, err
+		}
+		receipt.localOrigin = &preflightReceiptOrigin{device: uint64(identity.Dev), inode: uint64(identity.Ino), storeUUID: s.storeUUID, canonical: string(canonical)}
+	}
+	return receipt, evalErr
 }
 
 // preflightBoundLocked evaluates the complete registry snapshot while the
@@ -666,7 +703,7 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 	if err := action.validate(); err != nil {
 		return PreflightReceipt{}, err
 	}
-	journalLines, err := s.verifyWriteJournal()
+	_, err := s.verifyWriteJournal()
 	if err != nil {
 		return PreflightReceipt{Schema: MemorySchema, Action: action, Decision: PreflightUnverifiable, EvaluatedAtUTC: time.Now().UTC()}, err
 	}
@@ -682,12 +719,14 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 	if !validDigest(manifestDigest) {
 		return PreflightReceipt{}, errors.New("maat memory: invalid action manifest digest")
 	}
-	receipt := PreflightReceipt{Schema: MemorySchema, Action: action, ActionManifestSHA256: manifestDigest, Decision: PreflightPass, EvaluatedAtUTC: time.Now().UTC()}
+	receipt := PreflightReceipt{Schema: MemorySchema, RegistrySnapshotVersion: 2, Action: action, ActionManifestSHA256: manifestDigest, Decision: PreflightPass, EvaluatedAtUTC: time.Now().UTC()}
 	snapshot := sha256.New()
-	_, _ = snapshot.Write([]byte(MemorySchema + "\n"))
-	for _, line := range journalLines {
-		_, _ = snapshot.Write([]byte(line + "\n"))
-	}
+	_, _ = snapshot.Write([]byte("sirsi.maat.semantic-registry.v2\n" + MemorySchema + "\n"))
+	_, _ = snapshot.Write([]byte("local-lifecycle-v1\x00" + localLifecycleImplementationSHA() + "\n"))
+	closedGuard, _ := resolveMemoryGuard(ActiveIncidentGuardID, ActiveIncidentGuardVersion)
+	guardBytes, _ := json.Marshal(closedGuard.identity)
+	_, _ = snapshot.Write(guardBytes)
+	_, _ = snapshot.Write([]byte("\n"))
 	incidents := make(map[string]Incident, len(names))
 	for _, name := range names {
 		if !strings.HasSuffix(name, ".json") || !validDigest(strings.TrimSuffix(name, ".json")) {
@@ -696,6 +735,10 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 		}
 		data, err := readExact(s.incidentFD, name)
 		if err != nil {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, err
+		}
+		if err := s.verifyCommittedBytes("incidents", name, data); err != nil {
 			receipt.Decision = PreflightUnverifiable
 			return receipt, err
 		}
@@ -708,6 +751,7 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 			receipt.Decision = PreflightUnverifiable
 			return receipt, fmt.Errorf("maat memory: incident evidence unavailable: %w", err)
 		}
+		_, _ = snapshot.Write([]byte("evidence/" + incident.EvidenceSHA256 + "\n"))
 		fileDigest := sha256.Sum256(data)
 		_, _ = snapshot.Write([]byte("incidents/" + name + "\x00" + hex.EncodeToString(fileDigest[:]) + "\n"))
 		incidents[incident.Key] = incident
@@ -718,6 +762,7 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 		return receipt, err
 	}
 	terminal := make(map[string]IncidentTransition, len(transitionNames))
+	localEvents := []LocalPreventionEvent{}
 	for _, name := range transitionNames {
 		if !strings.HasSuffix(name, ".json") || !validDigest(strings.TrimSuffix(name, ".json")) {
 			receipt.Decision = PreflightUnverifiable
@@ -727,6 +772,32 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 		if err != nil {
 			receipt.Decision = PreflightUnverifiable
 			return receipt, err
+		}
+		if err := s.verifyCommittedBytes("transitions", name, data); err != nil {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, err
+		}
+		var envelope struct {
+			Schema string `json:"schema"`
+		}
+		if err := json.Unmarshal(data, &envelope); err != nil {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, err
+		}
+		if envelope.Schema == localPreventionEventSchema {
+			var event LocalPreventionEvent
+			if err := decodeLocalRecord(data, &event); err != nil || event.validate() != nil || name != event.EventKey+".json" {
+				receipt.Decision = PreflightUnverifiable
+				return receipt, errors.New("maat memory: invalid local transition")
+			}
+			if err := s.verifyEvidence(event.EvidenceSHA256); err != nil {
+				receipt.Decision = PreflightUnverifiable
+				return receipt, err
+			}
+			localEvents = append(localEvents, event)
+			fileDigest := sha256.Sum256(data)
+			_, _ = snapshot.Write([]byte("transitions/" + name + "\x00" + hex.EncodeToString(fileDigest[:]) + "\n" + "evidence/" + event.EvidenceSHA256 + "\n"))
+			continue
 		}
 		var transition IncidentTransition
 		if err := json.Unmarshal(data, &transition); err != nil {
@@ -745,6 +816,31 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 		terminal[transition.PredecessorKey] = transition
 		fileDigest := sha256.Sum256(data)
 		_, _ = snapshot.Write([]byte("transitions/" + name + "\x00" + hex.EncodeToString(fileDigest[:]) + "\n"))
+	}
+	for _, event := range localEvents {
+		if i, ok := incidents[event.IncidentKey]; !ok || !localManagedWatchIncident(i) {
+			receipt.Decision = PreflightUnverifiable
+			return receipt, errors.New("maat memory: orphan or foreign local transition")
+		}
+	}
+	for key, i := range incidents {
+		if localManagedWatchIncident(i) {
+			if _, legacy := terminal[key]; legacy {
+				receipt.Decision = PreflightUnverifiable
+				return receipt, errors.New("maat memory: unsupported legacy terminal on a local prevention family")
+			}
+			head, _, err := s.localFamilyLocked(i, localEvents)
+			if err != nil {
+				receipt.Decision = PreflightUnverifiable
+				return receipt, err
+			}
+			if head.Status == IncidentRetired {
+				terminal[key] = IncidentTransition{}
+			} else {
+				i.EvidenceSHA256 = head.EvidenceSHA256
+				incidents[key] = i
+			}
+		}
 	}
 	receipt.RegistrySnapshotSHA256 = hex.EncodeToString(snapshot.Sum(nil))
 	seenGuards := map[string]bool{}
@@ -786,6 +882,21 @@ func (s *Store) preflightBoundLocked(action Scope, manifestDigest string, resolv
 		recoveryDigest := sha256.Sum256(actions)
 		receipt.RecoveryReference = "maat-recovery:" + hex.EncodeToString(recoveryDigest[:])
 	}
+	if action == localWatchScope() {
+		if _, err := s.pendingLivenessWatchAttemptLocked(); err == nil {
+			guardErr = errors.Join(guardErr, errors.New("maat memory: unresolved local action/intake/projection; inspect and reconcile without replay"))
+		} else if !errors.Is(err, ErrNoIncompleteLivenessWatchAttempt) {
+			guardErr = errors.Join(guardErr, err)
+		}
+		if debts, err := s.pendingLocalDispositionsLocked(""); err != nil {
+			guardErr = errors.Join(guardErr, err)
+		} else if len(debts) > 0 {
+			guardErr = errors.Join(guardErr, errors.New("maat memory: local owner disposition projection debt requires data-only reconciliation"))
+		}
+		if guardErr != nil {
+			receipt.Decision = PreflightUnverifiable
+		}
+	}
 	return receipt, guardErr
 }
 
@@ -807,7 +918,7 @@ func (s *Store) verifyEvidence(expectedDigest string) error {
 	if hex.EncodeToString(sum[:]) != expectedDigest {
 		return errors.New("maat memory: evidence bytes do not match digest")
 	}
-	return nil
+	return s.verifyCommittedBytes("evidence", expectedDigest, data)
 }
 
 func openOrCreateDirectory(parentFD int, name string) (int, error) {
@@ -860,6 +971,12 @@ func (s *Store) unlock() {
 // records. Every governed evidence, incident, and transition leaf goes through
 // Store.createOrVerify so an intent survives a crash before the leaf exists.
 func createOrVerifyRaw(parentFD int, name string, expected []byte) error {
+	return createOrVerifyRawWithClose(parentFD, name, expected, unix.Close)
+}
+
+// createOrVerifyRawWithClose keeps close behavior injectable per call so a
+// close error can be tested without a process-global hook.
+func createOrVerifyRawWithClose(parentFD int, name string, expected []byte, closeFD func(int) error) error {
 	fd, err := unix.Openat(parentFD, name, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
 	if errors.Is(err, unix.EEXIST) {
 		actual, readErr := readExact(parentFD, name)
@@ -874,10 +991,11 @@ func createOrVerifyRaw(parentFD int, name string, expected []byte) error {
 	if err != nil {
 		return err
 	}
-	closed := false
+	closeAttempted := false
 	defer func() {
-		if !closed {
-			_ = unix.Close(fd)
+		if !closeAttempted {
+			closeAttempted = true
+			_ = closeFD(fd)
 		}
 	}()
 	var stat unix.Stat_t
@@ -900,10 +1018,10 @@ func createOrVerifyRaw(parentFD int, name string, expected []byte) error {
 	if err := unix.Fsync(fd); err != nil {
 		return err
 	}
-	if err := unix.Close(fd); err != nil {
+	closeAttempted = true
+	if err := closeFD(fd); err != nil {
 		return err
 	}
-	closed = true
 	if err := unix.Fsync(parentFD); err != nil {
 		return err
 	}
@@ -941,6 +1059,11 @@ func (s *Store) createOrVerify(namespace string, parentFD int, name string, expe
 		// being accepted until a retry proves completion or an explicit resolver
 		// handles the residue.
 		return fmt.Errorf("maat memory: governed write remains prepared: %w", err)
+	}
+	if s.beforeWriteCommit != nil {
+		if err := s.beforeWriteCommit(intent); err != nil {
+			return fmt.Errorf("maat memory: governed write commit interrupted after target readback: %w", err)
+		}
 	}
 	commitBytes, err := json.Marshal(writeCommit{Schema: MemorySchema, IntentKey: intent.Key})
 	if err != nil {
@@ -1064,8 +1187,8 @@ func readExact(parentFD int, name string) ([]byte, error) {
 	if err := unix.Fstat(fd, &stat); err != nil {
 		return nil, err
 	}
-	if stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 || stat.Size < 0 || stat.Size > maxMemoryObjectBytes {
-		return nil, errors.New("maat memory: invalid stored object identity")
+	if err := validateMemoryObjectStat(stat, uint32(os.Geteuid())); err != nil {
+		return nil, err
 	}
 	buf := make([]byte, stat.Size)
 	for read := 0; read < len(buf); {
@@ -1082,10 +1205,28 @@ func readExact(parentFD int, name string) ([]byte, error) {
 	if err := unix.Fstat(fd, &after); err != nil {
 		return nil, err
 	}
-	if after.Dev != stat.Dev || after.Ino != stat.Ino || after.Size != stat.Size || after.Mode != stat.Mode || after.Nlink != stat.Nlink {
-		return nil, errors.New("maat memory: stored object changed while read")
+	if err := validateMemoryObjectReadback(stat, after, uint32(os.Geteuid())); err != nil {
+		return nil, err
 	}
 	return buf, nil
+}
+
+// Pure stat validation is also the inert foreign-owner fixture seam. The
+// production reader always supplies its actual current EUID and opened FDs.
+func validateMemoryObjectStat(stat unix.Stat_t, ownerUID uint32) error {
+	if stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 || stat.Size < 0 || stat.Size > maxMemoryObjectBytes || stat.Uid != ownerUID || stat.Mode&0o077 != 0 {
+		return errors.New("maat memory: expected private current-owner singly linked bounded regular object")
+	}
+	return nil
+}
+func validateMemoryObjectReadback(before, after unix.Stat_t, ownerUID uint32) error {
+	if err := validateMemoryObjectStat(after, ownerUID); err != nil {
+		return err
+	}
+	if after.Dev != before.Dev || after.Ino != before.Ino || after.Size != before.Size || after.Mode != before.Mode || after.Nlink != before.Nlink || after.Uid != before.Uid {
+		return errors.New("maat memory: stored object changed while read")
+	}
+	return nil
 }
 
 func readDirectoryNames(fd int) ([]string, error) {

@@ -55,6 +55,18 @@ Ma'at is the first deity to become an autonomous agent. The patterns established
 - **Negative**: Adds a new internal package and CLI command. Increases binary size slightly.
 - **Risk**: Over-governance could slow development. Mitigated by making Ma'at advisory in Phase 1 (report only, no blocking).
 
+## 2026-10-25 source boundary: whole-app update
+
+The existing macOS whole-app update owner may use the existing Ma'at Store and
+DecisionJournal to retain an exact package-bound preflight and durable attempt
+before opening the verified normal PKG in Installer. Installer handoff is not
+an installed-success result: the route closes the attempt only after exact
+fresh app/helper identity, signature, dependency and version readback. An
+ambiguous result remains unresolved and is reconciled by readback only; it is
+never replayed automatically. This is an unqualified source candidate. Raw
+self-update and alternate installation routes, installed qualification, and
+the original rollback criterion remain outside this delivered boundary.
+
 ## References
 - [ADR-001](ADR-001-FOUNDING-ARCHITECTURE.md) — Founding architecture (module codenames)
 - [ADR-003](ADR-003-BUILD-IN-PUBLIC.md) — Build-in-public process (Ma'at enforces this)

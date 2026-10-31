@@ -1,5 +1,21 @@
 # 𓁢 Building Pantheon in Public
 
+## 2026-10-25 — Corrective candidate v0.24.137 from released136
+
+Prepare the complete Main1f227096 composition: Ma'at retained preflight and
+recovery workflows, Mercury freshness/refresh ownership, legacy maintenance
+contracts and reusable Stack Lab components. Integrated qualification records
+976 selected Go names in each normal/race mode, strict Swift Release and160
+Swift passes, with explicit skips. It is not whole-product, installed service
+or M5-off autonomy evidence. See the exact
+[release plan](stacklab/pantheon-pt/canon/RELEASE_0_24_137_PLAN.md).
+
+Release preparation found and reproduced paragraph-fragment loss; preserve
+complete notes and distinct entries sharing a prefix. Historical sections,
+failed qualification and prior donor-stage limitations remain in the record.
+Signed paired packages, public readback, cask and catalogue publication require
+their actual terminal receipts before this candidate can be called released.
+
 ## 2026-10-24 — Corrective candidate v0.24.128 from released127
 
 This candidate starts at published signed/notarized127 `beec7143/treeac34`.

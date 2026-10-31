@@ -183,6 +183,10 @@ func (s *SQLiteStore) ClaimItem(agent, id string, ttl time.Duration) (*Lease, er
 // claimItemOnce is one retriable ClaimItem transaction. Never call it outside
 // ClaimItem: readonly contention must repeat the complete decision.
 func (s *SQLiteStore) claimItemOnce(agent, id string, ttl time.Duration) (*Lease, error) {
+	return s.claimItemSessionOnce(agent, id, ttl, "")
+}
+
+func (s *SQLiteStore) claimItemSessionOnce(agent, id string, ttl time.Duration, session string) (*Lease, error) {
 	if strings.TrimSpace(agent) == "" {
 		return nil, fmt.Errorf("routerstore: ClaimItem: agent is required")
 	}
@@ -204,6 +208,10 @@ func (s *SQLiteStore) claimItemOnce(agent, id string, ttl time.Duration) (*Lease
 		return nil, fmt.Errorf("routerstore: ClaimItem: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err = s.laneClaimGateTx(tx, agent); err != nil {
+		return nil, err
+	}
+
 	if err = s.reclaimExpiredTx(tx, now); err != nil {
 		return nil, err
 	}
@@ -235,6 +243,9 @@ func (s *SQLiteStore) claimItemOnce(agent, id string, ttl time.Duration) (*Lease
 	if n, _ := res.RowsAffected(); n != 1 {
 		return nil, ErrNoWork
 	}
+	if err := bindClaimSessionTx(tx, id, session); err != nil {
+		return nil, err
+	}
 	if err := bumpCounterTx(tx, "claims", 1); err != nil {
 		return nil, err
 	}
@@ -247,6 +258,10 @@ func (s *SQLiteStore) claimItemOnce(agent, id string, ttl time.Duration) (*Lease
 // claimNextOnce is one attempt of ClaimNext. Never call it directly — callers
 // must go through ClaimNext so contention is retried.
 func (s *SQLiteStore) claimNextOnce(agent string, ttl time.Duration) (*Lease, error) {
+	return s.claimNextSessionOnce(agent, ttl, "")
+}
+
+func (s *SQLiteStore) claimNextSessionOnce(agent string, ttl time.Duration, session string) (*Lease, error) {
 	if strings.TrimSpace(agent) == "" {
 		return nil, fmt.Errorf("routerstore: ClaimNext: agent is required")
 	}
@@ -266,6 +281,9 @@ func (s *SQLiteStore) claimNextOnce(agent string, ttl time.Duration) (*Lease, er
 		return nil, fmt.Errorf("routerstore: ClaimNext: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err = s.laneClaimGateTx(tx, agent); err != nil {
+		return nil, err
+	}
 
 	if err = s.reclaimExpiredTx(tx, now); err != nil {
 		return nil, err
@@ -313,6 +331,9 @@ func (s *SQLiteStore) claimNextOnce(agent string, ttl time.Duration) (*Lease, er
 		// cannot happen with one write connection, but stay honest if it does.
 		return nil, ErrNoWork
 	}
+	if err := bindClaimSessionTx(tx, id, session); err != nil {
+		return nil, err
+	}
 	if err := bumpCounterTx(tx, "claims", 1); err != nil {
 		return nil, err
 	}
@@ -320,6 +341,51 @@ func (s *SQLiteStore) claimNextOnce(agent string, ttl time.Duration) (*Lease, er
 		return nil, fmt.Errorf("routerstore: ClaimNext: commit: %w", err)
 	}
 	return &Lease{ItemID: id, Agent: agent, Token: token, Expires: expires}, nil
+}
+
+// claimItemSession is server-internal, never a reflected Store RPC. The service
+// supplies its authenticated session, not an owner argument from the wire. Empty
+// id retains ClaimNext selection; all eligibility and retry rules stay shared.
+func (s *SQLiteStore) claimItemSession(agent, id, session string, ttl time.Duration) (*Lease, error) {
+	if strings.TrimSpace(session) == "" {
+		return nil, ErrSessionUnknown
+	}
+	var out *Lease
+	err := s.retryWrite(func() error {
+		var err error
+		if id == "" {
+			out, err = s.claimNextSessionOnce(agent, ttl, session)
+		} else {
+			out, err = s.claimItemSessionOnce(agent, id, ttl, session)
+		}
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// The same transaction commits lease + owner + counter, or none of them.
+// Legacy local claims alone keep the existing explicitly unbound behavior.
+func bindClaimSessionTx(tx *txHandle, id, session string) error {
+	if session == "" {
+		return nil
+	}
+	res, err := tx.Exec(`INSERT INTO lease_sessions(kind,key,session)
+		SELECT 'item',?,session_id FROM sessions WHERE session_id=? AND revoked=''
+		ON CONFLICT(kind,key) DO UPDATE SET session=excluded.session`, id, session)
+	if err != nil {
+		return fmt.Errorf("routerstore: authenticated claim owner binding: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("routerstore: authenticated claim owner readback: %w", err)
+	}
+	if n != 1 {
+		return ErrSessionUnknown
+	}
+	return nil
 }
 
 // fenceTx returns the item's current status iff the (id, token) fence holds:

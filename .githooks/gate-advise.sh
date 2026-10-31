@@ -25,11 +25,10 @@ gate_advise() {
 }
 
 gate_show_failure() {
-    local file="$1" lines
-    # Prefer the lines that name the failure; fall back to the tail.
-    lines="$(grep -E '^(--- FAIL|FAIL|panic:|fatal error:)|_test\.go:[0-9]+|\.go:[0-9]+:[0-9]+:|^#|error:|Error:' "$file" | head -40)"
-    if [ -z "$lines" ]; then lines="$(tail -40 "$file")"; fi
-    printf '%s\n' "$lines" | sed 's/^/     /'
+    # The hook removes its temporary log at exit. Emit every retained line
+    # before cleanup so later failures and unclassified linker details survive
+    # in the caller's ordinary captured stdout/stderr. Never alter the verdict.
+    sed 's/^/     /' "$1"
 }
 
 gate_run() {

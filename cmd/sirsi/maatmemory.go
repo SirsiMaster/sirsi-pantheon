@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,11 +13,12 @@ import (
 )
 
 var (
-	maatMemoryStore     string
-	maatMemoryComponent string
-	maatMemoryProfile   string
-	maatMemoryOperation string
-	maatMemoryConfirm   bool
+	maatMemoryStore      string
+	maatMemoryComponent  string
+	maatMemoryProfile    string
+	maatMemoryOperation  string
+	maatMemoryConfirm    bool
+	maatMemoryReceiptSHA string
 )
 
 // maatFailureMemoryCmd exposes the local, evidence-only half of failure
@@ -36,7 +39,7 @@ Use --confirm only after inspecting the receipt to project that same factual
 result into Ma'at's existing Casebook decision journal.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		store, err := maat.OpenStore(strings.TrimSpace(maatMemoryStore))
+		store, err := openMaatMemoryExisting(maatMemoryStore)
 		if err != nil {
 			return fmt.Errorf("open Ma'at failure-memory store: %w", err)
 		}
@@ -51,7 +54,11 @@ result into Ma'at's existing Casebook decision journal.`,
 			if err != nil {
 				return fmt.Errorf("open Ma'at decision journal: %w", err)
 			}
-			if err := maat.ProjectFailureMemoryPreflight(journal, receipt); err != nil {
+			stored, err := store.RetainPreflightReceipt(receipt)
+			if err != nil {
+				return err
+			}
+			if err := maat.ProjectFailureMemoryPreflight(journal, stored); err != nil {
 				return err
 			}
 			decisionEvidence, err = receipt.EvidenceReference()
@@ -112,10 +119,12 @@ func failureMemorySummary(receipt maat.PreflightReceipt) string {
 func failureMemoryCommand(confirm bool) string {
 	parts := []string{
 		"sirsi maat failure-memory preflight",
-		"--store " + shellQuote(maatMemoryStore),
 		"--component " + shellQuote(maatMemoryComponent),
 		"--profile " + shellQuote(maatMemoryProfile),
 		"--operation " + shellQuote(maatMemoryOperation),
+	}
+	if strings.TrimSpace(maatMemoryStore) != "" {
+		parts = append(parts, "--store "+shellQuote(maatMemoryStore))
 	}
 	if confirm {
 		parts = append(parts, "--confirm")
@@ -130,10 +139,73 @@ func init() {
 	maatFailureMemoryPreflightCmd.Flags().StringVar(&maatMemoryOperation, "operation", "", "exact operation identity")
 	maatFailureMemoryPreflightCmd.Flags().BoolVar(&maatMemoryConfirm, "confirm", false, "confirm recording this typed preflight in Ma'at Casebook")
 	maatFailureMemoryPreflightCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
-	_ = maatFailureMemoryPreflightCmd.MarkFlagRequired("store")
 	_ = maatFailureMemoryPreflightCmd.MarkFlagRequired("component")
 	_ = maatFailureMemoryPreflightCmd.MarkFlagRequired("profile")
 	_ = maatFailureMemoryPreflightCmd.MarkFlagRequired("operation")
-	maatFailureMemoryCmd.AddCommand(maatFailureMemoryPreflightCmd)
+	maatFailureMemoryReceiptCmd.Flags().StringVar(&maatMemoryReceiptSHA, "sha256", "", "exact retained preflight receipt SHA256")
+	maatFailureMemoryReceiptCmd.Flags().StringVar(&maatMemoryReceiptStore, "store", "", "optional absolute existing private legacy store; never initializes")
+	maatFailureMemoryReceiptCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
+	maatFailureMemoryReceiptCmd.Flags().BoolVar(&maatMemoryReceiptRecover, "recover", false, "complete only this exact already-retained interrupted receipt; no action or projection")
+	maatFailureMemoryReceiptCmd.Flags().BoolVar(&maatMemoryReceiptConfirm, "confirm", false, "confirm exact historical receipt write recovery")
+	maatFailureMemoryReceiptCmd.Flags().StringVar(&maatMemoryPreparedTarget, "prepared-target", "", "exact captured prepared receipt target from the read-only inspector; requires --recover --confirm")
+	_ = maatFailureMemoryReceiptCmd.MarkFlagRequired("sha256")
+	maatFailureMemoryCmd.AddCommand(maatFailureMemoryPreflightCmd, maatFailureMemoryReceiptCmd)
 	maatCmd.AddCommand(maatFailureMemoryCmd)
+}
+
+// Reads always open existing custody. Explicit legacy roots never acquire the
+// default store's initialized authority through this inspection command.
+func openMaatMemoryExisting(root string) (*maat.Store, error) {
+	if strings.TrimSpace(root) == "" {
+		return maat.OpenDefaultStore()
+	}
+	return maat.OpenExistingStore(strings.TrimSpace(root))
+}
+
+var maatMemoryReceiptStore string
+var maatMemoryReceiptRecover bool
+var maatMemoryReceiptConfirm bool
+var maatMemoryPreparedTarget string
+var maatFailureMemoryReceiptCmd = &cobra.Command{
+	Use: "receipt", Short: "Read an exact retained historical preflight; grants no action authority", Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if maatMemoryReceiptRecover != maatMemoryReceiptConfirm {
+			return errors.New("exact receipt recovery requires --recover and --confirm together; no bytes were changed")
+		}
+		if maatMemoryPreparedTarget != "" && !maatMemoryReceiptRecover {
+			return errors.New("prepared receipt target requires explicit --recover --confirm; no bytes changed")
+		}
+		store, err := openMaatMemoryExisting(maatMemoryReceiptStore)
+		if err != nil {
+			return fmt.Errorf("open existing receipt custody: %w", err)
+		}
+		defer store.Close()
+		var receipt maat.PreflightReceiptRead
+		if maatMemoryReceiptRecover {
+			receipt, err = recoverMaatPreparedReceipt(store, maatMemoryReceiptSHA, maatMemoryPreparedTarget)
+		} else {
+			receipt, err = store.ReadPreflightReceipt(maatMemoryReceiptSHA)
+		}
+		if err != nil {
+			if (JsonOutput || maatJSON) && errors.Is(err, maat.ErrHistoricalReceiptUnavailable) {
+				if outputErr := emitJSON(struct {
+					Schema        string `json:"schema"`
+					ReceiptSHA256 string `json:"receipt_sha256"`
+					ErrorCode     string `json:"error_code"`
+				}{maat.PreflightReceiptReadSchema, maatMemoryReceiptSHA, "historical-receipt-unavailable"}); outputErr != nil {
+					return outputErr
+				}
+			}
+			return err
+		}
+		if JsonOutput || maatJSON {
+			return emitJSON(receipt)
+		}
+		data, err := json.MarshalIndent(receipt, "", "  ")
+		if err != nil {
+			return err
+		}
+		cmd.Println(string(data))
+		return nil
+	},
 }

@@ -11,6 +11,14 @@ printf '# canon\n\n## 2026-01-01 — v1.0.0 release candidate\n\n- old\n' > "$T/
 printf '%s\n' '' '## [Unreleased] — complete canon notes' '' \
   '- A complete release note without an emphasized title must preserve every word beyond the old ninety-character boundary: retained-tail-121.' \
   '  Preserve this continuation sentence too: continuation-tail-121.' >> "$T/CHANGELOG.md"
+printf '%s\n' '' '## [Unreleased] — paragraph fragments' '' \
+  'Retain an existing plain-paragraph release fragment: plain-fragment-137.' \
+  'This continuation must also survive: plain-continuation-137.' '' \
+  '- This shared opening deliberately exceeds seventy characters before the two meaningful endings differ: variant-new-137.' >> "$T/CHANGELOG.md"
+# A shared prefix is not evidence that the new note already shipped.
+sed -i.bak '/^- delta already shipped in the old release$/a\
+- This shared opening deliberately exceeds seventy characters before the two meaningful endings differ: variant-old-137.\
+' "$T/CHANGELOG.md"
 (cd "$T" && python3 "$SCRIPT" 2.0.0 >/dev/null)
 C="$T/CHANGELOG.md"
 [ "$(grep -c '^## \[Unreleased\]' "$C")" = 1 ] || { echo "FAIL: want exactly one [Unreleased]"; exit 1; }
@@ -24,4 +32,7 @@ sed -n '/^## \[1.0.0\]/,$p' "$C" | grep -q "delta already shipped" || { echo "FA
 grep -q "v2.0.0 release candidate" "$T/docs/stacklab/pantheon-pt/canon/CHANGELOG.md" || { echo "FAIL: canon changelog"; exit 1; }
 grep -q 'retained-tail-121\.' "$T/docs/stacklab/pantheon-pt/canon/CHANGELOG.md" || { echo "FAIL: canon truncated a complete release note"; exit 1; }
 grep -q 'continuation-tail-121\.' "$T/docs/stacklab/pantheon-pt/canon/CHANGELOG.md" || { echo "FAIL: canon lost the release-note continuation"; exit 1; }
+echo "$new" | grep -q 'plain-fragment-137' || { echo "FAIL: plain-paragraph fragment silently dropped"; exit 1; }
+echo "$new" | grep -q 'plain-continuation-137' || { echo "FAIL: plain-paragraph continuation silently dropped"; exit 1; }
+echo "$new" | grep -q 'variant-new-137' || { echo "FAIL: shared prefix hid a distinct new note"; exit 1; }
 echo "ok: release-prep cuts every Unreleased block"

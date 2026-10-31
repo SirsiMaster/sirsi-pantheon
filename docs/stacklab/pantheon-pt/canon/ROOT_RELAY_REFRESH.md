@@ -123,6 +123,39 @@ the relay's run-as identity. The credential-bearing plist remains root:wheel0600
 The five existing maintenance profiles retain their behavior. Only SSA and SHA
 receive the additional exact-label grant; the source lane receives none.
 
+The maintenance image probe validates the retained payload's static signature,
+then reads the selected PID's loaded CodeDirectory hash from the kernel with
+`csops(CS_OPS_CDHASH)` and compares the exact 20 bytes. The SDK supplies
+`SYS_csops`; the operation value follows Apple's XNU `bsd/sys/codesign.h`
+definition (`CS_OPS_CDHASH == 5`). A failed/denied query or any mismatch refuses
+the plan. The public PID is range-checked against Darwin's signed 32-bit
+`pid_t` before any C conversion or reader call. Static signature identity,
+PID-only Security lookup, installed metadata and pathname are not substitutes
+for loaded-image identity. Artifact inspection with PID zero reports only the
+retained static hash and makes no loaded-image claim.
+
+The root child keeps stderr private and bounded. The parent may surface only
+the allowlisted kernel-query errno, strict-signature status, or fixed identity
+diagnostics for the exact maintenance-image invocation; arbitrary child text,
+paths, and payload data are never copied into the parent error.
+
+The existing read-only `router relay maintenance-image --pid <pid>` form may
+omit `--payload` to report only the kernel-loaded CDHash, bracketed by matching
+kernel process-start observations. Use that value to identify a retained
+archive before evaluating its source profile. This observation is not a
+migration plan or source approval; supplying `--payload` still requires an
+exact loaded-hash match.
+
+Legacy migration is source-profile-specific. The implementation admits only
+the exact inspected consume-before-forward source pinned by
+`maintenanceLegacySource`, with an unmodified build. A retained archive's
+version string, path, or signature does not identify the source of the running
+process. If the kernel-loaded hash cannot first identify the retained archive,
+or that archive's source is outside the inspected profile, leave the existing
+service and request state untouched and refuse migration. Do not add a source
+override or replay path; any additional old source requires its own inspection
+of request consumption, one-use behavior, and recovery semantics.
+
 ## Sequence and evidence
 
 1. Inspect through the existing qualified privileged controller. Retain the

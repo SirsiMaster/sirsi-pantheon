@@ -11,6 +11,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/brain"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/help"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/localreceipt"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/suggest"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/thoth"
@@ -165,12 +166,14 @@ func runThothCompact(cmd *cobra.Command, args []string) error {
 	compactOpts := thothCompactOptions(cmd, repoRoot, summary, thothCompactMaxAge, thothCompactMaxKeep)
 
 	// ADR-016 Phase 2: prefer npm binary, fall back to Go
-	if delegated, delegateErr := thoth.TryDelegateCompact(compactOpts); delegated {
-		if delegateErr != nil {
-			return delegateErr
+	if !localreceipt.Verified(cmd.Context()) {
+		if delegated, delegateErr := thoth.TryDelegateCompact(compactOpts); delegated {
+			if delegateErr != nil {
+				return delegateErr
+			}
+			output.Success("Session decisions persisted to .thoth/ (via sirsi-thoth).")
+			return nil
 		}
-		output.Success("Session decisions persisted to .thoth/ (via sirsi-thoth).")
-		return nil
 	}
 
 	err = thoth.Compact(compactOpts)
@@ -205,14 +208,16 @@ func runThothSync(cmd *cobra.Command, args []string) error {
 	start := time.Now()
 
 	// ADR-016 Phase 2: prefer npm binary, fall back to Go
-	if delegated, err := thoth.TryDelegateSync(syncOpts); delegated {
-		if err != nil {
-			return err
+	if !localreceipt.Verified(cmd.Context()) {
+		if delegated, err := thoth.TryDelegateSync(syncOpts); delegated {
+			if err != nil {
+				return err
+			}
+			output.Success("Memory synced (via sirsi-thoth).")
+			output.Footer(time.Since(start))
+			output.NextSteps(output.SuggestSteps(suggest.Context{Deity: "thoth", Subcommand: "sync"}))
+			return nil
 		}
-		output.Success("Memory synced (via sirsi-thoth).")
-		output.Footer(time.Since(start))
-		output.NextSteps(output.SuggestSteps(suggest.Context{Deity: "thoth", Subcommand: "sync"}))
-		return nil
 	}
 
 	if err := thoth.Sync(syncOpts); err != nil {

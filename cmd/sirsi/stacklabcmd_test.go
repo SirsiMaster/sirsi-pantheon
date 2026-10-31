@@ -1,9 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/stacklab"
 )
 
 func TestFindStacklabCatalogRootUsesNearestSelectedCheckout(t *testing.T) {
@@ -27,6 +30,16 @@ func TestFindStacklabCatalogRootUsesNearestSelectedCheckout(t *testing.T) {
 	}
 	if same, err := sameDirPaths(got, root); err != nil || !same {
 		t.Fatalf("catalog root = %q, want %q (same=%v, err=%v)", got, root, same, err)
+	}
+}
+
+func TestStacklabDoctorDiagnosticCodeIsClosedAndWrapped(t *testing.T) {
+	err := fmt.Errorf("read failed: %w", stacklab.MissingGitHubCLIError{})
+	if got := stacklabDoctorDiagnosticCode(err); got != "missing_gh" {
+		t.Fatalf("diagnostic code = %q, want missing_gh", got)
+	}
+	if got := stacklabDoctorDiagnosticCode(fmt.Errorf("private service detail")); got != "" {
+		t.Fatalf("unrecognized diagnostic code = %q, want empty", got)
 	}
 }
 

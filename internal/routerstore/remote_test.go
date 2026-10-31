@@ -149,7 +149,7 @@ func TestRemoteRejectsBadTokenAndUnknownMethod(t *testing.T) {
 // Every sentinel the package exports must be in the wire table, or a client
 // loses errors.Is on it silently. Pins the closed set in remote.go.
 func TestSentinelsRoundTrip(t *testing.T) {
-	all := []error{ErrTaskResumeInput, ErrNotComplete, ErrBreakerOpen, ErrOverQuota, ErrIdentifierTaken, ErrNoWork,
+	all := []error{ErrTaskResumeInput, ErrNotComplete, ErrBreakerOpen, ErrOverQuota, ErrIdentifierTaken, ErrNoWork, ErrLanePaused,
 		ErrNoClaimableTask, ErrLeaseInvalid, ErrTerminal, ErrBudgetExceeded, ErrReasonRequired,
 		ErrIncompleteEvidence, ErrNotFound, ErrAlreadyClosed, ErrConcurrentTaskUpdate, ErrTaskExists,
 		ErrSessionUnknown, ErrSessionRevoked, ErrNotOwner, ErrTokenUnknown, ErrTokenRevoked, ErrHostMismatch, ErrServiceUnavailable, ErrUnregistered, ErrThreadUnknown, ErrThreadAuthority, ErrWorkerAnswers}
@@ -451,8 +451,18 @@ func TestLegacyClaimCacheSurvivesBoundCoordinationSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacy := mk("")
-	lease, err := legacy.ClaimTask("codex-apollo", "legacy-primary", "primary-worker", "attended", time.Minute)
+	// Seed the pre-fix historical shape through the local fixture. New remote
+	// threadless claims are refused; this test preserves EXISTING leases without
+	// transferring them to a newly registered coordination thread.
+	session, err := legacy.ensureSession(t.Context())
 	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := backend.ClaimTask("codex-apollo", "legacy-primary", "primary-worker", "attended", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.BindTaskSession("codex-apollo", "legacy-primary", session.ID); err != nil {
 		t.Fatal(err)
 	}
 	coord := mk("coordination")

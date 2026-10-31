@@ -1,22 +1,226 @@
 import Combine
 import Foundation
 
+private final class MaatHistoryBurstCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    private var finished = false
+
+    @discardableResult
+    func cancel() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { return false }
+        cancelled = true
+        return true
+    }
+
+    func finish() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        finished = true
+        return cancelled
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+}
+
 /// Both browse surfaces publish one state value. Only the current request may
 /// commit after suspension; failures retain the latest committed page here.
 @MainActor
 final class MaatHistoryRefreshStore: ObservableObject {
     @Published private(set) var state: MaatHistoryRefreshState
 
-    init(projection: MaatCasebookProjection? = nil) {
+    typealias Reader = @Sendable ([String]) async -> SirsiEngine.JSONCommandRead
+    typealias MonotonicNow = @Sendable () -> TimeInterval
+    typealias DeadlineSleep = @Sendable (TimeInterval) async throws -> Void
+    typealias DeadlineHandled = @Sendable () async -> Void
+    typealias CancellationDelivery = @Sendable (@escaping @MainActor @Sendable () -> Void) -> Void
+    private let reader: Reader
+    private let maximumBurstReads: Int
+    private let maximumBurstDuration: TimeInterval
+    private let monotonicNow: MonotonicNow
+    private let deadlineSleep: DeadlineSleep
+    private let deadlineHandled: DeadlineHandled
+    private let cancellationDelivery: CancellationDelivery
+    private var activeBurstID: UUID?
+    private var activeCancellation: MaatHistoryBurstCancellation?
+    private var readTask: Task<Void, Never>?
+    private var deadlineTask: Task<Void, Never>?
+
+    init(projection: MaatCasebookProjection? = nil,
+         maximumBurstReads: Int = 128,
+         maximumBurstDuration: TimeInterval = 8,
+         monotonicNow: @escaping MonotonicNow = { ProcessInfo.processInfo.systemUptime },
+         deadlineSleep: @escaping DeadlineSleep = { seconds in
+             let nanoseconds = UInt64(max(0, seconds) * 1_000_000_000)
+             try await Task.sleep(nanoseconds: nanoseconds)
+         },
+         deadlineHandled: @escaping DeadlineHandled = {},
+         cancellationDelivery: @escaping CancellationDelivery = { callback in
+             _ = Task { @MainActor in callback() }
+         },
+         read: @escaping Reader = { await SirsiEngine.runJSONRead(args: $0) }) {
         state = MaatHistoryRefreshState(projection: projection)
+        self.reader = read
+        self.maximumBurstReads = min(128, max(1, maximumBurstReads))
+        self.maximumBurstDuration = min(8, max(0.001, maximumBurstDuration))
+        self.monotonicNow = monotonicNow
+        self.deadlineSleep = deadlineSleep
+        self.deadlineHandled = deadlineHandled
+        self.cancellationDelivery = cancellationDelivery
+    }
+
+    // A verified write starts a new snapshot of the committed query; its old
+    // cursor is not replayed. load retains the existing generation/cancel fence.
+    func refresh(scope: String) async {
+        await load(scope: scope, query: state.refreshQuery, run: reader)
     }
 
     func load(scope: String, query: String? = nil, cursor: String? = nil,
               run: @escaping @Sendable ([String]) async -> SirsiEngine.JSONCommandRead) async {
-        guard !Task.isCancelled, let request = state.begin(scope: scope, query: query, cursor: cursor) else { return }
-        let read = await run(request.arguments)
-        guard state.isCurrent(request) else { return }
-        state.complete(read, for: request, cancelled: Task.isCancelled)
+        guard !Task.isCancelled else { return }
+        cancelActiveBurst()
+        guard let request = state.begin(scope: scope, query: query, cursor: cursor) else { return }
+
+        let burstID = UUID()
+        let cancellation = MaatHistoryBurstCancellation()
+        let started = monotonicNow()
+        activeBurstID = burstID
+        activeCancellation = cancellation
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.runBurst(id: burstID, first: request, started: started,
+                                cancellation: cancellation, run: run)
+        }
+        readTask = task
+        let sleepUntilDeadline = deadlineSleep
+        let burstDuration = maximumBurstDuration
+        let deliverCancellation = cancellationDelivery
+        deadlineTask = Task { [weak self] in
+            do {
+                try await sleepUntilDeadline(burstDuration)
+            } catch {
+                return
+            }
+            guard let self else { return }
+            await self.deadlineReached(for: burstID)
+            await self.deadlineHandled()
+        }
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: { [weak self] in
+            if cancellation.cancel() {
+                deliverCancellation { [weak self] in self?.cancelBurst(id: burstID) }
+            }
+        }
+        finishBurst(id: burstID)
+    }
+
+    func cancel() {
+        guard let activeBurstID else { return }
+        cancelBurst(id: activeBurstID)
+    }
+
+    private func runBurst(
+        id: UUID,
+        first: MaatHistoryRefreshRequest,
+        started: TimeInterval,
+        cancellation: MaatHistoryBurstCancellation,
+        run: @escaping Reader
+    ) async {
+        var request = first
+        var seenCursors = Set<String>()
+        if let cursor = request.cursor { seenCursors.insert(cursor) }
+        var reads = 0
+
+        while activeBurstID == id, state.isCurrent(request), !Task.isCancelled, !cancellation.isCancelled {
+            if monotonicNow() - started >= maximumBurstDuration {
+                pauseBurst(id: id, failure: .timedOut)
+                return
+            }
+            let read = await run(request.arguments)
+            reads += 1
+            guard activeBurstID == id, state.isCurrent(request), !Task.isCancelled,
+                  !cancellation.isCancelled else { return }
+            if monotonicNow() - started >= maximumBurstDuration {
+                pauseBurst(id: id, failure: .timedOut)
+                return
+            }
+
+            guard state.complete(read, for: request, cancelled: false, keepLoading: true,
+                                 seenCursors: seenCursors) else { return }
+            guard state.failure == nil,
+                  let history = state.projection?.history,
+                  history.scope == request.scope,
+                  history.coverage == "partial" else {
+                finishBurst(id: id)
+                return
+            }
+            guard let next = history.nextCursor, !next.isEmpty, seenCursors.insert(next).inserted else {
+                state.rejectContinuationForRestart()
+                finishBurst(id: id)
+                return
+            }
+            guard reads < maximumBurstReads else {
+                pauseBurst(id: id, failure: nil)
+                return
+            }
+            if monotonicNow() - started >= maximumBurstDuration {
+                pauseBurst(id: id, failure: .timedOut)
+                return
+            }
+            guard let continuation = state.begin(scope: request.scope, cursor: next) else {
+                finishBurst(id: id)
+                return
+            }
+            request = continuation
+        }
+        finishBurst(id: id)
+    }
+
+    private func pauseBurst(id: UUID, failure: MaatHistoryRefreshFailure?) {
+        guard activeBurstID == id else { return }
+        _ = activeCancellation?.cancel()
+        state.pauseContinuation(failure: failure)
+        releaseBurst(id: id, cancelRead: true)
+    }
+
+    private func deadlineReached(for id: UUID) {
+        pauseBurst(id: id, failure: .timedOut)
+    }
+
+    private func cancelBurst(id: UUID) {
+        pauseBurst(id: id, failure: .cancelled)
+    }
+
+    private func cancelActiveBurst() {
+        guard let activeBurstID else { return }
+        _ = activeCancellation?.cancel()
+        releaseBurst(id: activeBurstID, cancelRead: true)
+    }
+
+    private func finishBurst(id: UUID, cancelRead: Bool = false) {
+        guard activeBurstID == id else { return }
+        if activeCancellation?.finish() == true {
+            state.pauseContinuation(failure: .cancelled)
+        }
+        releaseBurst(id: id, cancelRead: cancelRead)
+    }
+
+    private func releaseBurst(id: UUID, cancelRead: Bool) {
+        guard activeBurstID == id else { return }
+        _ = activeCancellation?.finish()
+        activeBurstID = nil
+        activeCancellation = nil
+        deadlineTask?.cancel()
+        deadlineTask = nil
+        if cancelRead { readTask?.cancel() }
+        readTask = nil
     }
 }
 
@@ -247,8 +451,29 @@ enum MaatOperationPreflight {
 /// workspace navigation tree replaces its detail view.
 @MainActor
 final class MaatCaseOperationStore: ObservableObject {
+    let failureMemoryReceipts: MaatPreflightReceiptReadStore
+    let preparedPreflightRecovery: MaatPreparedPreflightRecovery
+    let localPreventions: MaatLocalPreventionModel
+    let diagnosticRecord: MaatDiagnosticRecordModel
+    private let suppliedLegacyMaintenance: LegacyRelayMaintenanceModel?
+    lazy var legacyMaintenance = suppliedLegacyMaintenance ?? LegacyRelayMaintenanceModel(directory: URL(fileURLWithPath: NSHomeDirectory()))
+    lazy var appUpdate = MaatAppUpdateModel(memory: diagnosticRecord, recovery: preparedPreflightRecovery, maintenance: legacyMaintenance)
     @Published private(set) var records: [MaatOperationKey: MaatOperationRecord] = [:]
     private var historyReads: [MaatOperationKey: (generation: UUID, continuation: MaatExactHistoryContinuation)] = [:]
+
+    init(preparedPreflightRecovery: MaatPreparedPreflightRecovery? = nil,
+         localPreventions: MaatLocalPreventionModel? = nil,
+         failureMemoryReceipts: MaatPreflightReceiptReadStore? = nil,
+         diagnosticRecord: MaatDiagnosticRecordModel? = nil,
+         legacyMaintenance: LegacyRelayMaintenanceModel? = nil) {
+        let recoveryOwner = preparedPreflightRecovery ?? MaatPreparedPreflightRecovery()
+        let diagnosticOwner = diagnosticRecord ?? MaatDiagnosticRecordModel()
+        self.preparedPreflightRecovery = recoveryOwner
+        self.localPreventions = localPreventions ?? MaatLocalPreventionModel()
+        self.failureMemoryReceipts = failureMemoryReceipts ?? MaatPreflightReceiptReadStore()
+        self.diagnosticRecord = diagnosticOwner
+        self.suppliedLegacyMaintenance = legacyMaintenance
+    }
 
     func record(for key: MaatOperationKey) -> MaatOperationRecord? {
         records[key]

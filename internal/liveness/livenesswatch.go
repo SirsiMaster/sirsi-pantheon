@@ -2,11 +2,11 @@
 //
 // The router conduit, the gemma generation broker, and the menubar are watched
 // today only by Claude-app scheduled tasks: those survive a session close but
-// NOT a full OS reboot until a human relaunches the app — and (worse) every
-// scheduled run leaks a resident claude-desktop session, the very leak that
-// swap-killed the broker on 2026-07-17. This LaunchAgent closes both gaps: it is
-// OS-managed (RunAtLoad + StartInterval), needs no Claude app, and spawns NO
-// claude session, so it is zero-leak by construction. Routed by claude-home;
+// NOT a full OS reboot until a human relaunches the app. A prior memory-pressure
+// incident was associated with scheduled-task sessions, but that does not prove
+// each run leaks a session or establish session-level causation. This
+// LaunchAgent is OS-managed (RunAtLoad + StartInterval), needs no Claude app, and spawns NO
+// Claude session. Routed by claude-home;
 // canon A32 (overseer) + the launchd-durability item. Decision: this is the thin
 // liveness+alert safety net ONLY — it never runs the router's heavy passes.
 //
@@ -245,9 +245,9 @@ type Finding struct {
 // root (…/.agents/idea-router). Read-and-route only — never kills a process.
 func Run(routerRoot string, w io.Writer) error {
 	home, _ := os.UserHomeDir()
-	// Order = severity: a wedged broker strands every agent; a memory spiral
-	// swap-kills the broker; a leaked-session pileup is the precursor that CAUSES
-	// that spiral; a dead menubar only loses the operator surface.
+	// Preserve severity order: broker, sampled memory spiral, session-candidate
+	// count, then menubar. These are separate signals; candidate counts alone do
+	// not establish the cause of memory pressure.
 	findings := []Finding{
 		probeLaunchdDisabled(),
 		probeGemma(home),
@@ -716,8 +716,8 @@ func extractModelGen(idLower string) string {
 	return idLower[i : i+len(prefix)+1]
 }
 
-// rightSizeAdvice returns a runnable command string when the active broker
-// model is clearly too large for availableGB of RAM; empty string otherwise.
+// rightSizeAdvice returns snapshot sizing context when the active broker model
+// exceeds the availableGB fit check; it does not issue or execute a command.
 //
 // Size authority (in order):
 //  1. /health mlx_active_bytes — allocator-truthful; model weights are
@@ -730,8 +730,8 @@ func extractModelGen(idLower string) string {
 // Headroom formulas differ by path — approximateModelGB returns *weights only*
 // while mlx_active_bytes already includes KV cache:
 //
-//	measured path:   modelGB + 4          (KV already counted; +4 = OS headroom)
-//	estimated path:  1.4*modelGB + 4      (×1.4 reserves for KV cache not in the
+//	measured path:   measuredGiB + 4 GiB  (KV already counted; +4 = OS headroom)
+//	estimated path:  1.4*weightsGiB + 4 GiB (×1.4 reserves for KV cache not in the
 //	                                       weight estimate; gb+4 alone falls below
 //	                                       the live KV-inclusive allocator pool,
 //	                                       causing false-fits in the death-spiral
@@ -776,7 +776,22 @@ func rightSizeAdvice(home string, availableGB float64) string {
 	if i := strings.LastIndex(model, "/"); i >= 0 {
 		label = model[i+1:]
 	}
-	confPath := filepath.Join(home, ".sirsi", "gemma-model.conf")
+	var provenance string
+	if measured {
+		provenance = fmt.Sprintf(
+			"measured MLX /health mlx_active_bytes is %.2f GiB active allocation "+
+				"(includes KV cache and transient pages); measured fit threshold = %.2f GiB + 4 GiB OS headroom = %.2f GiB",
+			modelGB, modelGB, modelGB+4)
+	} else {
+		provenance = fmt.Sprintf(
+			"model-ID estimate is %.2f GiB of weights only; estimated fit threshold = "+
+				"1.4 × %.2f GiB weights + 4 GiB OS headroom = %.2f GiB (1.4 reserves for KV cache)",
+			modelGB, modelGB, kvScale*modelGB+4)
+	}
+	snapshot := fmt.Sprintf(
+		"Sizing snapshot: available memory is %.2f GiB (free plus inactive). Configured model ID %s: %s. "+
+			"This point-in-time sizing is not current truth; cause is unknown. Refresh readings, confirm the exact workload owner/custody and current demand, then use its supported resolution at its own idle boundary.",
+		availableGB, label, provenance)
 
 	// Offer a smaller same-generation tier if one fits.
 	allTiers := []struct {
@@ -794,24 +809,21 @@ func rightSizeAdvice(home string, availableGB float64) string {
 			}
 		}
 		if kvScale*t.gb+4 <= availableGB {
-			return fmt.Sprintf("Right-size command: current model %s (~%.0f GB) is too large for %.1f GB "+
-				"available — switch to the %s tier: "+
-				"`echo '%s' > %s && sirsi gemma serve --stop && sirsi gemma serve`",
-				label, modelGB, availableGB, t.id, t.id, confPath)
+			return fmt.Sprintf(
+				"%s Same-generation tier candidate from the existing fit check: %s "+
+					"(catalog weight estimate %.2f GiB).",
+				snapshot, t.id, t.gb)
 		}
 	}
-	return fmt.Sprintf("Right-size command: current model %s (~%.0f GB) cannot fit in %.1f GB available — "+
-		"stop the broker to recover RAM: `sirsi gemma serve --stop`",
-		label, modelGB, availableGB)
+	return snapshot + " No same-generation tier passed the existing fit check; this alert does not issue a stop or restart instruction."
 }
 
-// sessionLeakThreshold is how many leaked claude-desktop sessions must
-// accumulate before the watch proactively alerts. Matches the `sirsi diagnose`
-// leaked-sessions lever so the two surfaces agree.
+// sessionLeakThreshold is the candidate count that triggers the session
+// observation alert. Candidate classification does not establish a leak or cause.
 const sessionLeakThreshold = 8
 
-// sessionLeakCountFn returns (candidate count, reclaimable MB) for leaked
-// sessions — the caller's own ancestry is never counted (reaper.Plan). Injectable
+// sessionLeakCountFn returns (candidate count, estimated reclaimable MB) — the
+// caller's own ancestry is never counted (reaper.Plan). Injectable
 // (A16/A21) so the threshold branch is testable without a live process table.
 var (
 	sessionLeakMu    sync.RWMutex
@@ -836,25 +848,24 @@ func setSessionLeakCount(fn func() (int, int)) {
 	sessionLeakCount = fn
 }
 
-// probeSessionLeak surfaces a leaked-session pileup PROACTIVELY (before an
-// operator runs `sirsi diagnose`) so it can be reclaimed before it swap-kills
-// the broker. Alert-ONLY: it never reaps (the hard reap stays owner/doctor-
-// invoked via `sirsi reap-sessions --apply` — no auto-kill from a headless net).
+// probeSessionLeak reports the sampled candidate count only. It does not infer
+// a leak, assign causation, or reap sessions; action requires fresh exact-owner
+// and custody confirmation outside this alert.
 func probeSessionLeak() Finding {
+	sampleStartedAt := time.Now().UTC()
 	n, mb := getSessionLeakCount()()
+	sampleFinishedAt := time.Now().UTC()
 	f := Finding{Check: "session-leak", Fixable: true,
-		Title: "liveness-watch: leaked claude-desktop sessions piling up",
-		Body: fmt.Sprintf("The launchd liveness watch found %d leaked claude-desktop task-runner sessions "+
-			"(~%d MB reclaimable). These accumulate from scheduled-task/wakeup runs that never self-exit and "+
-			"drive the swap-death that wedges the gemma broker (2026-07-17). Reclaim them safely — your live "+
-			"session is protected: `sirsi reap-sessions` (dry-run) then `sirsi reap-sessions --apply`. Alert-only; "+
-			"nothing was killed.", n, mb)}
+		Title: "liveness-watch: Claude Desktop session candidates observed",
+		Body: fmt.Sprintf("Session candidate sample window UTC: %s through %s. %d Claude Desktop task-runner candidate sessions (~%d MB estimated reclaimable). "+
+			"Candidate count does not prove a leak or cause. Refresh readings, confirm the exact workload owner/custody and current demand, then use its supported resolution at its own idle boundary.",
+			sampleStartedAt.Format(time.RFC3339Nano), sampleFinishedAt.Format(time.RFC3339Nano), n, mb)}
 	if n < sessionLeakThreshold {
 		f.OK = true
-		f.Detail = fmt.Sprintf("%d leaked (below %d threshold)", n, sessionLeakThreshold)
+		f.Detail = fmt.Sprintf("%d candidates observed (below %d threshold)", n, sessionLeakThreshold)
 		return f
 	}
-	f.Detail = fmt.Sprintf("%d leaked sessions (~%d MB) — reap to prevent swap-death", n, mb)
+	f.Detail = fmt.Sprintf("%d candidates observed (~%d MB estimated reclaimable) — snapshot only", n, mb)
 	return f
 }
 
@@ -952,25 +963,37 @@ func probeMenubar() Finding {
 	return f
 }
 
+// memoryDeathSnapshotBody renders the sampled memory signals without turning
+// them into current-state or process-causation claims.
+func memoryDeathSnapshotBody(md guard.MemoryDeath, sizing string, sampleStartedAt, sampleFinishedAt time.Time) string {
+	body := fmt.Sprintf("Memory alert sample window UTC: %s through %s. Memory signals were collected during this interval; this is not current truth when the alert is read. "+
+		"Snapshot values: swap %.0f%% in use (%.2f GiB used), available %.2f GiB (free plus inactive), one-minute load %.1f across %d cores. "+
+		"Cause and process ownership are unknown. Refresh readings, confirm the exact workload owner/custody and current demand, then use its supported resolution at its own idle boundary.",
+		sampleStartedAt.Format(time.RFC3339Nano), sampleFinishedAt.Format(time.RFC3339Nano),
+		md.SwapPct, md.SwapUsedGB, md.AvailableGB, md.Load1, md.Cores)
+	if md.Dying {
+		body += " In this snapshot, the spiral condition was swap at least 90% and either one-minute load at least twice the core count or available memory below 0.50 GiB."
+	}
+	if sizing != "" {
+		body += " " + sizing
+	}
+	return body
+}
+
 // probeMemoryDeath reads the swap/free-RAM spiral signals via guard (one shared
-// definition of "dying"). It routes only the live-critical spiral; ordinary
-// pressure is not a currently-owner-fixable emergency (A32: alarm only when a
-// current fixable condition exists). When dying, it appends a runnable
-// right-size command so the alert is actionable, not just descriptive.
+// definition of the condition). It routes only the live-critical sampled
+// spiral; ordinary pressure remains non-actionable under the existing policy.
+// Sizing context is descriptive and never issues a process or model command.
 func probeMemoryDeath() Finding {
 	home, homeErr := os.UserHomeDir()
+	sampleStartedAt := time.Now().UTC()
 	md := guard.SampleMemoryDeath()
-	body := fmt.Sprintf("The launchd liveness watch measured a memory death spiral: swap %.0f%% (%.1f GB), "+
-		"available %.2f GB, load %.1f on %d cores. The machine is paging itself to death — this swap-kills the "+
-		"gemma broker (2026-07-17). Fix: close/restart the heaviest leaked sessions (leaked claude-desktop "+
-		"scheduled-task sessions have NO safe auto-reap signature — restart Claude.app to reap them) and "+
-		"right-size the broker; never SIGKILL a load-bearing serving process (A32/ADR-040).",
-		md.SwapPct, md.SwapUsedGB, md.AvailableGB, md.Load1, md.Cores)
+	sizing := ""
 	if md.Dying && homeErr == nil {
-		if advice := rightSizeAdvice(home, md.AvailableGB); advice != "" {
-			body += " " + advice
-		}
+		sizing = rightSizeAdvice(home, md.AvailableGB)
 	}
+	sampleFinishedAt := time.Now().UTC()
+	body := memoryDeathSnapshotBody(md, sizing, sampleStartedAt, sampleFinishedAt)
 	f := Finding{Check: "memory-death", Fixable: true,
 		Title: "liveness-watch: memory death spiral",
 		Body:  body}
@@ -979,11 +1002,11 @@ func probeMemoryDeath() Finding {
 		return f
 	}
 	if md.Dying {
-		f.Detail = fmt.Sprintf("swap %.0f%% / available %.2f GB / load %.1f — SPIRAL", md.SwapPct, md.AvailableGB, md.Load1)
+		f.Detail = fmt.Sprintf("snapshot: swap %.0f%% / available %.2f GiB / load %.1f — SPIRAL", md.SwapPct, md.AvailableGB, md.Load1)
 		return f
 	}
 	f.OK = true
-	f.Detail = fmt.Sprintf("swap %.0f%% / available %.2f GB / load %.1f/%d", md.SwapPct, md.AvailableGB, md.Load1, md.Cores)
+	f.Detail = fmt.Sprintf("snapshot: swap %.0f%% / available %.2f GiB / load %.1f/%d", md.SwapPct, md.AvailableGB, md.Load1, md.Cores)
 	return f
 }
 

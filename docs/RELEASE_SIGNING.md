@@ -1,5 +1,16 @@
 # Release Signing & Notarization
 
+## Current authority
+
+The universal [Sirsi signing reference](https://github.com/SirsiMaster/sirsi-stacklab/blob/main/canon/signing/SIRSI_SIGNING.md)
+and `signing-registry-v1.json` govern identity, delegated `sirsi-sign`, custody
+and receipts. The Team9D382WV988 route is established and has shipped releases.
+SSA selects the current qualified route and retains its signing/notary/Gatekeeper
+receipt. The older one-time provisioning guidance below is historical owner/CI
+setup context, not an instruction for agents to export certificates, inspect
+private material, ask for passwords or diagnose credentials as unavailable.
+
+
 How a tagged release becomes a **Developer-ID-signed, notarized, stapled** DMG —
 so `brew install` / `brew upgrade` is Gatekeeper-clean and the user's **Full Disk
 Access grant survives upgrades** (one stable signing identity = one stable TCC
@@ -42,8 +53,8 @@ then builds the DMG and PKG, notarizes each, and staples each ticket.
 
 ## What the pipeline does (`scripts/build-dmg.sh` and `scripts/build-pkg.sh`)
 
-1. Builds the menu bar app — the **native SwiftUI app** (`macapp/`) when present,
-   else the legacy fyne binary — plus the `sirsi` CLI, into `Pantheon.app`.
+1. Builds the menu bar app — the required **native SwiftUI app** (`macapp/`),
+   never a legacy fyne substitute — plus the `sirsi` CLI, into `Pantheon.app`.
 2. Signs **inside-out** (inner executables, then the bundle) with the Developer ID,
    **hardened runtime** (`--options runtime`) + secure `--timestamp`, and verifies
    with `codesign --verify --deep --strict`.

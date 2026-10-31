@@ -8,14 +8,18 @@ request may finish one bounded record with at most two dependencies when an
 injected budget is smaller than that atomic bundle. No whole page receives that
 allowance. `history_query_test.go` asserts retained reference and work bounds;
 `MaatOperationStateTests.swift` exercises cancellation, continuation generations
-and the same empty-state reducer used by both native loaders. These are authored
-source fixtures pending Main's execution.
+and the same empty-state reducer used by both native loaders. G04 source qualification and explicit residuals are now recorded in
+[G04_BOUNDED_SURFACES.md](G04_BOUNDED_SURFACES.md): PR1240 merged as e26, with
+focused engine/native evidence. Historical authored-only statements below do not
+override that scoped result; other memory/repair rows remain separately scoped.
 
 | Component | Source surface | Write boundary | Evidence / next action |
 |---|---|---|---|
 | Assessors | `internal/maat` | append decision through recorder | focused tests; keep receipt current |
 | Journal and bounded history window | `internal/maat/decisions.go` + `internal/maat/history_query.go` + `internal/maat/diagnostic_resolution.go` + `internal/maat/casebook` + `cmd/sirsi/maatcasebook.go` + native `MaatCasebookView.swift` / `MaatOperationState.swift` | append-only JSONL; browsing is read-only; legacy `Recent` behavior is unchanged; confirmed old-review acceptance uses a separate bounded strict exact scan under the existing mutation lock | System One, kind, text and linked status qualify before candidate limiting; continuations preserve exact query/snapshot and distinguish whole-query from after-cursor counts; canonical owner-review/acceptance links resolve before filtering; native search queries the full retained journal, and all three selected-action preflights consume bounded same-snapshot continuation. Empty arrays, cancellation, invalid history and failed refresh remain distinct. Source-only corrective candidate; qualification pending. |
 | Failure memory | `internal/maat/memory.go` | retained-descriptor, create-only prepared/committed evidence, incident, and transition namespaces | deterministic signature/hash, exact-scope preflight, unresolved-write debt, predecessor-bound terminal events, tamper, symlink, collision, and race fixtures; no imported action execution |
+| Binary-drift memory admission (O3/O8 slice) | `cmd/sirsi/maatrepair_binary_drift.go` + `internal/maat/memory_binary_update.go`; separate raw route in `cmd/sirsi/selfupdate.go`, `cmd/sirsi/selfupdate_maat.go`, and `internal/maat/memory_raw_self_update.go` | existing initialized store; full manifest receipt is retained and projected through the canonical typed preflight row; exact receipt reference and complete running `version.Info` including the migration-derived schema ceiling stay in the v2 Store attempt; a create-only digest-named claim-ownership leaf binds only the exact successful journal callback return; claim hashes remain bounded context, not authority; attempt/invocation/outcome/projection/readback leaves use existing governed evidence | Homebrew Cobra route retains reject/unverifiable receipts, rechecks registry/action/schema, and records exact fresh postcheck. Only an owned claim can support global terminal projection; refused/mismatched claims remain local no-invocation evidence, preserving older operation-wide claims. Owned pre-invocation and terminal/projection gaps have data-only reconciliation; invocation with unknown completion and legacy attempts remain no-replay debt. The separate raw `self-update --confirm` route binds the displayed exact manifest preview, retains the opaque full receipt and Store attempt before invoking existing `SafeReplace`, refuses Homebrew-owned paths, and retains exact target/schema postcheck plus data-only projection reconciliation. Source authored only; Main qualification remains open, as do commercial whole-app update/install and O4 rollback. |
+| Whole-app update memory adapter | `internal/maat/memory_app_update.go` + `cmd/sirsi/{update.go,update_app_darwin.go,launchdmaintenance_installer_darwin.go}` | existing Store full-receipt retention and canonical typed preflight projection; durable attempt stores the opaque receipt reference after exact committed-byte readback under the Store lock | Existing signed/notarized PKG inspection and confirmed native Installer handoff remain authoritative; candidate/live schema, app/helper identity, dependencies, final PKG revalidation, exact installed readback, and bidirectional pending-owner fences remain bound. Source-only composition on 0.24.137; Main qualification pending. Raw-route source remains unqualified; alternate installers and full O4 rollback remain open. |
 | Known-failure proposals | `internal/maat/knownfail/proposal.go` + `cmd/sirsi/maatknownfail.go` + native Ma'at workspace | create-only, readback-verified local proposal under `~/.sirsi/maat/known-failures/proposals` after explicit confirmation | local evidence is visible in the native Proposals workspace and CLI JSON; it is never a recognition rule until Stack Lab review promotes it |
 | Casebook | `internal/maat/casebook` | none | deterministic projection tests |
 | Canonical knowledge archive (first vertical slice) | `internal/maat/knowledge/` + `internal/seshat/adapter_claude.go` + `cmd/sirsi/maatknowledge.go` + knowledge section of native `MaatCasebookView.swift` | private `~/.sirsi/maat/knowledge/archive.sqlite3`; one explicit local Claude reader; source cursors only on complete/no-new-items; owner annotations remain separate and create visible Casebook projection debt | source contract and authored fixtures in `internal/maat/knowledge/archive_test.go`; one transaction-backed archive, immutable versions/stable logical IDs/origins, filter-before-FTS admission and re-filtered projections, exact-content dedup, legacy snapshot migration, bounded search/detail/history/status, native partial-coverage/retry route. See [source map](KNOWLEDGE_ARCHIVE_V1.md). Remaining local adapters, consented online workspace ingestion, richer CLI/MCP/TUI/dashboard workflows and guided conflict review remain OPEN. No empirical or installed-runtime claim. |
@@ -30,6 +34,26 @@ source fixtures pending Main's execution.
 | Finite CPU admission | `scripts/maat/admitted-run.py`, `cmd/sirsi/maatschedule.go`, `internal/maat/schedule` | one actual executor's explicit CPU request; never mutation or retirement of another holder | launcher propagation, real CLI persisted request, actual CPU-first/model-second admission and conservative quiet/memory/unknown/unbounded negatives; corrected source is not installed qualification |
 | Scoped service lifecycle | `internal/setup/launchdservice*`, `cmd/sirsi/launchdservice*` | one explicitly selected allowlisted service; default read-only, native identity/grant/four pins/drain assertion and per-service serialization required | `maat-scoped-service-lifecycle` in the System One recipe; [runbook](../../../runbooks/SCOPED-SERVICE-LIFECYCLE.md); source tests do not establish signed installed deployment or application health |
 | Stack Lab integration recipe | `contracts/stacklab/maat-*` | source contract only; Stack Lab governance is SSA-owned | keep schema and implementation aligned without claiming platform authority |
+
+Known-failure proposal catalog history is read-only provenance. The trusted
+historical snapshot is the exact
+`internal/maat/knownfail/catalog.json` at commit
+`68b1ee17ac49d4c087c54bd4860eee597181fd45` (Git blob
+`325edb6a7017905209515529006fc908c126ce51`, SHA-256
+`e8a1b1a1e295f3ff02eef4342d4bd315555960d561458687c8ee1be034b2b178`). The
+reader classifies only current or this exact historical pin in its output
+projection; it never stores the classification or rewrites a proposal.
+Historical items remain local proposals requiring review against the current
+catalog. Unknown or altered pins and malformed provenance remain refused, and
+this read path does not change catalog matching or promotion authority. A native
+client without the projection field reports the catalog generation as
+unavailable rather than guessing that it is current. Reproduce the source
+binding with:
+
+```sh
+git rev-parse 68b1ee17ac49d4c087c54bd4860eee597181fd45:internal/maat/knownfail/catalog.json
+git show 68b1ee17ac49d4c087c54bd4860eee597181fd45:internal/maat/knownfail/catalog.json | shasum -a 256
+```
 
 Integration and software Stack Lab governance owner: SSA / Ma'at. Pantheon
 implements the integrated product surfaces; Ra owns router transport, not a

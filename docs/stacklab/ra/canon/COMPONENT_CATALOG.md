@@ -1,5 +1,17 @@
 # Component catalog — Ra / Horus
 
+## Selected-task metric query
+
+`internal/ledger/fabric_tasks.go` supplies complete, safe, filter-bound task
+pages. `FabricGenerationProducer.ReadTaskSelection` validates continuation
+before transition history advances; the dashboard handler exposes only the
+closed query. The production web renderer/app use these pages for native metric
+buttons and captured task inspectors; no renderer independently scans or sums
+raw tasks. Recipe: [Fabric metric drill-downs](FABRIC_METRIC_DRILLDOWNS_V1.md).
+Local normal/race, actual Go-to-JS wire, causal control and bounded browser
+fixtures qualify the candidate only. Protected release and installed gateway
+readback remain pending. No new worker, store, credential or action authority.
+
 | Component | Source surface | Boundary | Release evidence/state |
 |---|---|---|---|
 | Explicit native quiet request | `scripts/maat/admitted-run.py`, `scripts/maat/test_admitted_run.py` | fresh destination-native owned full-share quiet grant; never loaded relabel or CPU-floor model permission | source successor; tests, install, CI payload admission and physical sample qualification not inferred |
@@ -17,7 +29,7 @@
 | Native delegated booking authority | `internal/maat/schedule/pod*.go`, `cmd/sirsi/maatpod*`, `contracts/stacklab/maat-pod-authority-service-recipe-v1.json` | finite canonical grant, mutual TLS, durable exact nonce journal and catch-up; no second work router | actual d1 CLI fixture1fc5045f online/offline/restart/catch-up six events/two rows; source45c99; dormant signed-engine recipe is not installed TLS onboarding or activation |
 | Complete native contract payload | `internal/packageinventory/source_contracts_test.go`, `inventory.go`, app builders | entire copied Stack Lab source directory checked against exact regular/directory policy, including native workspace, pod and Mercury recipes | former policy REDde4/current race GREENf107; fixture24 entries; no wildcard allowlist or package-release claim |
 | Relay | `cmd/sirsi/routerrelaycmd.go` | host token holder; no DB copy | M1/M5 host receipt |
-| Scoped native transport | `scripts/maat/fabric-run.sh`, registry Codex consumer profiles | exact enrolled IP proxy, pinned SSH, no bearer export; both ends supervised | literal-argv/refusal fixtures; actual scoped SSA M1/Studio terminals2311a0d6/d3f5f7aa; per-lane adoption remains tracked |
+| Scoped native transport | `scripts/maat/fabric-run.sh`, `fabric-endpoints.py`, registry Codex profiles | exact kernel-owned enrolled endpoint + native UID selects normal local executor; otherwise pinned SSH/proxy; no bearer export or fallback | authored parser/UID/actual-shell/PID fixtures unrun; prior SSA M1/Studio proof retained; actual own M5 route/adoption Main-owned |
 | Leases | `tasklease.go`, `items.go` | fenced claim/renew/close | adversarial tests |
 | Studio capacity aliases | `internal/maat/schedule/resource.go`, shared atomic scheduler | bare legacy/canonical names share capacity; original IDs/spellings and host binding retained | independent source inspection/native race fixtures; actual deployment still required |
 | Wake/informer substrate | `wake.go`, `wakeevents.go`, `horus` | bounded delivery, no blind spawn | shipped substrate; informer increment next |

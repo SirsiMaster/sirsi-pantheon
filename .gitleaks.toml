@@ -17,6 +17,10 @@
 [extend]
 useDefault = true
 
+# A single historical generic-api-key finding is fingerprinted in
+# .gitleaksignore: an immutable UserDefaults preference-name literal, verified
+# against its read/write call sites. No path or rule exclusion is added here.
+
 [allowlist]
 description = "Verified-benign secret-SHAPED fixtures/examples — full-tree scan is 0 findings (2026-07-02)"
 

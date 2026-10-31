@@ -2,6 +2,8 @@
 
 | Requirement | Source | Evidence in this release | State |
 |---|---|---|---|
+| Every task headline opens its complete selected set, including blocked/stalled tails | `fabric_tasks.go`, `ReadTaskSelection`, dashboard handler and actual web app; `FABRIC_METRIC_DRILLDOWNS_V1.md` | matching canonical bucket counts, full-set-before-page and cross-filter/tail-drift refusals, actual handler and app click/refresh tests; private old-selection assertion RED | local normal/race and browser fixture qualified; exact protected/signed installed gateway proof pending, not140 delivery |
+| Metric and lane controls remain usable by keyboard and on narrow screens | actual `ui/fabric.js`, `app.js`, `app.css` | native buttons, selected-heading focus only on explicit actions, numeric column alignment, controlled desktop/mobile preview | candidate source/fixture evidence; no live all-surface acceptance |
 | Quiet is requested and confirmed, never a label added to loaded samples | native runner explicit regime plus fresh reservation/lease scope | wrong-regime/floor and missing-executor refusal; no borrowing and renewal-scope fixtures | authored source; full runner/CI admission and installed proof remain separate |
 | One production authority | `routerstore.Resolve`, `dispatch.Open` | explicit-local-fallback negative control | verified locally |
 | Prevent cooperative pollers publishing during a selected relay refresh | retained-directory shared/exclusive producer admission; `docs/RELAY-BOUNDED-PRODUCER-ADMISSION.md` | actual Darwin seven admission fixtures and whole setup race PASS; trust-preflight omission reproduced deadline failure, corrected ordering PASS; existing queue guard preserved | source qualified; every actual writer must adopt signed successor before root rollover; legacy mixed-writer safety is not claimed |
@@ -21,7 +23,7 @@
 | Read acknowledgement is distinct | `AckItem`, schema v22+ | recipient-only ack tests | source-bound |
 | Cloud canonical service | `router serve`, GCP recipe | historical deploy receipts; current readback pending permissions | open-live |
 | Codex least-privilege delivery | `router relay`, spool contract | M1/M5 relay evidence | host-verified prior receipt |
-| Restricted-worker native execution | `scripts/maat/fabric-run.sh`, exact-IP proxy profiles | all declared Codex profile guards, POSIX argv/refusal tests; scoped SSA M1/Studio success; external-domain denial | source/transport verified; each lane still needs its own actual destination receipts |
+| Restricted-worker native execution | `scripts/maat/fabric-run.sh`, `fabric-endpoints.py`, exact-IP profiles | retained original plan/remote tests; authored kernel endpoint/UID/UUID, literal argv/PID/no-retry fixtures | self-dispatch source unrun; no identity/grant changes; Main actual own native terminal required; prior M1/Studio proof preserved |
 | M1/M5 fleet parity | relay/client/service | current fresh cross-host proof | partial |
 | Fresh third-machine join | token/env/register/claim/close | hermetic rehearsal script | rehearsal pending |
 | Horus/CLI/MCP same read model | `routerboard`, `internal/routermcp`, canonical `sirsi router-mcp`, Horus | released bare manifest parity on core and both entrypoints; original claim/expiry/completion fixtures moved, inert EOF/cancel/failed-registration/instance isolation fixtures | Source-only corrective; no test/build execution by producer. Managed-config migration, explicit remote audience decision and installed caller qualification remain open; generic `mcp` unchanged. |
@@ -32,3 +34,12 @@
 | Rollback/revocation | deploy/cutover scripts | rollback fixture; fresh cloud rehearsal pending | partial |
 | Commercial product closure | commercialization gate | pilot/platform-foundation classification | open |
 | Scoped cloud logical host survives ephemeral OS hostnames | `routerstore.ThreadOwnerHost`, `NewRemoteStore`, thread registration/save | exact120 baseline403, corrected registration/heartbeat/claim/completion/close and foreign-host/lane refusal; native two-package race PASS | client candidate only; private environment readiness and M5-off proof remain open |
+
+Original Fabric surface unification: `fabric-board` joins canonical task/message
+reads with existing leased runtime classification, existing host/capacity/session
+read models and the existing FleetTracker's real transitions. Current web and
+protected native projections share `ledger.FabricFrom`; missing data stays
+unavailable/null, not a zero or WORKING inference. Actual Go endpoint fixture
+JSON is an explicit Node/native input. Source only, qualification and foreign
+Nexus/Horus consumer mapping/readback pending; no row/status/release claim.
+See [module/provenance/upgrade boundary](FABRIC_SURFACE_PRODUCER_V1.md).

@@ -1,5 +1,29 @@
 # Changelog — Ra / Horus canon
 
+## 2026-10-25 — Horus status update
+
+- Add a dated status update without rewriting the 03:25Z snapshot. Both
+  observed Macs run a Horus from v0.24.135 or later, which carries #1194. Ra
+  verified the M1; Mercury reported the Studio. The launchd label is still
+  `agent-router`.
+- Attribute the M1's 425 registration fence errors to the 2026-10-12 build,
+  which predates #1156. The current process logs none.
+
+## 2026-10-24 — Ra and Horus roles
+
+- Record the owner's split: Ra is the cloud or third-party-level router and
+  the single ledger. Horus is an independent service on every node, acting as
+  machine observer and local routing edge, and routes upward through the relay
+  and outbox.
+- Horus is not an IDE agent or inbox lane; its mail routes to Ra via `mail_to`.
+- Ra and Horus are independently updatable modules with standalone and
+  integrated views to the Swift Mac standard.
+- State the shipped gaps (per-module versioning, board parity audit) as
+  post-freeze work, not as done.
+- Status narrowed to observation (Mercury review): Horus runs on the M1 only
+  (pre-#1194 build, legacy `agent-router` label); the Studio has no Horus;
+  the M5 was not observed.
+
 ## 2026-10-19 — Loaded-image and observer continuity successor
 
 - Record the real distinction between replacing installed files and replacing

@@ -11,8 +11,9 @@ GIT_READS = {"status", "diff", "show", "log", "rev-parse", "ls-files", "ls-tree"
 FRONT = os.path.expanduser("~/.local/bin/sirsi-maat-run")
 CLI = os.path.expanduser("~/.local/bin/sirsi")
 REASON = ("Ma'at: execution requires the supervised foreground front door. "
-          "Register your own actual runtime, then use ~/.local/bin/sirsi-maat-run "
-          "--agent <own-id> --thread <own-thread> --work <exact-work> --timeout 300 -- <program> <args>. "
+          "Use ~/.local/bin/sirsi-maat-run --agent <own-id> --register-executor "
+          "--work <exact-work> --timeout 300 -- <program> <args>; it registers this job's actual local runtime, not a dispatcher thread. "
+          "Use standalone canonical CLI calls for registration and router coordination. "
           "Do not change permissions or retry in another session. Registration, router coordination and source reads remain available.")
 OPERATORS = {";", "&", "&&", "|", "||", "<", ">", ">>", "<<", "(", ")"}
 

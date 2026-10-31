@@ -42,7 +42,8 @@ func (s *SQLiteStore) TaskEligibility(agent, taskID string) (TaskEligibility, er
 		FROM tasks WHERE agent=? AND task_id=?;`, agent, taskID).
 		Scan(&e.Status, &e.ResponsibleParty, &e.BlockedBy, &e.ClaimedBy, &e.ThreadID, &leaseToken, &e.LeaseExpires, &e.Attempts, &e.FailureReason)
 	if errors.Is(err, sql.ErrNoRows) {
-		return TaskEligibility{}, fmt.Errorf("routerstore: task %s/%s not found", agent, taskID)
+		// Wrap the sentinel so the service returns a named not-found, not an HTTP 500.
+		return TaskEligibility{}, fmt.Errorf("%w: task %s/%s", ErrNotFound, agent, taskID)
 	}
 	if err != nil {
 		return TaskEligibility{}, fmt.Errorf("routerstore: task eligibility: %w", err)

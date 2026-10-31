@@ -2,6 +2,15 @@ import XCTest
 @testable import SirsiMenubar
 
 final class CoreContractsTests: XCTestCase {
+    func testPeriodicMemoryVitalsRequestsSummaryAndDecodesEmptyTop() throws {
+        XCTAssertEqual(SirsiEngine.vitalsReadArguments, ["vitals", "--summary", "--json"])
+        let raw = #"{"total_bytes":51539607552,"used_bytes":34359738368,"free_bytes":17179869184,"swap_used_bytes":42,"pressure":"normal","pressure_source":"fixture","top":[]}"#
+        let read = try JSONDecoder().decode(MemoryVitals.self, from: Data(raw.utf8))
+        XCTAssertEqual(read.usedBytes, 34359738368)
+        XCTAssertEqual(read.swapUsedBytes, 42)
+        XCTAssertEqual(read.top?.count, 0)
+    }
+
     func testStackLabReportTreatsNullCollectionsAsAnEmptyTypedReport() {
         let raw = #"""
         {"roster":["stacklab.wing.maat"],"findings":null}
@@ -21,6 +30,32 @@ final class CoreContractsTests: XCTestCase {
 
         let empty = SirsiEngine.JSONCommandRead(data: Data(), exitStatus: 1, timedOut: false, launchError: nil)
         XCTAssertTrue(StackLabReadFailure.message(for: empty).contains("exit 1"))
+    }
+
+    func testStackLabMissingGitHubCLIDiagnosticStaysUnknownWithStaticGuidance() {
+        let raw = #"{"diagnostic":{"code":"missing_gh"}}"#
+        let read = SirsiEngine.JSONCommandRead(data: Data(raw.utf8), exitStatus: 1, timedOut: false, launchError: nil)
+
+        XCTAssertNil(StackLabReport.decode(read.data))
+        let guidance = StackLabReadFailure.message(for: read)
+        XCTAssertTrue(guidance.contains("brew install gh"))
+        XCTAssertTrue(guidance.contains("No registry result was inferred"))
+    }
+
+    func testStackLabUnknownAndMalformedDiagnosticsNeverDecodeAsCleanReports() {
+        let payloads = [
+            #"{"diagnostic":{"code":"future_error"},"roster":[]}"#,
+            #"{"diagnostic":{"code":null}}"#,
+            #"{"diagnostic":null,"roster":[]}"#,
+            #"{"diagnostic":{"detail":"bad"}}"#,
+        ]
+
+        for raw in payloads {
+            let data = Data(raw.utf8)
+            XCTAssertNil(StackLabReport.decode(data), "diagnostic payload became a report: \(raw)")
+            let read = SirsiEngine.JSONCommandRead(data: data, exitStatus: 1, timedOut: false, launchError: nil)
+            XCTAssertTrue(StackLabReadFailure.message(for: read).contains("did not infer a registry result"))
+        }
     }
 
     func testFleetWorkspaceMetadataDescribesWorkerLanesNotMachineInventory() {
@@ -73,7 +108,8 @@ final class CoreContractsTests: XCTestCase {
           "cause":"an ambient checkout is incomplete",
           "status":"proposed",
           "created_at_utc":"2026-10-05T20:00:00Z",
-          "catalog_sha256":"abc123"
+          "catalog_sha256":"e8a1b1a1e295f3ff02eef4342d4bd315555960d561458687c8ee1be034b2b178",
+          "catalog_relation":"historical"
         }]
         """#
 
@@ -82,6 +118,25 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(proposals?.count, 1)
         XCTAssertEqual(proposals?.first?.id, "catalog-root-missing")
         XCTAssertEqual(proposals?.first?.titleOrID, "Catalog root missing")
+        XCTAssertEqual(proposals?.first?.catalogRelationLabel,
+                       "Recorded against a prior catalog · review against current catalog")
+    }
+
+    func testKnownFailureProposalWithoutCatalogProjectionIsNotLabeledCurrent() throws {
+        let raw = #"[{"schema":"sirsi.maat.known-failure-proposal.v1","id":"legacy","signature":"x","cause":"y","status":"proposed","created_at_utc":"2026-10-05T20:00:00Z","catalog_sha256":"e8a1b1a1e295f3ff02eef4342d4bd315555960d561458687c8ee1be034b2b178"}]"#
+
+        let proposal = try XCTUnwrap(MaatKnownFailureProposalsView.decode(raw)?.first)
+
+        XCTAssertNil(proposal.catalogRelation)
+        XCTAssertEqual(proposal.catalogRelationLabel, "Catalog generation unavailable")
+    }
+
+    func testKnownFailureProposalCurrentProjectionLabelsCurrent() throws {
+        let raw = #"[{"schema":"sirsi.maat.known-failure-proposal.v1","id":"current","signature":"x","cause":"y","status":"proposed","created_at_utc":"2026-10-30T12:00:00Z","catalog_sha256":"80145ab40c50d156607fc3155e7840f194398f7674d42f7bdc39b553586473d8","catalog_relation":"current"}]"#
+
+        let proposal = try XCTUnwrap(MaatKnownFailureProposalsView.decode(raw)?.first)
+
+        XCTAssertEqual(proposal.catalogRelationLabel, "Recorded against the current known-failure catalog")
     }
 
     func testActivityResolutionAlwaysClosesAnAmbiguousOrFailedOutcome() {

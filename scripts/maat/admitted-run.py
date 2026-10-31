@@ -2,6 +2,7 @@
 """Cooperative native Ma'at launch supervisor, not a security sandbox."""
 import argparse
 import ctypes
+from dataclasses import dataclass
 import datetime as dt
 import hashlib
 import json
@@ -11,6 +12,7 @@ import re
 import shlex
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -96,8 +98,8 @@ class _BSDInfo(ctypes.Structure):
         ('start_usec', ctypes.c_uint64)]
 
 
-def process_identity(pid):
-    """Read kernel identity without spawning ps or trusting a cached PID."""
+def native_process_info(pid, include_zombies=False):
+    """Existing Darwin public proc_pidinfo metadata; no argv/environment read."""
     if sys.platform != 'darwin' or type(pid) is not int or pid <= 1:
         raise Refused('Native process identity unavailable on this execution host')
     library = ctypes.CDLL('/usr/lib/libproc.dylib', use_errno=True)
@@ -107,15 +109,27 @@ def process_identity(pid):
     lookup.restype = ctypes.c_int
     row = _BSDInfo()
     size = ctypes.sizeof(row)
-    read = lookup(pid, 3, 0, ctypes.byref(row), size)
+    # XNU's BSD-info arg=1 explicitly includes the zombie table. Group cleanup
+    # needs its unreaped anchor; ordinary live identity reads retain arg=0.
+    read = lookup(pid, 3, int(include_zombies), ctypes.byref(row), size)
     if read != size or row.pid != pid or row.start_sec <= 0:
         raise Refused('Kernel process identity unavailable or changed for PID '+str(pid))
+    return row
+
+
+def process_identity(pid):
+    """Read kernel identity without spawning ps or trusting a cached PID."""
+    row = native_process_info(pid)
+    return row.ppid, _process_start(row)
+
+
+def _process_start(row):
     # Match Go time.ANSIC / ps lstart, independent of caller locale.
     stamp = time.localtime(row.start_sec)
     start = ('Mon Tue Wed Thu Fri Sat Sun'.split()[stamp.tm_wday]+' '+
              'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split()[stamp.tm_mon-1]+
              f' {stamp.tm_mday:2d} {stamp.tm_hour:02d}:{stamp.tm_min:02d}:{stamp.tm_sec:02d} {stamp.tm_year:04d}')
-    return row.ppid, start
+    return start
 
 
 def local_resource():
@@ -124,6 +138,611 @@ def local_resource():
     if name not in names:
         raise Refused('Host has no enrolled local resource mapping')
     return names[name]
+
+
+def local_scope_options(args, regime):
+    """Local CPU-floor work is not a fabric booking or an offline Ra session."""
+    require_local_user()
+    if regime != 'build' or args.cpu_cores != 1:
+        raise Refused('Local scope supports one cooperative CPU core only; quiet, loaded and shared-resource bookings require fabric admission')
+    if args.register_executor or args.iterations != 1 or args.job_timeout is not None:
+        raise Refused('Local scope is one foreground job, without fabric executor registration or recurring reservations')
+
+
+def require_local_user():
+    if os.getuid() == 0 or os.geteuid() == 0 or os.getuid() != os.geteuid() or os.getgid() != os.getegid():
+        raise Refused('Local CPU scope requires matching ordinary real/effective user and group; elevated execution is not local admission')
+
+
+def local_transition(folder, record, write=None, sync=None, publish=None, phase=None):
+    """Create-only immutable phases; a failed update never truncates intent."""
+    phase = phase or ('intent' if record['status'] == 'admitted' else 'running' if record['status'] == 'running' else 'terminal')
+    target = folder/(phase+'.json')
+    stage = folder/('.'+phase+'-'+uuid.uuid4().hex)
+    fd = os.open(stage, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    data = json.dumps(record, sort_keys=True).encode()
+    with os.fdopen(fd, 'wb') as output:
+        written=(write or (lambda file, value: file.write(value)))(output, data)
+        if written!=len(data):raise OSError('Short local receipt write; prior immutable intent retained')
+        output.flush()
+        (sync or os.fsync)(output.fileno())
+        opened = os.fstat(output.fileno())
+    # Atomic no-replace publication, unlike rename-overwrite or mode-w updates.
+    (publish or (lambda source, destination: os.link(source, destination, follow_symlinks=False)))(stage, target)
+    named = stage.lstat()
+    if (opened.st_dev, opened.st_ino) != (named.st_dev, named.st_ino):
+        raise Refused('Local receipt staging identity changed; retained cleanup debt')
+    stage.unlink()
+    directory = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+LOCAL_RECEIPT_SCHEMA = 'sirsi.maat.local-execution.v1'
+
+
+def tier1_candidate(command):
+    """Routing hint only; the executing Go CLI enforces the closed operation set."""
+    path = Path(command[0])
+    installed = (str(path) == '/usr/local/libexec/sirsi-pantheon/sirsi'
+                 or str(path).endswith('.app/Contents/MacOS/sirsi'))
+    if not path.is_absolute() or not installed:
+        return False
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o022 or not info.st_mode & 0o111:
+            return False
+    except OSError:
+        return False
+    args = command[1:]
+    return (bool(args) and args[0] in ('version', 'vitals', 'diagnose')
+            or args[:2] in (['maat', 'triage'], ['maat', 'decisions'], ['maat', 'casebook'], ['thoth', 'status'], ['thoth', 'compact'], ['thoth', 'sync'], ['thoth', 'init'], ['stacklab', 'local'], ['liveness-watch', 'status'])
+            or args[:3] == ['liveness-watch', 'run', '--local'])
+
+
+def select_scope(args, command, regime):
+    if args.scope != 'auto':
+        return args.scope
+    if (args.register_executor or args.iterations != 1 or regime != 'build'
+            or args.cpu_cores != 1 or args.job_timeout is not None or not tier1_candidate(command)):
+        return 'fabric'
+    require_local_user()  # Even the local metadata child must not inherit elevation.
+    env = os.environ.copy()
+    for key in ('SIRSI_MAAT_EXECUTION_RECEIPT', 'SIRSI_MAAT_LOCAL_EXECUTION_RECEIPT'):
+        env.pop(key, None)
+    # One bounded local metadata read, never a reachability/error fallback.
+    try:
+        probe = subprocess.run([command[0], 'version', '--json'], env=env, stdin=subprocess.DEVNULL,
+                               capture_output=True, text=True, timeout=5)
+        if probe.returncode == 0 and len(probe.stdout)<=65536:
+            metadata=json.loads(probe.stdout)
+            if isinstance(metadata,dict) and metadata.get('local_admission_schema')==LOCAL_RECEIPT_SCHEMA:
+                return 'local'
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        pass
+    return 'fabric'
+
+
+def local_group_snapshot(group):
+    if sys.platform == 'darwin':
+        return native_group_snapshot(group)
+    return ps_group_snapshot(group)
+
+
+def _native_group_pids(group, listpids):
+    # proc_listpids returns BYTES; its wrapper returns zero on both syscall
+    # failure and successful empty result. Clear/check errno on EACH call.
+    ctypes.set_errno(0)
+    size = listpids(2, group, None, 0)  # PROC_PGRP_ONLY
+    error = ctypes.get_errno()
+    unit = ctypes.sizeof(ctypes.c_int)
+    if error or size <= 0 or size % unit or size > (1 << 20) - 64:
+        raise Refused('Native process-group sizing unavailable or malformed; no absence inferred')
+    capacity = size + 64
+    buffer = (ctypes.c_int * (capacity // unit))()
+    ctypes.set_errno(0)
+    read = listpids(2, group, buffer, capacity)
+    error = ctypes.get_errno()
+    if error or read < 0 or read >= capacity or read % unit:
+        raise Refused('Native process-group enumeration denied, truncated or malformed; no absence inferred')
+    pids = list(buffer[:read // unit])
+    if any(pid <= 0 for pid in pids) or len(set(pids)) != len(pids):
+        raise Refused('Native process-group PID list malformed; no absence inferred')
+    return sorted(pids)
+
+
+def native_group_snapshot(group):
+    """Fresh Darwin group observation, never a ps-error-to-absence fallback.
+
+    Same-executor positive control must enumerate our own known-live PID. The
+    requested group is enumerated before and after exact BSD-info metadata,
+    including zombies, without reading argv/environment or trusting a cache.
+    Denial, partial observation and membership drift retain cleanup debt.
+    """
+    if (sys.platform != 'darwin' or type(group) is not int or not 1 < group <= 0x7fffffff
+            or ctypes.sizeof(ctypes.c_int) != 4 or ctypes.sizeof(_BSDInfo) != 136):
+        raise Refused('Native process-group observation ABI unavailable')
+    library = ctypes.CDLL('/usr/lib/libproc.dylib', use_errno=True)
+    listpids = library.proc_listpids
+    listpids.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_int]
+    listpids.restype = ctypes.c_int
+    own_pid, own_group = os.getpid(), os.getpgrp()
+    def qualify():
+        own = native_process_info(own_pid)
+        if (own.pid != own_pid or own.pgid != own_group or own.uid != os.getuid()
+                or own.ruid != os.getuid() or own.status not in (1, 2, 3, 4)
+                or own_pid not in _native_group_pids(own_group, listpids)):
+            raise Refused('Native group observer positive control failed; no absence inferred')
+    qualify()
+    pids = _native_group_pids(group, listpids)
+    rows = []
+    states = {1: 'I', 2: 'R', 3: 'S', 4: 'T', 5: 'Z'}
+    for pid in pids:
+        row = native_process_info(pid, include_zombies=True)
+        if row.pgid != group or row.status not in states:
+            raise Refused('Native group member changed or status unknown; no absence inferred')
+        rows.append(dict(pid=row.pid, ppid=row.ppid, pgid=row.pgid,
+                         uid=row.uid, status=states[row.status]))
+    if _native_group_pids(group, listpids) != pids:
+        raise Refused('Native group membership changed during observation; no absence inferred')
+    qualify()
+    return rows
+
+
+def ps_group_snapshot(group):
+    # Non-Darwin compatibility only. Darwin never depends on spawning ps and
+    # never chooses this path after a failed native observation.
+    probe = subprocess.run(['/bin/ps', '-axo', 'pid=,ppid=,pgid=,uid=,stat='], capture_output=True, text=True, timeout=2)
+    if probe.returncode or len(probe.stdout)>1<<20:
+        raise Refused('Local process-group observation unavailable')
+    rows=[]; observed=False
+    for line in probe.stdout.splitlines():
+        if not line.strip():continue  # Empty ps header with explicit '=' columns.
+        parts=line.split()
+        if (len(parts)!=5 or not all(re.fullmatch(r'[0-9]+', x) for x in parts[:3])
+                or not re.fullmatch(r'-?[0-9]+', parts[3])):
+            raise Refused('Local process-group observation malformed')
+        observed=True
+        if int(parts[2])==group:
+            rows.append(dict(pid=int(parts[0]),ppid=int(parts[1]),pgid=int(parts[2]),uid=int(parts[3]),status=parts[4]))
+    if not observed:raise Refused('Local process-group enumeration is empty/unknown')
+    return rows
+
+
+class _Sigval(ctypes.Union):
+    _fields_ = [('integer',ctypes.c_int),('pointer',ctypes.c_void_p)]
+
+
+class _Siginfo(ctypes.Structure):
+    # Public Darwin sys/signal.h siginfo_t, arm64/x86_64 LP64. No proc/argv read.
+    _fields_ = [('signo',ctypes.c_int),('error',ctypes.c_int),('code',ctypes.c_int),
+                ('pid',ctypes.c_int),('uid',ctypes.c_uint32),('status',ctypes.c_int),
+                ('address',ctypes.c_void_p),('value',_Sigval),('band',ctypes.c_long),
+                ('reserved',ctypes.c_ulong*7)]
+
+
+class LocalWaitRefused(Refused):
+    def __init__(self, reason, observation):
+        self.observation=observation
+        super().__init__(reason+': '+json.dumps(observation,sort_keys=True,separators=(',',':')))
+
+
+@dataclass(frozen=True)
+class _LocalChildIdentity:
+    handle: object
+    pid: int
+    parent: int
+    uid: int
+    real_uid: int
+    group: int
+    start: str
+
+
+def local_bind_owned_child(child, birth):
+    # Called on the actual Popen handle while its launch pipe still withholds
+    # the payload. Capture credentials as well as start/parent from live libproc.
+    row=native_process_info(child.pid)
+    if (child.returncode is not None or row.pid!=child.pid or row.ppid!=os.getpid()
+            or row.uid!=os.getuid() or row.ruid!=os.getuid() or os.getuid()<=0
+            or row.pgid!=child.pid or _process_start(row)!=birth):
+        raise Refused('Live owned child UID/start/parent/group binding differs before release')
+    child._sirsi_local_identity=_LocalChildIdentity(child,child.pid,row.ppid,row.uid,row.ruid,row.pgid,birth)
+
+
+def local_owned_identity(child):
+    owned=getattr(child,'_sirsi_local_identity',None)
+    if (not isinstance(owned,_LocalChildIdentity) or owned.handle is not child
+            or owned.pid!=child.pid or owned.parent!=os.getpid() or not owned.start
+            or owned.uid!=os.getuid() or owned.real_uid!=os.getuid() or owned.uid<=0
+            or owned.group!=child.pid or child.returncode is not None):
+        raise Refused('Exact live-bound unreaped Popen custody unavailable; no terminal authority inferred')
+    return owned
+
+
+def local_child_terminal(child, wait=None):
+    """Non-reaping kernel receipt for our exact child; ECHILD is not absence.
+
+    Python's Darwin os module omits waitid, but libSystem exposes the public C
+    interface. Constants/layout below are from SDK sys/wait.h and sys/signal.h.
+    Live libproc credentials/start and the Popen handle are bound before release;
+    WNOWAIT keeps this exact exited child waitable, preventing PID reuse before
+    the controller's sole later wait/reap. No unavailable libproc read implies exit.
+    """
+    if (sys.platform!='darwin' or type(child.pid) is not int or child.pid<=1
+            or ctypes.sizeof(ctypes.c_void_p)!=8 or ctypes.sizeof(_Siginfo)!=104
+            or _Siginfo.pid.offset!=12 or _Siginfo.status.offset!=20):
+        raise Refused('Owned child wait ABI unavailable')
+    owned=local_owned_identity(child)
+    if wait is None:
+        library=ctypes.CDLL('/usr/lib/libSystem.B.dylib',use_errno=True)
+        wait=library.waitid
+        wait.argtypes=[ctypes.c_int,ctypes.c_uint32,ctypes.POINTER(_Siginfo),ctypes.c_int]
+        wait.restype=ctypes.c_int
+    info=_Siginfo()
+    # P_PID=1; WNOHANG=1, WEXITED=4, WNOWAIT=0x20. Never consumes the child.
+    result=wait(1,child.pid,ctypes.byref(info),1|4|0x20)
+    observation=dict(api='libSystem.waitid',result=result,errno=ctypes.get_errno() if result else 0,
+                     expected_pid=owned.pid,expected_uid=owned.uid,expected_signal=int(signal.SIGCHLD),
+                     pid=info.pid,uid=info.uid,signo=info.signo,error=info.error,code=info.code,status=info.status,
+                     abi_bytes=ctypes.sizeof(info),pid_offset=_Siginfo.pid.offset,status_offset=_Siginfo.status.offset)
+    # Only defined scalar fields: no addresses, reserved bytes, argv or environment.
+    if result!=0:
+        raise LocalWaitRefused('Owned child wait observation failed; no exit or absence inferred',observation)
+    if info.pid==0:
+        if any((info.signo,info.error,info.code,info.uid,info.status)):
+            raise LocalWaitRefused('Malformed empty owned child wait observation',observation)
+        return None
+    # XNU kern_exit.c waitid_nocancel/SZOMB zeroes siginfo and does not assign
+    # si_uid. Zero is NOT a root credential or an ownership observation. Require
+    # exact unreaped direct-child custody above; group credentials are separately
+    # observed and checked before any signal/reap/release. Populated foreign UID
+    # remains a refusal, as do foreign PID/signal, ECHILD and unknown status.
+    if info.pid!=owned.pid or info.uid not in (0,owned.uid) or info.signo!=signal.SIGCHLD or info.error:
+        raise LocalWaitRefused('Owned child wait PID/UID/signal differs',observation)
+    if info.code==1 and 0<=info.status<=255:  # CLD_EXITED
+        return info.status
+    if info.code in (2,3) and 0<info.status<signal.NSIG:  # CLD_KILLED/DUMPED
+        return -info.status
+    raise LocalWaitRefused('Unknown owned child terminal status',observation)
+
+
+def local_anchor_matches(child, birth):
+    owned=local_owned_identity(child)
+    if not birth or birth!=owned.start:return False
+    try:
+        return process_identity(child.pid)==(os.getpid(),birth)
+    except Refused:
+        # libproc may omit an exited process. Only a positive non-reaping
+        # kernel receipt for our already-bound direct child replaces that read.
+        return local_child_terminal(child) is not None
+
+
+def local_wait_terminal(child, timeout):
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        status=local_child_terminal(child)
+        if status is not None:return status
+        time.sleep(0.02)
+    raise subprocess.TimeoutExpired('owned local child',timeout)
+
+
+def local_stop_owned(child, birth):
+    for sig in (None,signal.SIGTERM,signal.SIGKILL):
+        rows=local_group_snapshot(child.pid)
+        anchor=next((x for x in rows if x['pid']==child.pid),None)
+        if anchor is None or not local_anchor_matches(child,birth):
+            raise Refused('Local child identity anchor absent/changed; no signal sent')
+        if any(x['uid']!=os.getuid() for x in rows):
+            raise Refused('Foreign UID in local group; no signal sent')
+        if not any(not x['status'].startswith('Z') for x in rows):
+            child.wait(timeout=1)  # Reap only after every member is non-running.
+            if local_group_snapshot(child.pid):
+                raise Refused('Local group absence unconfirmed after reap')
+            return
+        if sig is not None:
+            # Revalidate immediately before each signal; never a reaped PID.
+            if not local_anchor_matches(child,birth):
+                raise Refused('Local child start changed before signal')
+            os.killpg(child.pid,sig)
+        end=time.monotonic()+0.5
+        while time.monotonic()<end:
+            rows=local_group_snapshot(child.pid)
+            if not any(not x['status'].startswith('Z') for x in rows):
+                break
+            time.sleep(0.02)
+        # The final SIGKILL wait has no next outer iteration: complete through
+        # the same anchored quiescence/reap/absence path before falling through.
+        rows=local_group_snapshot(child.pid)
+        anchor=next((x for x in rows if x['pid']==child.pid),None)
+        if anchor is None or not local_anchor_matches(child,birth):
+            raise Refused('Local child identity changed after signal wait; no further signal')
+        if any(x['uid']!=os.getuid() for x in rows):
+            raise Refused('Foreign UID after local signal wait')
+        if not any(not x['status'].startswith('Z') for x in rows):
+            child.wait(timeout=1)
+            if local_group_snapshot(child.pid):raise Refused('Local group absence unconfirmed after reap')
+            return
+    raise Refused('Owned local group quiescence unconfirmed; debt retained')
+
+
+def retain_local_debt(root, folder, child, birth):
+    path=root/'.local-cpu.debt.json'
+    fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,'w') as out:
+        json.dump(dict(schema=LOCAL_RECEIPT_SCHEMA,execution=folder.name,uid=os.getuid(),pid=child.pid,start=birth),out)
+        out.flush();os.fsync(out.fileno())
+    directory=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:os.fsync(directory)
+    finally:os.close(directory)
+
+
+def release_local_child(fd):
+    if os.write(fd,b'1')!=1:raise Refused('Owned local launch handshake was not delivered')
+
+
+def owned_local_child(fd,command):
+    # Same foreground child, no daemon/helper service or independent authority.
+    import select
+    require_local_user()
+    if not command or not stat.S_ISFIFO(os.fstat(fd).st_mode):return 78
+    ready,_,_=select.select([fd],[],[],5)
+    token=os.read(fd,1) if ready else b''
+    os.close(fd)
+    if token!=b'1':return 78
+    os.execvpe(command[0],command,os.environ.copy())
+    return 78
+
+
+def read_local_record(path, max_links=1):
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,'rb') as value:
+        st=os.fstat(value.fileno())
+        if not stat.S_ISREG(st.st_mode) or st.st_uid!=os.getuid() or stat.S_IMODE(st.st_mode)!=0o600 or not 1<=st.st_nlink<=max_links or st.st_size>4096:
+            raise Refused('Local record metadata unavailable')
+        raw=value.read(4097)
+    if len(raw)>4096:raise Refused('Local record exceeded bound')
+    def exact(pairs):
+        result={}
+        for key,item in pairs:
+            if key in result:raise Refused('Duplicate local record field')
+            result[key]=item
+        return result
+    record=json.loads(raw,object_pairs_hook=exact)
+    if not isinstance(record,dict):raise Refused('Local record must be an object')
+    return record,st,hashlib.sha256(raw).hexdigest()
+
+
+def sync_local_directory(path):
+    fd=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:os.fsync(fd)
+    finally:os.close(fd)
+
+
+def publish_local_resolution(folder, resolution, write=None):
+    marker=folder/'cleanup-reconciled.json'
+    if not os.path.lexists(marker):
+        local_transition(folder,resolution,write=write,phase='cleanup-reconciled')
+    got,info,_=read_local_record(marker,max_links=2)
+    if got!=resolution:raise Refused('Retained local resolution conflicts with this exact outcome')
+    # Resume the exact publication prefix link->stage removal after a crash.
+    # Only an identity-matching private stage linked to this marker is removed.
+    if info.st_nlink==2:
+        names=list(folder.iterdir())
+        if len(names)>128:raise Refused('Local resolution staging inventory exceeded bound')
+        matches=[]
+        for path in names:
+            if re.fullmatch(r'\.cleanup-reconciled-[0-9a-f]{32}',path.name):
+                stage=path.lstat()
+                if (stage.st_dev,stage.st_ino)==(info.st_dev,info.st_ino):matches.append(path)
+        if len(matches)!=1:raise Refused('Unknown link to retained local resolution')
+        stage=matches[0]
+        if (stage.lstat().st_dev,stage.lstat().st_ino)!=(info.st_dev,info.st_ino):raise Refused('Resolution stage changed')
+        stage.unlink()
+    got,_,_=read_local_record(marker)
+    if got!=resolution:raise Refused('Local resolution readback differs')
+    sync_local_directory(folder)
+
+
+def reconcile_local_debt(execution, step=None, resolution_write=None):
+    require_local_user()
+    if not re.fullmatch('[0-9a-f]{32}',execution):raise Refused('Exact local execution identity required')
+    step=step or (lambda _name:None)  # Per-call inert fault seam; CLI has no bypass.
+    root=Path.home()/'.sirsi/evidence/maat-runs'
+    lock=os.open(root/'.local-cpu.lock',os.O_RDWR|os.O_NOFOLLOW|os.O_NONBLOCK)
+    try:
+        import fcntl
+        lock_info=os.fstat(lock)
+        if not stat.S_ISREG(lock_info.st_mode) or lock_info.st_uid!=os.getuid() or stat.S_IMODE(lock_info.st_mode)!=0o600 or lock_info.st_nlink!=1:raise Refused('Local lock custody differs')
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        fence=os.read(lock,128)
+        marker=root/execution/'cleanup-reconciled.json'
+        if fence!=(execution+'\n').encode() and not (fence==b'' and os.path.lexists(marker)):
+            raise Refused('Local execution fence identity differs')
+        path=root/'.local-cpu.debt.json'
+        archive=root/('.local-cpu.resolved-'+execution+'.json')
+        active=os.path.lexists(path)
+        if active:
+            source=path
+        elif os.path.lexists(archive):
+            source=archive
+        else:
+            # This fallback is protocol evidence, not "file absent => never ran".
+            # The release byte is written only after running.json is committed.
+            source=root/execution/'running.json'
+            if not os.path.lexists(source):source=root/execution/'intent.json'
+        debt,st,source_hash=read_local_record(source,max_links=2 if active else 1)
+        if st.st_nlink==2:
+            named=archive.lstat()
+            if (named.st_dev,named.st_ino)!=(st.st_dev,st.st_ino):raise Refused('Unrecognized link to local debt')
+        fallback=debt.get('spawn_protocol')=='pipe-after-durable-running-v1'
+        if fallback:
+            if debt.get('scope')!='local' or debt.get('uid')!=os.getuid() or debt.get('execution')!=execution:raise Refused('Local phase identity differs')
+            if debt.get('status')=='admitted':
+                outcome='payload_not_released_by_protocol'
+            elif debt.get('status')=='running' and type(debt.get('pid')) is int:
+                if local_group_snapshot(debt['pid']):raise Refused('Original group remains; no signal or replay')
+                outcome='released_group_now_absent'
+            else:raise Refused('Local phase cannot resolve this fence')
+        else:
+            if debt.get('schema')!=LOCAL_RECEIPT_SCHEMA or debt.get('uid')!=os.getuid() or debt.get('execution')!=execution or type(debt.get('pid')) is not int:raise Refused('Local debt identity differs')
+            if local_group_snapshot(debt['pid']):raise Refused('Original group is not proven absent; no signal or replay')
+            outcome='released_group_now_absent'
+        resolution=dict(schema=LOCAL_RECEIPT_SCHEMA,execution=execution,uid=os.getuid(),source_sha256=source_hash,resolution=outcome)
+        publish_local_resolution(root/execution,resolution,write=resolution_write)
+        step('marker_committed')
+        if active:
+            if (path.lstat().st_dev,path.lstat().st_ino)!=(st.st_dev,st.st_ino):raise Refused('Local debt changed before resolution')
+            step('before_archive')
+            if os.path.lexists(archive):
+                archived=archive.lstat()
+                if (archived.st_dev,archived.st_ino)!=(st.st_dev,st.st_ino):raise Refused('Local debt archive conflicts')
+            else:os.link(path,archive,follow_symlinks=False)
+            sync_local_directory(root)
+            step('archive_linked')
+            step('before_debt_unlink')
+            if (path.lstat().st_dev,path.lstat().st_ino)!=(st.st_dev,st.st_ino):raise Refused('Local debt replaced before archive completion')
+            path.unlink();sync_local_directory(root)
+            step('debt_unlinked')
+        step('before_fence_clear')
+        os.ftruncate(lock,0)
+        step('fence_cleared')
+        os.fsync(lock);sync_local_directory(root)
+    finally:os.close(lock)
+
+
+def supervise_local(command, timeout, record, folder, persist):
+    """Existing foreground lifecycle with an explicit per-user local CPU lock.
+
+    No reservation ledger, Ra thread, pod grant, lease cache or transport fallback.
+    This is cooperative CPU work, not permission for a model or fleet operation.
+    """
+    import fcntl
+
+    parent_fd = lock_fd = None
+    child = None
+    birth = None
+    fence_written = False
+    gate_read = gate_write = None
+    code = 78
+    try:
+        require_local_user()
+        require_job_safe_command(command)
+        parent_fd = os.open(folder.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        parent = os.fstat(parent_fd)
+        if parent.st_uid != os.getuid() or parent.st_mode & 0o022:
+            raise Refused('Local execution evidence parent must be owned and not writable by another user/group')
+        lock_fd = os.open('.local-cpu.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600, dir_fd=parent_fd)
+        lock = os.fstat(lock_fd)
+        if (not stat.S_ISREG(lock.st_mode) or lock.st_uid != os.getuid()
+                or stat.S_IMODE(lock.st_mode) != 0o600 or lock.st_nlink != 1):
+            raise Refused('Local CPU lock metadata is not private, regular and singly linked')
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Refused('Another same-user local CPU job is active; no fabric booking was requested')
+        if os.path.lexists(folder.parent/'.local-cpu.debt.json'):
+            raise Refused('Local cleanup debt retained; reconcile the exact execution with --reconcile-local, never replay the job')
+        if os.fstat(lock_fd).st_size:
+            raise Refused('A retained local execution fence requires exact reconciliation; no absence-only reset')
+        named = os.stat('.local-cpu.lock', dir_fd=parent_fd, follow_symlinks=False)
+        current_parent = os.stat(folder.parent, follow_symlinks=False)
+        if ((named.st_dev, named.st_ino) != (lock.st_dev, lock.st_ino)
+                or (current_parent.st_dev, current_parent.st_ino) != (parent.st_dev, parent.st_ino)):
+            raise Refused('Local CPU lock or evidence root changed before admission')
+        os.fsync(parent_fd)
+        record.update(scope='local', authority='local-user-process-lock', uid=os.getuid(),
+                      resource='local-user-cpu', cpu_cores=1, borrowed=False,
+                      local_lock=dict(device=lock.st_dev, inode=lock.st_ino),
+                      supervisor_pid=os.getpid(), execution_timeout_sec=timeout,
+                      status='admitted', fabric_delivery='not_requested')
+        record.update(execution=folder.name,spawn_protocol='pipe-after-durable-running-v1')
+        persist()  # Typed, durable recovery witness BEFORE any durable refusal fence.
+        fence_written = True
+        os.write(lock_fd,(folder.name+'\n').encode())
+        os.fsync(lock_fd)  # Pre-spawn durable refusal fence, even if later debt write fails.
+        env = os.environ.copy()
+        # Never borrow a parent's native/fabric admission as this job's authority.
+        env.pop('SIRSI_MAAT_EXECUTION_RECEIPT', None)
+        env.pop('SIRSI_MAAT_LOCAL_EXECUTION_RECEIPT', None)
+        if tier1_candidate(command):
+            _, birth = process_identity(os.getpid())
+            now = dt.datetime.now(dt.timezone.utc)
+            fact = dict(schema=LOCAL_RECEIPT_SCHEMA, scope='local', uid=os.getuid(),
+                        supervisor_pid=os.getpid(), supervisor_start=birth,
+                        argv_sha256=record['argv_sha256'],
+                        started_at=now.isoformat(), deadline=(now+dt.timedelta(seconds=timeout)).isoformat(),
+                        cpu_cores=1)
+            receipt = folder/'local-execution.json'
+            fd = os.open(receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, 'w') as output:
+                json.dump(fact, output); output.flush(); os.fsync(output.fileno())
+            directory = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+            env['SIRSI_MAAT_LOCAL_EXECUTION_RECEIPT'] = str(receipt)
+        for key in ('GOMAXPROCS', 'OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS',
+                    'VECLIB_MAXIMUM_THREADS', 'NUMEXPR_NUM_THREADS', 'BLIS_NUM_THREADS'):
+            env[key] = '1'
+        # The child retains this same kernel lock if the supervisor crashes.
+        # A cooperative child/descendant exiting releases it; no timer unlock.
+        gate_read,gate_write=os.pipe()
+        launcher=[sys.executable,str(Path(__file__).resolve()),'--owned-local-child',str(gate_read),*command]
+        child = subprocess.Popen(launcher, start_new_session=True, env=env, pass_fds=(lock_fd,gate_read))
+        os.close(gate_read);gate_read=None
+        parent,birth=process_identity(child.pid)
+        if parent!=os.getpid():raise Refused('Local child parent differs')
+        local_bind_owned_child(child,birth)
+        owned=local_owned_identity(child)
+        record.update(pid=child.pid, child_start=birth, child_uid=owned.uid,
+                      child_real_uid=owned.real_uid, child_group=owned.group,status='running')
+        persist()
+        release_local_child(gate_write)
+        os.close(gate_write);gate_write=None
+        code = local_wait_terminal(child,timeout)
+        record['child_exit_code'] = code
+        record['status'] = 'success' if code == 0 else 'child_failed'
+    except subprocess.TimeoutExpired:
+        record.update(status='refused_or_stopped', reason='Local execution timeout; no remote lease or delivery was inferred')
+        code = 78
+    except (Exception, KeyboardInterrupt) as error:
+        record.update(status='refused_or_stopped', reason=str(error))
+        if isinstance(error,LocalWaitRefused):record['local_wait_observation']=error.observation
+        code = 78
+    finally:
+        if child is not None:
+            try:
+                local_stop_owned(child,birth)
+            except Exception as error:
+                record['cleanup_debt'] = 'Local child group cleanup unconfirmed: ' + str(error)
+                if isinstance(error,LocalWaitRefused):record['cleanup_wait_observation']=error.observation
+                try:
+                    retain_local_debt(folder.parent,folder,child,birth)
+                except Exception as debt_error:
+                    record['cleanup_debt'] += '; durable fence unconfirmed: '+str(debt_error)
+                code = 78
+        if fence_written and not record.get('cleanup_debt'):
+            try:
+                os.ftruncate(lock_fd,0)
+                os.fsync(lock_fd)  # Only an unspawned job or verified quiescent group frees admission.
+            except OSError as error:
+                record['cleanup_debt']='Local completion fence persistence unconfirmed: '+str(error)
+                code=78
+        for fd in (gate_read, gate_write, lock_fd, parent_fd):
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError as error:
+                    record['cleanup_debt'] = 'Local descriptor close unconfirmed: ' + str(error)
+                    code = 78
+        if record.get('cleanup_debt'):
+            record['status'] = 'refused_or_stopped'
+        record['exit_code'] = code
+        persist()
+    return code
 
 
 def execution_regime(cpu_cores=None, requested=None):
@@ -163,6 +782,26 @@ def valid(row, resource, agent, work, cpu_cores=None, regime=None):
         return False
 
 
+CONTROL_DENIAL_RE = re.compile(r'(?i)\b(401|403|unauthori[sz]ed|forbidden|denied|revoked|released|expired|scope|mismatch)\b')
+
+
+def registration_transport_cause(error):
+    """Retain closed diagnostic classes, never arbitrary credential-bearing stderr."""
+    detail = str(error)
+    causes = []
+    for status in ('502', '503', '504'):
+        if re.search(r'\bHTTP ' + status + r'\b', detail):
+            causes.append('http_' + status)
+    for marker, cause in (
+            ('TLS handshake timeout', 'tls_handshake_timeout'),
+            ('OUTCOME UNKNOWN', 'relay_outcome_unknown'),
+            ('prune lost lifecycle fence', 'prune_lifecycle_fence'),
+            ('timed out', 'control_timeout')):
+        if marker in detail:
+            causes.append(cause)
+    return ','.join(causes) or 'transient_transport'
+
+
 class Native:
     def __init__(self):
         self.cli = str(Path.home() / '.local/bin/sirsi')
@@ -187,11 +826,16 @@ class Native:
             row = self.call('thread', 'register', '--agent', agent, '--surface', 'worker', '--thread', identity,
                             '--anchor-pid', str(os.getpid()), '--repo', os.getcwd(),
                             '--json', timeout=30)
-        except TransientTransport:
+        except TransientTransport as initial:
             # Retain the requested identity and resolve that exact registration;
             # never create another executor to discover an uncertain outcome.
             self.executor_thread = identity
-            row = self.registration_observation(identity)
+            try:
+                row = self.registration_observation(identity, pending_registration=True)
+            except Refused as observed:
+                raise Refused('Initial registration outcome uncertain (' +
+                              registration_transport_cause(initial) +
+                              '); exact-ID observation failed: ' + str(observed)) from initial
         if (not isinstance(row, dict) or row.get('agent_id') != agent or
                 row.get('pid') != os.getpid() or row.get('status') != 'active' or
                 row.get('thread_id') != identity):
@@ -228,7 +872,7 @@ class Native:
         except subprocess.CalledProcessError as error:
             detail = (error.stderr or '')[-1600:]
             # Denial takes precedence over transport text; unknown errors refuse.
-            denied = re.search(r'(?i)\b(401|403|unauthori[sz]ed|forbidden|denied|revoked|released|expired|scope|mismatch)\b', detail)
+            denied = CONTROL_DENIAL_RE.search(detail)
             transient = re.search(r'(?i)(\bHTTP (502|503|504)\b|TLS handshake timeout|relay[^\n]*OUTCOME UNKNOWN)', detail)
             # RegisterThread saves its own row before opportunistic terminal
             # pruning. A lost prune CAS can therefore report failure AFTER our
@@ -241,7 +885,7 @@ class Native:
             raise Refused('Control call '+str(args[:2])+' failed: '+detail) from error
         return (json.loads(response.stdout) if response.stdout.strip() else None) if json_result else response.stdout
 
-    def registration_observation(self, thread):
+    def registration_observation(self, thread, *, pending_registration=False):
         """Bound registration transport retries; no compute permission is created."""
         prior_deadline = self.deadline
         self.deadline = min(prior_deadline, time.monotonic() + 120) if prior_deadline is not None else time.monotonic() + 120
@@ -252,7 +896,19 @@ class Native:
                     raise TransientTransport('Registration observation recovery budget exhausted')
                 try:
                     return self.call('thread', 'heartbeat', '--thread', thread, '--json', timeout=30)
-                except TransientTransport:
+                except Refused as error:
+                    # Only a newly submitted, outcome-unknown registration can
+                    # still arrive after its first exact-ID observation. Never
+                    # retry Register, and never revive a terminal/mismatched row.
+                    detail = re.sub(r'\x1b\[[0-9;]*m', '', str(error)).strip()
+                    missing = ('thread "' + thread +
+                               '" not registered: heartbeat registration unavailable')
+                    pending = (pending_registration and
+                               detail.startswith("Control call ('thread', 'heartbeat') failed:") and
+                               detail.endswith(missing) and
+                               not CONTROL_DENIAL_RE.search(detail))
+                    if not isinstance(error, TransientTransport) and not pending:
+                        raise
                     remaining = self.deadline - time.monotonic()
                     if remaining <= 0:
                         raise
@@ -307,15 +963,16 @@ class Native:
     def lookup(self, resource):
         if self.owned_admission:
             # Read-only exact-ID recovery: never replay an uncertain heartbeat
-            # just to discover whether it succeeded. Status includes terminal rows.
-            rows = self.call('maat', 'status', resource, '--json')
-            if not isinstance(rows, list):
+            # just to discover whether it succeeded. The exact-ID query includes
+            # terminal rows and must return only the requested reservation.
+            try:
+                rows = self.call('maat', 'status', '--id', self.owned_admission, '--json')
+            except json.JSONDecodeError as error:
+                raise Refused('Reservation readback is malformed') from error
+            if (not isinstance(rows, list) or len(rows) != 1 or
+                    not isinstance(rows[0], dict) or rows[0].get('id') != self.owned_admission):
                 raise Refused('Reservation readback is malformed')
-            matches = [row for row in rows if isinstance(row, dict) and
-                       row.get('id') == self.owned_admission]
-            if len(matches) != 1:
-                raise Refused('Exact admission missing or duplicated')
-            return matches[0]
+            return rows[0]
         return self.call('maat', 'who-is-on', resource, '--json')
 
     def reserve(self, resource, agent, work):
@@ -472,7 +1129,11 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
         # Ask the atomic scheduler for this executor's own exact decision.
         fresh_executor = isinstance(backend, Native) and backend.executor_thread is not None
         row = None if fresh_executor else backend.lookup(resource)
-        if fresh_executor or regime == 'quiet' or row is None or (cpu_cores and not valid(row, resource, agent, work, cpu_cores, regime)):
+        # A loaded caller without a new executor must also ask the scheduler
+        # when its lookup names another grant. A foreign CPU row is not a
+        # scheduler denial, and must never be borrowed as model admission.
+        if (fresh_executor or regime == 'quiet' or row is None or
+                ((cpu_cores or regime == 'loaded') and not valid(row, resource, agent, work, cpu_cores, regime))):
             reservation_requested = True
             confirmed_at = time.monotonic()
             reply = backend.reserve(resource, agent, work)
@@ -681,7 +1342,10 @@ def supervise_iterations(command, resource, agent, thread, work, timeout, backen
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--work', required=True)
+    parser.add_argument('--scope', choices=('auto', 'fabric', 'local'), default='auto',
+                        help='Auto keeps qualified Tier1 CLI operations local; other work uses fabric. Explicit local is same-user CPU-floor only')
+    parser.add_argument('--reconcile-local',help='Read-only kernel outcome check for one exact local cleanup debt; no replay or signal')
+    parser.add_argument('--work')
     parser.add_argument('--agent', default=os.environ.get('SIRSI_AGENT_ID'))
     parser.add_argument('--thread', default=os.environ.get('SIRSI_THREAD_ID'))
     parser.add_argument('--register-executor', action='store_true',
@@ -699,8 +1363,12 @@ def main():
                         help='Default build shares the machine; loaded/model and quiet measurement must be explicit; quiet requires a fresh full-share native executor')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    if args.reconcile_local:
+        if args.command or args.register_executor or args.scope=='fabric':parser.error('Local debt reconciliation does not accept a payload or fabric operation')
+        reconcile_local_debt(args.reconcile_local)
+        return 0
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
-    if not command or not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', args.work) or not 1 <= args.timeout <= 7200:
+    if not command or not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', args.work or '') or not 1 <= args.timeout <= 7200:
         parser.error('Supply a bounded timeout, simple work identity and foreground command after --')
     if args.cpu_cores is not None and not 1 <= args.cpu_cores <= 64:
         parser.error('CPU build mask must be between 1 and 64')
@@ -709,6 +1377,15 @@ def main():
         args.cpu_cores = execution_cores(args.cpu_cores, args.regime)
     except Refused as error:
         parser.error(str(error))
+    try:
+        args.scope = select_scope(args, command, regime)
+    except Refused as error:
+        parser.error(str(error))
+    if args.scope == 'local':
+        try:
+            local_scope_options(args, regime)
+        except Refused as error:
+            parser.error(str(error))
     if regime == 'quiet' and not args.register_executor:
         parser.error('Quiet qualification requires --register-executor and a fresh owned reservation')
     if not 1 <= args.iterations <= 1000 or not 0 <= args.interval <= 3600:
@@ -718,7 +1395,7 @@ def main():
     if args.job_timeout is not None and not 1 <= args.job_timeout <= 86400:
         parser.error('Job timeout must be 1..86400 seconds')
     # No caller-set host or admission exemption; host is derived locally.
-    resource = local_resource()
+    resource = 'local-user-cpu' if args.scope == 'local' else local_resource()
     folder = Path.home()/'.sirsi/evidence/maat-runs'/uuid.uuid4().hex
     folder.mkdir(parents=True, mode=0o700)
     record = {'status':'pending', 'resource':resource, 'work':args.work,
@@ -727,17 +1404,27 @@ def main():
         raise InterruptedError('Supervisor interrupted')
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
-    target = folder/'terminal.json'
+    target = folder/('pending.json' if args.scope == 'local' else 'terminal.json')
     fd = os.open(target, os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'w') as output:
         json.dump(record, output); output.flush(); os.fsync(output.fileno())
+    def persist():
+        if args.scope == 'local':
+            local_transition(folder, record)
+            return
+        with target.open('w') as output:
+            json.dump(record, output, indent=2); output.flush(); os.fsync(output.fileno())
+    if args.scope == 'local':
+        record.update(scope='local', authority='local-user-process-lock', uid=os.getuid(),
+                      fabric_delivery='not_requested')
+        try:
+            return supervise_local(command, args.timeout, record, folder, persist)
+        finally:
+            print('Ma\'at local execution evidence: '+str(folder), file=sys.stderr)
     backend = Native()
     backend.execution_receipt_root = folder
     backend.cpu_cores = args.cpu_cores
     backend.requested_regime = regime
-    def persist():
-        with target.open('w') as output:
-            json.dump(record, output, indent=2); output.flush(); os.fsync(output.fileno())
     code = 78
     try:
         require_job_safe_command(command)
@@ -790,6 +1477,8 @@ def check_tool_stop(payload):
 
 
 if __name__ == '__main__':
+    if len(sys.argv)>3 and sys.argv[1]=='--owned-local-child':
+        sys.exit(owned_local_child(int(sys.argv[2]),sys.argv[3:]))
     if sys.argv[1:] == ['--check-stop-command']:
         try:
             raw = sys.stdin.read(65537)

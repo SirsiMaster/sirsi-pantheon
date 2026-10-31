@@ -1,5 +1,18 @@
 # PANTHEON_RULES.md
 
+## Canonical code-signing authority
+
+For every shipped macOS binary, app, DMG or PKG, read the universal Stack Lab
+[Sirsi signing reference](https://github.com/SirsiMaster/sirsi-stacklab/blob/main/canon/signing/SIRSI_SIGNING.md)
+and its `signing-registry-v1.json`. Team9D382WV988 and the established delegated
+`sirsi-sign`/qualified release-workflow route are authority; old provisioning
+prose is not a missing-credential diagnosis. SSA owns this release's signing and
+publication execution. Retain identity, notary ID/status, Gatekeeper and exact
+artifact receipts. Never export, print, copy or create private keys, certificates
+or passwords, or duplicate a tag/publisher. Source acceptance is not release
+or installed-runtime certification. See the PT wing's
+`docs/stacklab/pantheon-pt/canon/CERTIFICATION.md`.
+
 ## Sirsi Portfolio Manifesto
 
 Before non-trivial work, read `$HOME/Development/SIRSI_MANIFESTO.md` (workspace-root-relative;

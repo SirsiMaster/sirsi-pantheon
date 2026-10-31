@@ -6,6 +6,954 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.151] — 2026-10-31
+
+- The wake-consumer reload regression now waits for the same controller thread's
+  capability and answer-role update after the old child exits. Its inert child
+  hold also demonstrates that the prior fixed-delay assertion can observe the
+  old grants before the required join and reload have happened.
+
+- Refs: `PANTHEON_RULES.md` A27, `docs/ADR-022-CTR-OS-TRUTH-LIVENESS.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/pantheon-pt/canon/TRACEABILITY_MATRIX.md`.
+
+- Pass absolute app paths from the release workflow and both paired Make targets to PKG inventory, satisfying its existing absolute-path contract without changing no-follow checks. The workflow records the selected pre-sign receipt path in `GITHUB_ENV` and includes that exact original file in its always-uploaded evidence; a selected path without a created receipt remains missing and is not fabricated. Inert workflow-payload and private-space Make fixtures check receipt lineage, argv/order, and relative-path refusal under Bash 3.2; the strict release-preflight workflow provenance pin matches the final workflow bytes.
+
+- Refs: `.github/workflows/release.yml`, `Makefile`, `scripts/build-pkg.sh`, `scripts/test_artifact_modes.py`, `scripts/PACKAGING.md`, `docs/ADR-066-STACK-LAB-WING-AUTHORITY-ORIGIN-IS-TRUTH.md`, `docs/ADR-015-DEITY-HIERARCHY.md`
+
+- Preserve complete Ma’at diagnostic names in the native finding detail list by wrapping long names across lines; values and selectable text remain intact.
+
+- Refs: `macapp/Sources/SirsiMenubar/Views.swift`, `docs/design/PANTHEON_NATIVE_WORKSPACE.md`
+
+- Carry forward the unshipped source corrections prepared for 0.24.148, 0.24.149 and 0.24.150. Their immutable failed-attempt history remains below; none completed the commercial DMG/PKG pair, cask publication or client rollout.
+
+- Retain Ma’at exact-case lookup and readable preview errors, lifecycle observation and neutral calibration labels. Adopt the exact-reservation admission runner only after its compatible installed CLI.
+
+- Retain explicit native-Apollo-disabled package composition, shared pre-sign digest binding, checked Bash 3.2 receipt reading, and inventory fixtures that remain correct under a private umask.
+
+- Retain per-Codex-thread registration, bounded Fabric cancellation, attended-lane availability and wake/scoring refresh corrections, plus the native Stack Lab GitHub CLI lookup. Full installed workflow and product acceptance remain separately evidenced.
+
+## [0.24.150] — 2026-10-31 — failed/unpublished
+
+The DMG was signed, notarized and stapled but retained privately after PKG preparation rejected a relative canonical input path. No complete GitHub release, PKG, Homebrew cask update or installed-client rollout was published. All unshipped changes carry forward into 0.24.151.
+
+- test(core): make Apollo inventory fixture modes umask-independent
+
+- Set explicit modes on the generated signature directory, CodeResources file,
+  and Apollo profile in the two positive inventory fixtures. A private caller
+  umask can no longer turn these fixtures into unintended negative cases; product
+  mode validation and all existing assertions remain unchanged.
+
+- Refs: cmd/sirsi-package-inventory/main_test.go;
+  internal/packageinventory/inventory_test.go; scripts/artifact_modes.py;
+  scripts/PACKAGING.md; ADR-032.
+
+- Carry forward the changes prepared for 0.24.148 and 0.24.149. Both publication
+  attempts failed before commercial packages were published; their historical
+  entries remain marked failed/unpublished. Source preparation and development
+  fixtures do not establish commercial signing, installation, or runtime certification.
+
+- Ma’at retains the exact-case preview, readable error presentation, source
+  lifecycle observation controls, and neutral labels for historical calibration.
+  The standalone launcher reads only its exact reservation ID after compatible
+  installed-client adoption.
+
+- Packaging retains explicit Apollo capability/profile binding and one frozen
+  receipt shared by the DMG and PKG. Official packages remain native-Apollo-disabled.
+
+- Router corrections retain per-Codex-thread session markers, bounded Fabric
+  cancellation, truthful attended-lane availability, and scoring/configuration
+  refresh before wake replacement. The compatible pruned-row guards do not
+  activate pruning or claim the remaining retained-key cure.
+
+- Native Stack Lab retains the corrected GitHub CLI lookup. Existing installed
+  app, model-profile, service-lifecycle, and full-product acceptance remain separate.
+
+- Refs: `scripts/PACKAGING.md`, `docs/stacklab/pantheon-pt/canon/CERTIFICATION.md`,
+  `docs/ADR-066-STACK-LAB-WING-AUTHORITY-ORIGIN-IS-TRUTH.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`.
+
+- fix(core): read frozen Apollo digest receipts safely in Bash 3.2
+
+- Both release builders now capture and check the receipt parser's exit status
+  before extracting the exact Info.plist and Apollo profile digest pair. The
+  existing two-key schema, lowercase SHA-256 validation, and disabled `absent`
+  profile value remain required; malformed, incomplete, unreadable, or
+  unparseable receipts stop before signing or PKG construction.
+  The inert Bash 3.2 regression exercises both complete reader blocks with valid
+  enabled/disabled receipts and space-containing paths, plus malformed and
+  invalid-profile-digest refusals. Its forced parser-failure control emits a
+  valid-looking pair before exiting nonzero, confirming status propagation.
+
+- Refs: scripts/PACKAGING.md; scripts/build-dmg.sh; scripts/build-pkg.sh;
+  scripts/test_artifact_modes.py; internal/maat/releasepreflight_test.go;
+  docs/evidence/APOLLO_NATIVE_PACKAGE_COMPOSITION_20261015.md; ADR-032.
+
+## [0.24.149] — 2026-10-30 — failed/unpublished
+
+The native package build failed while reading the frozen digest receipt. No commercial DMG/PKG, cask update, or installed-client rollout was published by this attempt. Its unshipped changes carry forward into the 0.24.150 candidate.
+
+- Corrected the existing Ma'at binary-drift preview to resolve one exact System One case across the complete bounded journal, refusing duplicates and malformed retained tails, and stripped ANSI styling from the preview error label. Added inert retained-history regressions; native error presentation reuses the existing ANSI stripper and still requires installed-app verification. No updater or host action was run.
+
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`, `cmd/sirsi/maatrepair_binary_drift.go`, `internal/maat/decisions.go`
+
+- Corrected the retained binary-drift case regression fixture to capture all four values returned by its existing setup helper. Production behavior and the missing-case, host, digest, and duplicate-evidence assertions are unchanged.
+
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `cmd/sirsi/maatrepair_binary_drift_test.go`
+
+- Pinned retained binary-drift case fixtures before their filler records and pinned recent duplicate rows after the fillers. The regressions now assert exact evidence counts in `Recent(100)` before checking full-history uniqueness and refusal.
+
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `cmd/sirsi/maatrepair_binary_drift_test.go`, `internal/maat/decisions.go`
+
+- Added the strict all-kind evidence lookup to the concurrent binary-drift journal fixture under its existing mutex, preserving the concurrent one-launch test's exact oracle. Production behavior is unchanged.
+
+- Tightened the retained binary-drift case lookup to count every exact evidence-reference match across kinds before checking the sole row's System One type. Added an old/new-window regression for a different-kind duplicate; the existing kind-specific lookup remains unchanged.
+
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`, `internal/maat/decisions.go`, `cmd/sirsi/maatrepair_binary_drift.go`
+
+- Require exact-ID CLI support for owned Ma’at reservation readback
+
+- The admitted-run supervisor now requests `maat status --id <full-id> --json`
+  for its own reservation and refuses malformed, missing, duplicated, or extra
+  rows. It does not fall back to a resource history query. Install the normal
+  signed CLI rollout with `status --id` support before using this recovery path.
+
+- Refs: `scripts/maat/README.md`, `docs/ADR-006-SELF-AWARE-RESOURCE-GOVERNANCE.md`
+
+- Initialize the nonempty Apollo inventory argument array with the capability
+  pair in both DMG and PKG builders, then append the profile pair only when a
+  profile is present. Remove the empty optional array that caused Bash 3.2
+  nounset to abort disabled-profile DMG builds.
+
+- Deliberately refresh Ma’at release-preflight provenance hashes for both
+  builder files; this keeps their exact reviewed Bash 3.2 argv correction
+  pinned without changing any signing, keychain, or contract checks.
+
+- Add a regression to the existing macOS artifact-contract suite. It extracts
+  the production argument blocks and first inventory commands from each
+  builder, runs them under `/bin/bash` 3.2 against an owned recording CLI, and
+  checks exact disabled/enabled argv. The enabled DMG fixture also checks only
+  its temporary copied profile bytes and mode. No build, package, signature,
+  mount, notarization, or model operation is performed by the fixture.
+
+- Refs: `contracts/stacklab/pantheon-release-artifact-recipe-v1.json`,
+  `scripts/PACKAGING.md`, `.github/workflows/ci.yml`.
+
+- Preserve existing internal `pruned` rows across compatible upserts and
+  physical deletes, reject callers that try to manufacture the reserved status,
+  and hide retained rows from ordinary reads while keeping authority and raw
+  migration visibility intact. G1 creates no fences and does not close the
+  absent-row stale-insert residual; no prune activation or G2 behavior is added.
+
+- Refs: `docs/ADR-057-OPERATIONAL-ENFORCEMENT-SUPERVISION.md`, `internal/routerstore/threads.go`
+
+- **Router wake loop:** a consumer that exited between the loop's scoring check and its dispatch check was replaced in the same tick. The replacement skipped the #636 no-progress backoff and ran under the old consumer configuration. Dispatch now waits until the previous exit has been scored and the configuration refreshed. This includes a consumer adopted from a restarted loop's durable marker, which previously started out already marked as scored. Found as a CI failure of `TestWakeConsumerReloadInvalidController`, with the adoption case from codex-pantheon's review.
+
+- Create the decision-journal mutation lock relative to its retained parent
+  descriptor with `O_CREAT|O_EXCL`; only `EEXIST` falls back to opening the
+  exact existing leaf without creation. Errors from either operation,
+  including `ENOENT`, propagate; there is no retry or pathname fallback.
+
+- Before locking, require the opened leaf to be an owned, private, singly-linked
+  regular file. Do not chmod or otherwise repair an invalid existing lock.
+
+- Add per-call injected-open tests for exact flags, create refusal, existing
+  lock fallback, open refusal, concurrent first creation, and symlink refusal;
+  add invalid hardlink and public-mode fixtures. Existing nonblocking flock
+  and descriptor ownership remain in place. Keep refusal messages compatible
+  with the repository's spelling check.
+
+- The Darwin concurrent first-create issue is documented by the
+  [primary Entire CLI source fix](https://github.com/entireio/cli/commit/9c18f31b23a62749b804718125b17c236420a28a).
+
+- Refs: `docs/stacklab/maat/canon/DESIGN.md`, `docs/stacklab/maat/canon/SECURITY_THREAT_MODEL.md`, ADR-009, PANTHEON_RULES.md A16.
+
+## [0.24.148] — 2026-10-30 — failed/unpublished
+
+The native package build failed on Bash 3.2 optional-array handling. No commercial DMG/PKG, cask update, or installed-client rollout was published by this attempt. Its unshipped changes carry forward into the 0.24.150 candidate.
+
+### Packaged-engine authority test seam
+
+- Keep the fixed codesign argument assertion in the shared Darwin/Linux leaf
+  package so Linux lint sees the same production command coverage as Darwin.
+- Remove the Darwin-test-only setup wrapper; exported setup entry points and the
+  packaged-engine verification checks remain unchanged.
+
+Refs: `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, `contracts/stacklab/maat-system-one-recipe-v1.json`, ADR-004
+
+### Ma’at recipe test inventory
+
+- Add the shared Darwin/Linux packaged-engine authority test to the lifecycle
+  recipe inventory: `internal/packagedengine/authority_unix_test.go`, including
+  `TestVerificationCommandUsesFixedInlineTeamRequirement`.
+
+Refs: `contracts/stacklab/maat-system-one-recipe-v1.json`, `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, ADR-004
+
+### Ma'at Stack Lab recipe oracle
+
+- Add the accepted `maat-adr070-source-lifecycle-observation` component to the
+  recipe test's exact expected ID set. The strict count, component equality,
+  referenced-path, and component-content checks remain in force.
+
+Refs: `contracts/stacklab/maat-system-one-recipe-v1.json`, `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, ADR-070
+
+### Ma’at lifecycle native placement
+
+- Restore the source-lifecycle control beside screen import in System One's
+  normal and history-error views, while preserving the existing Decisions
+  controls, history layout, and maintenance panel.
+- Label retained historical calibration rows as neutral legacy comparisons and
+  clarify that they are not verified source-profile qualification.
+
+Refs: `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, `contracts/stacklab/maat-system-one-recipe-v1.json`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, ADR-004
+
+### Ma’at lifecycle import and authority cleanup
+
+- Normalize imports in the four lifecycle files flagged by the protected lint
+  gate and remove the unused setup validation wrapper after confirming it has no
+  callers; validation remains in the shared packaged-engine leaf.
+
+Refs: `contracts/stacklab/maat-system-one-recipe-v1.json`, `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, ADR-004
+
+### Ma’at lifecycle qualification fixtures
+
+- Update inert receipt fixtures to include the strict empty `host_binding`
+  member alongside `boundary`; retain explicit negative checks for both keys.
+- Keep the selected-head acceptance fixture pinned to its exact canonical raw
+  receipt, and inventory the shared packaged-engine authority implementation
+  plus existing setup authority fixtures in the System One recipe.
+
+Refs: `contracts/stacklab/maat-system-one-recipe-v1.json`, `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, ADR-004
+
+### Ma’at installed lifecycle authority composition
+
+- Move the existing exact packaged-engine identity, no-follow inspection, and
+  bounded Developer-ID verification into a dependency-leaf package shared by
+  setup and Ma’at, breaking the Darwin import cycle without changing authority.
+- Keep setup compatibility entry points and the opaque Ma’at token minting
+  boundary; canonical paths, Team ID, executable identity checks, and the empty
+  empirical acceptance inventory remain unchanged.
+
+Refs: `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, ADR-004
+
+### Ma’at source lifecycle observation
+
+- Adds strict lifecycle receipt preview, bounded replay, and digest-bound
+  observation/owner-adoption records through the existing decision journal and
+  Casebook surfaces.
+- Preserves canonical router custody as unauthenticated attribution, keeps the
+  installed acceptance inventories empty, and leaves every model profile
+  unqualified with the deterministic floor unchanged.
+- This source slice does not complete ADR-070 calibration or enable a gate.
+
+Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, `contracts/maat/source-lifecycle-v1.json`, ADR-004
+
+### Other changes
+
+- Shorten the router staging traffic tag to meet Cloud Run's service-plus-tag limit while preserving the full 96-bit nonce; promotion remains separate.
+
+- Correct model-router traceability for existing source-level streaming, JSON-object and determinism paths. Production backend behavior and installed handoff remain unqualified; retained qualifications keep their original source identity.
+
+- Use Codex's current thread ID for its session marker, retaining the root session ID only as a legacy fallback and preserving existing identity and compare-and-swap checks. Add inert coverage for separate child threads sharing a root session.
+
+- Add an explicit router `stage.sh --stage-only` mode that retains the verified zero-traffic revision and tag for separate compatibility testing and operator-controlled promotion. It refuses first-service use and caller-supplied traffic or revision overrides.
+
+- Bind the release's expected Apollo capability and protected profile bytes across app signing and expanded-PKG verification. The DMG and paired PKG share a fresh per-build receipt; missing receipts and changed or insecure profile inputs fail closed. The official release remains native-Apollo-disabled. Refs: docs/evidence/APOLLO_NATIVE_PACKAGE_COMPOSITION_20261015.md; scripts/PACKAGING.md.
+
+- Propagate Fabric command cancellation through existing ledger/runtime reads and report bounded deadline attribution without read payloads. Limit independent per-agent runtime classification to four workers. A deadline may return while acquisition remains active; cancellation does not retract remote work already dispatched. Refs: docs/design/FABRIC_SURFACE_UNIFICATION.md; docs/user-guides/router-fabric.md.
+
+- An attended lane without a live session now reports needs-owner rather than incorrectly advertising a wakeable consumer (ADR-079 D4).
+
+- Router send and ping now report no live consumer when an attended or no-grant hold has no fresh attended session.
+
+- Add `maat status --id ID --json` using server-side exact MaatRead selection with a 64KiB response ceiling. Preserve whole-history status compatibility; unknown is not released, duplicate/oversized rows fail closed, old servers refuse without broad fallback. No admission or reservation mutation; delegated pod IDs refuse unsupported canonical fallback.
+
+- Keep terminal wake failures unresolved when a legacy completion contains only a whitespace-padded no-result marker. Filter in SQLite/PostgreSQL without returning result bodies. Refs: ADR-061; docs/stacklab/LANE_CURRENT_WAKE_FAILURES.md.
+
+- Resolve the existing GitHub CLI from the inherited PATH and standard macOS Homebrew locations for the Stack Lab fabric reader. A missing CLI now yields a typed unknown diagnostic and static native install guidance without exposing command stderr. Refs: ADR-009, ADR-066, `docs/stacklab/LOCAL_TIER1_AND_STACKLAB.md`.
+
+- Canonicalize temporary roots in Stack Lab executable-path fixtures so exact path assertions match macOS symlink resolution. Refs: ADR-009, ADR-066.
+
+- Fix staged router deploy rollback receipts to identify the sole 100% serving revision and refuse ambiguous or unreadable traffic state. Bind health checks and traffic shifts to a freshly named staged revision and refuse tag retargets. Refs: scripts/router-service/stage.sh.
+
+## [0.24.147] — 2026-10-30
+
+- Keep Ma'at proposals pinned to their exact catalog bytes while reading proposals from the current catalog or the trusted historical catalog at `68b1ee17ac49d4c087c54bd4860eee597181fd45`. Classify current versus historical only in the read projection, preserve original local bytes, and continue refusing unknown or malformed provenance. Historical proposals remain local evidence for current Stack Lab review and do not affect fabric matching or promotion authority.
+
+- Refs: `internal/maat/knownfail/proposal.go`; `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`; `contracts/stacklab/maat-system-one-recipe-v1.json`.
+
+- **ADR-062 G3 two-host contention on Postgres: PASS.** This repeats the 10-26 run with the test service on a disposable PostgreSQL 16 store (production roles and schema from v0.24.143). M1 and M5 raced 1,000 rounds at 204 ms (2× p99), and every round had exactly one winner. The negative control saw two winners in 50 of 50 rounds. Store readback shows 1,000 tasks leased exactly once. See `docs/evidence/ADR-062-G3-TWO-HOST-CONTENTION-PG-20261029.md`. Refs: ADR-062.
+
+- **G3 harness: serve logs no longer record the host's scratch path.** `run.sh` now rewrites the absolute run directory to `<run>` in every `*.serve.log` once the test servers have stopped. The 2026-10-26 raw logs stay as recorded, because they are pinned by `SHA256SUMS`. This addresses Mercury's non-blocking note on #1222. Refs: ADR-062.
+
+## [0.24.146] — 2026-10-29
+
+- Keep long Ma’at recovery, access guidance, Apollo and Stack Lab failures, and Osiris fallback content scrollable; size recovery actions to their wrapped labels and open the actual Stack Lab Doctor from its catalog route.
+
+- Include the native viewport regressions in the Stack Lab native-workspace and Ma’at recovery component recipes.
+
+- Keep synthetic CLI subprocess registrations independent of inherited Codex/Claude session aliases and explicit thread environment; test-only private canaries verify that registration does not rewrite unrelated fixture markers. Preserve explicit fixture inputs and existing production identity policy.
+
+- Reject new authenticated task claims with empty or mismatched caller thread
+  before consuming an attempt, and commit the session owner atomically with the
+  executable lease. Preserve existing release ownership and same-worker remint
+  fences; do not transfer old threadless leases to a newly registered caller.
+
+- Add read-only Ma'at retained-aggregate billing reporting with explicit unknown,
+  reported and delayed states. Preserve integer net cost and measured zero;
+  never invent available budget, credits or enforcement from absent export.
+  Strict JSON and timestamp fixtures reject ambiguous or malformed evidence.
+
+- Repair panels open with a usable viewport before their results load. Primary and secondary result actions wrap their titles and consequences on content-sized surfaces, preserving confirmation and execution behavior.
+
+- Retained qualification records use the exact quoted multi-suite Swift test filter for reproduction.
+
+- Keep diagnostic repair actions fully readable at enlarged text sizes: their gold surface grows with the title and wrapping command, with dark high-contrast text instead of a clipped single-line native bezel.
+
+- Refs: docs/stacklab/pantheon-pt/canon/DESIGN.md; macapp/Tests/SirsiMenubarTests/DiagnosticRepairActionTests.swift.
+
+- Reconcile the provider-quota runbook with its integrated source and v0.24.143 ancestry. Preserve the October20 qualification checkpoint as history; do not infer loaded-controller adoption, provider recovery, or three-home synchronization from a package release.
+
+- Link the later completed protected Test job to all seven actual quota test passes and exact unchanged source/test blobs. Keep race/short qualification distinct from non-short or native-provider/runtime outcomes; no baseline rerun required.
+
+- Refs: ADR-061; docs/provider-quota-retry-hold.md
+
+- Persist a successfully observed canonical loss/change of pod authority in its existing private journal. Refuse new admission, renewal, live guard read and nonce-liveness replay after that observation, including an offline reopen with the old finite cache. Preserve owned release/invalidation and reservation history/sequence; transport outages alone do not revoke a finite delegation. No credentials, listener, deployment or release authority is added. Refs: ADR-120, PANTHEON_RULES A16/A35.
+
+- Reconcile ADR-120's command, journal, canonical state and native mTLS descriptions with implemented source while retaining Proposed status and the unqualified automatic-renewal/offline acceptance boundaries. Runtime integration, independent review, normal publication and three-home synchronization remain open.
+
+- Replace obsolete missing-Git publication status in the existing Ma'at failure-memory contract with the pinned published-source fact. Preserve unverified independent/runtime enforcement and current human-mirror/Workspace synchronization obligations; do not create a competing contract or mirror.
+
+- Observe local Darwin process groups through errno-checked libproc calls with
+  same-executor positive controls and zombie-aware metadata, instead of spawning
+  sandbox-denied ps during cleanup. Preserve uncertainty/debt and exact owned
+  child signaling/reap fences; no missing read is treated as absence.
+
+- Refuse CCD reap/archive before mutations when initial process observation fails, is partial/malformed or cannot establish a runner's session attribution. Preserve successful no-match behavior and existing archive grace/retention/live-session rules; do not treat process visibility failures as proof of absence.
+
+- Typed installed Apollo 2.2.6 Qwen loopback bridge for `apollo chat`, with explicit
+  model/precision/mode binding, pinned app bytes, bounded response identity checks,
+  and no proxy, redirect, retry or fallback. Catalog exposes the installed binding
+  separately without changing Gemma or the signed native fleet route. Source
+  fixtures do not establish signed adoption or actual installed-command proof.
+
+- Refs: docs/user-guides/apollo-installed-qwen.md; PANTHEON_RULES.md A16/A21/A35;
+  docs/evidence/APOLLO_NATIVE_PACKAGE_COMPOSITION_20261015.md; Rail103939.
+
+- **ADR-062 G3 two-host contention: PASS.** M1 and M5 raced 1,000 rounds of `sirsi router task claim-id` against a test router service with a 312 ms (2× p99) injected delay, and every round had exactly one winner. The negative control, with separate ledgers, saw two winners in 50 of 50 rounds. The harness and raw per-round data are under `docs/evidence/ADR-062-G3-TWO-HOST-CONTENTION-20261026/`. Limit: the test service used SQLite, not Postgres. Refs: ADR-062.
+
+- **ADR-062 G7 cross-host consumers: PASS.** A headless Claude worker on the M1 (`claude-io`) and a headless codex worker on the M5 (`codex-homebrew`) each woke on their own and closed an item in the same minute (20:34:40Z and 20:34:53Z). The hosts are swapped relative to G7's original wording, because no codex lane runs on the M1 today. See `docs/evidence/ADR-062-G7-CROSS-HOST-CONSUMERS-20261026.md`. Refs: ADR-062.
+
+## [0.24.145] — 2026-10-29
+
+- Keep provider-session and surface identity when reusing a shared runtime PID,
+  and reject pinned-thread rebinding to another session. Ambiguous native Codex
+  aliases now fail attended registration before any registry or marker write;
+  they no longer silently fall back to a parent's PID-backed thread. Same-session
+  and legacy same-surface registrations remain idempotent. No audience check,
+  credential scope, compute admission or worker capability is relaxed.
+  Refs: `ra-maat-release-integration-20261023`, actual helper report
+  `20261029-202143-sirsi-software-admin-sirsi-software-admin-new-action-portfolio-original-recovery-own-helper-registrati`.
+
+Release preparation retains all prior changelog fragments and evidence. This entry does not assert signed publication, installed adoption or full operational completion.
+
+## [0.24.144] — 2026-10-29
+
+- Route typed Apollo CLI chat through the existing installed native bridge, retaining explicit provider/model selection and bounded response behavior.
+- Observe admitted Darwin process groups through native kernel inventory instead of depending on sandbox-blocked process-list commands; retain unknown states and exact cleanup custody.
+- Bind new authenticated task claims to their genuine same-agent session in the same transaction as the claim and wake acknowledgment. Refused or failed bindings do not acquire a lease; existing ownership and wire/schema contracts remain unchanged.
+- Persist canonical pod revocation and authority-loss observations as sticky local fences. A transport outage alone is not revocation; legacy journal readers fail closed. Deployment and delegated authority remain separately qualified.
+- Isolate provider tests from inherited production identity aliases without changing production session policy. Refuse CCD archive/reap actions when the initial process observation is incomplete or indeterminate.
+- Add read-only retained billing evidence reporting with explicit unknown/delayed states, measured integer amounts and no invented budget, credits, authentication or enforcement.
+- Reconcile the Ma’at contract's published-source status and quota-retry runbook with retained qualification while keeping unverified reading mirrors, installed adoption and full product acceptance explicit.
+
+Release preparation retains the original changelog fragments and all prior evidence. Signed package publication, compatible cloud promotion and actual loaded-client adoption require their own recorded results; this source entry does not assert them.
+
+## [0.24.143] — 2026-10-29
+
+- `sirsi router ping` no longer reports a lane whose background loop is quarantined as "needs a human". That verdict is reached only when no attended session is heartbeat-fresh, so it now says the background loop is quarantined and no attended session is registered. A working session whose thread was reaped (a resumed session with a new PID) must re-register to be seen.
+
+- A Claude/Codex session that resumes with a new process no longer drops off the router. The reaper used to retire an attended session's thread as soon as its old PID died, so the resumed session's heartbeats were refused and re-registering minted a second thread. Attended session-keyed threads now follow the 2-hour session lease (the same rule PID-less sessions already had). Re-registering with the same session ID renews the original thread. Workers keep the immediate OS-truth reap.
+
+## [0.24.142] — 2026-10-27
+
+- Registry: `rpa` / `RPA` now route to the existing attended ReprogramAnything lane `codex-sirsinexusapp` (callsign `RPA`), per the owner's direction to "register with the router as RPA". Identity, claims and consumer policy unchanged; no new worker.
+
+- **Readable native Mac workspace** — Increase body text to 15 pt, secondary text to 14 pt and supporting text to at least 12 pt. Add persisted 100–150% text sizing and native File, Edit, View, Window and Help menus, preserving the existing workspace, project and Apollo draft. Project selection remains cancellable from nested screens.
+
+- **Responsive Fabric reads** — Keep passive status reads from launching authentication probes, share overlapping default reads without duplicating transitions, cancel abandoned readers and reuse a validated snapshot already returned to the dashboard. Explicit authentication diagnostics remain available separately.
+
+- **Preserve Apollo planning intent** — Keep resource choices through navigation and telemetry views, revalidate current capacity on return, retain invalid intent for correction and fence canceled or stale plan completions.
+
+- **Truthful Ma’at assessment failures** — Retain child output and errors, avoid caching failed coverage runs and distinguish package progress from policy-module counts. Expand mail and service-cleanup regression coverage against the existing policy floors.
+
+- **Stack Lab source traceability** — Reconcile the native and Fabric process canon, refresh the exact module inventory and declare the RPA recipe peer without broadening runtime authority. Add a disposable hosted commercial-lifecycle qualification workflow; actual package, installed and lifecycle acceptance remains separately evidenced.
+
+- ADR-079 D1: `sirsi thread attended <agent>` (and the wake hold and worker deferral that share it) now credits a heartbeat-fresh interactive `claude`/`codex` session as attended. It previously also required a watch-loop process that ADR-065 retired, so no Claude lane could ever read as attended and a headless worker answered beside the live session. Stale, suspended, closed, worker and resident records still never count.
+
+## [0.24.141] — 2026-10-27
+
+- **Correct canonical deity metrics** — Ma’at Pulse counts literal canonical roster declarations in the selected source, including inline Isis, with bounded non-blocking input handling. This count does not claim runtime registration or availability.
+
+- Make each Fabric task count open its exact, snapshot-bound full-ledger selection, including separate blocked and stalled views and completed-task pages; preserve the selected bucket through next-page and refresh, reject changed/mismatched cursors, and keep message counts linked to the distinct inbox stream.
+
+- Align lane headers and numeric columns, keep lane state/count inspectors keyboard-operable, and focus the selected task list after an explicit drill-down without moving focus during background refresh.
+
+- Classify legacy relay retirement only after an independent kernel absence check and complete system job-list absence when Darwin's PID identity read returns EIO or ESRCH; preserve live, reused, inaccessible and indeterminate states.
+
+- Parse complete Darwin system inventories with loaded-inactive PID zero and the native `-`/`(pe)` status forms, while refusing duplicate labels, unknown rows and incomplete inventories; a selected label always remains loaded regardless of PID or status.
+
+- Require a complete, parseable system inventory containing the selected job before recording a retirement request or stopping the original service; invalid, unavailable or absent-job observations leave the original untouched.
+
+- Admit only clean retained legacy sources at the audited 0.24.129 and 0.24.137 revisions to this existing startup-gated kernel-absence recovery profile; the modern drain route remains independent and old remote outcomes remain unknown, not drained.
+
+- Native Ma'at history browsing now continues validated partial reads in a bounded burst, retains the latest accepted cursor on pause or cancellation, and leaves older-page navigation explicit.
+
+- Treat a journal's retained parent directory identity independently of its link count, so creating the canonical mutation lock or another sibling does not invalidate a frozen history prefix. Keep the journal leaf's singly-linked regular-file requirement and all parent identity checks.
+
+- Gemma worker preserves the typed lane-claim barrier and exits cleanly between joined work turns, rather than continuing its idle poll loop. Canonical thread-close failures now propagate. This source step does not add a native lifecycle controller or qualify a live handoff.
+
+- Add a typed SSA-only native Gemma worker plan/apply/recover source route. A durable lane barrier, joined worker-owned pause acknowledgment, kernel PID absence, exact loaded image/program/plist identity and single-use start intent replace generic stop/drained assertions. Broker and model processes are outside the closed profile. Unknown outcomes retain private controller debt. Native qualification and deployment remain separate.
+
+- Reconcile Pantheon Stack Lab canon with current native-product requirements, all-deity/module source inventory, process diagrams, replacement boundaries and criterion-to-proof certification. Preserve verified release evidence separately from final composed and installed acceptance; use established signing and mark changed reading copies stale until refreshed.
+
+- Memory liveness and Doctor alerts now label observed counters with their actual
+  UTC sampling window and GiB units. Liveness sizing copy distinguishes measured
+  MLX allocation from a model-ID weight estimate and states the applicable
+  KV-cache and OS-headroom formula. Session-candidate copy no longer asserts
+  Claude-session causality or directs reaping. Both surfaces require fresh
+  readings, exact owner/custody, and current-demand confirmation before supported
+  resolution at the workload's own idle boundary. Classification thresholds,
+  sizing formulas, admission, and runtime actions are unchanged.
+
+- Refs: `internal/liveness/livenesswatch.go`,
+  `internal/liveness/livenesswatch_test.go`, `internal/guard/deathspiral.go`,
+  `internal/guard/deathspiral_test.go`.
+
+- Ma'at history prefix verification now rejects physical EOF before the anchored
+  boundary, even if the inode is restored before draining. A verification
+  deadline with no verified cursor progress returns an error instead of an
+  unchanged continuation. Windows keeps the prior bounded reader, including its
+  append and cancellation semantics; frozen-prefix verification remains
+  Unix-scoped.
+
+- Align the Codex CompassPoint consumer prompt with the Claude dispatcher-binding
+  contract. Keep actual-session registration and router/task coordination in
+  standalone installed CLI calls outside the compute wrapper, and state that
+  Thoth/canon reads use standalone permitted source-read commands outside it. Use
+  the existing registered-executor Ma’at wrapper only for payload execution. The
+  native cross-host command, proxy, host-pin, and public-key-authentication facts
+  remain byte-identical; only “Local work” is narrowed to “Local payload work.”
+  No admission or service behavior changed.
+
+- **ADR-079 step 1 (Ra first): Ra's lane is now the interactive session.** The `ra` registry entry gains `attended: true`, sets `worker_answers: false` and wakes by `session-message`, matching `mercury`. While Ra's attended session holds the inbox, `attendedSessionOwnsInbox` stops dispatch, so the wake loop stops starting headless `claude --print` workers that answered Ra's mail alongside the live session. Registry data only: no lane is parked or booted out, and every other lane is unchanged.
+
+- **ADR-079 (PROPOSED, rev 2): wake lanes are the interactive sessions.** This records the owner directive of 2026-10-26. It names the three defects observed on Ra's lane that let its wake loop start headless workers beside its live attended session:
+  - the attended probe needs a live watcher process (thread-, predecessor-, or agent-keyed), and none was running for Ra's lane — per-lane watcher retirement under ADR-065 is gated separately and not a fleet-wide fact, so this is Ra's observed case, not a claim about every Claude session;
+  - Ra's registry entry has no `attended` fence;
+  - the consumer prompt defines a resident loop rather than a one-pass job.
+
+- It also sets out a staged, Ra-first rollout with a pre-registered test, including a close-session negative fixture for the `ConsumerCapable`/`armed` path that D1–D3 do not by themselves resolve. This is design only: no code or registry change is included.
+
+## [0.24.140] — 2026-10-27
+
+- Show clear Ma’at first-use readiness and a path to the existing journal-preservation repair. Verify its JSON receipt, preserve the original journal, and require a fresh inspection and separate initialization confirmation. Journal diagnostics avoid exposing invalid record contents; historical receipt recovery remains independent.
+- Correct relay maintenance group validation when the enrolled service group differs from the account’s primary group. Controller and successor use the same verified group without changing filesystem permissions. Installed successor adoption remains separately verified.
+- Return a single machine-readable committed receipt from `sirsi router send --json`, including the resolved recipient and message ID. A post-commit output failure retains the ID and warns against sending a duplicate.
+- Clarify the CompassPoint worker’s existing queue assignment and actual executor bootstrap instructions. Diagnostics identify when standalone coordination or executor registration is needed; existing role and admission policies remain in force.
+- Refresh the wake controller’s consumer declaration only after its child is joined and scored. Preserve controller identity and failure/quota holds; an invalid replacement withdraws consumer capability while retaining the lead’s independent answer grant. No active consumer is signaled.
+
+## [0.24.139] — 2026-10-26
+
+- Recognize the separately inspected 0.24.121 source revision in the existing protected legacy maintenance preview profile and bind the selected revision into the plan digest. This records source-profile support only; it does not perform a rollover or claim the legacy worker is drained or cancel-joined.
+
+- Declare the existing attended RPA Codex session as the metadata-only `codex-sirsinexusapp` lane; no worker, launch agent, or answer capability is configured. Refs: session `01a179d5-340d-7e72-962d-8b828ad7960e`; thread `thr-a74850a2ddb72c1e`.
+
+- Node status now probes process and loop liveness only when both stable machine IDs are present and equal. Foreign or unidentified loop-monitor lanes with pending work are shown as unverified from this node, not falsely armed or dead-stranded. Refs: `internal/router/nodestatus.go`; `internal/router/nodestatus_hostscope_test.go`.
+
+- Maat's create-only write helper now treats an explicit close attempt as consumed even when close reports an error, so deferred cleanup cannot close a potentially reused descriptor a second time. Refs: `internal/maat/memory.go`; `internal/maat/memory_create_or_verify_raw_test.go`.
+
+- Restore the previously qualified Gemma maintenance claim barrier on the current router APIs. Session-bound item claims and task claims share the same lane lock; existing lease renewal and settlement continue during a pause.
+
+- Apply that barrier to fresh task-resume leases while preserving inspection and idempotent replay of an existing lease. Maintenance pauses cannot silently become new recovery claims.
+
+- This source change does not activate a live maintenance pause or replace a running worker. Matching controller, service, and client deployment remains an explicit operational transaction.
+
+- Pass the bounded lane-maintenance controller context through its durable row lock and every SQL statement. Preserve existing ordinary claim semantics and durable owner/capability; cancellation never releases the maintenance pause. Add an isolated PostgreSQL held-lock fixture that requires deadline return before unlock, joins the caller on all exits and verifies unchanged custody and paused claims. The current implementation passed 20 isolated PostgreSQL tests normally and under race, the worker pause fixture in both modes, vet and lint. Live maintenance activation and worker rollout remain separate operational actions.
+
+- Close each joined pause/claim race iteration's fixture store before the next schema reset, retaining parent cleanup as an idempotent failure fallback instead of accumulating sixteen PostgreSQL pools. The fixture server connection cap and production pool/barrier behavior are unchanged.
+
+## [0.24.138] — 2026-10-26
+
+- Ma’at default-store bootstrap now uses exclusive lock creation and one bounded, identity-checked acquisition of an existing lock after a competing creation is observed. Both readers and initializers verify named-lock identity after flock before accessing the store. Deterministic fixtures cover failed-create appearance, unsafe leaves, replacement, disappearance, and refusal without creating again. The intermittent CI ENOENT's underlying kernel cause remains unproven; no existing store is reset or adopted. Refs: PR #1225 `TestDefaultStoreConcurrentInitializationCommitsExactlyOnce`; `internal/maat/memory_bootstrap_race_test.go`.
+
+- Bind the already-reviewed XCTest mock-request UUID exception to the exact PR1224 squash fingerprint. The literal is byte-identical to its reviewed predecessor; no file/rule/value wildcard, future-commit exception or credential change is introduced.
+
+- **`sirsi router task why` on an unknown task now reports "not found" instead of an HTTP 500.** `TaskEligibility` returned a plain error string, which the store service could not match to a known error, so it answered with a 500 server error. It now wraps `ErrNotFound`, so the client receives the named not-found error. Refs: ADR-062.
+
+- Canonicalize owned Ma’at test fixture roots on macOS before using them as HOME. Production no-follow path checks remain unchanged. A deterministic aliased-TMPDIR regression and the original failed cases pass in normal and race modes; restoring the old helper fails the regression.
+
+- Ask the atomic Ma’at scheduler for an explicit loaded request when the current lookup is not that caller’s valid admission, even when the caller uses its existing registered thread rather than a new executor. A foreign bounded CPU row no longer prevents the request from reaching the scheduler. Scheduler refusals, insufficient shares and foreign grants still prevent child execution; only the caller’s new grant is released.
+
+- Preserve the canonical Fabric host observation and overview headlines while retaining the explicit on-demand memory diagnostics from the integrated fixes. Source composition only; final tests and installed readback remain pending.
+
+- Normal supported Tier1 CLI requests gain local automatic routing with a verified
+  direct-child execution fact; fabric/privileged/model authority remains separate.
+  Local admission rejects elevation, pins child/group cleanup and retains exact
+  uncertainty fences, while create-only phase receipts preserve prior intent.
+  Stack Lab gains persisted off-default local preferences, closed provider-kind
+  selection, installed-recipe reads and a reachable native root; opening it no
+  longer automatically reads the fabric registry. Source-only pending qualification.
+
+- Correct local Stack Lab's release-recovery navigation to the existing
+  PantheonReleaseWorkspaceView, shared with the desktop and Control Center.
+  Preserve its engine, explicit navigation, labels and normal release workflow.
+  The c185 Swift compile failure is retained; its first13 qualified rows are
+  unchanged inputs, not a whole-run pass. Strict Swift and remaining gates pending.
+
+- Complete the source-screen fixture family with its required explicit empty
+  host_binding in CLI input, shared contract JSON and the native copyable
+  example. Preserve strict missing-key and foreign host-scope refusal cases.
+  Establish a real private initialized failure-memory store in the inert update
+  availability fixture and verify no pending update debt after unavailable
+  releases. Production admission and decoder authority are unchanged.
+
+- Honor the existing `router pull --json` flag with one canonical inbox-item array and `[]` for empty results. Keep the existing build filter and human output; machine-mode deferred warnings use stderr. Return reader/output errors. Source candidate with inert Cobra command fixtures; qualification and installed CLI verification remain pending.
+
+- Expose optional exact item id on router_claim through the existing ClaimItem
+  selector, preserving ClaimNext when omitted and the15-minute own-instance map.
+  Invalid supplied IDs/unknown keys refuse before RPC; exact refusal never claims
+  older or foreign work. No durable session-binding change or DC01 closure claim.
+
+- Normalize typed ErrNoWork only for omitted-ID ClaimNext to a friendly empty-inbox
+  reply without a session claim; exact unavailable items remain errors. Fixtures
+  use chronological ID prefixes matching the store’s ID ordering, so exact-target
+  selection is tested against an earlier eligible own item.
+
+- Bind the non-executing release source preflight to the current unified
+  app-update dispatch and typed retained-preflight, durable attempt, Installer
+  handoff and installed-readback recovery owner instead of removed help prose.
+  Add causal missing-control fixtures; source presence does not prove installed
+  update/rollback or call ordering. Complete the strict source-screen JSON
+  fixture with its required empty host_binding while preserving source/host
+  separation and all required-key refusal cases.
+
+- Compose qualified O2/O3, O7 producer/native recovery, private-engine summary and
+  explicit diagnostics, exact-item MCP frontend, router JSON and portable stock
+  prompt corrections onto published137. Preserve its Mercury factor, fonts and
+  all31 Ma'at recipe components and existing owner/receipt-reader seams.
+
+- Join the existing typed O7 attempt namespace to app-update inspection without
+  relaxing unknown/corrupt/prepared-WAL refusal; add source-only cross-owner
+  regressions. Preserve inherited native private-host/check/dedicated custody
+  coverage alongside correlated actual-Go request interop.
+
+- Replace obsolete O7 unrun/lost-ID canon claims with exact bounded Main evidence.
+  New integrated-head qualification, installed/export/full-O7 proof remain open;
+  O4 target-capability coverage is included below. No author test/build/runtime
+  or publication was performed.
+
+- Carry the complete qualified O4 exact-version whole-app rollback candidate,
+  signed-target recovery-capability checks and native data-only retained-attempt
+  recheck. Main qualified the donor's 11 bounded rows (124 Go named nodes per
+  normal/race mode, three native methods and Linux ARM64 compile header only).
+  This establishes tested target capability, not an actual installed rollback.
+  Preserve unknown handoff debt and never replay Installer automatically.
+
+- Periodic native memory reads now use `vitals --summary`, preserving capacity,
+  pressure and swap while avoiding process ranking and emitting `top: []`.
+  Explicit CLI vitals retains ranked evidence. The browser Host view offers an
+  on-demand Inspect memory read using the same ranked producer, with truthful
+  empty, retained/error and retry states, including when router data is unavailable.
+
+- Serialize native managed app update/rollback with the existing legacy Installer
+  and root-maintenance owner. Consume review before suspension, refuse stale
+  consent after another operation, and retain custody until canceled work joins.
+  Preserve separate memory recovery and receipts. Remove obsolete rollback view
+  cleanup references; add inert bidirectional overlap regressions.
+
+- Offer existing local memory initialization/recovery inside the native managed
+  app-update flow, retain the selected update/rollback through recovery, and
+  require verified store readback plus fresh confirmation before the canonical
+  request. Reuse engine-owned operation and memory models; no error-text parser,
+  store reset, automatic retry or Installer-success inference. Preserve the
+  separate labelled legacy app/helper recovery Installer fallback.
+
+- Stage diagnostic-result interruption fixtures at the real post-target,
+  pre-commit boundary. Require the exact injected error, canonical retained target
+  and governed prepared metadata before testing data-only recovery. This replaces
+  early malformed commit directories that strict WAL validation correctly refused
+  before target creation. Production constructors leave the private instance hook
+  nil; validation and write order remain unchanged.
+
+- Ma'at diagnostic request validation now reads flag presence from the executing
+  Cobra command, avoiding a command-initialization cycle. Explicit empty request
+  identities and incompatible operation selectors retain the same refusals before
+  observation or submission. Request wire formats and local memory policy are
+  unchanged.
+
+- Ma’at retains the safe cause class of an uncertain executor registration and
+  observes only its generated thread ID within the existing bounded recovery
+  deadline. Pending absence no longer discards the original cause or triggers
+  another registration. Denial, terminal/runtime mismatch and foreign identity
+  checks remain immediate; existing healthy execution leases are unchanged.
+
+- Route native diagnostic recording, including the dedicated fresh-screen action,
+  through the existing engine-owned canonical request prepare/record/read/resolve
+  flow. Retain uncertain request IDs, typed completed receipts and resolve-first
+  debt across refresh/navigation. Discover same-snapshot paginated history without
+  a128-row total cap; expose honest partial/restart/continue state. Source-only
+  consumer of accepted73d API, pending Main qualification and normal-window proof;
+  no installed/full-O7 or authority change claim.
+
+- Send the canonical `--record-request` flag from the native diagnostic adapter.
+  Make its inert command fixture use an independent literal flag table; preserve
+  existing invocation-count and once-consent assertions. Add literal argv checks
+  for all four request operations and bind native interop to actual Go-accepted
+  argv. Source-only correction; no test/build/installed execution claimed.
+
+- Ma’at history browsing now recognizes the canonical stale-snapshot refusal, keeps the visible page and query, disables the stale continuation, and offers an explicit restart without its cursor. Nonzero unknown errors, malformed responses, and timeouts remain distinct without displaying raw stderr. Partial history reports the rows and bytes examined by the bounded read. A complete all-history scan under concurrent journal appends remains unresolved.
+
+- Bind local diagnostic records to durable, once-consumed request UUIDs before
+  observation. Add exact read-only pending/completed lookup and confirmed,
+  writer-serialized request fencing/data-only reconciliation after lost replies;
+  never resend or infer safety from absence. Preserve historical uncorrelated
+  records and distinguish fenced-not-recorded from never-submitted outcomes.
+
+- Compose a versioned privacy-safe local-host binding with the existing Go/native
+  diagnostic consumers. Preserve original canonical finding identities for unknown
+  redacted checks without retaining raw check text. Historical observation-v1
+  bytes and strict legacy hostname matching remain unchanged. Native correlation
+  adapter/refresh integration and actual qualification remain separate work.
+
+- Bind confirmed local Ma'at triage recording to privacy-filtered selected status
+  provenance, full scoped failure-memory preflight/retained receipt and durable
+  record intent. Reuse journal append-once and exact strict readback; uncertain
+  delivery never automatically resends. Add data-only pending inspection and
+  reconciliation, keeping pure observation available with memory unknown reported
+  separately. Producer text, diagnostic paths, prompts and process arguments are
+  excluded from new retained/output payloads. Authorized export, other diagnostic
+  callers and installed/full O7 acceptance remain separate. Source fixtures only;
+  no tests or host operations were run by the author.
+
+- Clear a prior verified-record association when submitting a new confirmed local
+  observation. A later refusal or lost reply retains observation evidence without
+  inheriting the older record's success label. No record is resent.
+
+- Retain the last bounded, typed diagnostic completion separately from readiness
+  inspection, including exact reconciliation evidence and initialization readback.
+  Refresh the existing query-owned System One/Decisions histories from either
+  native diagnostic entry without remount, cursor replay, or health inference.
+  Unknown-ID correlation remains separately owned and unresolved in this slice.
+
+- Expose case-independent local diagnostic observation and memory readiness in
+  Ma'at. Reuse confirmed first-use initialization and exact data-only record
+  reconciliation, retain structured non-recorded observations on refusal, and
+  consume each confirmation once. No automatic initialization, retry, repair or
+  resend follows an uncertain record. Complete-reply loss before its record ID
+  is captured remains an explicit protocol recovery limitation; this is not full
+  Diagnostics/export or installed qualification.
+
+- Page diagnostic restart discovery across both request and historical-record
+  collections with explicit coverage, snapshot/query-bound continuation and
+  changed-read restart. Preserve strict whole-store/WAL validation and exact UUID
+  lookup; do not truncate or treat the first empty request page as complete.
+
+- Finish exact retained not-submitted result WAL before absent-journal inference,
+  then fence normally without observation or append. Reject explicitly empty
+  request selectors before they can fall through to legacy confirmed recording;
+  omitted selectors retain legacy behavior.
+
+- Preserve critical-first local diagnostic presentation after privacy projection.
+  Raw triage screens and native finding details use severity then stable ID;
+  canonical System One verdict order and retained hashes remain unchanged.
+  Keep the original first-critical fixture assertion and add canonical-equality,
+  privacy, guidance and native display-order regressions. Targeted Go qualification
+  is recorded separately; no native runtime result is implied by authored fixtures.
+
+- Retain bounded defined scalar fields when an owned Darwin wait result is refused,
+  including expected/observed PID, UID, signal, code/status and ABI offsets. Do not
+  read or retain pointer/reserved bytes, argv or environment. Preserve all positive
+  wait checks and original failure debt. Diagnostic source only: the5b real-true
+  failure remains unresolved pending actual field readback, not a repaired lifecycle.
+
+- Bind live ordinary child credentials/start/group to the exact unreaped Popen
+  handle before payload release. Interpret Darwin's unfilled waitid UID using that
+  custody, never zero alone. Keep foreign UID/group, changed/missing/reaped handle,
+  ECHILD and malformed wait refusals; preserve quiescence/reap/absence and debt.
+  Adds direct binding/refusal fixtures. Prior failures are retained and the real
+  native probe/full local-first and Stack Lab qualification remain pending.
+
+- Local CPU admission: complete verified quiescence after the final SIGKILL wait;
+  persist typed recovery intent before the durable execution fence; atomically
+  publish and resume exact cleanup resolution through archive and fence failures.
+  Retain original debt bytes and refuse conflicting evidence without signal/replay.
+  Adds inert boundary fixtures. Source only: native lifecycle, installed offline
+  behavior and the remaining original Tier1/Stack Lab obligations are not claimed.
+
+- Local CPU lifecycle: accept macOS's signed UID process-table representation while
+  refusing foreign group members and malformed rows. Observe exact owned-child
+  termination through public non-reaping libSystem waitid; never infer exit from
+  libproc absence. Preserve the pre-release identity, quiescence/reap/absence gate
+  and uncertainty debt. Adds inert SDK-ABI, ECHILD, identity and parser controls.
+  The original1c native-true failure/debt is retained; native requalification and
+  the broader original Tier1/functional Stack Lab obligation remain open.
+
+- The existing Ma'at front door gains explicit `--scope local` for one bounded,
+  same-user cooperative CPU-floor job without a router request or fabricated Ra
+  session. Private intent/terminal evidence and a retained kernel lock distinguish
+  local execution from fabric delivery. Shared/pod bookings and the default fabric
+  path remain unchanged; transport errors never trigger local fallback. This is
+  source-only partial local-first delivery, not whole offline/fleet qualification.
+
+- Bind the existing knowledge-surface source guard to the canonical local
+  refresh owner, separate supported flags and typed receipt, and the current
+  bounded MCP archive reader. Check native retained-view failure wording only
+  when a view exists, preserving the unread/unverified branch. Add inert
+  source-mutation coverage for these routes and no-export/legacy-delegate
+  refusals. Production refresh and archive behavior are unchanged.
+
+- Keep standalone Fabric machine output to one JSON value while preserving reader refusals and selected-writer checks.
+
+- Embed and serve the canonical Fabric JavaScript through the existing asset route, and retain a scrollable same-store detail view with Back navigation.
+
+- Give Fabric freshness and lane drill-down their own observation while keeping memory inspection available independently of router data.
+
+- Use the normal local executor for a configured endpoint proven to belong to this Mac and account; preserve strict remote SSH/proxy behavior for remote targets.
+
+- Bound metadata-child and configured-account lookup lifetimes, and keep uncertain owned-child cleanup terminal rather than starting a fallback payload.
+
+- Bound Darwin kernel identity probes to pid_t, compare the full kernel code identity, and expose only allowlisted probe diagnostics.
+
+- Support an exact-version whole-app rollback through the existing signed-PKG, Ma’at attempt and installed app/helper readback owner. Require the selected target recovery capability and retain ambiguous handoffs without replaying Installer.
+
+- Bind rollback fixture URLs to the full selected version and exercise actual Cobra flag parsing while restoring shared fixture state.
+
+- These notes consolidate imported source changes from the feature-freeze branch. Qualification and installed/release status belong to the existing Stack Lab composition record and its evidence; this fragment does not assert installed or commercial release completion.
+
+- Capture a private immutable Fabric generation and derive common task/message
+  gauges and observed transitions once. Existing board-serve, dashboard and menu
+  read paths consume these facts without child CLI reacquisition or independent
+  task-age classification. Preserve registry/ledger lane union, including taskless
+  services; missing runtime evidence stays unknown. Inclusive active contains its
+  blocked subset.
+
+- Keep board routes, router-board.v1/full task and phase details, Horus
+  router-surface.v1, standalone/once, no-store/CORS/method restrictions and failed
+  source/SSE invalidation. The read-only route set excludes the existing arm
+  mutation. Canonical Fabric task privacy/paging and semantic colors remain intact.
+
+- Source and inert fixtures only; admitted qualification and actual existing
+  consumer readback remain required. No listener retirement or installed/release
+  completion is claimed.
+
+- Complete original Fabric R1/R2 source: bounded canonical open-task rows and
+  clicked-observation detail/provenance on the existing web board; digest-bound
+  continuation and explicit refresh on drift; private payload/reference exclusions.
+  Share producer-assigned state roles through existing native/web brand tokens.
+  Adds inert privacy/paging/interop/role regressions. Source-only, not executed;
+  installed adoption and Nexus/Horus convergence/conditional8734 retirement remain
+  open and are not inferred from completion mail or prior ce8 qualification.
+
+- Complete existing FabricBoard joins for canonical leased runtime, measured host
+  facts and real FleetTracker status transitions. Current web and native headline
+  projections consume the same stream-separated producer. Unknown observations
+  remain unavailable, known zeros remain values, and one-shot/first-read activity
+  is explicitly unseeded. Source-only candidate; independent/native qualification
+  and foreign consumer mapping remain open. No new router store, service or policy.
+
+- Commit authenticated inbox claims and their session ownership in the same
+  store transaction (DC01). A failed owner-binding write rolls back the item
+  lease and claim counter instead of acknowledging a usable unbound claim.
+  Existing local/unclaimed and delegated close compatibility is unchanged.
+  Source qualification and installed backend adoption are separate evidence.
+
+- Refs: docs/ADR-068-ROUTER-A2A-MCP-FRONT-END.md,
+  internal/routerstore/README.md.
+
+- Preserve the existing no-complete-commercial-release update/recheck promise
+  when composing the additive whole-app rollback recipe. Keep its existing
+  installed-product preservation behavior, source guard and all rollback outputs.
+  This corrects recipe metadata; no update, Installer or runtime behavior changes.
+
+- Remove personal identity, private portfolio, retired agent lanes, and aspirational
+  service dependencies from the native Ask Sirsi stock prompt. Clarify Ra/Horus,
+  Hermes protocol/Mercury transport, Ma'at/Seshat, and evidence-bound optional model
+  roles. Execution, routing, permissions, schemas, and root lookup are unchanged.
+  Source-only candidate; no model invocation or compile qualification claimed.
+
+## [0.24.137] — 2026-10-25
+
+This corrective candidate starts from published v0.24.136. The entries below
+preserve donor-stage notes; current combined qualification and remaining
+installed limitations are recorded in the v0.24.137 Stack Lab release plan.
+They are not claims that every historical operational obligation is closed.
+
+- Preserve plain-paragraph release fragments and their continuation text when
+  cutting a release. Deduplicate complete normalized entries rather than a
+  shared seventy-character prefix, and retain prior versioned sections without
+  adding a separator at every historical heading. A causal regression exposed
+  the missing paragraph before correction; existing release-note controls remain.
+
+- Document one verified historical secret-scan false positive with an exact
+  commit/rule/path/line fingerprint: a local preference-name string, not a
+  credential. No whole file, scanner rule or future change is excluded.
+
+- Each in-process Stack Lab accessibility fixture now first reads independent
+  public SwiftUI Text/Button controls and presses the actual control once. If that
+  independent oracle is unavailable, the fixture reports an explicit diagnostic
+  skip before inspecting product content. With a working control, all original
+  content, handoff and scrolling assertions remain failures when unmet.
+
+- No product view, recipe content or accessibility representation is replaced.
+  Non-AX semantic tests remain active. Skips do not establish accessibility
+  completion: exact-source external evidence is separately required for all29
+  Ma'at components and scrolling/Apollo/Ma'at handoffs, release handoff, short wing
+  and full component fields. Existing finite36e9 external receipts and prior
+  644/239 failures retain their original scopes; no new runtime proof is claimed.
+
+- Preserve Mercury's offline/invalid/partial read states and individually fresh partial observations, while retaining unknown aggregates and independent local aging. Manual and periodic refreshes now share one visibility-bound owned task; superseded/cancelled native reads cannot publish a late result. Add an actual Go mixed-freshness export for native/web parity qualification.
+
+- Restore the retained read-only Mercury web and native hardware/cable presentation over the canonical Go snapshot: shared headline, partial eligibility, local expiry, run/calibration/provenance detail and explicit unknowns. Preserve strict same-origin web assets, owned read cancellation, reduced motion, separate Ra/transport evidence and Power Unknown. Map all four existing consumer components and correct stale native-endpoint canon; visual/installed parity remains unqualified.
+
+- The Mercury web renderer no longer retains a prior read's activity lamps when
+  the current Go projection supplies an empty/null lamp vector. A fresh idle null
+  vector clears prior lamps; a missing vector is explicitly unavailable rather
+  than inferred off. Current arrays and existing aggregate eligibility remain
+  authoritative.
+
+- An actual embedded-renderer active-to-idle regression covers null, missing and
+  empty vectors, zero active cables, idle context, withheld hero cells and stopped
+  motion without a clock-triggered fetch. Both existing DOM fixtures now implement
+  the production mount's appendChild call with node ownership/return semantics;
+  their original cancellation/expiry assertions are retained. The frozen5d53
+  attempt's four passing Node cases and two pre-render fixture failures are not
+  reclassified. No new execution, Swift change or whole G1–G5 completion claimed.
+
+- Mercury's web activity lamps, active-cable count and context now use the same
+  existing aggregate eligibility as its headline measurements. Direction expiry,
+  partial reads and envelope expiry withhold current aggregate claims while
+  individually eligible directions remain visible. The local aging clock does not
+  fetch a new snapshot.
+
+- Native workspace reads now bind loading cleanup and evidence publication to
+  their owning refresh invocation. A canceled older read joining its children
+  cannot clear a newer refresh's loading state or replace its evidence/errors.
+  Canonical monitor generation and structured child cancellation remain intact.
+
+- Direct embedded-renderer and workspace-owner regressions are authored only.
+  This source successor preserves the original G1–G5 scope; qualification, visual
+  fidelity/accessibility, configured recovery and installed/per-Mac obligations
+  remain separately open. No transport/reader/schema or service policy changes.
+
+- Expose Local memory recovery with an always-visible Inspect control at the
+  ordinary Ma'at workspace root, outside Casebook loading, empty and error states.
+  Reuse the existing engine-owned prepared-receipt inspector, exact confirmation
+  and recovery refresh callbacks. No selected case, synthetic journal row or
+  manual digest is required. Add production-root entry/callback fixtures with
+  no MaatCase, preserving prior component tests and private custody policy.
+  Source-only pending qualification and separate visible-window proof.
+
+- Retain and verify complete Ma'at preflight receipts before Casebook projection and managed-watch admission, without receipt bookkeeping staling its own semantic registry snapshot. Native historical receipt inspection preserves prior evidence on unavailable, mismatched or cancelled reads; historical results never authorize a new action.
+
+- Resume only exact interrupted Ma’at receipt writes before reassessing eligibility, and expose separately confirmed historical recovery for complete retained targets. Verify private current-owner custody on receipt and WAL reads without changing modes or granting an action.
+
+- Fix recovery reachability when the first preflight receipt is fully retained
+  but its write commit fails before Casebook projection. The existing memory
+  inspector now discovers and displays verified complete historical bytes and
+  their exact intent/store binding. Native liveness setup offers separately
+  confirmed recovery through the canonical receipt command without a Casebook
+  receipt row or manual digest lookup. Missing, changed and unrelated debt stays
+  unavailable. Recovery creates no decision, attempt or installation and requires
+  fresh ordinary assessment and consent afterward. Source fixtures are authored;
+  qualification and installed workflow evidence remain pending.
+
+- Own-lane cause-fixed recovery accepts an inactive blocked original with
+  ordinary attempts remaining. It consumes the next attempt with the existing
+  authenticated transaction, evidence audit and row-version fence; it never
+  resets history or marks the task complete. Pending/in-progress below-ceiling
+  tasks retain ordinary claim semantics. Focused qualification passed; protected
+  integration, independent review, release and real-row deployment remain open.
+
+- Refs: docs/stacklab/maat/canon/OWN_BLOCKED_TASK_RECOVERY_PLAN.md;
+  docs/ADR-061-DURABLE-CONTINUOUS-EXECUTION-ENFORCEMENT.md.
+
+- Complete the local managed-watch failure-memory loop with typed direct-attempt intake, stable-key recurrence prevention and exact local owner disposition. Native Casebook reviews full retained evidence, confirms “Accepted — not repaired,” reconciles interrupted data-only phases and returns fresh observations to the existing controlled resolver. Unknown actions stay pending and installers never replay during reconciliation. Source candidate; qualification and remaining operational rows stay explicit.
+
+- The optional legacy root-relay maintenance app path now binds each reviewed
+  operation to a controller-issued durable ticket and monotonic generation under
+  the existing service lock. Explicit resolution records a matching result or
+  fences delayed arrival before offering fresh consent. Old or empty status never
+  clears a newer unknown receipt. Cancellation preserves uncertain outcomes;
+  recovery, abort and replacement restoration require their own captured tickets.
+
+- Protected-engine preflight is bounded and checks the installed helper's native
+  protocol/release against the signed app before authorization. A reachable app
+  action prepares and rechecks the exact running release's normal PKG, including
+  published SHA256, package trust, replacement metadata, payload and helper
+  compatibility, before opening macOS Installer. Installation and fresh installed
+  pair verification remain separate; a DMG handoff or an older incompatible PKG
+  is not substituted.
+
+- This is an unqualified source successor to the retained 54d bridge review and
+  failed fixture-compile attempt. Authored inert fixtures are not execution or
+  installed-recovery evidence. Existing modern service/agent authorization and
+  producer-covered Studio maintenance remain unchanged; this fallback adds no
+  Studio rollout gate or automatic service action.
+
+- Add a narrow one-shot macOS-authorized app route for legacy root-relay
+  maintenance. Keep the GUI unprivileged and execute only the qualified protected
+  installed engine with closed public request data and a minimal environment.
+  Preserve existing registered-agent authorization, controller/journal fences,
+  LR01–03 recovery, captured restore bytes and unknown-outcome debt. Retain model
+  state across workspace remounts. Missing or drifted protected installation stays
+  unsupported with an in-app normal signed-PKG prerequisite; no bundle/PATH root
+  fallback, daemon, router DB or credential forwarding is introduced. Inert
+  quoting, denial, frame, identity and lifecycle fixtures accompany the source;
+  actual administrator/service execution is not claimed.
+
+- The legacy relay panel now offers authoritative public-binding inspection and
+  explicit confirmed reconciliation when its saved public receipt is unreadable.
+  It recovers an exact controller binding or obtains a new serialized preview
+  reservation for the selected retained payload. The public binding is stored and
+  read back, then the existing matching-result/fence control is required before a
+  fresh preview and new service consent. Empty status never resets uncertainty.
+  Unreadable-byte count and bounded-prefix digest remain labelled as unknown past
+  outcome; no manual preferences deletion or service replay is requested.
+
+- Installer preparation and final verification now share the bridge's bounded
+  preflight mechanism. Signed-app and bundled-engine identity checks run off the
+  UI actor; deadline, cancellation, generation and consumed consent are checked
+  before command submission and before opening normal Installer. Late read-only
+  probe completion cannot revive an expired operation.
+
+- Direct inert fixtures include the actual controller's empty wire shape and
+  late-ticket refusal, public persistence/readback failure, changed bindings and
+  stalled Installer identity. This source successor preserves6f40's separately
+  qualified203+203 Go events and21 Swift methods without treating them as proof
+  of these new paths. Real OS authorization, Installer, native image/service and
+  installed recovery remain separately unproved. No Studio rollout gate added.
+
+- Add an exact root-relay legacy maintenance transaction and startup-held producer
+  protocol, separate from ordinary/producer-covered refresh. Private durable phases,
+  selected instance/artifact bindings, positive retirement checks and quarantined
+  unknown envelopes support explicit transaction-bound recovery without replay or
+  old-work drain claims. Add inert controller, command, journal, custody, startup,
+  wire and physical admission fixtures. Native loaded-image binding, application
+  root-host integration and installed qualification remain open; this fallback is
+  not an additional gate on the supported Studio route or published135.
+
+- Route legacy maintenance authorization through the selected protected relay's
+  existing direct canonical configuration, in memory only, so a pending spool hold
+  does not block fresh owner/grant verification. Preserve the registered actor,
+  thread, native runtime and exact lifecycle-service grant contract; retain ordinary
+  refresh authority behavior. Add inert protected-configuration, real owned HTTP
+  session and current-runtime/grant fixtures. Privileged native app-host execution
+  remains absent in the baseline; no administrator prompt, daemon or fake GUI
+  identity is substituted. Add shared global custody dimensions, durable atomic
+  prepare-before-journal startup holds, marker-cleanup generation recovery,
+  pre-retirement abort, and exact replacement restoration with retained backup/stage
+  debt. Casebook consent binds captured plans and exact transaction identity; the
+  host refuses ordinary user-process operation rather than acquiring privileges.
+  Source candidate with initial compiler feedback, not installed qualification.
+
 ## [0.24.136] — 2026-10-24
 
 ### Fixed

@@ -12,7 +12,7 @@ enum MaatSourceImportContract {
     static let example = #"""
     {
       "contract":"maat.adr070.source-screen","schema_version":2,
-      "subject":{"kind":"commit","repo":"fixture/repo","ref":"main","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","boundary":""},
+      "subject":{"kind":"commit","repo":"fixture/repo","ref":"main","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","boundary":"","host_binding":""},
       "feather_weight":92,"confidence":0.96,"findings":[],
       "floor":{"passed":true,"checks":[{"name":"gofmt","passed":true},{"name":"vet","passed":true},{"name":"golangci-lint","passed":true},{"name":"test-race","passed":true}]},
       "model":{"provider":"local:fixture","version":"fixture-v1","local":true,"latency_ms":0,

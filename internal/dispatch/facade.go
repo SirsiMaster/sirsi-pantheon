@@ -149,6 +149,7 @@ func (f *Facade) UpdateTask(agent, taskID string, u routerstore.TaskUpdate) (rou
 // SendResult reports one guarded dispatch.
 type SendResult struct {
 	ID        string
+	To        string // the validated recipient after retired-name resolution
 	Deduped   bool   // an idempotent duplicate — the existing item was returned
 	AuditPath string // the items/<id>.md audit view (empty if its write failed)
 }
@@ -200,17 +201,17 @@ func (f *Facade) SendContext(ctx context.Context, from, to, title, msgType, inst
 	// After the cutover the store row IS the record — no items/<id>.md audit view
 	// is written, consumers wake via `router wait`, and Show/Close read the store.
 	if routercfg.StoreWake() {
-		return SendResult{ID: id, Deduped: deduped}, nil
+		return SendResult{ID: id, To: to, Deduped: deduped}, nil
 	}
 	path, err := f.store.ExportItem(filepath.Join(f.root, "items"), id)
 	if err != nil {
 		// The dispatch HAPPENED (store row committed); the audit view failed.
 		// Loud, not fatal — the sweep flags store-only items, and ExportMarkdown
 		// can regenerate every audit file from the store.
-		return SendResult{ID: id, Deduped: deduped},
+		return SendResult{ID: id, To: to, Deduped: deduped},
 			fmt.Errorf("dispatch: item %s dispatched but audit file write failed: %w", id, err)
 	}
-	return SendResult{ID: id, Deduped: deduped, AuditPath: path}, nil
+	return SendResult{ID: id, To: to, Deduped: deduped, AuditPath: path}, nil
 }
 
 // RegistryPath picks the agents.json this host reads for a router root. The default is
@@ -363,13 +364,20 @@ func (f *Facade) Inbox(agent string) ([]work.Item, error) {
 // ListAll filtered, so behavior is unchanged there. The full ledger is 13k+ rows
 // and 6-20 s per call on the service, which under concurrency became the 30 s
 // spool timeouts every lane reported.
-func (f *Facade) ListActive() (items []work.Item, closed int, err error) {
+func (f *Facade) ListActive() ([]work.Item, int, error) {
+	return f.ListActiveContext(context.Background())
+}
+
+func (f *Facade) ListActiveContext(ctx context.Context) (items []work.Item, closed int, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
 	if routercfg.StoreWake() {
-		rows, rerr := f.store.ListActive(context.Background())
+		rows, rerr := f.store.ListActive(ctx)
 		if rerr != nil {
 			return nil, 0, fmt.Errorf("store list unavailable (store is the cutover authority): %w", rerr)
 		}
-		n, cerr := f.store.CountClosed(context.Background())
+		n, cerr := f.store.CountClosed(ctx)
 		if cerr != nil {
 			return nil, 0, fmt.Errorf("store count unavailable (store is the cutover authority): %w", cerr)
 		}
@@ -390,6 +398,9 @@ func (f *Facade) ListActive() (items []work.Item, closed int, err error) {
 			continue
 		}
 		items = append(items, it)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
 	}
 	return items, closed, nil
 }

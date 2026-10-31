@@ -51,10 +51,14 @@ type NodeStatus struct {
 	ActiveTopics   []string            `json:"active_topics"`
 	CompletedCount int                 `json:"completed_count"`
 
-	// StrandedInbox: agents with open items but NO armed thread to watch them —
-	// work that sits silently until the agent is (re)armed (PR #2 strand
-	// visibility). Empty when every backlogged agent is armed.
+	// StrandedInbox: actionable agents with open items but NO armed thread to
+	// watch them (PR #2 strand visibility). Loop evidence outside this node's
+	// process scope is reported separately as UnverifiedInbox.
 	StrandedInbox []StrandedAgent `json:"stranded_inbox,omitempty"`
+	// UnverifiedInbox: pending lanes whose loop-monitor evidence belongs to a
+	// foreign or unidentified machine. They are not classified as armed or dead
+	// from this node's process table.
+	UnverifiedInbox []UnverifiedInboxAgent `json:"unverified_inbox,omitempty"`
 
 	// Work items
 	WorkItemSummary map[string]int `json:"work_item_summary"` // status → count
@@ -101,6 +105,9 @@ type NodeStatus struct {
 type ThreadSummary struct {
 	ThreadID      string       `json:"thread_id"`
 	AgentID       string       `json:"agent_id"`
+	Host          string       `json:"host"`
+	MachineID     string       `json:"machine_id"`
+	OSScope       string       `json:"os_scope"` // local | remote | unknown; stable machine IDs only
 	Surface       string       `json:"surface"`
 	Status        ThreadStatus `json:"status"`
 	Watches       []string     `json:"watches,omitempty"`
@@ -113,7 +120,7 @@ type ThreadSummary struct {
 	IdleSeconds   float64      `json:"idle_seconds"`
 	Stale         bool         `json:"stale,omitempty"`
 	PID           int          `json:"pid,omitempty"`
-	OSState       PIDState     `json:"os_state,omitempty"` // OS-truth liveness of PID
+	OSState       PIDState     `json:"os_state,omitempty"` // Local OS-truth liveness; unknown outside local scope.
 	// Honest liveness (owner priority 2026-06-19, codex-validated). watcher_type is
 	// the thread's canonical watcher (WatcherFor().Type). loop_state is the
 	// surface-native loop-evidence verdict: "alive"/"dead" for loop-bearing surfaces
@@ -127,6 +134,22 @@ type ThreadSummary struct {
 	LoopState   string `json:"loop_state,omitempty"` // alive | dead | na | unknown
 	Armed       bool   `json:"armed"`
 	ArmedReason string `json:"armed_reason,omitempty"`
+}
+
+const (
+	threadOSScopeLocal   = "local"
+	threadOSScopeRemote  = "remote"
+	threadOSScopeUnknown = "unknown"
+)
+
+func threadOSScope(recordMachineID, localMachineID string) string {
+	if recordMachineID == "" || localMachineID == "" {
+		return threadOSScopeUnknown
+	}
+	if recordMachineID == localMachineID {
+		return threadOSScopeLocal
+	}
+	return threadOSScopeRemote
 }
 
 // AgentHealthCheck reports whether a local agent CLI is available and authenticated.
@@ -188,6 +211,65 @@ type WorkItemFailure struct {
 	Agent    string    `json:"agent"`
 	Error    string    `json:"error"`
 	FailedAt time.Time `json:"failed_at"`
+}
+
+// UnverifiedInboxAgent has pending work whose loop liveness cannot be decided
+// from this node because the thread's machine scope is foreign or unknown.
+type UnverifiedInboxAgent struct {
+	AgentID   string `json:"agent_id"`
+	OpenItems int    `json:"open_items"`
+	OSScope   string `json:"os_scope"`
+}
+
+// computeNodeStatusStranding projects local node-status summaries without
+// reopening the registry through AgentArmed. That global helper has different
+// authority and legacy identity assumptions; this projection may classify a
+// loop as dead only when its collector summary had local stable-ID scope.
+func computeNodeStatusStranding(pending map[string][]string, liveWake, noWake map[string]bool, threads []ThreadSummary) ([]StrandedAgent, []UnverifiedInboxAgent) {
+	var stranded []StrandedAgent
+	var unverified []UnverifiedInboxAgent
+	for agent, items := range pending {
+		if len(items) == 0 || agent == "user" || noWake[agent] || liveWake[agent] {
+			continue
+		}
+		armed := false
+		unverifiedScope := ""
+		for _, thread := range threads {
+			if thread.AgentID != agent {
+				continue
+			}
+			if thread.Armed {
+				armed = true
+				break
+			}
+			if requiresThreadIDLoop(thread.WatcherType) && thread.LoopState == "unknown" && thread.OSScope != threadOSScopeLocal {
+				if thread.OSScope == threadOSScopeUnknown || unverifiedScope == "" {
+					unverifiedScope = thread.OSScope
+				}
+			}
+		}
+		if armed {
+			continue
+		}
+		if unverifiedScope != "" {
+			unverified = append(unverified, UnverifiedInboxAgent{AgentID: agent, OpenItems: len(items), OSScope: unverifiedScope})
+			continue
+		}
+		stranded = append(stranded, StrandedAgent{AgentID: agent, OpenItems: len(items)})
+	}
+	sort.Slice(stranded, func(i, j int) bool {
+		if stranded[i].OpenItems != stranded[j].OpenItems {
+			return stranded[i].OpenItems > stranded[j].OpenItems
+		}
+		return stranded[i].AgentID < stranded[j].AgentID
+	})
+	sort.Slice(unverified, func(i, j int) bool {
+		if unverified[i].OpenItems != unverified[j].OpenItems {
+			return unverified[i].OpenItems > unverified[j].OpenItems
+		}
+		return unverified[i].AgentID < unverified[j].AgentID
+	})
+	return stranded, unverified
 }
 
 // LaunchctlChecker abstracts launchctl probing for testability.
@@ -333,8 +415,14 @@ func isAuthError(output string) bool {
 // CollectNodeStatus gathers the Horus local-node view from all sources.
 // Pass nil for authProbe to use DefaultAuthProbe.
 func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authProbe ...AuthProbeFunc) (*NodeStatus, error) {
+	return CollectNodeStatusContext(context.Background(), repoRoot, launchctlCheck, authProbe...)
+}
+func CollectNodeStatusContext(ctx context.Context, repoRoot string, launchctlCheck LaunchctlChecker, authProbe ...AuthProbeFunc) (*NodeStatus, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if launchctlCheck == nil {
-		launchctlCheck = DefaultLaunchctlChecker
+		launchctlCheck = func(args ...string) error { return runBoundedContext(ctx, "launchctl", args...) }
 	}
 	routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
 
@@ -406,7 +494,15 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 		// items, a 36 MB response on 2026-09-15) through the relay's response
 		// cap and the client's 30 s spool wait, so `ctr`/`node-status` on the
 		// M5 "hung" and printed nothing (SHA 20260914-234610; A31, A35).
-		items, lErr := store.Inbox("")
+		var items []routerstore.Item
+		var lErr error
+		if contextual, ok := store.(interface {
+			InboxContext(context.Context, string) ([]routerstore.Item, error)
+		}); ok {
+			items, lErr = contextual.InboxContext(ctx, "")
+		} else {
+			items, lErr = store.Inbox("")
+		}
 		if lErr != nil {
 			return nil, fmt.Errorf("node-status: list service pending: %w", lErr)
 		}
@@ -478,21 +574,32 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	// transport registry. Lifecycle writers (register, doctor --fix, session
 	// reaper) own reconciliation. We still project local OS truth below so a
 	// dead PID cannot be presented as live while it awaits that maintenance pass.
-	if treg, loadErr := LoadThreadRegistry(routerRoot); loadErr == nil {
+	if treg, loadErr := LoadThreadRegistryContext(ctx, routerRoot); loadErr == nil {
 		now := time.Now().UTC()
 		sortedThrs := treg.SortedThreads()
 		newestByAgent := NewestActiveByAgent(sortedThrs)
 		machineID := MachineID()
 		for _, thr := range sortedThrs {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if thr.Status.IsTerminal() {
 				continue
 			}
 			if thr.Status == ThreadStatusSuspended {
 				continue
 			}
+			osScope := threadOSScope(thr.MachineID, machineID)
+			osState := PIDUnknown
+			if osScope == threadOSScopeLocal {
+				osState = PIDStateOf(thr.PID, thr.StartTime)
+			}
 			sum := ThreadSummary{
 				ThreadID:      thr.ThreadID,
 				AgentID:       thr.AgentID,
+				Host:          thr.Host,
+				MachineID:     thr.MachineID,
+				OSScope:       osScope,
 				Surface:       thr.Surface,
 				Status:        thr.Status,
 				Watches:       append([]string(nil), thr.Watches...),
@@ -505,9 +612,9 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 				IdleSeconds:   now.Sub(thr.LastSeenAt).Seconds(),
 				Stale:         thr.IsStale(now, DefaultThreadStaleAfter),
 				PID:           thr.PID,
-				OSState:       PIDStateOf(thr.PID, thr.StartTime),
+				OSState:       osState,
 			}
-			osDead := SameMachine(thr.MachineID, machineID) && (sum.OSState == PIDGone || sum.OSState == PIDDefunct || sum.OSState == PIDRecycled || sum.OSState == PIDMismatched)
+			osDead := sum.OSScope == threadOSScopeLocal && (sum.OSState == PIDGone || sum.OSState == PIDDefunct || sum.OSState == PIDRecycled || sum.OSState == PIDMismatched)
 			// Honest liveness, classified by watcher_type (codex-home SME verdict on #79):
 			//  - loop-monitor (Claude) ONLY requires pgrep `thr-<id>` loop evidence —
 			//    its /loop is thr-id-keyed AND its heartbeat is harness-gated, so it can
@@ -520,6 +627,10 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 			//    pull-loop: loop_state "na"; heartbeat freshness is the armed proof.
 			sum.WatcherType = WatcherFor(thr.Surface, thr.AgentID, thr.ThreadID).Type
 			switch {
+			case requiresThreadIDLoop(sum.WatcherType) && sum.OSScope != threadOSScopeLocal:
+				// A local process table cannot prove or disprove a foreign/unknown
+				// loop. Keep heartbeat age as recorded, but never infer loop death.
+				sum.LoopState, sum.Armed, sum.ArmedReason = "unknown", false, "process-scope-"+sum.OSScope
 			case osDead:
 				sum.Stale, sum.LoopState, sum.Armed, sum.ArmedReason = true, "dead", false, "os-"+string(sum.OSState)
 			case requiresThreadIDLoop(sum.WatcherType):
@@ -589,6 +700,9 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	}
 
 	for _, agentType := range []string{"claude", "codex"} {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		check := AgentHealthCheck{AgentType: agentType}
 		path, err := exec.LookPath(agentType)
 		if err != nil {
@@ -635,8 +749,12 @@ func CollectNodeStatus(repoRoot string, launchctlCheck LaunchctlChecker, authPro
 	for a := range ns.PendingByAgent {
 		strandAgents = append(strandAgents, a)
 	}
-	ns.StrandedInbox = computeStranded(routerRoot, ns.PendingByAgent, liveWakeAgents(strandAgents, launchctlCheck), noWakeAgents(reg))
+	threads := append(append([]ThreadSummary(nil), ns.LiveThreads...), ns.StaleThreads...)
+	ns.StrandedInbox, ns.UnverifiedInbox = computeNodeStatusStranding(ns.PendingByAgent, liveWakeAgents(strandAgents, launchctlCheck), noWakeAgents(reg), threads)
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return ns, nil
 }
 

@@ -140,8 +140,14 @@ func ValidateTaskResumeRequest(r TaskResumeRequest) error {
 
 func taskResumeEligible(r taskResumeSnapshot, now time.Time) (int, error) {
 	attempts, err := strconv.Atoi(r[24].String)
-	if err != nil || attempts < MaxRetriesPerItem || attempts == int(^uint(0)>>1) {
-		return 0, errors.New("task resume: only exhausted original attempts qualify")
+	if err != nil || attempts < 0 || attempts == int(^uint(0)>>1) {
+		return 0, errors.New("task resume: valid incrementable original attempts required")
+	}
+	// An inactive blocked task can still have ordinary attempts left. Its
+	// corrected-cause attestation consumes the next attempt, never a reset or
+	// fabricated exhaustion. Other below-ceiling states use ordinary claims.
+	if attempts < MaxRetriesPerItem && r[3].String != "blocked" {
+		return 0, errors.New("task resume: below-ceiling original must be blocked")
 	}
 	if (r[3].String != "pending" && r[3].String != "blocked" && r[3].String != "in-progress") || r[6].String != "" {
 		return 0, errors.New("task resume: terminal/dependency state refuses")
@@ -175,6 +181,16 @@ func (s *SQLiteStore) ResumeTaskClaim(ctx context.Context, req TaskResumeRequest
 		pg := s.dialect().name == "postgres"
 		if err := taskEvidencePrincipal(ctx, tx, a, s.clock(), pg); err != nil {
 			return err
+		}
+		var barrier laneClaimBarrierState
+		if req.Action == "claim" {
+			// Acquire the shared lane lock before locking the task row. Inspect
+			// remains read-only; claim replay below remains valid while paused.
+			var err error
+			barrier, err = s.lockLaneClaimsContextTx(ctx, tx, req.Agent)
+			if err != nil {
+				return err
+			}
 		}
 		before, err := taskResumeRead(ctx, tx, req.Agent, req.TaskID, pg)
 		if err != nil {
@@ -215,6 +231,9 @@ func (s *SQLiteStore) ResumeTaskClaim(ctx context.Context, req TaskResumeRequest
 		attempts, err = taskResumeEligible(before, now)
 		if err != nil {
 			return err
+		}
+		if barrier.Digest != "" {
+			return ErrLanePaused
 		}
 		token, err := newToken()
 		if err != nil {

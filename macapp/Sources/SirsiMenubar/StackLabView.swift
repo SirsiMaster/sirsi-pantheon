@@ -1,11 +1,14 @@
 import SwiftUI
 
-// StackLabView is the native inspection surface for the same ADR-066 doctor
+// StackLabDoctorView is the explicit fabric inspection surface for ADR-066;
+// the ordinary StackLabView root is the off-by-default local workspace.
+// This doctor is the same one the CLI exposes and
 // the CLI exposes. It does not scrape a shell transcript or reconstruct wing
 // authority in Swift: Go's typed report remains the sole authority. This view
 // makes an incomplete registry actionable instead of leaving an operator with
 // a command and no route through the product.
-struct StackLabView: View {
+struct StackLabDoctorView: View {
+    @EnvironmentObject private var nav: Nav
     @ObservedObject var engine: SirsiEngine
     @State private var report: StackLabReport?
     @State private var loadError: String?
@@ -69,26 +72,28 @@ struct StackLabView: View {
     }
 
     private func failureState(_ error: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .sirsiFont(24, weight: .semibold)
-                .foregroundStyle(.orange)
-            Text("Stack Lab needs a fresh read")
-                .sirsiFont(.headline)
-            Text(error)
-                .sirsiFont(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Try again") { Task { await load() } }
-                .buttonStyle(.borderedProminent)
-                .tint(gold)
-            NavLink { MaatWorkspaceView(engine: engine) } label: {
-                Label("Open Ma'at evidence", systemImage: "checkmark.seal")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .sirsiFont(24, weight: .semibold)
+                    .foregroundStyle(.orange)
+                Text("Stack Lab needs a fresh read")
+                    .sirsiFont(.headline)
+                Text(error)
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Try again") { Task { await load() } }
+                    .buttonStyle(ResultActionButtonStyle(prominent: true))
+                Button { nav.push(MaatWorkspaceView(engine: engine)) } label: {
+                    Label("Open Ma'at evidence", systemImage: "checkmark.seal")
+                }
+                .buttonStyle(ResultActionButtonStyle(prominent: false))
             }
-            .buttonStyle(.bordered)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func reportBody(_ report: StackLabReport) -> some View {
@@ -353,12 +358,30 @@ struct StackLabReport: Decodable {
     var clean: Bool { findings.isEmpty && unknown.isEmpty }
 
     static func decode(_ data: Data) -> StackLabReport? {
-        try? JSONDecoder().decode(StackLabReport.self, from: data)
+        guard let payload = try? JSONSerialization.jsonObject(with: data),
+              let object = payload as? [String: Any],
+              !object.keys.contains("diagnostic"),
+              object["roster"] as? [String] != nil else {
+            return nil
+        }
+        return try? JSONDecoder().decode(StackLabReport.self, from: data)
     }
+}
+
+private struct StackLabReadDiagnostic: Decodable {
+    struct Detail: Decodable {
+        let code: String
+    }
+
+    let diagnostic: Detail?
 }
 
 enum StackLabReadFailure {
     static func message(for read: SirsiEngine.JSONCommandRead) -> String {
+        if let diagnostic = try? JSONDecoder().decode(StackLabReadDiagnostic.self, from: read.data),
+           diagnostic.diagnostic?.code == "missing_gh" {
+            return "The GitHub CLI is missing. Install it with Homebrew (brew install gh) or add its executable to PATH, then refresh. No registry result was inferred."
+        }
         if read.timedOut {
             return "The canonical registry did not answer within 20 seconds, so Pantheon made no registry decision. Refresh to retry the bounded read; if it repeats, open Ma'at evidence to retain the failed read and guide the next repair."
         }

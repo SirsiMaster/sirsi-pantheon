@@ -1,0 +1,6 @@
+offset +0.0784  rtt 0.222
+offset +0.0693  rtt 0.204
+offset +0.0695  rtt 0.212
+offset +0.0926  rtt 0.260
+offset +0.1074  rtt 0.296
+M5 clock offset median 0.0784s; M1 fire lag 0.111s (half median RTT)

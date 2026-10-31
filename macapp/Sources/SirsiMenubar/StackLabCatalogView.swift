@@ -5,6 +5,7 @@ import SwiftUI
 // Go projection; this view does not enumerate the filesystem or infer remote
 // registry status. The doctor remains the authority for remote canonicality.
 struct StackLabCatalogView: View {
+    @EnvironmentObject private var nav: Nav
     @ObservedObject var engine: SirsiEngine
     @State private var catalog: StackLabCatalog?
     @State private var loadError: String?
@@ -52,38 +53,55 @@ struct StackLabCatalogView: View {
     }
 
     private func failureState(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .sirsiFont(24, weight: .semibold)
-                .foregroundStyle(.orange)
-            Text("Stack Lab needs your next step")
-                .sirsiFont(.headline)
-            Text(message)
-                .sirsiFont(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 6) {
-                recoveryStep("1", "Refresh this selected project if its files were just updated.")
-                recoveryStep("2", "Use Change above if this is not the repository you meant to inspect.")
-                recoveryStep("3", "Run Stack Lab Doctor to identify the exact record and continue its Ma'at evidence route when source repair needs review.")
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.08)))
-            HStack(spacing: 10) {
-                Button("Refresh selected project") { Task { await load() } }
-                    .buttonStyle(.borderedProminent)
-                    .tint(gold)
-                    .accessibilityHint("Reads the currently selected project's Stack Lab catalog again without changing it.")
-                NavLink { StackLabView(engine: engine) } label: {
-                    Label("Open Stack Lab Doctor", systemImage: "stethoscope")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .sirsiFont(24, weight: .semibold)
+                    .foregroundStyle(.orange)
+                Text("Stack Lab needs your next step")
+                    .sirsiFont(.headline)
+                Text(message)
+                    .sirsiFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    recoveryStep("1", "Refresh this selected project if its files were just updated.")
+                    recoveryStep("2", "Use Change above if this is not the repository you meant to inspect.")
+                    recoveryStep("3", "Run Stack Lab Doctor to identify the exact record and continue its Ma'at evidence route when source repair needs review.")
                 }
-                .buttonStyle(.bordered)
-                .accessibilityHint("Checks the selected project's canonical Stack Lab records and routes unresolved findings to Ma'at evidence.")
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.08)))
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        refreshCatalogButton
+                        openDoctorButton
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    VStack(alignment: .leading, spacing: 8) {
+                        refreshCatalogButton
+                        openDoctorButton
+                    }
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var refreshCatalogButton: some View {
+        Button("Refresh selected project") { Task { await load() } }
+            .buttonStyle(ResultActionButtonStyle(prominent: true))
+            .accessibilityHint("Reads the currently selected project's Stack Lab catalog again without changing it.")
+    }
+
+    private var openDoctorButton: some View {
+        Button { nav.push(StackLabDoctorView(engine: engine)) } label: {
+            Label("Open Stack Lab Doctor", systemImage: "stethoscope")
+        }
+        .buttonStyle(ResultActionButtonStyle(prominent: false))
+        .accessibilityHint("Checks the selected project's canonical Stack Lab records and routes unresolved findings to Ma'at evidence.")
     }
 
     private func recoveryStep(_ number: String, _ detail: String) -> some View {
@@ -229,7 +247,7 @@ private struct StackLabCatalogRow: View {
     }
 }
 
-private struct StackLabContractDetail: View {
+struct StackLabContractDetail: View {
     @ObservedObject var engine: SirsiEngine
     let entry: StackLabCatalogEntry
 
@@ -237,18 +255,24 @@ private struct StackLabContractDetail: View {
         VStack(spacing: 0) {
             BackBar(title: entry.kind == "recipe" ? "Recipe" : "Wing")
             MaybeScroll {
+                // Keep the explicit accessibility section boundaries below.
+                // Lazy layout trapped during external AX scrolling; use the
+                // original eager layout while retaining distinct children.
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(entry.id)
-                        .sirsiFont(.title3, weight: .bold)
-                    Text(entry.purpose)
-                        .sirsiFont(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    contractFact("Source contract", entry.sourcePath)
-                    if !entry.wing.isEmpty { contractFact("Wing", entry.wing) }
-                    if !entry.product.isEmpty { contractFact("Product", entry.product) }
-                    if entry.version > 0 { contractFact("Version", String(entry.version)) }
-                    if !entry.nextAction.isEmpty { contractFact("Next action", entry.nextAction) }
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(entry.id)
+                            .sirsiFont(.title3, weight: .bold)
+                        Text(entry.purpose)
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        contractFact("Source contract", entry.sourcePath)
+                        if !entry.wing.isEmpty { contractFact("Wing", entry.wing) }
+                        if !entry.product.isEmpty { contractFact("Product", entry.product) }
+                        if entry.version > 0 { contractFact("Version", String(entry.version)) }
+                        if !entry.nextAction.isEmpty { contractFact("Next action", entry.nextAction) }
+                    }
+                    .accessibilityElement(children: .contain)
                     if entry.components.contains(where: { $0.id == "stacklab-apollo-run-planner" }) {
                         apolloRecipeHandoff
                     }
@@ -263,6 +287,8 @@ private struct StackLabContractDetail: View {
                     }
                 }
                 .padding(16)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(entry.kind == "recipe" ? "Recipe content" : "Wing content")
             }
         }
     }
@@ -285,6 +311,7 @@ private struct StackLabContractDetail: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .accessibilityElement(children: .contain)
     }
 
     // Stack Lab records component metadata, but it is not a shell launcher.
@@ -309,6 +336,7 @@ private struct StackLabContractDetail: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .accessibilityElement(children: .contain)
     }
 
     // The release recipe is intentionally a typed navigation destination, not
@@ -334,6 +362,7 @@ private struct StackLabContractDetail: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .accessibilityElement(children: .contain)
     }
 
     private func contractFact(_ label: String, _ value: String) -> some View {
@@ -344,7 +373,7 @@ private struct StackLabContractDetail: View {
     }
 }
 
-private struct StackLabComponentCard: View {
+struct StackLabComponentCard: View {
     let component: StackLabRecipeComponent
 
     var body: some View {
@@ -360,6 +389,7 @@ private struct StackLabComponentCard: View {
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .accessibilityElement(children: .contain)
     }
 
     private func componentList(_ title: String, _ values: [String]) -> some View {
@@ -385,7 +415,7 @@ private struct StackLabCatalog: Decodable {
     var complete: Bool { unknown.isEmpty }
 }
 
-private struct StackLabCatalogEntry: Decodable, Identifiable {
+struct StackLabCatalogEntry: Decodable, Identifiable {
     let id: String
     let kind: String
     let sourcePath: String
@@ -415,7 +445,7 @@ private struct StackLabCatalogEntry: Decodable, Identifiable {
     }
 }
 
-private struct StackLabRecipeComponent: Decodable, Identifiable {
+struct StackLabRecipeComponent: Decodable, Identifiable {
     let id: String
     let source: [String]
     let tests: [String]

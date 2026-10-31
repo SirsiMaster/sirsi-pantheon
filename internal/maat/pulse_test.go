@@ -17,11 +17,13 @@ func TestPulse_WithMockRunners(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	// Create minimal project structure
-	cmdDir := filepath.Join(tmpDir, "cmd", "sirsi")
-	os.MkdirAll(cmdDir, 0o755)
-	for _, deity := range []string{"anubis.go", "maat.go", "thoth.go", "hapi.go", "seba.go", "seshat.go"} {
-		os.WriteFile(filepath.Join(cmdDir, deity), []byte("package main"), 0o644)
+	// The selected source roster is authoritative, including inline-command Isis.
+	registryPath := filepath.Join(tmpDir, "internal", "deity", "registry.go")
+	if err := os.MkdirAll(filepath.Dir(registryPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(registryPath, []byte(pulseRosterFixture), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
 	internalDir := filepath.Join(tmpDir, "internal")
@@ -74,11 +76,11 @@ func TestPulse_WithMockRunners(t *testing.T) {
 	if m.GoSourceLines != 17110 {
 		t.Errorf("expected 17110 Go source lines, got %d", m.GoSourceLines)
 	}
-	if m.Deities != 6 {
-		t.Errorf("expected 6 deities, got %d", m.Deities)
+	if m.Deities != 10 {
+		t.Errorf("expected 10 source roster declarations, got %d", m.Deities)
 	}
-	if m.Modules != 5 {
-		t.Errorf("expected 5 modules, got %d", m.Modules)
+	if m.Modules != 6 {
+		t.Errorf("expected 6 immediate internal directories including deity, got %d", m.Modules)
 	}
 	if m.BinarySize != 12*1024*1024 {
 		t.Errorf("expected 12 MB binary, got %d", m.BinarySize)
@@ -268,18 +270,62 @@ func TestFormatBytes(t *testing.T) {
 func TestCountDeities(t *testing.T) {
 	t.Parallel()
 
-	tmpDir := t.TempDir()
-	cmdDir := filepath.Join(tmpDir, "cmd", "sirsi")
-	os.MkdirAll(cmdDir, 0o755)
-
-	// Create exactly 3 deity files
-	for _, f := range []string{"anubis.go", "maat.go", "thoth.go"} {
-		os.WriteFile(filepath.Join(cmdDir, f), []byte("package main"), 0o644)
+	const prefix = "package deity\ntype Info struct { Key, Glyph, Name, Role string }\n"
+	cases := []struct {
+		name   string
+		source string
+		want   int
+	}{
+		{"canonical roster with inline Isis", pulseRosterFixture, 10},
+		{"selected historical subset", prefix + `var Roster = []Info{{"thoth", "", "", ""}, {"maat", "", "", ""}, {"isis", "", "", ""}}`, 3},
+		{"keyed literals", prefix + `var Roster = []Info{{Name: "Isis", Key: "isis"}, {Key: "maat"}}`, 2},
+		{"missing roster file", "", 0},
+		{"empty file", " ", 0},
+		{"malformed source", prefix + `var Roster = []Info{`, 0},
+		{"empty roster", prefix + `var Roster = []Info{}`, 0},
+		{"duplicate keys", prefix + `var Roster = []Info{{Key: "isis"}, {Key: "isis"}}`, 0},
+		{"duplicate declarations", prefix + `var Roster = []Info{{Key: "isis"}}; var Roster = []Info{{Key: "maat"}}`, 0},
+		{"nonliteral roster", prefix + `var Roster = loadRoster()`, 0},
+		{"nonliteral key", prefix + `var Roster = []Info{{Key: key}}`, 0},
+		{"empty key", prefix + `var Roster = []Info{{Key: ""}}`, 0},
+		{"unrelated variable", prefix + `var Other = []Info{{Key: "isis"}}`, 0},
+		{"local variable", prefix + `func f() { var Roster = []Info{{Key: "isis"}}; _ = Roster }`, 0},
+		{"wrong roster type", prefix + `var Roster = []string{"isis"}`, 0},
+		{"oversized source", strings.Repeat(" ", 256*1024) + pulseRosterFixture, 0},
 	}
-
-	count := countDeities(tmpDir)
-	if count != 3 {
-		t.Errorf("expected 3 deities, got %d", count)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			// Command layout, legacy files, and unrelated files do not define the roster.
+			cmdDir := filepath.Join(root, "cmd", "sirsi")
+			if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for file, source := range map[string]string{
+				"main.go":         "package main\nvar isisCmd = &cobra.Command{Use: \"isis\"}\nfunc init() { rootCmd.AddCommand(isisCmd) }\n",
+				"hapi.go":         "package main",
+				"unregistered.go": "package main",
+			} {
+				if err := os.WriteFile(filepath.Join(cmdDir, file), []byte(source), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.source != "" {
+				path := filepath.Join(root, "internal", "deity", "registry.go")
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(tc.source), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := countDeities(root); got != tc.want {
+				t.Errorf("countDeities() = %d, want %d selected-source roster declarations", got, tc.want)
+			}
+		})
+	}
+	if got := countDeities(filepath.Join(t.TempDir(), "missing")); got != 0 {
+		t.Errorf("missing root: countDeities() = %d, want 0", got)
 	}
 }
 
@@ -336,4 +382,34 @@ ok  	github.com/SirsiMaster/sirsi-pantheon/internal/mirror	0.345s	coverage: 88.7
 ok  	github.com/SirsiMaster/sirsi-pantheon/internal/jackal	0.156s	coverage: 92.4% of statements
 ?   	github.com/SirsiMaster/sirsi-pantheon/internal/thoth	[no test files]
 ok  	github.com/SirsiMaster/sirsi-pantheon/internal/scales	0.078s	coverage: 94.6% of statements
+`
+
+// Source fixture mirrors the canonical registry declaration, not command-file layout.
+const pulseRosterFixture = `// Package deity provides the canonical deity registry for the Sirsi Pantheon.
+// All surfaces (TUI, menubar, dashboard, CLI) import from here to ensure
+// glyphs, names, and roles are consistent. See ADR-025 (Deity Registry).
+package deity
+
+// Info describes a single deity in the Pantheon hierarchy.
+type Info struct {
+	Key   string // lowercase identifier used in CLI args and state keys
+	Glyph string // Egyptian hieroglyph for display
+	Name  string // display name (PascalCase)
+	Role  string // two-word role description
+}
+
+// Roster is the canonical deity list, ordered by hierarchy (Rule D6).
+// Horus → Ra → Net → Thoth → Ma'at → Isis → Seshat → Anubis → Seba → Osiris
+var Roster = []Info{
+	{"horus", "𓂀", "Horus", "Workstation Lord"},
+	{"ra", "𓇶", "Ra", "Fleet Orchestrator"},
+	{"net", "𓁯", "Net", "Universal Weaver"},
+	{"thoth", "𓁟", "Thoth", "Local Memory"},
+	{"maat", "𓆄", "Ma'at", "Quality Gate"},
+	{"isis", "𓁐", "Isis", "Health & Remedy"},
+	{"seshat", "𓁆", "Seshat", "Local Knowledge"},
+	{"anubis", "𓃣", "Anubis", "System Jackal"},
+	{"seba", "𓇽", "Seba", "Infra & Hardware"},
+	{"osiris", "𓁹", "Osiris", "State Keeper"},
+}
 `

@@ -248,18 +248,21 @@ func humanAge(d time.Duration) string {
 	return fmt.Sprintf("%dm", minutes)
 }
 
-var (
-	sendFrom         string
-	sendTo           string
-	sendTitle        string
-	sendType         string
-	sendInstructions string
-)
+type routerSendOperation func(from, to, title, msgType, instructions string) (dispatch.SendResult, func(bool), error)
 
-var routerSendCmd = &cobra.Command{
-	Use:   "send",
-	Short: "Send a work item from one agent to another",
-	Long: `Commits a new open work item to the canonical router service.
+type routerSendJSON struct {
+	ID      string `json:"id"`
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Deduped bool   `json:"deduped"`
+}
+
+func newRouterSendCmd(load func(string) (string, error), send routerSendOperation) *cobra.Command {
+	var from, to, title, msgType, instructions string
+	cmd := &cobra.Command{
+		Use:   "send",
+		Short: "Send a work item from one agent to another",
+		Long: `Commits a new open work item to the canonical router service.
 The recipient picks it up on sirsi router pull <their-id>, or wakes on it
 immediately if they are blocked in sirsi router wait <their-id>.
 
@@ -268,110 +271,188 @@ cutover live the store row IS the record.
 
   sirsi router send --from claude-pantheon --to codex-pantheon \
     --title "review canon-sync" --instructions @proposal.md`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if sendFrom == "" || sendTo == "" {
-			return fmt.Errorf("--from and --to are required")
-		}
-		if sendTitle == "" {
-			return fmt.Errorf("--title is required")
-		}
-		// Unlike close/respond/dismiss, an omitted body here is not a
-		// legitimate no-op — send is creating a NEW item, and a title with no
-		// instructions leaves the recipient with no ask at all. Required
-		// explicitly (not just via loadOrLiteral's non-empty check) so the
-		// error names the right flag before ever touching its value.
-		if !cmd.Flags().Changed("instructions") {
-			return fmt.Errorf("--instructions is required")
-		}
-		instr, err := loadOrLiteral(sendInstructions)
-		if err != nil {
-			return fmt.Errorf("--instructions: %w", err)
-		}
-		// Router v2 Phase 3: THE send facade (store-first guards — idempotency,
-		// quotas, breakers — then the items/*.md audit view; §2b axiom 8).
-		repoRoot, err := router.FindRepoRoot()
-		if err != nil {
-			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
-		}
-		f, err := dispatch.Open(repoRoot)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = f.Close() }()
-		res, err := f.Send(sendFrom, sendTo, sendTitle, sendType, instr)
-		if err != nil {
-			return err
-		}
-		if res.Deduped {
-			fmt.Printf("  Deduped %s → %s: %s (same logical send this window — nothing appended)\n", sendFrom, sendTo, res.ID)
-		} else {
-			fmt.Printf("  Sent %s → %s: %s\n", sendFrom, sendTo, res.ID)
-			printSendVerdict(f, repoRoot, sendTo)
-		}
-		return nil
-	},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if from == "" || to == "" {
+				return fmt.Errorf("--from and --to are required")
+			}
+			if title == "" {
+				return fmt.Errorf("--title is required")
+			}
+			// Unlike close/respond/dismiss, an omitted body here is not a
+			// legitimate no-op — send is creating a NEW item, and a title with no
+			// instructions leaves the recipient with no ask at all. Required
+			// explicitly (not just via loadOrLiteral's non-empty check) so the
+			// error names the right flag before ever touching its value.
+			if !cmd.Flags().Changed("instructions") {
+				return fmt.Errorf("--instructions is required")
+			}
+			instr, err := load(instructions)
+			if err != nil {
+				return fmt.Errorf("--instructions: %w", err)
+			}
+			res, finish, err := send(from, to, title, msgType, instr)
+			finished := false
+			if finish != nil {
+				defer func() {
+					if !finished {
+						finish(false)
+					}
+				}()
+			}
+			if err != nil {
+				if res.ID != "" {
+					return fmt.Errorf("router send committed item %s; reconcile by ID and do not retry: %w", res.ID, err)
+				}
+				return err
+			}
+			if JsonOutput {
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(routerSendJSON{ID: res.ID, From: from, To: res.To, Deduped: res.Deduped}); err != nil {
+					return fmt.Errorf("router send committed item %s but JSON response write failed; reconcile by ID and do not retry: %w", res.ID, err)
+				}
+				return nil
+			}
+			if res.Deduped {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  Deduped %s → %s: %s (same logical send this window — nothing appended)\n", from, to, res.ID); err != nil {
+					return fmt.Errorf("router send committed item %s but output write failed; reconcile by ID and do not retry: %w", res.ID, err)
+				}
+			} else {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  Sent %s → %s: %s\n", from, to, res.ID); err != nil {
+					return fmt.Errorf("router send committed item %s but output write failed; reconcile by ID and do not retry: %w", res.ID, err)
+				}
+				if finish != nil {
+					finish(true)
+					finished = true
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&from, "from", "", "Sender agent id (e.g., claude-pantheon)")
+	cmd.Flags().StringVar(&to, "to", "", "Recipient agent id (e.g., codex-pantheon)")
+	cmd.Flags().StringVar(&title, "title", "", "Short title for the work item")
+	cmd.Flags().StringVar(&msgType, "type", "", "Message type: proposal|review|decision (ADR-024 §5 — one inbox, no reviews/ or decisions/ dirs)")
+	cmd.Flags().StringVar(&instructions, "instructions", "", "Instructions body (literal text, or @file)")
+	return cmd
 }
 
-var pullBuildFilter bool
+var routerSendCmd = newRouterSendCmd(loadOrLiteral, func(from, to, title, msgType, instructions string) (dispatch.SendResult, func(bool), error) {
+	// Router v2 Phase 3: THE send facade (store-first guards — idempotency,
+	// quotas, breakers — then the items/*.md audit view; §2b axiom 8).
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return dispatch.SendResult{}, nil, fmt.Errorf("no .agents/idea-router/ found: %w", err)
+	}
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		return dispatch.SendResult{}, nil, err
+	}
+	res, err := f.Send(from, to, title, msgType, instructions)
+	if err != nil {
+		_ = f.Close()
+		return res, nil, err
+	}
+	return res, func(showVerdict bool) {
+		if showVerdict {
+			printSendVerdict(f, repoRoot, to)
+		}
+		_ = f.Close()
+	}, nil
+})
 
-var routerPullCmd = &cobra.Command{
-	Use:   "pull <agent>",
-	Short: "Pull open work items addressed to an agent",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Read through the facade (store rows ∪ file items) so store-only items
-		// — the post-cutover steady state — are visible to pull, not just wait.
-		repoRoot, err := router.FindRepoRoot()
-		if err != nil {
-			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
-		}
-		f, err := dispatch.Open(repoRoot)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = f.Close() }()
-		items, err := f.Inbox(args[0])
-		if err != nil {
-			return err
-		}
+// readRouterPullInbox preserves the canonical facade's validation, authority
+// and store/file cutover behavior. Output selection never opens another reader.
+func readRouterPullInbox(agent string) ([]work.Item, error) {
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return nil, fmt.Errorf("no .agents/idea-router/ found: %w", err)
+	}
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return f.Inbox(agent)
+}
 
-		if pullBuildFilter {
-			// Guard: headless build workers cannot execute decision/review/proposal
-			// items (no build artifact exists). Split into buildable vs. deferred and
-			// warn about deferred ones so they don't silently spin for the full timeout.
-			var buildable, nonBuildable []work.Item
+var routerPullCmd = newRouterPullCmd(readRouterPullInbox)
+
+// The per-command reader seam permits inert command fixtures; the production
+// command always uses readRouterPullInbox, with no alternate CLI/config path.
+func newRouterPullCmd(readInbox func(string) ([]work.Item, error)) *cobra.Command {
+	var buildFilter bool
+	cmd := &cobra.Command{
+		Use:   "pull <agent>",
+		Short: "Pull open work items addressed to an agent",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			items, err := readInbox(args[0])
+			if err != nil {
+				return err
+			}
+
+			if buildFilter {
+				// Keep the existing predicate, ordering and deferred-item guidance.
+				var buildable, nonBuildable []work.Item
+				for _, it := range items {
+					if it.IsBuildable() {
+						buildable = append(buildable, it)
+					} else {
+						nonBuildable = append(nonBuildable, it)
+					}
+				}
+				if len(nonBuildable) > 0 {
+					warnings := cmd.OutOrStdout()
+					if JsonOutput {
+						warnings = cmd.ErrOrStderr()
+					}
+					if _, err := fmt.Fprintf(warnings, "  ⚠ %d item(s) skipped — not build-shaped (type: decision/review/proposal):\n", len(nonBuildable)); err != nil {
+						return err
+					}
+					for _, it := range nonBuildable {
+						if _, err := fmt.Fprintf(warnings, "    • %s  type:%s  from:%s\n      → route to human/agent lane: sirsi router respond %s --result \"<answer>\"\n\n", it.ID, it.Type, it.From, it.ID); err != nil {
+							return err
+						}
+					}
+				}
+				items = buildable
+			}
+
+			out := cmd.OutOrStdout()
+			if JsonOutput {
+				// Match the canonical item array used by wait's items member;
+				// never fetch show/body/dump data beyond this same inbox read.
+				if items == nil {
+					items = []work.Item{}
+				}
+				encoder := json.NewEncoder(out)
+				encoder.SetIndent("", "  ")
+				return encoder.Encode(items)
+			}
+			if len(items) == 0 {
+				_, err := fmt.Fprintf(out, "  No open items for %s.\n", args[0])
+				return err
+			}
+			if _, err := fmt.Fprintf(out, "  %d open items for %s:\n\n", len(items), args[0]); err != nil {
+				return err
+			}
 			for _, it := range items {
-				if it.IsBuildable() {
-					buildable = append(buildable, it)
-				} else {
-					nonBuildable = append(nonBuildable, it)
+				typeHint := ""
+				if it.Type != "" {
+					typeHint = fmt.Sprintf("  type: %s\n    ", it.Type)
+				}
+				if _, err := fmt.Fprintf(out, "  • %s\n    %sfrom: %s\n      title: %s\n      opened: %s\n\n", it.ID, typeHint, it.From, it.Title, it.Opened); err != nil {
+					return err
 				}
 			}
-			if len(nonBuildable) > 0 {
-				fmt.Printf("  ⚠ %d item(s) skipped — not build-shaped (type: decision/review/proposal):\n", len(nonBuildable))
-				for _, it := range nonBuildable {
-					fmt.Printf("    • %s  type:%s  from:%s\n      → route to human/agent lane: sirsi router respond %s --result \"<answer>\"\n\n", it.ID, it.Type, it.From, it.ID)
-				}
+			if _, err := fmt.Fprint(out, "  Read full: sirsi router show <id>\n"); err != nil {
+				return err
 			}
-			items = buildable
-		}
-
-		if len(items) == 0 {
-			fmt.Printf("  No open items for %s.\n", args[0])
-			return nil
-		}
-		fmt.Printf("  %d open items for %s:\n\n", len(items), args[0])
-		for _, it := range items {
-			typeHint := ""
-			if it.Type != "" {
-				typeHint = fmt.Sprintf("  type: %s\n    ", it.Type)
-			}
-			fmt.Printf("  • %s\n    %sfrom: %s\n      title: %s\n      opened: %s\n\n", it.ID, typeHint, it.From, it.Title, it.Opened)
-		}
-		fmt.Printf("  Read full: sirsi router show <id>\n")
-		fmt.Printf("  Close when done: sirsi router close <id> --result @path/to/result.md\n")
-		return nil
-	},
+			_, err = fmt.Fprint(out, "  Close when done: sirsi router close <id> --result @path/to/result.md\n")
+			return err
+		},
+	}
+	cmd.Flags().BoolVar(&buildFilter, "build-filter", false, "Skip non-build items (decision/review/proposal) — safe for headless build workers")
+	return cmd
 }
 
 var routerWaitCmd = newRouterWaitCmdWithKernel(strictCodexAnchor)
@@ -1495,11 +1576,6 @@ is a fixed H4-boundary contract (JSON only, no schema exposure).`,
 }
 
 func init() {
-	routerSendCmd.Flags().StringVar(&sendFrom, "from", "", "Sender agent id (e.g., claude-pantheon)")
-	routerSendCmd.Flags().StringVar(&sendTo, "to", "", "Recipient agent id (e.g., codex-pantheon)")
-	routerSendCmd.Flags().StringVar(&sendTitle, "title", "", "Short title for the work item")
-	routerSendCmd.Flags().StringVar(&sendType, "type", "", "Message type: proposal|review|decision (ADR-024 §5 — one inbox, no reviews/ or decisions/ dirs)")
-	routerSendCmd.Flags().StringVar(&sendInstructions, "instructions", "", "Instructions body (literal text, or @file)")
 	routerCloseCmd.Flags().StringVar(&closeResult, "result", "", "Result body (literal text, or @file)")
 	routerCloseCmd.Flags().StringVar(&closeAgent, "agent", "", "Acting agent id (otherwise resolved from the current session)")
 	routerAcknowledgeCmd.Flags().StringVar(&acknowledgeAgent, "agent", "", "Acting agent id — must be the item's recipient (otherwise resolved from the current session)")
@@ -1515,7 +1591,6 @@ func init() {
 	routerDoctorCmd.Flags().BoolVar(&routerDoctorFix, "fix", false, "run the safe repair: reap OS-dead thread records (non-destructive)")
 	routerQuarantineWorkerCmd.Flags().BoolVar(&quarantineWorkerDryRun, "dry-run", false, "report the full plan without booting out or renaming anything (Rule A1)")
 	routerWakeInstallCmd.Flags().Bool("force", false, "arm even if the agent already has an armed watcher (bypasses the duplicate-spawn leak guard)")
-	routerPullCmd.Flags().BoolVar(&pullBuildFilter, "build-filter", false, "Skip non-build items (decision/review/proposal) — safe for headless build workers")
 	routerCutoverEnableCmd.Flags().Bool("rearm", false, "reinstall headless wake LaunchAgents into store-wake mode now")
 	routerCutoverCmd.AddCommand(routerCutoverStatusCmd, routerCutoverEnableCmd, routerCutoverDisableCmd)
 	routerPruneCmd.Flags().IntVar(&pruneDays, "days", router.DefaultRetentionDays, "retention window in days (older artifacts are removed)")

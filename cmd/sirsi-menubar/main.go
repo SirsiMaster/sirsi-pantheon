@@ -22,6 +22,7 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/jackal/rules"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/mercury"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/platform"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
@@ -102,16 +103,22 @@ func menubarLedger() (ledger.BoardSummary, error) {
 }
 
 func menubarFabric() (ledger.FabricBoard, error) {
+	producer := ledger.NewFabricGenerationProducer(menubarFabricRead, version)
+	generation, err := producer.Read(context.Background())
+	if err != nil {
+		return ledger.FabricBoard{}, err
+	}
+	view, err := generation.View()
+	return view.Board, err
+}
+
+func menubarFabricRead() (ledger.FabricRead, error) {
 	routerRoot, ok := resolveRouterRoot()
 	if !ok {
-		return ledger.FabricBoard{}, fmt.Errorf("router root not resolvable from menubar context")
+		return ledger.FabricRead{}, fmt.Errorf("router root not resolvable from menubar context")
 	}
 	repoRoot := filepath.Dir(filepath.Dir(routerRoot))
-	board, err := ledger.BuildFabric(repoRoot, version, time.Now().UTC())
-	if err != nil {
-		return ledger.FabricBoard{}, fmt.Errorf("fabric build: %w", err)
-	}
-	return board, nil
+	return ledger.ReadFabric(repoRoot, time.Now().UTC())
 }
 
 // applyFDAState renders the disk-access item to the current all/some/none tier:
@@ -171,11 +178,22 @@ func onReady() {
 	// below) can capture ctx/cancel/dashSrv/router cleanly.
 	cfg := DefaultStatsConfig()
 	eventBuf := dashboard.NewEventBuffer(256)
+	ctx, cancel := context.WithCancel(context.Background())
+	fabricSource := ledger.NewFabricGenerationProducer(menubarFabricRead, version)
+	readMenuFabric := func() (ledger.FabricBoard, error) {
+		generation, err := fabricSource.Read(ctx)
+		if err != nil {
+			return ledger.FabricBoard{}, err
+		}
+		view, err := generation.View()
+		return view.Board, err
+	}
 	dashSrv := dashboard.New(dashboard.Config{
-		Port:     dashboard.DashboardPort,
-		NotifyDB: nStore,
-		Events:   eventBuf,
-		SirsiBin: sirsiBin,
+		MercuryFn: mercury.NewConfigured().Read,
+		Port:      dashboard.DashboardPort,
+		NotifyDB:  nStore,
+		Events:    eventBuf,
+		SirsiBin:  sirsiBin,
 		StatsFn: func() ([]byte, error) {
 			snap := CollectStats(cfg)
 			return json.Marshal(snap)
@@ -184,14 +202,14 @@ func onReady() {
 		// dashboard. Unresolved root → error → 503 (designed degrade).
 		NodeStatusFn: menubarNodeStatus,
 		// A26 Nexus seam: serve the compact ledger board summary.
-		LedgerFn: menubarLedger,
-		FabricFn: menubarFabric,
+		LedgerFn:     menubarLedger,
+		FabricFn:     menubarFabric,
+		FabricSource: fabricSource,
 	})
 	if err := dashSrv.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "dashboard: %v\n", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
 	startGuardBridge(ctx)
 	startPeriodicScan(ctx)
 	startLiveRefresh(ctx)
@@ -409,7 +427,7 @@ func onReady() {
 			// The menubar consumes the same FabricBoard producer as /api/fabric.
 			// Failures retain the prior payload and label its age; they never turn
 			// an unavailable producer into authoritative zeroes.
-			if board, ferr := menubarFabric(); ferr == nil {
+			if board, ferr := readMenuFabric(); ferr == nil {
 				lastGoodFabric = time.Now().UTC()
 				mLedger.SetTitle(fmt.Sprintf("𓂀 Fabric — %d completed / %d in flight", board.Work.Done, board.Work.Open))
 				mLedgerProgress.SetTitle(fmt.Sprintf("  Completed / in flight: %d / %d", board.Work.Done, board.Work.Open))
@@ -420,7 +438,7 @@ func onReady() {
 					fmt.Sprintf("  %d messages pending", board.Messages.Open),
 				}
 				for _, lane := range board.Lanes {
-					if lane.State == "IDLE with work" || lane.State == "BLOCKED" {
+					if lane.State == "IDLE_WITH_WORK" || lane.State == "BLOCKED" {
 						rows = append(rows, fmt.Sprintf("  ⚠ %s — %s", lane.Agent, lane.State))
 					}
 				}
@@ -469,13 +487,7 @@ func onReady() {
 func onExit() {}
 
 func countIdleLanes(lanes []ledger.FabricLane) int {
-	count := 0
-	for _, lane := range lanes {
-		if lane.State == "IDLE" || lane.State == "IDLE with work" {
-			count++
-		}
-	}
-	return count
+	return ledger.IdleFabricLanes(lanes)
 }
 
 func formatAge(age time.Duration) string {

@@ -119,7 +119,7 @@ struct CommandExecution: Equatable {
     var jsonRead: SirsiEngine.JSONCommandRead {
         SirsiEngine.JSONCommandRead(data: complete ? stdoutData : Data(),
             exitStatus: complete ? exitCode : nil, timedOut: timedOut,
-            launchError: issue)
+            launchError: issue, stderrData: complete ? stderrData : Data())
     }
 }
 
@@ -209,6 +209,7 @@ extension SirsiEngine {
     // only for small inert fixtures; it cannot raise the production ceiling.
     nonisolated static func captureProcess(executable: String, args: [String], directory: URL? = nil,
         stdin: String? = nil, timeout: TimeInterval = 30, outputLimit: Int = 4 * 1024 * 1024,
+        environment: [String: String]? = nil,
         authorize: @escaping @MainActor () -> Bool = { true }) async -> CommandExecution {
         guard timeout.isFinite, timeout > 0, outputLimit > 0, outputLimit <= 4 * 1024 * 1024,
               (stdin?.utf8.count ?? 0) <= 64 * 1024 else {
@@ -219,6 +220,7 @@ extension SirsiEngine {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: executable)
             process.arguments = args
+            if let environment { process.environment = environment }
             process.currentDirectoryURL = directory
             let output = Pipe(), errors = Pipe(), input = Pipe()
             process.standardOutput = output; process.standardError = errors

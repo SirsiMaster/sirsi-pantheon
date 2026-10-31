@@ -21,7 +21,6 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/ledger"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
-	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/knowledge"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/notify"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/rtk"
@@ -39,10 +38,13 @@ func registerTools(s *Server) {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]SchemaField{
-				"query":  {Type: "string", Description: "Optional text filter across recorded case and evidence fields."},
-				"kind":   {Type: "string", Description: "Optional decision kind or category filter."},
-				"status": {Type: "string", Description: "Optional status filter: open or resolved."},
-				"limit":  {Type: "number", Description: "Maximum returned cases, from 1 through 100; defaults to 50."},
+				"query":    {Type: "string", Description: "Optional text filter across recorded case and evidence fields."},
+				"kind":     {Type: "string", Description: "Optional decision kind or category filter."},
+				"status":   {Type: "string", Description: "Optional status filter: open or resolved."},
+				"limit":    {Type: "number", Description: "Maximum returned cases, from 1 through 100; defaults to 50."},
+				"scope":    {Type: "string", Description: "all (default) or system-one; applied before the window."},
+				"evidence": {Type: "string", Description: "Exact retained evidence identity."},
+				"cursor":   {Type: "string", Description: "Opaque same-query/snapshot continuation from history.next_cursor."},
 			},
 		},
 	}, handleMaatCasebook)
@@ -53,7 +55,16 @@ func registerTools(s *Server) {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]SchemaField{
-				"query": {Type: "string", Description: "Optional text filter across safe title, summary, and reference metadata."},
+				"query":          {Type: "string", Description: "Optional text filter across safe title, summary, and reference metadata."},
+				"mode":           {Type: "string", Description: "search (default), detail or history; read-only canonical archive."},
+				"id":             {Type: "string", Description: "Record ID for detail/history."},
+				"revision":       {Type: "number", Description: "Retained detail revision; zero selects current."},
+				"limit":          {Type: "number", Description: "Page size 1..100, default50."},
+				"cursor":         {Type: "string", Description: "Opaque same-query archive continuation."},
+				"source":         {Type: "string", Description: "Canonical source filter for search."},
+				"classification": {Type: "string", Description: "Canonical classification filter."},
+				"resolution":     {Type: "string", Description: "open, reviewed, accepted or rejected."},
+				"history":        {Type: "boolean", Description: "Include retained versions in search."},
 			},
 		},
 	}, handleMaatKnowledge)
@@ -492,7 +503,7 @@ var maatKnowledgeHome = os.UserHomeDir
 // It deliberately reads the shared append-only journal rather than rebuilding
 // policy or hosting a second agent-facing store.
 func handleMaatCasebook(args map[string]interface{}) (*ToolResult, error) {
-	query, err := parseMaatCasebookQuery(args)
+	query, err := parseMaatHistoryQuery(args)
 	if err != nil {
 		return textResult("Error: "+err.Error(), true), nil
 	}
@@ -500,11 +511,10 @@ func handleMaatCasebook(args map[string]interface{}) (*ToolResult, error) {
 	if err != nil {
 		return textResult(fmt.Sprintf("Ma'at casebook unavailable: %v", err), true), nil
 	}
-	rows, err := journal.Recent(1000)
+	view, err := readMaatHistory(journal, query)
 	if err != nil {
-		return textResult(fmt.Sprintf("Ma'at decision journal unavailable: %v", err), true), nil
+		return textResult("Ma'at history unavailable; restart the query if its snapshot changed", true), nil
 	}
-	view := casebook.Search(rows, query)
 	raw, err := json.Marshal(view)
 	if err != nil {
 		return nil, fmt.Errorf("encode Ma'at casebook: %w", err)
@@ -516,19 +526,15 @@ func handleMaatCasebook(args map[string]interface{}) (*ToolResult, error) {
 // local knowledge view used by Ma'at's CLI and native surface. It never exposes
 // a raw Seshat cache or offers ingestion mutation through MCP.
 func handleMaatKnowledge(args map[string]interface{}) (*ToolResult, error) {
-	query := ""
-	if value, exists := args["query"]; exists {
-		text, ok := value.(string)
-		if !ok {
-			return textResult("Error: query must be a string", true), nil
-		}
-		query = text
+	query, err := parseMaatKnowledgeRead(args)
+	if err != nil {
+		return textResult("Error: "+err.Error(), true), nil
 	}
 	home, err := maatKnowledgeHome()
 	if err != nil {
 		return textResult(fmt.Sprintf("Ma'at knowledge unavailable: determine home directory: %v", err), true), nil
 	}
-	view, err := knowledge.Load(home, query)
+	view, err := readMaatKnowledge(home, query)
 	if err != nil {
 		return textResult(fmt.Sprintf("Ma'at knowledge unavailable: %v", err), true), nil
 	}

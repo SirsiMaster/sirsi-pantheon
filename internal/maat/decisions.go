@@ -43,7 +43,21 @@ type Decision struct {
 	SystemOne *MaatVerdict `json:"system_one,omitempty"`
 	// SystemOneCalibration binds one recorded local auto-pass to a distinct
 	// independent outcome. It is audit evidence only, never a local grant.
-	SystemOneCalibration *CalibrationRecord `json:"system_one_calibration,omitempty"`
+	SystemOneCalibration      *CalibrationRecord         `json:"system_one_calibration,omitempty"`
+	FailureMemoryReceipt      *PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
+	FailureMemoryIncidentKeys *[]string                  `json:"failure_memory_incident_keys,omitempty"`
+	SourceQualification       *QualificationEvent        `json:"source_qualification,omitempty"`
+	LifecycleAdoption         *LifecycleOwnerAdoption    `json:"lifecycle_owner_adoption,omitempty"`
+}
+
+// A pointer preserves Decision's existing comparability while the optional
+// wire value remains an ordinary JSON array. It is read-model data only.
+func copyFailureMemoryIncidentKeys(keys []string) *[]string {
+	if len(keys) == 0 {
+		return nil
+	}
+	copy := append([]string(nil), keys...)
+	return &copy
 }
 
 // DecisionJournal persists the local decision projection. Implementations may
@@ -57,11 +71,12 @@ type DecisionJournal interface {
 // Ma'at's existing decision journal.  This is intentionally one-way: the
 // journal is an inspectable projection for Casebook and surfaces, never an
 // input that can alter a failure-memory decision or authorize remediation.
-func ProjectFailureMemoryPreflight(j DecisionJournal, receipt PreflightReceipt) error {
+func ProjectFailureMemoryPreflight(j DecisionJournal, stored StoredPreflightReceipt) error {
 	if j == nil {
 		return fmt.Errorf("maat failure memory projection: nil decision journal")
 	}
-	if err := receipt.validate(); err != nil {
+	receipt, err := stored.Receipt()
+	if err != nil {
 		return fmt.Errorf("maat failure memory projection: invalid preflight receipt")
 	}
 	evidence, err := receipt.EvidenceReference()
@@ -72,16 +87,19 @@ func ProjectFailureMemoryPreflight(j DecisionJournal, receipt PreflightReceipt) 
 	if receipt.RecoveryReference != "" {
 		why += "; recovery reference: " + receipt.RecoveryReference
 	}
+	reference := stored.Reference()
 	return j.Append(Decision{
-		Time:          receipt.EvaluatedAtUTC.UTC().Format(time.RFC3339Nano),
-		Kind:          "failure memory preflight",
-		Requester:     "maat",
-		Resource:      receipt.Action.Component,
-		Assessed:      receipt.Action.Operation,
-		Affected:      receipt.Action.Profile,
-		Determination: string(receipt.Decision),
-		Why:           why,
-		Evidence:      evidence,
+		FailureMemoryReceipt:      &reference,
+		FailureMemoryIncidentKeys: copyFailureMemoryIncidentKeys(receipt.IncidentKeys),
+		Time:                      receipt.EvaluatedAtUTC.UTC().Format(time.RFC3339Nano),
+		Kind:                      "failure memory preflight",
+		Requester:                 "maat",
+		Resource:                  receipt.Action.Component,
+		Assessed:                  receipt.Action.Operation,
+		Affected:                  receipt.Action.Profile,
+		Determination:             string(receipt.Decision),
+		Why:                       why,
+		Evidence:                  evidence,
 	})
 }
 
@@ -151,12 +169,26 @@ type JournalIssue struct {
 	Reason string `json:"reason"`
 }
 
+// JournalValidationError identifies the first strict-read record rejected by
+// the journal contract without retaining or exposing its decision contents.
+type JournalValidationError struct {
+	Issue JournalIssue
+}
+
+func (e *JournalValidationError) Error() string {
+	if e == nil {
+		return "maat decision journal: invalid record"
+	}
+	return fmt.Sprintf("maat decision journal: invalid record at line %d: %s", e.Issue.Line, e.Issue.Reason)
+}
+
 // JournalIntegrity accompanies the tolerant Casebook projection.  The strict
 // journal API remains the policy read path; this shape exists only so a legacy
 // or damaged display record cannot make every healthy Ma'at case invisible.
 type JournalIntegrity struct {
-	InvalidCount int            `json:"invalid_count"`
-	Issues       []JournalIssue `json:"issues,omitempty"`
+	InvalidCount      int            `json:"invalid_count"`
+	CountIsLowerBound bool           `json:"count_is_lower_bound,omitempty"`
+	Issues            []JournalIssue `json:"issues,omitempty"`
 }
 
 // JournalRepairReceipt names the retained original and the verified active
@@ -457,6 +489,25 @@ func (j *FileDecisionJournal) FindByEvidence(kind, evidence string) (Decision, b
 	return found, ok, err
 }
 
+// FindUniqueByEvidence strictly scans the complete retained journal and keeps
+// at most one row matching the evidence reference, regardless of kind. The
+// match count lets authorization paths check evidence uniqueness before
+// validating the row's kind and payload without relying on recent history.
+func (j *FileDecisionJournal) FindUniqueByEvidence(evidence string) (Decision, int, error) {
+	var found Decision
+	matches := 0
+	_, err := j.scanStrict(func(d Decision) bool {
+		if d.Evidence == evidence {
+			matches++
+			if matches == 1 {
+				found = d
+			}
+		}
+		return false // scanStrict must validate the entire retained tail.
+	})
+	return found, matches, err
+}
+
 // HasOriginDecision reports whether a strict retained row matches the exact
 // origin tuple. It is used alongside FindByEvidence to distinguish an
 // unresolved attempt from one with a later terminal repair receipt.
@@ -554,14 +605,14 @@ func (j *FileDecisionJournal) readRecent(limit int, tolerateInvalid bool) ([]Dec
 		var decision Decision
 		if err := json.Unmarshal([]byte(line), &decision); err != nil {
 			if !tolerateInvalid {
-				return nil, JournalIntegrity{}, fmt.Errorf("maat decision journal: malformed record: %w", err)
+				return nil, JournalIntegrity{}, &JournalValidationError{Issue: makeJournalIssue(lineNumber, raw, "malformed JSON record")}
 			}
 			integrity.addIssue(lineNumber, raw, "malformed JSON record")
 			continue
 		}
 		if err := validateDecision(decision); err != nil {
 			if !tolerateInvalid {
-				return nil, JournalIntegrity{}, err
+				return nil, JournalIntegrity{}, &JournalValidationError{Issue: makeJournalIssue(lineNumber, raw, journalIssueReason(err))}
 			}
 			integrity.addIssue(lineNumber, raw, journalIssueReason(err))
 			continue
@@ -583,21 +634,47 @@ func (integrity *JournalIntegrity) addIssue(line int, raw, reason string) {
 	if len(integrity.Issues) >= maxRetainedJournalIssues {
 		return
 	}
+	integrity.Issues = append(integrity.Issues, makeJournalIssue(line, raw, reason))
+}
+
+func makeJournalIssue(line int, raw, reason string) JournalIssue {
 	digest := sha256.Sum256([]byte(raw))
-	integrity.Issues = append(integrity.Issues, JournalIssue{
+	return JournalIssue{
 		Line: line, Digest: fmt.Sprintf("sha256:%x", digest), Reason: reason,
-	})
+	}
 }
 
 func journalIssueReason(err error) string {
-	reason := strings.TrimSpace(strings.TrimPrefix(err.Error(), "maat decision journal:"))
-	if reason == "" {
+	if err == nil {
 		return "record violates the Ma'at journal contract"
 	}
-	if len(reason) > 240 {
-		return reason[:240]
+	reason := strings.TrimSpace(strings.TrimPrefix(err.Error(), "maat decision journal:"))
+	switch {
+	case strings.Contains(reason, " is required"):
+		return "required field is missing"
+	case strings.HasPrefix(reason, "invalid time:"):
+		return "invalid time"
+	case reason == "resolution evidence exceeds bounded record size":
+		return reason
+	case reason == "incident links require retained receipt metadata":
+		return reason
+	case reason == "invalid or duplicate failure memory incident link":
+		return reason
+	case reason == "invalid failure-memory receipt reference":
+		return reason
+	case strings.HasPrefix(reason, "invalid System One verdict:"):
+		return "invalid System One verdict"
+	case reason == "System One verdict is valid only for system one screen":
+		return reason
+	case strings.HasPrefix(reason, "invalid System One calibration:"):
+		return "invalid System One calibration"
+	case reason == "System One calibration is valid only for system one calibration":
+		return reason
+	case reason == "screen and calibration records cannot coexist":
+		return reason
+	default:
+		return "record violates the Ma'at journal contract"
 	}
-	return reason
 }
 
 // RepairInvalidRecords preserves the original journal and rebuilds only the
@@ -623,6 +700,25 @@ func normalizeDecision(decision *Decision) error {
 }
 
 func validateDecision(decision Decision) error {
+	if decision.Kind == "source qualification observation" && decision.SourceQualification == nil {
+		return fmt.Errorf("lifecycle decision requires its typed event")
+	}
+	if decision.SourceQualification != nil {
+		if decision.Kind != "source qualification observation" || decision.SystemOne != nil || decision.SystemOneCalibration != nil || decision.FailureMemoryReceipt != nil || decision.FailureMemoryIncidentKeys != nil || decision.LifecycleAdoption != nil {
+			return fmt.Errorf("invalid lifecycle decision kind/payload combination")
+		}
+		if err := decision.SourceQualification.validate(); err != nil {
+			return err
+		}
+	}
+	if decision.LifecycleAdoption != nil {
+		if decision.Kind != "source qualification owner adoption" || decision.SystemOne != nil || decision.SystemOneCalibration != nil || decision.FailureMemoryReceipt != nil || decision.FailureMemoryIncidentKeys != nil || decision.SourceQualification != nil {
+			return fmt.Errorf("invalid lifecycle owner-adoption kind/payload combination")
+		}
+		if err := decision.LifecycleAdoption.validate(); err != nil {
+			return err
+		}
+	}
 	for field, value := range map[string]string{
 		"time": decision.Time, "host": decision.Host, "kind": decision.Kind,
 		"requester": decision.Requester, "assessed": decision.Assessed,
@@ -637,6 +733,23 @@ func validateDecision(decision Decision) error {
 	}
 	if len(decision.OriginEvidence) > 512 || len(decision.ResolutionFor) > 512 {
 		return fmt.Errorf("maat decision journal: resolution evidence exceeds bounded record size")
+	}
+	if keys := decision.FailureMemoryIncidentKeys; keys != nil {
+		if decision.FailureMemoryReceipt == nil {
+			return fmt.Errorf("maat decision journal: incident links require retained receipt metadata")
+		}
+		previousKey := ""
+		for _, key := range *keys {
+			if !validDigest(key) || key <= previousKey {
+				return fmt.Errorf("maat decision journal: invalid or duplicate failure memory incident link")
+			}
+			previousKey = key
+		}
+	}
+	if reference := decision.FailureMemoryReceipt; reference != nil {
+		if decision.Kind != "failure memory preflight" || reference.validate() != nil || decision.Evidence != reference.EvidenceReference() || decision.Resource != reference.Action.Component || decision.Affected != reference.Action.Profile || decision.Assessed != reference.Action.Operation {
+			return fmt.Errorf("maat decision journal: invalid failure-memory receipt reference")
+		}
 	}
 	if decision.SystemOne != nil {
 		if err := ValidateMaatVerdict(*decision.SystemOne); err != nil {

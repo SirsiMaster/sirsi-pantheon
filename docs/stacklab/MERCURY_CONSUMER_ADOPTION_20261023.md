@@ -20,8 +20,8 @@ historical branch is cherry-picked.
 | `sirsi mercury` | Adopt as thin current CLI, with shared configuration | Development and installed signed readbacks remain distinct |
 | MCP access | Add zero-argument `mercury_status` over the same read model | No endpoint or control parameters; no second sampler/cache |
 | Historical Go scene/card-edge geometry | Preserve as read-model data | Does not mean the current native UI renders that scene |
-| Historical browser SVG, console and router-script repair | Retain, not imported in this increment | Dedicated current-web adoption/security/visual parity remains open |
-| Historical `MercuryView.swift` | Not copied over current native1190 | Current `/api` hardware workspace remains intact; full versioned-dashboard scene parity remains open |
+| Historical browser SVG, console and router-script repair | Restored as scoped source from cd379 into the existing console, GET-only shared reader and same-origin external assets | Current-source fixtures/security/visual/installed parity remain unqualified until Main runs them; no wholesale historical merge |
+| Historical `MercuryView.swift` | Reuse only the retained vector geometry and presentation under the current canonical CLI/owned runner; do not copy the old process helper or replace adjacent native scopes | Native now reads dashboard/v1 and retains separately labelled Ra/transport sections; independent scene fidelity and installed parity remain open |
 | Current native CPU/GPU/power/interface view | Native candidate consumes the canonical dashboard/v1 CPU-busy, calibrated GPU-work and projected link-rate fields; local monotonic aging withholds retained measurements and rates | Power is not exposed by dashboard/v1 and remains unknown; the broader native power/telemetry obligation in the original heterogeneous-compute PRD remains open. Full historical web/native scene parity is still open |
 | October18 worker EPERM/socket limitation | Requalified, no longer a current blanket hold | Exact historical live read now succeeds; recovered socket/race fixtures pass |
 | Full installed product and all enrolled machines | Not established here | Requires normal signed release, installed readback and explicit machine/freshness evidence |
@@ -31,12 +31,16 @@ historical branch is cherry-picked.
 Existing Mercury producer → bounded private dashboard/v1 GET → validated Go
 snapshot and presentation → CLI or MCP. Errors return typed unknown/refused/stale
 state. There is no write path to Mercury, Ra or an inference engine. Existing
-native hardware UI continues to read its separately labelled producer endpoint.
+native Mercury UI now reads that same CLI projection. Its adjacent Ra/admission
+and hardware-transport receipts remain separate facts, never another Mercury
+measurement generation. Web/native clocks only expire retained claims; they do
+not sample a device, calculate gain, or fetch from a clock-render callback.
 
 Producer schema and calibration belong to Mercury. Configured endpoint choice
 belongs to the operator, never to MCP arguments. Ra owns fabric authority;
 Ma'at admission governs builds/tests, not the measurement's truth. Pantheon owns
-read-model composition. SSA alone composes and publishes release0.24.124.
+read-model composition. SSA alone composes and publishes through its normal
+release train; this source restoration does not choose a version or a new gate.
 
 ## Implementation order and decisions
 
@@ -45,15 +49,16 @@ read-model composition. SSA alone composes and publishes release0.24.124.
 3. Add CLI/MCP adapters and closed read-only contracts.
 4. Review/test, record Stack Lab and exact package inventory, return immutable
    commits to SSA's sole release train.
-5. Keep the separate web/native scene and installed-product obligations open;
-   no source-only completion or silent feature retirement.
+5. Restore the retained web/native scene without replacing the producer or
+   adjacent native scopes; keep exact-source runtime, fidelity/accessibility
+   and installed-product obligations open until their own proof exists.
 
 | Question | Chosen | Rejected |
 | --- | --- | --- |
 | Reuse strategy | Exact scoped source extraction | Blind historical multi-commit merge |
 | Measurement authority | Existing Mercury producer | A new Pantheon sampler or inferred calibration |
 | Surface composition | CLI/MCP share one Go read | Independently computed units or freshness |
-| Native compatibility | Preserve reviewed1190 UI | Replace it with an older view to obtain an easier passing test |
+| Native compatibility | Preserve reviewed1190 Ra/transport scope and current bounded runner; reuse only retained vector/presentation code | Replace the workspace or runner with the older whole view to obtain an easier passing test |
 
 ## Known proof and remaining proof
 

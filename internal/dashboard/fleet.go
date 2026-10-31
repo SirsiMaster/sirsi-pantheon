@@ -190,7 +190,7 @@ func (ft *FleetTracker) observe(snap ledger.Snapshot, now time.Time, unroutable 
 				ft.prev[key] = status
 			case prev != status:
 				ft.events = append([]FleetEvent{{
-					At:      now.Format("15:04:05"),
+					At:      now.UTC().Format(time.RFC3339Nano),
 					Agent:   ag.AgentID,
 					TaskID:  t.TaskID,
 					Subject: t.Subject,
@@ -318,14 +318,38 @@ func (ft *FleetTracker) observe(snap ledger.Snapshot, now time.Time, unroutable 
 	})
 
 	out.Activity = append([]FleetEvent{}, ft.events...)
-	ft.seeded = true
 	out.Seeded = ft.seeded
+	ft.seeded = true
 	return out
 }
 
 // apiFleet serves GET /api/fleet.
 func (s *Server) apiFleet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if !fabricReadMethod(w, r) {
+		return
+	}
+	if s.cfg.FabricSource != nil {
+		g, err := s.cfg.FabricSource.Read(r.Context())
+		if err != nil {
+			writeError(w, "fleet generation unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		out, err := FleetFromGeneration(g)
+		if err != nil {
+			writeError(w, "fleet generation unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		v, err := g.View()
+		if err != nil {
+			writeError(w, "fleet generation unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("X-Sirsi-Fabric-Generation", v.ID)
+		writeJSON(w, out)
+		return
+	}
 	if s.cfg.FleetFn == nil {
 		// Honest degrade, same contract as /api/ledger: no producer wired is a
 		// 503, never an empty board that reads as "the fleet has no work".

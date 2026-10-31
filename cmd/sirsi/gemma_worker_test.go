@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -373,3 +374,46 @@ func TestGemmaWorkerSingletonRejectsDuplicate(t *testing.T) {
 }
 
 func (s *gemmaWorkerStoreFake) Block(_, _, reason string) error { s.blocked = reason; return nil }
+
+func TestGemmaWorkerMaintenancePausePreservesBarrier(t *testing.T) {
+	for _, exact := range []bool{false, true} {
+		s, r := claimedGemmaItem()
+		s.claimErr = fmt.Errorf("remote: %w", routerstore.ErrLanePaused)
+		generated := false
+		w := testGemmaWorker(s, r, func(context.Context, string) (string, error) { generated = true; return "", nil })
+		if exact {
+			w.itemID = "selected"
+		}
+		worked, err := w.runOnce(context.Background())
+		if !errors.Is(err, routerstore.ErrLanePaused) || worked || generated || s.started || s.renews != 0 || s.failed != "" || r.calls != 0 {
+			t.Fatal("maintenance pause caused work or failure")
+		}
+	}
+}
+
+// Exercises the production loop and production runOnce. A barrier which arrives
+// during inference cannot cancel its owned result or launch another generation.
+func TestGemmaWorkerLoopPauseAfterJoinedResult(t *testing.T) {
+	s, r := claimedGemmaItem()
+	generated := 0
+	w := testGemmaWorker(s, r, func(ctx context.Context, _ string) (string, error) {
+		generated++
+		s.claimErr = fmt.Errorf("remote: %w", routerstore.ErrLanePaused)
+		return "A complete retained draft.", nil
+	})
+	if err := runGemmaWorkerLoop(context.Background(), w, false, func() error { return nil }, func(error) {}); !errors.Is(err, routerstore.ErrLanePaused) {
+		t.Fatal(err)
+	}
+	if generated != 1 || r.calls != 1 || s.claimNextCalls != 2 || s.failed != "" {
+		t.Fatalf("result lost or duplicate dispatch: generated=%d replies=%d claims=%d failure=%s", generated, r.calls, s.claimNextCalls, s.failed)
+	}
+}
+func TestGemmaWorkerLoopPauseDoesNotHideOutage(t *testing.T) {
+	s, r := claimedGemmaItem()
+	outage := errors.New("canonical authentication unavailable")
+	s.claimErr = outage
+	w := testGemmaWorker(s, r, func(context.Context, string) (string, error) { t.Fatal("generation after refusal"); return "", nil })
+	if err := runGemmaWorkerLoop(context.Background(), w, false, func() error { return nil }, func(error) {}); !errors.Is(err, outage) {
+		t.Fatalf("outage became clean pause: %v", err)
+	}
+}

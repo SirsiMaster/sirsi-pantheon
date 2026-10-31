@@ -205,12 +205,13 @@ var ccdReapCmd = &cobra.Command{
 		// archive path (it holds for untagged/interactive sessions too, which the
 		// kill path skips outright and would otherwise be archived on age alone).
 		liveSIDs := map[string]bool{}
-		for _, pid := range ccdPgrep("-f", "claude.app/Contents/MacOS/claude ") {
+		runners, err := ccdCollectRunners()
+		if err != nil {
+			return fmt.Errorf("ccd: runner observation incomplete; refusing reap/archive: %w", err)
+		}
+		for _, runner := range runners {
+			pid, st := runner.pid, runner.start
 			if pid == me {
-				continue
-			}
-			st, ok := ccdPidStart(pid)
-			if !ok {
 				continue
 			}
 			var best *ccdSession
@@ -223,8 +224,10 @@ var ccdReapCmd = &cobra.Command{
 					bd, best = d, &sessions[i]
 				}
 			}
-			if best == nil || bd > ccdMatchWinSec { // unattributable → never kill
-				continue
+			if best == nil || bd > ccdMatchWinSec {
+				// An observed but unattributable runner is not evidence that
+				// every session is inactive. Refuse before either mutation pass.
+				return fmt.Errorf("ccd: runner %d has no verified session attribution; refusing reap/archive", pid)
 			}
 			liveSIDs[best.sid] = true // attributed and running — archive must skip it
 			if best.sched == "" {     // interactive/named → protect

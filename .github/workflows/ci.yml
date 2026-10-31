@@ -55,6 +55,12 @@ jobs:
       - name: router service image context (stage.sh)
         run: bash scripts/ci-private-sdk.sh bash scripts/router-service/stage.test.sh
 
+      - name: router staged rollback traffic selection
+        run: bash scripts/router-service/traffic-target.test.sh
+
+      - name: router staged tag and traffic shift binding
+        run: bash scripts/router-service/staged-tag.test.sh
+
       - name: ADR number uniqueness
         run: bash scripts/check-adr-numbers.sh
 
@@ -89,7 +95,9 @@ jobs:
       # Ma'at resolution. Caution-tier hygiene is deliberately confirmation
       # gated, never Terminal-only; this guard keeps that entire contract live.
       - name: native menubar resolution guard
-        run: bash scripts/verify-maat-native-resolution-contract.sh
+        run: |
+          bash scripts/verify-maat-native-resolution-contract.sh
+          bash scripts/verify-maat-native-resolution-contract.test.sh
 
       # Gemma resolver guards run on the HOSTED runner (bash + python3 only, no
       # Xcode/MLX): extracted ranking/conf checks plus a whole-program inert
@@ -131,7 +139,8 @@ jobs:
 
   test:
     name: Test
-    runs-on: macos-14
+    # GitHub-hosted macOS 15 supports standard ARM64 runners: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -148,7 +157,7 @@ jobs:
           /usr/bin/python3 -B scripts/maat/fabric-endpoints.test.py -v
           /usr/bin/python3 -B scripts/maat/fabric-run.test.py -v
 
-      - name: Public artifact modes and native replacement metadata (model-free)
+      - name: Public artifact modes, native replacement, and Bash 3.2 package argv (model-free)
         run: |
           python3 -B -m unittest discover -s scripts -p 'test_artifact_modes.py' -v
           python3 -B -m unittest discover -s scripts -p 'test_package_info_contract.py' -v
@@ -177,7 +186,7 @@ jobs:
       # Verified locally: identical ci-postgres.sh run against postgresql@14
       # fails this negative control; against postgresql@16 it passes
       # end-to-end (schema + role checks + the full routerstore suite).
-      # The hosted macos-14 image ships multiple Postgres versions via
+      # The hosted macos-15 image ships multiple Postgres versions via
       # Homebrew but does NOT link any onto PATH by default. Link 16
       # explicitly so initdb/pg_ctl/psql are on PATH for the next step —
       # required, not best-effort: a missing tool now fails ci-postgres.sh
@@ -250,7 +259,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-14]
+        os: [macos-15]
         go-version: ['1.25']
     steps:
       - uses: actions/checkout@v4
@@ -319,7 +328,7 @@ jobs:
   # exact-name check keeps main mergeable while branch protection is migrated.
   branch-protection-build:
     name: Build (self-hosted, macOS, ARM64, 1.25)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

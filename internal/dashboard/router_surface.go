@@ -86,6 +86,17 @@ func (s *Server) apiRouterSurfaceSnapshot(w http.ResponseWriter, r *http.Request
 		http.Error(w, `{"error":"router producer unavailable"}`, http.StatusServiceUnavailable)
 		return
 	}
+	if s.cfg.FabricSource != nil {
+		generation, e := s.cfg.FabricSource.Read(r.Context())
+		if e == nil {
+			snap, e = BindRouterFabric(snap, generation)
+		}
+		if e != nil {
+			http.Error(w, `{"error":"fabric generation unavailable"}`, http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("X-Sirsi-Fabric-Generation", snap.FabricGeneration)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(snap)
 }

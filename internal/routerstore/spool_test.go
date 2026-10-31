@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +21,22 @@ import (
 	"testing"
 	"time"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type signalBody struct {
+	read chan struct{}
+	once sync.Once
+}
+
+func (b *signalBody) Read([]byte) (int, error) {
+	b.once.Do(func() { close(b.read) })
+	return 0, io.EOF
+}
+
+func (*signalBody) Close() error { return nil }
 
 // End to end through files: a real Handler behind httptest stands in for the
 // service, the Relay forwards with the host token, and a RemoteStore over
@@ -64,6 +82,187 @@ func TestSpoolRelayEndToEnd(t *testing.T) {
 	var out []any
 	if err := rs.call("ListHostTokens", nil, &out); err == nil || !strings.Contains(err.Error(), "never forwarded") {
 		t.Fatalf("ListHostTokens must be refused by the relay: %v", err)
+	}
+}
+
+func TestSpoolRelayShutdownJoinsForwardBeforeServeReturns(t *testing.T) {
+	spool := t.TempDir()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(release) })
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(entered)
+		<-release
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"result":[]}`)
+	}))
+	t.Cleanup(svc.Close)
+	relay := &Relay{Spool: spool, Base: svc.URL, Token: "fixture"}
+	serveCtx, stop := context.WithCancel(context.Background())
+	defer stop()
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- relay.Serve(serveCtx) }()
+	transport := newSpoolTransport(spool, "active")
+	transport.wait = 3 * time.Second
+	request, err := http.NewRequest(http.MethodPost, "http://spool/v1/call/Read", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callDone := make(chan error, 1)
+	go func() {
+		response, callErr := transport.RoundTrip(request)
+		if callErr == nil {
+			_, callErr = io.Copy(io.Discard, response.Body)
+			_ = response.Body.Close()
+		}
+		callDone <- callErr
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("relay did not start the retained request")
+	}
+	stop()
+	select {
+	case err := <-serveDone:
+		t.Fatalf("Serve returned while a forward worker was active: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	releaseOnce.Do(func() { close(release) })
+	select {
+	case err := <-callDone:
+		if err != nil {
+			t.Fatalf("caller did not receive settled response: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("active caller did not settle after the forward was released")
+	}
+	select {
+	case err := <-serveDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not return after its request worker joined")
+	}
+}
+
+func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) {
+	for _, mode := range []string{"forward", "startup-recovery", "queued-ack"} {
+		t.Run(mode, func(t *testing.T) {
+			spool := t.TempDir()
+			lane := filepath.Join(spool, "retained")
+			for _, dir := range []string{"req", "res", "inflight"} {
+				if err := os.MkdirAll(filepath.Join(lane, dir), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			id := "1-1-retained"
+			sourceDir := "req"
+			if mode == "startup-recovery" {
+				sourceDir = "inflight"
+			}
+			requestPath := filepath.Join(lane, sourceDir, id+".json")
+			if err := writeAtomic(requestPath, spoolRequest{Method: "Read", Headers: map[string]string{}, Body: []byte(`{}`)}, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			// Force either a terminal response or queued acknowledgment publication
+			// to fail without replacing retained request evidence.
+			if err := os.Mkdir(filepath.Join(lane, "res", id+".json"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var calls atomic.Int32
+			var client *http.Client
+			base := "http://service.invalid"
+			secondAttempt := make(chan struct{})
+			if mode == "queued-ack" {
+				client = &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+					if calls.Add(1) == 2 {
+						// Stop the lane before this second safe pre-send failure can
+						// publish an outbox item visible to its independent drain loop.
+						cancel()
+						close(secondAttempt)
+					}
+					return nil, &url.Error{Op: "Post", URL: base, Err: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("fixture unreachable")}}
+				})}
+			} else {
+				svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					calls.Add(1)
+					_, _ = io.WriteString(w, `{"result":[]}`)
+				}))
+				t.Cleanup(svc.Close)
+				base, client = svc.URL, svc.Client()
+			}
+			relay := &Relay{Spool: spool, Base: base, Token: "fixture", Client: client, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+			done := make(chan error, 1)
+			serveFinished := make(chan struct{})
+			go func() {
+				defer close(serveFinished)
+				done <- relay.Serve(ctx)
+			}()
+			t.Cleanup(func() {
+				cancel()
+				select {
+				case <-serveFinished:
+				case <-time.After(time.Second):
+					t.Error("Serve did not join during fixture cleanup")
+				}
+			})
+			if mode == "queued-ack" {
+				select {
+				case <-secondAttempt:
+				case <-time.After(time.Second):
+					t.Fatal("second safe pre-send attempt was not reached")
+				}
+				if ctx.Err() == nil {
+					t.Fatal("second pre-send attempt did not cancel lane dispatch before the error returned")
+				}
+				deadline := time.Now().Add(time.Second)
+				for !relay.settlementFailed.Load() && time.Now().Before(deadline) {
+					time.Sleep(time.Millisecond)
+				}
+				if !relay.settlementFailed.Load() {
+					t.Fatal("queued acknowledgment failure was not retained")
+				}
+			} else {
+				deadline := time.Now().Add(time.Second)
+				for !relay.settlementFailed.Load() && time.Now().Before(deadline) {
+					time.Sleep(time.Millisecond)
+				}
+				if !relay.settlementFailed.Load() {
+					t.Fatal("response publication failure was not retained")
+				}
+				cancel()
+			}
+			select {
+			case err := <-done:
+				if !errors.Is(err, errRelaySettlementUnresolved) {
+					t.Fatalf("shutdown falsely reported a clean settlement: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("Serve did not finish its bounded shutdown")
+			}
+			retainedDir := "inflight"
+			if mode == "queued-ack" {
+				retainedDir = "outbox"
+			}
+			if _, err := os.Stat(filepath.Join(lane, retainedDir, id+".json")); err != nil {
+				t.Fatalf("unsettled request evidence was not retained in %s: %v", retainedDir, err)
+			}
+			wantCalls := int32(1)
+			if mode == "startup-recovery" {
+				wantCalls = 0
+			}
+			if mode == "queued-ack" {
+				wantCalls = 2 // one bounded safe re-dial, both provably pre-send
+			}
+			if got := calls.Load(); got != wantCalls {
+				t.Fatalf("unexpected forward count: got %d want %d", got, wantCalls)
+			}
+		})
 	}
 }
 
@@ -496,12 +695,20 @@ func TestSpoolRelayNewLaneIsNotBlockedBySlowLane(t *testing.T) {
 	}
 }
 
-// A backlog inside one lane must not spin the discovery loop, and cancellation
-// must return promptly while that backlog is still pending.
+// A backlog inside one lane must not spin, and cancellation joins the active
+// forward while leaving the two queued requests untouched.
 func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 	spool := t.TempDir()
+	oldParallel := relayLaneParallel
+	relayLaneParallel = 1
+	t.Cleanup(func() { relayLaneParallel = oldParallel })
 	release := make(chan struct{})
-	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { <-release; _, _ = w.Write([]byte(`{"result":[]}`)) }))
+	entered := make(chan struct{}, 2)
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		entered <- struct{}{}
+		<-release
+		_, _ = w.Write([]byte(`{"result":[]}`))
+	}))
 	t.Cleanup(svc.Close)
 	// LIFO cleanup releases the held handlers BEFORE server Close, even if a
 	// preceding assertion fails. Otherwise the actual failure is hidden by a
@@ -513,7 +720,7 @@ func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(spool, "lane-q", "req"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"1-1-a", "1-2-b"} { // two pending in the SAME lane
+	for _, id := range []string{"1-1-a", "1-2-b", "1-3-c"} { // active plus two queued in the SAME lane
 		if err := writeAtomic(filepath.Join(spool, "lane-q", "req", id+".json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -522,22 +729,106 @@ func TestSpoolRelayBacklogDoesNotSpinAndCancels(t *testing.T) {
 	t.Cleanup(cancel)
 	done := make(chan struct{})
 	go func() { _ = rl.Serve(ctx); close(done) }()
+	t.Cleanup(func() {
+		cancel()
+		free()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("Serve did not join during backlog fixture cleanup")
+		}
+	})
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("relay did not begin the first queued request")
+	}
 	observedFrom := time.Now()
-	time.Sleep(600 * time.Millisecond) // first request held upstream, second queued behind it
+	time.Sleep(600 * time.Millisecond) // first request held upstream, two remain queued
 	observedFor := time.Since(observedFrom)
 	if n, max := rl.scans.Load(), int32(observedFor/spoolPoll)+2; n > max {
 		t.Fatalf("discovery spun: %d scans in %s with a %s poll (max %d)", n, observedFor, spoolPoll, max)
 	}
-	start := time.Now()
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(300 * time.Millisecond):
-		t.Fatal("Serve did not return within 300 ms of cancellation while a backlog was pending")
+		t.Fatal("Serve returned before its already-active forward settled")
+	case <-time.After(30 * time.Millisecond):
 	}
-	_ = start
-	free() // let the held worker finish before TempDir cleanup
-	time.Sleep(100 * time.Millisecond)
+	free()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not return after the active forward settled")
+	}
+	for _, id := range []string{"1-2-b", "1-3-c"} {
+		if _, err := os.Stat(filepath.Join(spool, "lane-q", "req", id+".json")); err != nil {
+			t.Fatalf("canceled relay consumed queued request %s: %v", id, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(spool, "lane-q", "res", "1-1-a.json")); err != nil {
+		t.Fatalf("active request did not settle before shutdown: %v", err)
+	}
+}
+
+func TestSpoolRelayCancellationStopsOutboxAfterActiveForward(t *testing.T) {
+	spool := t.TempDir()
+	agent := "outbox-lane"
+	for _, dir := range []string{"outbox", "inflight"} {
+		if err := os.MkdirAll(filepath.Join(spool, agent, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"1-1-a", "1-2-b"} {
+		if err := writeAtomic(filepath.Join(spool, agent, "outbox", id+".json"), spoolRequest{Method: "ListAll", Headers: map[string]string{}, Body: []byte(`{"args":[]}`)}, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	free := func() { releaseOnce.Do(func() { close(release) }) }
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		entered <- struct{}{}
+		<-release
+		_, _ = io.WriteString(w, `{"result":[]}`)
+	}))
+	t.Cleanup(svc.Close)
+	t.Cleanup(free)
+	relay := &Relay{Spool: spool, Base: svc.URL, Token: "fixture", Client: svc.Client(), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	wake := make(chan struct{}, 1)
+	go func() { relay.laneWorker(ctx, agent, wake); close(done) }()
+	t.Cleanup(func() {
+		cancel()
+		free()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("lane did not join during outbox fixture cleanup")
+		}
+	})
+	wake <- struct{}{}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("lane did not begin the first held outbox item")
+	}
+	cancel()
+	free()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("lane did not stop after its active outbox forward settled")
+	}
+	if _, err := os.Stat(filepath.Join(spool, agent, "outbox", "1-2-b.json")); err != nil {
+		t.Fatalf("canceled lane consumed later outbox item: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(spool, agent, "outbox", "1-1-a.json")); !os.IsNotExist(err) {
+		t.Fatalf("positively delivered active outbox item was not settled: %v", err)
+	}
 }
 
 // A worker consuming its wake quickly must not turn the next discovery pass
@@ -984,25 +1275,46 @@ func TestPublishNeverAttemptsToChmodAnExistingResDir(t *testing.T) {
 	}
 }
 
-// TestPublishLogsWhenItCannotCreateResDir: the fresh-creation fallback path
-// must never fail silently — an unlogged failure here is exactly what let a
-// forwarded-and-succeeded request vanish with no response and no trace in
-// the real incident this fix responds to.
+// Publication errors must reach the recovery owner, which logs the failure,
+// retains the inflight request and refuses clean settlement. publish itself
+// returns the cause; logging it at that lower layer loses recovery context.
 func TestPublishLogsWhenItCannotCreateResDir(t *testing.T) {
-	lockedSpool := t.TempDir()
-	if err := os.Chmod(lockedSpool, 0o500); err != nil { // no write bit: MkdirAll below must fail
+	spool := t.TempDir()
+	lockedLane := filepath.Join(spool, "lane-locked")
+	inflight := filepath.Join(lockedLane, "inflight", "id1.json")
+	if err := os.MkdirAll(filepath.Dir(inflight), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(lockedSpool, 0o700) }) // let t.TempDir() clean up
+	if err := writeAtomic(inflight, spoolRequest{Method: "Read", Body: []byte(`{}`)}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := os.ReadFile(inflight)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(lockedLane, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lockedLane, 0o700) })
 	logBuf := &strings.Builder{}
-	rl := &Relay{Spool: lockedSpool, Log: slog.New(slog.NewTextHandler(logBuf, nil))}
-	rl.publish("lane-locked", "id1", spoolResponse{Status: 200})
-
-	if _, err := os.Stat(filepath.Join(lockedSpool, "lane-locked", "res", "id1.json")); !os.IsNotExist(err) {
+	rl := &Relay{Spool: spool, Log: slog.New(slog.NewTextHandler(logBuf, nil))}
+	if err := rl.publish("lane-locked", "id1", spoolResponse{Status: 200}); err == nil || !strings.Contains(err.Error(), "create response directory") || !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("publication must return its directory-creation failure: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(lockedLane, "res", "id1.json")); !os.IsNotExist(err) {
 		t.Fatalf("response must not exist when its directory could not be created: %v", err)
 	}
-	if l := logBuf.String(); !strings.Contains(l, "create response dir") {
-		t.Fatalf("a failed resDir creation must be logged, not swallowed silently:\n%s", l)
+	if n := rl.recoverInflight(); n != 1 {
+		t.Fatalf("recovery must inspect the retained request: got %d", n)
+	}
+	if l := logBuf.String(); !strings.Contains(l, "create response directory") || !strings.Contains(l, "retained inflight") {
+		t.Fatalf("recovery must log the publication cause and retained obligation:\n%s", l)
+	}
+	if !rl.settlementFailed.Load() {
+		t.Fatal("failed recovery publication must prevent clean settlement")
+	}
+	if after, err := os.ReadFile(inflight); err != nil || !bytes.Equal(after, retained) {
+		t.Fatalf("failed recovery must preserve the exact inflight request: %v", err)
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -48,6 +49,7 @@ var sentinelErrors = map[string]error{
 	"ErrBreakerOpen":          ErrBreakerOpen,
 	"ErrOverQuota":            ErrOverQuota,
 	"ErrIdentifierTaken":      ErrIdentifierTaken,
+	"ErrLanePaused":           ErrLanePaused,
 	"ErrNoWork":               ErrNoWork,
 	"ErrNoClaimableTask":      ErrNoClaimableTask,
 	"ErrLeaseInvalid":         ErrLeaseInvalid,
@@ -110,9 +112,11 @@ type RemoteStore struct {
 	threadID             string // SIRSI_THREAD_ID: the registered thread this process works for (Rule of Ra)
 	sessionDir           string // "" disables the on-disk cache (tests)
 
-	mu          sync.Mutex
-	session     Session // ID + Secret once minted
-	identityErr error
+	mu           sync.Mutex
+	mintGate     chan struct{}
+	sessionEpoch uint64
+	session      Session // ID + Secret once minted
+	identityErr  error
 	// now is injectable for the freshness tests.
 	now func() time.Time
 }
@@ -248,6 +252,29 @@ func NewMemoryOnlyRemoteStore(base, token string) *RemoteStore {
 	return store
 }
 
+// NewMemoryOnlyRemoteStoreForCaller retains an existing service's credentials
+// and one explicit registered audience in memory. It neither resolves a local
+// store nor consults another caller's on-disk session cache.
+func NewMemoryOnlyRemoteStoreForCaller(base, token, agent, thread, pin string) (*RemoteStore, error) {
+	if strings.TrimSpace(agent) == "" || strings.TrimSpace(thread) == "" || token == "" || SpoolDir(base) != "" {
+		return nil, errors.New("routerstore: existing direct authority and registered caller required")
+	}
+	store := newRemoteStore(base, token, &callerBinding{agent: agent, thread: thread})
+	store.sessionDir = ""
+	// Reuse relay transport behavior with the selected relay's pin rather than
+	// substituting an ambient pin. No global environment swap.
+	client := newRelayHTTPClient()
+	cfg, err := pinConfig(pin, base, &tls.Config{MinVersion: tls.VersionTLS12})
+	if err != nil {
+		return nil, err
+	}
+	if cfg != nil {
+		client.Transport.(*http.Transport).TLSClientConfig = cfg
+	}
+	store.client = client
+	return store, nil
+}
+
 var (
 	runtimeOnce sync.Once
 	runtimeHash string
@@ -276,28 +303,52 @@ func RuntimeHash() string {
 	return runtimeHash
 }
 
-// ensureSession returns the cached session or mints one, bounding the mint
-// RPC by ctx (SSA review, PR #746) so a caller whose deadline already passed
-// (or is about to) fails fast on the mint instead of racing an unrelated
-// independent timeout. The cache lookup itself is in-memory/local-disk and not
-// worth threading ctx through. rs.mu still serializes concurrent callers with
-// a plain sync.Mutex — that acquisition is not itself ctx-cancellable, but the
-// critical section it guards is now bounded by ctx, which is what SSA's
-// reproduction actually exercised (a pre-canceled mint call running to its own
-// full timeout, not lock contention). The on-disk cache is keyed by agent and
-// validated against the current runtime hash.
+// ensureSession uses a cancellable mint gate. The state mutex protects cache
+// state only, never a network wait. Existing caller/runtime/cache bindings apply.
 func (rs *RemoteStore) ensureSession(ctx context.Context) (Session, error) {
-	rs.mu.Lock()
-	defer rs.mu.Unlock()
-	if rs.session.ID != "" {
-		return rs.session, nil
+	if err := ctx.Err(); err != nil {
+		return Session{}, err
 	}
+	rs.mu.Lock()
+	if rs.session.ID != "" {
+		sess := rs.session
+		rs.mu.Unlock()
+		return sess, nil
+	}
+	if rs.mintGate == nil {
+		rs.mintGate = make(chan struct{}, 1)
+	}
+	gate := rs.mintGate
+	rs.mu.Unlock()
+	select {
+	case gate <- struct{}{}:
+	case <-ctx.Done():
+		return Session{}, ctx.Err()
+	}
+	defer func() { <-gate }()
+	if err := ctx.Err(); err != nil {
+		return Session{}, err
+	}
+	rs.mu.Lock()
+	if rs.session.ID != "" {
+		sess := rs.session
+		rs.mu.Unlock()
+		return sess, nil
+	}
+	epoch := rs.sessionEpoch
+	rs.mu.Unlock()
 	if rs.sessionDir != "" {
 		for _, path := range rs.sessionPaths() {
 			if b, err := os.ReadFile(path); err == nil {
 				var cached Session
 				if json.Unmarshal(b, &cached) == nil && cached.ID != "" && cached.Secret != "" && cached.RuntimeHash == rs.runtime && cachedThreadFits(cached.ThreadID, rs.threadID) {
+					rs.mu.Lock()
+					if rs.sessionEpoch != epoch {
+						rs.mu.Unlock()
+						return Session{}, ErrSessionUnknown
+					}
 					rs.session = cached
+					rs.mu.Unlock()
 					return cached, nil
 				}
 			}
@@ -310,6 +361,14 @@ func (rs *RemoteStore) ensureSession(ctx context.Context) (Session, error) {
 	}
 	if err := rs.callUnsignedCtx(ctx, mintMethod, mintArgs, &minted); err != nil {
 		return Session{}, fmt.Errorf("routerstore: mint session: %w", err)
+	}
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return Session{}, err
+	}
+	if rs.sessionEpoch != epoch {
+		return Session{}, ErrSessionUnknown
 	}
 	rs.session = minted
 	if rs.sessionDir != "" {
@@ -394,6 +453,7 @@ func pruneSessionCache(dir string, maxAge time.Duration) {
 func (rs *RemoteStore) dropSession() {
 	rs.mu.Lock()
 	rs.session = Session{}
+	rs.sessionEpoch++
 	if rs.sessionDir != "" {
 		for _, path := range rs.sessionPaths() {
 			_ = os.Remove(path)
@@ -674,6 +734,12 @@ func (rs *RemoteStore) GetThreadRecord(threadID string) (ThreadRecord, error) {
 	return out, err
 }
 
+func (rs *RemoteStore) GetThreadRecordContext(ctx context.Context, threadID string) (ThreadRecord, error) {
+	var out ThreadRecord
+	err := rs.callCtx(ctx, "GetThreadRecord", []any{threadID}, &out)
+	return out, err
+}
+
 // RecordAudience is server-side only; a lane never writes the audit log itself.
 func (rs *RemoteStore) RecordAudience(AudienceEntry) error {
 	return errors.New("routerstore: RecordAudience is not served over the wire")
@@ -720,4 +786,33 @@ func (rs *RemoteStore) SendGuardedContext(ctx context.Context, req SendReq) (str
 	var deduped bool
 	e := rs.callCtx(ctx, "SendGuarded", []any{req}, &id, &deduped)
 	return id, deduped, e
+}
+
+// callFabricCtx caps only the new Fabric reads, including session acquisition.
+// Generic callCtx preserves caller-owned budgets such as Wait's long poll.
+func (rs *RemoteStore) callFabricCtx(ctx context.Context, method string, args []any, outs ...any) error {
+	ctx, cancel := context.WithTimeout(ctx, rs.perCall)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return rs.callCtx(ctx, method, args, outs...)
+}
+
+// Contextual siblings preserve wire method, positional arguments and auth.
+// They cancel client HTTP/spool waiting, not already-dispatched remote SQL/work.
+func (rs *RemoteStore) ListTasksContext(ctx context.Context, agent string) ([]Task, error) {
+	var out []Task
+	err := rs.callFabricCtx(ctx, "ListTasks", []any{agent}, &out)
+	return out, err
+}
+func (rs *RemoteStore) OperationalAgentsContext(ctx context.Context) ([]string, error) {
+	var out []string
+	err := rs.callFabricCtx(ctx, "OperationalAgents", nil, &out)
+	return out, err
+}
+func (rs *RemoteStore) ClassifyLaneContext(ctx context.Context, agent string, wakeRoutable bool, recentWithin time.Duration) (LaneOperationalState, error) {
+	var out LaneOperationalState
+	err := rs.callFabricCtx(ctx, "ClassifyLane", []any{agent, wakeRoutable, recentWithin}, &out)
+	return out, err
 }

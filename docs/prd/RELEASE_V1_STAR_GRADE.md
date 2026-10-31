@@ -1,6 +1,10 @@
 # PRD — Pantheon v1 "Star-Grade" Release
 
-**Status:** DRAFT — awaiting owner bless (Rule 17)
+**Status:** HISTORICAL July 2026 draft. Current product/release acceptance is
+`docs/stacklab/pantheon-pt/canon/PRD.md` and `CERTIFICATION.md`, under the
+owner-ratified portfolio manifesto and corrective feature freeze. The draft
+below is retained history; its old approval requests, multi-platform target,
+TUI-first positioning, colors and release assumptions are not current gates.
 **Author:** claude-pantheon · 2026-07-01
 **Basis:** Full end-to-end release audit of origin/main @ fde4635c (2026-07-01): engine verified
 release-grade (full test suite green, 63 API endpoints/tools all confirm-gated, 175 CLI commands

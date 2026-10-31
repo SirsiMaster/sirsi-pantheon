@@ -108,7 +108,9 @@ func TestTaskResumeRefusesIneligibleAndForeignPrincipals(t *testing.T) {
 		{"partial-custody", `UPDATE tasks SET claimed_by='retained' WHERE task_id='a'`},
 		{"done", `UPDATE tasks SET status='done' WHERE task_id='a'`},
 		{"real-blocker", `UPDATE tasks SET blocked_by='external-review-pending' WHERE task_id='a'`},
-		{"not-exhausted", `UPDATE tasks SET attempts=2 WHERE task_id='a'`},
+		{"ordinary-pending", `UPDATE tasks SET attempts=2,status='pending' WHERE task_id='a'`},
+		{"ordinary-in-progress", `UPDATE tasks SET attempts=2,status='in-progress' WHERE task_id='a'`},
+		{"negative-attempts", `UPDATE tasks SET attempts=-1 WHERE task_id='a'`},
 		{"closed-principal", `UPDATE threads SET status='closed' WHERE thread_id='fixture-thread'`},
 		{"stale-principal", `UPDATE threads SET last_seen_at='2000-01-01T00:00:00Z' WHERE thread_id='fixture-thread'`},
 		{"revoked-session", `UPDATE sessions SET revoked='2026-01-01T00:00:00Z' WHERE agent='fixture-lane'`},
@@ -143,6 +145,51 @@ func TestTaskResumeRefusesIneligibleAndForeignPrincipals(t *testing.T) {
 		if _, err := s.ResumeTaskClaim(foreign, req); err == nil {
 			t.Fatal("fabricated/foreign local actor accepted")
 		}
+	}
+}
+
+func TestTaskResumeBlockedWithOrdinaryAttemptsRemaining(t *testing.T) {
+	for _, attempts := range []int{0, 1, 2} {
+		t.Run(string(rune('0'+attempts)), func(t *testing.T) {
+			s, ctx, req := taskResumeFixture(t)
+			req = taskResumePin(t, s, ctx, req)
+			if _, err := s.exec(`UPDATE tasks SET attempts=? WHERE agent=? AND task_id=?`, attempts, req.Agent, req.TaskID); err != nil {
+				t.Fatal(err)
+			}
+			before := taskEvidenceRaw(t, s, req.Agent, req.TaskID)
+			inspect, err := s.ResumeTaskClaim(ctx, TaskResumeRequest{Version: 1, Action: "inspect", Agent: req.Agent, TaskID: req.TaskID})
+			if err != nil || inspect.Attempts != attempts || inspect.Claimed || inspect.Lease != nil {
+				t.Fatalf("inspection changed custody: %+v %v", inspect, err)
+			}
+			req.ExpectedVersion = inspect.RowVersion
+			out, err := s.ResumeTaskClaim(ctx, req)
+			if err != nil || !out.Claimed || out.Lease == nil || out.Attempts != attempts+1 || out.Lease.Attempt != attempts+1 {
+				t.Fatalf("BLOCKED_ORDINARY_ATTEMPT_STRANDED: %+v %v", out, err)
+			}
+			after := taskEvidenceRaw(t, s, req.Agent, req.TaskID)
+			changed := map[string]bool{"status": true, "claimed_by": true, "thread_id": true, "lease_token": true, "lease_expires": true, "attempts": true, "updated": true}
+			for column, value := range before {
+				if !changed[column] && after[column] != value {
+					t.Fatalf("history changed: %s", column)
+				}
+			}
+			replay, err := s.ResumeTaskClaim(ctx, req)
+			if err != nil || !replay.Repeated || replay.Lease == nil || replay.Lease.Token != out.Lease.Token || replay.Attempts != attempts+1 || taskResumeAuditCount(t, s) != 1 {
+				t.Fatal("replay consumed another attempt", err)
+			}
+			raw, ok, err := s.GetState(out.AuditKey)
+			var audit taskResumeAudit
+			if err != nil || !ok || json.Unmarshal([]byte(raw), &audit) != nil || audit.AttemptsBefore != attempts || audit.AttemptsAfter != attempts+1 || audit.BeforeVersion != inspect.RowVersion || audit.OldFailure != before["failure_reason"].String {
+				t.Fatal("remaining-attempt audit missing", err)
+			}
+			if err := s.CompleteTaskLease(req.Agent, req.TaskID, out.Lease.Token, "evidence://normal-completion"); err != nil {
+				t.Fatal(err)
+			}
+			final := taskEvidenceRaw(t, s, req.Agent, req.TaskID)
+			if final["status"].String != "done" || final["attempts"] != after["attempts"] || final["failure_reason"] != before["failure_reason"] {
+				t.Fatal("completion reset history")
+			}
+		})
 	}
 }
 

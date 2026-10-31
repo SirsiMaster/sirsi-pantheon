@@ -41,6 +41,13 @@ func (s *SQLiteStore) ClaimTask(agent, taskID, worker, threadID string, ttl time
 }
 
 func (s *SQLiteStore) claimTask(agent, exactTaskID, worker, threadID string, ttl time.Duration) (*TaskLease, error) {
+	return s.claimTaskSession(agent, exactTaskID, worker, threadID, "", ttl)
+}
+
+// claimTaskSession is server-internal, not a reflected Store RPC. A remote
+// authenticated claim commits its exact session owner with its executable lease.
+// Local injected callers retain the existing sessionless path.
+func (s *SQLiteStore) claimTaskSession(agent, exactTaskID, worker, threadID, session string, ttl time.Duration) (*TaskLease, error) {
 	agent = strings.TrimSpace(agent)
 	worker = strings.TrimSpace(worker)
 	threadID = strings.TrimSpace(threadID)
@@ -62,6 +69,9 @@ func (s *SQLiteStore) claimTask(agent, exactTaskID, worker, threadID string, ttl
 		return nil, fmt.Errorf("routerstore: task claim begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err = s.laneClaimGateTx(tx, agent); err != nil {
+		return nil, err
+	}
 
 	// Expiry is a failed execution attempt, not an ownership cleanup. Exhausted
 	// crash loops are made visibly blocked instead of being reclaimed forever.
@@ -123,6 +133,17 @@ func (s *SQLiteStore) claimTask(agent, exactTaskID, worker, threadID string, ttl
 	}
 	if n, _ := res.RowsAffected(); n != 1 {
 		return nil, ErrNoClaimableTask
+	}
+	if session != "" {
+		bound, bindErr := tx.Exec(`INSERT INTO lease_sessions(kind,key,session)
+			SELECT 'task',?,session_id FROM sessions WHERE session_id=? AND agent=? AND thread_id=? AND revoked=''
+			ON CONFLICT(kind,key) DO UPDATE SET session=excluded.session`, agent+"/"+taskID, session, agent, threadID)
+		if bindErr != nil {
+			return nil, fmt.Errorf("routerstore: bind authenticated task lease: %w", bindErr)
+		}
+		if n, bindErr := bound.RowsAffected(); bindErr != nil || n != 1 {
+			return nil, ErrSessionUnknown
+		}
 	}
 	// Direct authenticated claims do not require a supervisor wake lease. The
 	// successful executable fence is delivery evidence for this exact source.

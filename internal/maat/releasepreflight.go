@@ -146,9 +146,34 @@ var releaseContractRequirements = []releaseContractRequirement{
 	},
 	{
 		ID: "unified-update-install-handoff", Path: "cmd/sirsi/update.go",
-		Needles:   []string{"Commercial Pantheon updates ship one app payload", "unified app installer", "complete arm64 Pantheon app payload", "installed version remains active", "Recovery: recheck later"},
+		Needles: []string{
+			"Commercial Pantheon updates ship one app payload", "unified app installer",
+			"installed version remains active", "Recovery: recheck later",
+			`if handled, err := reconcilePendingMaatAppUpdate(); handled || err != nil {`,
+			`return installAppRelease(rel)`, `return installAppReleaseWithMaat(rel)`,
+			`return installAppRollbackWithMaat(rel)`,
+			`report, err := reconcileMaatAppUpdateReport()`,
+		},
 		Forbidden: []string{"installCLIRelease", "schemaCompatibilityGate("},
 		Hint:      "Restore the one unified app-update handoff; do not advertise a standalone CLI replacement outside the commercial payload.",
+	},
+	{
+		ID: "retained-app-update-handoff", Path: "cmd/sirsi/update_app_darwin.go",
+		// These are non-executing source-presence checks, not Go AST/order
+		// proof or evidence of an installed update/rollback. The actual typed
+		// owner fixtures qualify admission, readback and no-replay behavior.
+		Needles: []string{
+			`receipt, preflightErr := store.PreflightAppUpdate(manifest)`,
+			`stored, err := store.RetainPreflightReceipt(receipt)`,
+			`if err := maat.ProjectFailureMemoryPreflight(journal, stored); err != nil {`,
+			`if receipt.Decision != maat.PreflightPass {`,
+			`attempt, err := store.BeginAppUpdateAttempt(manifest, stored)`,
+			`if err := maatAppUpdateDependencies.handoff(ctx, plan.Package); err != nil {`,
+			`observation, observeErr := maatAppUpdateDependencies.observe(ctx)`,
+			`if _, err := store.RecordAppUpdateInstalled(attempt, observation); err != nil {`,
+			`func reconcileMaatAppUpdateObserved(ctx context.Context, store maatAppUpdateStore, attempt maat.AppUpdateAttempt)`,
+		},
+		Hint: "Restore the typed whole-app owner: retain complete preflight and durable intent before the Installer handoff, and resolve only exact installed app/helper readback; unknown handoff debt requires data-only recheck, never Installer replay.",
 	},
 	{
 		ID: "static-contract-verifier", Path: "scripts/verify-commercial-release-contract.sh",

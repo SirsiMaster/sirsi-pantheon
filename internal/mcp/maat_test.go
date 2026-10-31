@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,8 +13,22 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/seshat"
 )
 
+// Resolve only the owned test directory: production must still reject
+// symlinked archive path components, including Darwin's /var alias.
+func maatKnowledgeTestHome(t *testing.T) string {
+	t.Helper()
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
 func TestHandleMaatKnowledgeProjectsSameFilteredLocalView(t *testing.T) {
-	home := t.TempDir()
+	home := maatKnowledgeTestHome(t)
 	archive, err := knowledge.Open(home)
 	if err != nil {
 		t.Fatal(err)

@@ -9,6 +9,13 @@ supervisory capability. Delegated closes record both actor and recipient in the
 durable Result. Ambiguous, undeclared, or unauthorized actors fail before the
 item or response queue is mutated.
 
+For Codex, `CODEX_THREAD_ID` identifies the current execution conversation and
+is the preferred session-marker key. `CODEX_SESSION_ID` identifies the shared
+root session and is a legacy fallback only when no thread ID is available. This
+choice selects which existing marker to read; it does not register a thread,
+grant authority, or persist parent/child lineage. Existing registered-agent,
+thread, host, PID and compare-and-swap checks remain in force.
+
 The task ledger answers two different questions together: “what messages are
 open?” and “what work has each agent committed to?” It also shows age,
 heartbeat staleness, dependency chains, and whether a live thread explicitly

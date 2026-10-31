@@ -212,6 +212,27 @@ struct RBStranded: Decodable, Identifiable {
     }
 }
 
+// RBUnverifiedInbox mirrors unverified_inbox[]: pending work whose loop
+// liveness cannot be verified from this node's process scope.
+struct RBUnverifiedInbox: Decodable, Identifiable {
+    var id: String { agentId }
+    let agentId: String
+    let openItems: Int
+    let osScope: String
+    enum CodingKeys: String, CodingKey {
+        case agentId = "agent_id"
+        case openItems = "open_items"
+        case osScope = "os_scope"
+    }
+    var scopeLabel: String {
+        switch osScope {
+        case "remote": return "Remote machine · unverified here"
+        case "unknown": return "Machine scope unknown"
+        default: return "Scope unverified"
+        }
+    }
+}
+
 // RBOutbox mirrors one entry of node-status's outbox[] (ADR-069,
 // routerstore.SpoolAgentOutbox) — a relay host's held-for-retry queue depth
 // per agent. unreadable (with error set) means the outbox directory exists
@@ -417,6 +438,7 @@ struct RouterBoard: Decodable {
     let agentHealth: [RBAgentHealth]?
     let launchAgents: [RBLaunchAgent]?
     let strandedInbox: [RBStranded]?
+    let unverifiedInbox: [RBUnverifiedInbox]?
     // agent id → open item ids: the fabric's actual work map.
     let pendingByAgent: [String: [String]]?
     let ownerGated: [OwnerGated]?
@@ -436,6 +458,7 @@ struct RouterBoard: Decodable {
         case agentHealth = "agent_health"
         case launchAgents = "launch_agents"
         case strandedInbox = "stranded_inbox"
+        case unverifiedInbox = "unverified_inbox"
         case pendingByAgent = "pending_by_agent"
         case ownerGated = "owner_gated"
         case outbox
@@ -603,6 +626,10 @@ func activityMaatReviewArgs(for entry: ActivityEntry) -> [String] {
 // this type only reads the persisted scan and runs the CLI.
 @MainActor
 final class SirsiEngine: ObservableObject {
+    lazy var localStackLab = StackLabLocalModel()
+    // Frame-owned operation state survives workspace unmounts without keeping
+    // hidden view trees or polling tasks alive.
+    lazy var legacyRelayMaintenance = maatCaseOperations.legacyMaintenance
     @Published var workspaceVisible = true
     // One bounded, direct Ra read for the native Fleet surface.  Keep this
     // data rather than a prose convention so a later refactor cannot quietly
@@ -632,11 +659,12 @@ final class SirsiEngine: ObservableObject {
     @Published var reopenTick = 0
 
     // Memory-First (canon: RAM is the pre-eminent view, not storage). Live
-    // vitals from `sirsi vitals --json`; drives the Home lead card.
+    // Periodic capacity reads never request whole-host process ranking.
     @Published var vitals: MemoryVitals?
+    nonisolated static let vitalsReadArguments = ["vitals", "--summary", "--json"]
 
     func fetchVitals() async {
-        let data = await Self.runJSON(args: ["vitals", "--json"])
+        let data = await Self.runJSON(args: Self.vitalsReadArguments)
         if let v = try? JSONDecoder().decode(MemoryVitals.self, from: data) {
             vitals = v
         }
@@ -704,7 +732,13 @@ final class SirsiEngine: ObservableObject {
     @Published var routerReadError: String?
     // Shared by every Ma'at root/detail; remounting a workspace cannot reset
     // the guard or lose an invocation's result. Go retains effect authority.
-    let maatCaseOperations = MaatCaseOperationStore()
+    let fabricProjection: FabricProjectionStore
+    let maatCaseOperations: MaatCaseOperationStore
+
+    init(maatCaseOperations: MaatCaseOperationStore? = nil, fabricProjection: FabricProjectionStore? = nil) {
+        self.fabricProjection = fabricProjection ?? FabricProjectionStore()
+        self.maatCaseOperations = maatCaseOperations ?? MaatCaseOperationStore()
+    }
     func routerObservationIsCurrent(at now: Date) -> Bool {
         routerReadError == nil && pantheonObservationIsCurrent(routerReadAt, at: now, maxAge: 30)
     }
@@ -827,6 +861,9 @@ final class SirsiEngine: ObservableObject {
     }
     var routerStranded: [RBStranded] {
         (routerBoard?.strandedInbox ?? []).sorted { $0.openItems > $1.openItems }
+    }
+    var routerUnverifiedInbox: [RBUnverifiedInbox] {
+        (routerBoard?.unverifiedInbox ?? []).sorted { $0.openItems > $1.openItems }
     }
     // Observer privacy is separate from relay retry evidence. A service-owned
     // private directory is not a same-user repair candidate. Producer evidence
@@ -1631,41 +1668,36 @@ final class SirsiEngine: ObservableObject {
 
     private func askSirsiSystemPrompt() -> String {
         """
-        You are Ask Sirsi, the local AI interface of Sirsi Pantheon running on Cylton Collymore's Mac.
-        You are part of Sirsi's on-device intelligence layer. Do not answer as a generic Google model,
-        Gemini model, Gemma model, or unaffiliated chatbot. If asked what you are, say you are Ask Sirsi:
-        Sirsi's local, private, on-device assistant for Pantheon and the wider Sirsi portfolio. It is OK
-        to acknowledge that local model weights power you under the hood, but your operating identity is Sirsi.
+        You are Ask Sirsi, Pantheon's local assistant on the current Mac. Address the current operator
+        plainly and directly. Do not assume their name, employer, projects, portfolio, or other machines.
+        Optional language models support this interface; they do not confer a vendor identity,
+        routing authority, permissions, or proof that an action occurred.
 
-        Core identity:
-        - Sirsi is Cylton Collymore's system for local-first AI, agent routing, infrastructure hygiene,
-          project memory, and portfolio orchestration.
-        - Pantheon is the local Mac application, CLI, TUI, menubar, Ra fabric, and deity-governed operations layer.
-        - Horus is the local Pantheon system instance; Ra unifies Horus instances and owns their router behavior. Mercury is the information interconnect between Horus instances. Photon is the hardware transfer device. Apollo runs local inference workloads.
-        - Ra owns routing/orchestration. Horus owns workstation visibility. Thoth preserves memory.
-          Ma'at governs quality, decisions, and the user-facing knowledge surface. Seshat is legacy ingestion compatibility only. Hapi governs pressure/admission.
-          Seba maps hardware and architecture. Anubis/Ka handle scan, cleanup, and app remnants.
-        - Ra coordinates Claude, Codex, Gemini, Gemma, Qwen, and future agents through
-          repo-scoped ids such as claude-pantheon, codex-pantheon, claude-home, codex-home,
-          claude-finalwishes, codex-nexus, and others.
-        - Claude Home is the routing owner. Codex Pantheon is an independent Pantheon review/build lane.
-        - Sirsi IO is the conduit/knowledge/messaging surface that should move context between apps,
-          agents, repos, and local models without making the user the message bus.
-        - Hypergraph is Sirsi's event-derived knowledge graph direction: Hedera HCS as ordered event
-          substrate, local replay/projection as queryable graph, and local models/accelerators for
-          embeddings, relation classification, routing intelligence, and summaries.
-        - The portfolio includes Sirsi Nexus, Pantheon, FinalWishes, Assiduous, Ask Eliot, Porch and Alley,
-          and deck/investor material. Treat them as one Sirsi ecosystem with repo-specific boundaries.
-        - The user is Cylton Collymore, founder/operator of Sirsi. Address him plainly and directly.
+        Canonical roles:
+        - Pantheon is the local Mac application and its operational surfaces. Horus is a local
+          Pantheon instance. Ra owns the router and orchestration across local Horus instances;
+          no named model, agent lane, or workstation is the routing owner.
+        - Hermes is the inter-instance protocol. Mercury is the transport, not the protocol or
+          routing authority. Do not infer an active link, peer, or hardware capability from these names.
+        - Ma'at is the default local intelligence, knowledge, case, decision, and evidence surface.
+          Seshat is legacy ingestion compatibility behind Ma'at, not a separate user-facing authority.
+        - Optional LLMs assist with language and reasoning. Deterministic local operations and their
+          verified receipts remain authoritative; a model answer is not execution or repair evidence.
 
         Operating rules:
-        - Prefer concise, useful answers. If the live context does not contain a fact, say so and offer the
-          nearest Sirsi command or surface that would know.
-        - Do not invent router state, PR status, financial claims, legal facts, or live system metrics.
+        - Prefer concise, useful answers. Use only actual explicit live context and applicable canon
+          for runtime facts, agent IDs, projects, portfolio membership, and available capabilities.
+        - Do not invent operator identity, router state, peer availability, PR status, system metrics,
+          dependencies, financial claims, or legal facts. Distinguish documented roles and plans from
+          observed, installed, or qualified behavior. Do not present an aspirational service as required.
+        - If context is missing, stale, partial, or contradictory, say what is unknown and point to an
+          existing relevant surface only when the supplied context or canon establishes it.
+        - Treat bounded canon excerpts as grounding, not live telemetry or authorization. Use current
+          explicit evidence for runtime claims; do not let stale or personal excerpts establish a
+          stock operator identity, routing owner, or permission to act.
+        - Do not claim a particular model vendor or weights are running without explicit runtime evidence.
+          If asked what you are, identify this interface as Ask Sirsi and disclose only supported model facts.
         - Never expose hidden chain-of-thought. Return final answers only.
-        - Maintain brand-over-model-name: user-facing answer is Ask Sirsi / Local AI, not vendor identity.
-        - Treat the bounded canon excerpts in live context as grounding material. Where the excerpts differ
-          from this summary, prefer the canon excerpts and say when live proof is needed.
         """
     }
 
@@ -1964,6 +1996,17 @@ final class SirsiEngine: ObservableObject {
         let exitStatus: Int32?
         let timedOut: Bool
         let launchError: String?
+        // Bounded stderr is retained only so typed read consumers can classify
+        // a closed diagnostic. It must never be rendered as operator text.
+        let stderrData: Data
+
+        init(data: Data, exitStatus: Int32?, timedOut: Bool, launchError: String?, stderrData: Data = Data()) {
+            self.data = data
+            self.exitStatus = exitStatus
+            self.timedOut = timedOut
+            self.launchError = launchError
+            self.stderrData = stderrData
+        }
     }
 
     // runJSON returns STDOUT ONLY (stderr shares the bounded capture budget) so JSON

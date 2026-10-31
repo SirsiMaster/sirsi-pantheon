@@ -10,6 +10,7 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -238,19 +239,39 @@ func threadsPath(routerRoot string) string {
 
 // LoadThreadRegistry reads threads.json. Missing file → empty registry.
 func LoadThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
+	return LoadThreadRegistryContext(context.Background(), routerRoot)
+}
+func LoadThreadRegistryContext(ctx context.Context, routerRoot string) (*ThreadRegistry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if routercfg.StoreWake() {
 		store, err := openThreadStore()
 		if err != nil {
 			return nil, err
 		}
 		defer store.Close()
-		return loadThreadRegistryStore(routerRoot, store)
+		return loadThreadRegistryStoreContext(ctx, routerRoot, store)
 	}
 	return loadLegacyThreadRegistry(routerRoot)
 }
 
 func loadThreadRegistryStore(routerRoot string, store routerstore.Store) (*ThreadRegistry, error) {
-	records, err := store.ListThreads()
+	return loadThreadRegistryStoreContext(context.Background(), routerRoot, store)
+}
+func loadThreadRegistryStoreContext(ctx context.Context, routerRoot string, store routerstore.Store) (*ThreadRegistry, error) {
+	list := func() ([]routerstore.ThreadRecord, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if contextual, ok := store.(interface {
+			ListThreadsContext(context.Context) ([]routerstore.ThreadRecord, error)
+		}); ok {
+			return contextual.ListThreadsContext(ctx)
+		}
+		return store.ListThreads()
+	}
+	records, err := list()
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +284,7 @@ func loadThreadRegistryStore(routerRoot string, store routerstore.Store) (*Threa
 			if importErr := store.ImportThreadsIfEmpty(seed); importErr != nil {
 				return nil, importErr
 			}
-			records, err = store.ListThreads()
+			records, err = list()
 			if err != nil {
 				return nil, err
 			}
@@ -280,6 +301,9 @@ func loadThreadRegistryStore(routerRoot string, store routerstore.Store) (*Threa
 		}
 		reg.Threads[record.ThreadID] = &thread
 		reg.baseline[record.ThreadID] = record
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return reg, nil
 }
@@ -825,6 +849,13 @@ func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mi
 				(existing.MachineID != "" && t.MachineID != "" && existing.MachineID != t.MachineID) {
 				continue
 			}
+			// Several real provider sessions can share one durable host PID.
+			// PID fallback must not undo the session/surface check above, or a
+			// helper can overwrite its parent's metadata and receive its thread.
+			// Two legacy empty-session records still deduplicate normally.
+			if existing.SessionID != t.SessionID || existing.Surface != t.Surface {
+				continue
+			}
 			// ADR-025: a suspended record must NOT be revived by the live
 			// fast-path — resuming is an explicit transition (`thread resume`)
 			// that restores the payload + re-arms the watcher. Skip it here so
@@ -895,6 +926,9 @@ func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mi
 	if t.ThreadID != "" {
 		if existing, ok := reg.Threads[t.ThreadID]; ok && existing != nil && existing.AgentID != t.AgentID {
 			return nil, fmt.Errorf("thread %q is bound to agent %q; refusing to register it as %q (cross-lane identity adoption is prohibited)", t.ThreadID, existing.AgentID, t.AgentID)
+		}
+		if existing := reg.Threads[t.ThreadID]; existing != nil && (existing.SessionID != t.SessionID || existing.Surface != t.Surface) {
+			return nil, fmt.Errorf("thread %q belongs to a different provider session or surface; refusing identity adoption", t.ThreadID)
 		}
 	}
 
@@ -1426,7 +1460,15 @@ func reapDeadThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 		// there is no OS-truth claim to probe). Stale-after-lease is still a
 		// reap so the terminal invariant holds and the supersession path
 		// (ReapStrayThreads) remains unaffected.
-		if t.PID < minAgentPID {
+		//
+		// The same lease governs an attended claude/codex session that DOES carry a
+		// PID. A desktop conversation outlives its process: the session resumes
+		// with a new PID and the same session_id, and RegisterThread's
+		// session-keyed path renews the record. Reaping on the old PID's death made
+		// the record terminal first, so the resumed session's heartbeats were
+		// refused and its re-register minted a second thread, leaving the router
+		// blind to a working lane (claude-m5-compasspoint and ra, 2026-10-27).
+		if t.PID < minAgentPID || (t.SessionID != "" && IsAttendedSurface(t.Surface)) {
 			ttl := DefaultThreadStaleAfter
 			if t.SessionID != "" {
 				ttl = LeaseSessionTTL

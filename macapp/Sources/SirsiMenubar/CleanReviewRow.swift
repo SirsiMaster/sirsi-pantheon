@@ -21,7 +21,7 @@ struct CleanReviewRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .sirsiFont(13, weight: .medium)
+                    .sirsiFont(14, weight: .medium)
                 Text(path)
                     .sirsiFont(.caption2, design: .monospaced)
                     .foregroundStyle(.secondary)

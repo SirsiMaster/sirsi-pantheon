@@ -372,7 +372,11 @@ func TestFailureMemoryProjectionAppendFailurePreservesAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	j := &failingMemoryJournal{}
-	if err := ProjectFailureMemoryPreflight(j, r); !errors.Is(err, errMemoryJournal) || j.appends != 1 || j.reads != 0 {
+	stored, err := s.RetainPreflightReceipt(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ProjectFailureMemoryPreflight(j, stored); !errors.Is(err, errMemoryJournal) || j.appends != 1 || j.reads != 0 {
 		t.Fatalf("append failure hidden or reverse policy read: %+v %v", j, err)
 	}
 	after, err := json.Marshal(r)

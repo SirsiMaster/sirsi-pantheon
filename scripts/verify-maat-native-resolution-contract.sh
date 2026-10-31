@@ -14,6 +14,8 @@ screencli="$root/cmd/sirsi/maatscreen.go"
 casebookcli="$root/cmd/sirsi/maatcasebook.go"
 tui="$root/internal/tui/screen_activity.go"
 dashboard="$root/internal/dashboard/pages.go"
+dashboardhistory="$root/internal/dashboard/ui/maat-history.js"
+dashboardassets="$root/internal/dashboard/ui.go"
 controlcenter="$root/macapp/Sources/SirsiMenubar/ControlCenter.swift"
 recipe="$root/contracts/stacklab/maat-system-one-recipe-v1.json"
 catalog="$root/docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"
@@ -29,6 +31,18 @@ catalog="$root/docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"
 [ -f "$controlcenter" ] || { echo "missing Pantheon control center" >&2; exit 1; }
 [ -f "$recipe" ] || { echo "missing Ma'at System One Stack Lab recipe" >&2; exit 1; }
 [ -f "$catalog" ] || { echo "missing Ma'at System One catalog" >&2; exit 1; }
+[ -f "$dashboardhistory" ] || { echo "missing canonical Ma'at history asset" >&2; exit 1; }
+[ -f "$dashboardassets" ] || { echo "missing canonical dashboard asset handler" >&2; exit 1; }
+
+# History moved out of the page literal into its shipped embedded module.
+# Bind every projection check to that actual module AND its host/serving path;
+# unrelated matching words elsewhere must not satisfy this contract.
+for needle in '<script src="/assets/maat-history.js"></script>' 'window.MaatHistoryUI.mount(T)'; do
+  /usr/bin/grep -Fq "$needle" "$dashboard" || { echo "canonical Ma'at history mount missing: $needle" >&2; exit 1; }
+done
+for needle in '//go:embed ui/index.html ui/app.css ui/app.js ui/maat-history.js' 'case "/assets/maat-history.js":' 's.serveEmbedded(w, "ui/maat-history.js", "application/javascript; charset=utf-8")'; do
+  /usr/bin/grep -Fq "$needle" "$dashboardassets" || { echo "canonical Ma'at history serving missing: $needle" >&2; exit 1; }
+done
 
 if /usr/bin/grep -Fq 'This needs attention but has no one-click fix yet.' "$view"; then
   echo "native finding dead-end text remains" >&2
@@ -80,21 +94,21 @@ for needle in \
   }
 done
 
-for target in "$casebookcli" "$tui" "$dashboard"; do
+for target in "$casebookcli" "$tui" "$dashboardhistory"; do
 	/usr/bin/grep -Fq 'prescribed next step' "$target" || {
 		echo "Ma'at recovery guidance projection missing: $target" >&2
 		exit 1
 	}
 done
 
-for target in "$casebookcli" "$tui" "$dashboard"; do
+for target in "$casebookcli" "$tui" "$dashboardhistory"; do
 	/usr/bin/grep -Fq 'deterministic floor' "$target" || {
 		echo "Ma'at System One floor projection missing: $target" >&2
 		exit 1
 	}
 	done
 
-for target in "$casebookcli" "$tui" "$dashboard"; do
+for target in "$casebookcli" "$tui" "$dashboardhistory"; do
 	/usr/bin/grep -Fq 'recovery level' "$target" || {
 		echo "Ma'at three-level recovery projection missing: $target" >&2
 		exit 1

@@ -8,6 +8,7 @@ final class PantheonWorkspaceSession: ObservableObject {
     private let defaults: UserDefaults
     private let stacks: [PantheonWorkspace: Nav]
     private var observations: [AnyCancellable] = []
+    private let apolloRootDraft = ApolloPlannerDraft()
     @Published private(set) var section: PantheonWorkspace
 
     init(defaults: UserDefaults = .standard) {
@@ -21,6 +22,11 @@ final class PantheonWorkspaceSession: ObservableObject {
         observations = stacks.values.map { nav in
             nav.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         }
+    }
+
+    @MainActor func apolloPlanner(engine: SirsiEngine) -> ApolloRunPlannerView {
+        apolloRootDraft.enterProject(engine.projectRoot)
+        return ApolloRunPlannerView(engine: engine, draft: apolloRootDraft)
     }
 
     var navigation: Nav { navigation(for: section) }

@@ -67,6 +67,9 @@ func LoadPage(home string, query SearchQuery) (View, error) {
 }
 
 func LoadPageContext(ctx context.Context, home string, query SearchQuery) (View, error) {
+	if err := ValidateSearchText(query.Text); err != nil {
+		return View{}, err
+	}
 	archive, err := Open(home)
 	if err != nil {
 		return View{}, err

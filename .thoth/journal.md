@@ -3,6 +3,23 @@
 # Each entry is timestamped with context and reasoning.
 # This is the "why" behind every decision.
 
+## 2026-10-25 — v0.24.137 corrective preparation and preserved release notes
+
+Build on public136 and Main's complete accepted1f227096 composition, not a
+hotfix-only replacement or new unqualified donor. Integrated normal/race,
+Node and strict Swift results retain explicit skip/scope limits. Existing
+native-lifecycle drain/O7 originals remain open and do not stall this finished
+corrective increment. Actual package, service and installed acceptance remain
+separate receipts; no duplicate publisher or artifact recreation is authorized.
+
+Normal release preparation exposed that paragraph-form fragments were ignored
+and a common seventy-character opening could hide a distinct entry. Retained
+old notes and fragments in Git; a new regression failed on the paragraph before
+the minimal parser correction. Complete normalized-entry identity preserves
+existing duplicate controls, and original versioned sections remain byte-exact.
+The release tool's initial six-note output was restored before a corrected cut
+retained twenty-five entries from the sixteen source fragments.
+
 ## Entry 028 — 2026-09-27 — Ra native handoff identity release candidate
 
 The native Ra handoff form exposed a free-form sender and defaulted it to the
