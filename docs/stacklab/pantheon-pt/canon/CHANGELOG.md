@@ -2,6 +2,8 @@
 
 ## 2026-10-30 — v0.24.148 release candidate
 
+- Keep the router staging tag within Cloud Run limits without reducing nonce entropy.
+- Correct model-router source traceability without claiming production or installed qualification.
 - Correct Codex thread-marker identity while preserving registered-agent, host, PID and compare-and-swap checks.
 - Add zero-traffic-only router staging with separate compatibility verification and promotion.
 - Bind the expected Apollo capability and protected profile across signing and package verification; the official release remains native-Apollo-disabled.

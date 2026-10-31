@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.148] — 2026-10-30
 
+- Shorten the router staging traffic tag to meet Cloud Run's service-plus-tag limit while preserving the full 96-bit nonce; promotion remains separate.
+
+- Correct model-router traceability for existing source-level streaming, JSON-object and determinism paths. Production backend behavior and installed handoff remain unqualified; retained qualifications keep their original source identity.
+
 - Use Codex's current thread ID for its session marker, retaining the root session ID only as a legacy fallback and preserving existing identity and compare-and-swap checks. Add inert coverage for separate child threads sharing a root session.
 
 - Add an explicit router `stage.sh --stage-only` mode that retains the verified zero-traffic revision and tag for separate compatibility testing and operator-controlled promotion. It refuses first-service use and caller-supplied traffic or revision overrides.
