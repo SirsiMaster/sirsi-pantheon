@@ -1,0 +1,1 @@
+- **Hosted router board finds every Sirsi Mac on its own.** The board reads its tailnet every 30 seconds and lists each online Mac tagged `tag:sirsi-mac` as a drivable console, so a new Mac appears once it is tagged, with no redeploy. `MACS` in `board.sh deploy` is now optional and pins a fixed list instead.

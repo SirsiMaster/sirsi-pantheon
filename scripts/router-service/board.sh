@@ -8,9 +8,10 @@
 # registry and confirm guard.
 #
 # Per Mac, once (host lane): the console LaunchAgent (ai.sirsi.router.surface)
-# and `tailscale serve --bg 9119`. Owner, once: a reusable ephemeral Tailscale
-# key tagged tag:cloud-board into secret sirsi-router-board-tailscale-key, and an
-# ACL letting tag:cloud-board reach the Macs on 443 only.
+# and `tailscale serve --bg 9119`; owner tags the Mac tag:sirsi-mac and the board
+# lists it within 30 s — no redeploy per Mac. Owner, once: a reusable ephemeral
+# Tailscale key tagged tag:cloud-board into secret sirsi-router-board-tailscale-key,
+# and a policy letting tag:cloud-board reach tag:sirsi-mac on 443 only.
 #
 #   board.sh provision   one-time: service account, token secret, IAP binding target
 #   board.sh mint        one-time (and on rotation): mint the @observer token straight
@@ -95,15 +96,17 @@ deploy)
   CTX=$(mktemp -d); trap 'rm -rf "$CTX"' EXIT
   context "$CTX"
   PREV=$($G run services describe "$SERVICE" --region="$REGION" --format='value(status.traffic[0].revisionName)' 2>/dev/null || true)
-  # MACS names each Mac console on the tailnet, e.g. M1=https://m1.tail1234.ts.net,M5=…,Studio=…
-  MACS=${MACS:?"MACS=name=https://<mac>.<tailnet>.ts.net,… (each Mac: tailscale serve --bg 9119)"}
+  # The board discovers every online tag:sirsi-mac Mac on the tailnet itself. MACS
+  # (m1=https://m1.<tailnet>.ts.net,…) optionally pins a fixed list instead.
+  ENVS="SIRSI_ROUTER_URL=$URL@SIRSI_ROUTER_CLOUD_HOST=cloud-board@SIRSI_AGENT_ID=router-board"
+  [ -z "${MACS:-}" ] || ENVS="$ENVS@SIRSI_BOARD_MACS=$MACS"
   SECRETS="SIRSI_ROUTER_TOKEN=$SECRET:latest"
   $G secrets describe "$TS_SECRET" >/dev/null 2>&1 && SECRETS="$SECRETS,TS_AUTHKEY=$TS_SECRET:latest"
   # --no-cpu-throttling keeps the tailnet connection alive between requests; min-instances 0 still
   # scales the board to nothing when nobody is looking.
   run $G beta run deploy "$SERVICE" --source "$CTX" --region="$REGION" --service-account="$SA" \
     --no-allow-unauthenticated --iap --min-instances=0 --max-instances=2 --cpu=1 --memory=512Mi --timeout=300 \
-    --no-cpu-throttling --set-env-vars="^@^SIRSI_ROUTER_URL=$URL@SIRSI_ROUTER_CLOUD_HOST=cloud-board@SIRSI_AGENT_ID=router-board@SIRSI_BOARD_MACS=$MACS" \
+    --no-cpu-throttling --set-env-vars="^@^$ENVS" \
     --set-secrets="$SECRETS" --labels=workstream=router-board
   NUM=$($G projects describe "$PROJECT" --format='value(projectNumber)')
   # IAP must be allowed to invoke the service; only the sirsi.ai domain may pass IAP.
