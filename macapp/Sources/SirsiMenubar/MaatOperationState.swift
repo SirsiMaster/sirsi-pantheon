@@ -361,6 +361,18 @@ struct MaatExactHistoryContinuation: Sendable {
 struct MaatExactHistoryRead: Sendable {
     let read: SirsiEngine.JSONCommandRead
     let continuation: MaatExactHistoryContinuation?
+    // A completed review may retain only the cursor that opened its terminal
+    // page. A later explicit confirmation must fetch that page again; this is
+    // never a cached projection or permission to dispatch.
+    let retryReadCursor: MaatExactHistoryContinuation?
+
+    init(read: SirsiEngine.JSONCommandRead,
+         continuation: MaatExactHistoryContinuation?,
+         retryReadCursor: MaatExactHistoryContinuation? = nil) {
+        self.read = read
+        self.continuation = continuation
+        self.retryReadCursor = retryReadCursor
+    }
 
     var data: Data { read.data }
     var exitStatus: Int32? { read.exitStatus }
@@ -423,7 +435,12 @@ enum MaatOperationPreflight {
             expectedQueryID = history.queryID
             expectedSnapshot = history.snapshot
             if history.coverage == "complete" {
-                return MaatExactHistoryRead(read: read, continuation: nil)
+                let retryReadCursor = cursor.map {
+                    MaatExactHistoryContinuation(evidence: evidence, queryID: history.queryID,
+                        snapshot: history.snapshot, cursor: $0)
+                }
+                return MaatExactHistoryRead(read: read, continuation: nil,
+                    retryReadCursor: retryReadCursor)
             }
             guard history.coverage == "partial",
                   let next = history.nextCursor, !next.isEmpty,
@@ -548,14 +565,24 @@ final class MaatCaseOperationStore: ObservableObject {
         if let existing = records[key] {
             if existing.phase == .historyIncomplete {
                 var resumed = existing
+                if resumed.intent != intent { historyReads[key] = nil }
                 resumed.phase = .preflighting
                 resumed.intent = intent
                 records[key] = resumed
                 return true
             }
             guard existing.phase == .retryReady else { return false }
-            historyReads[key] = nil
-            records[key] = MaatOperationRecord(phase: .preflighting, receipt: existing.receipt, guidance: nil, intent: intent)
+            let reviewedContinuation = existing.intent == .inactiveDisposition && intent == .inactiveDisposition
+                ? historyContinuation(for: key, generation: existing.generation)
+                : nil
+            let next = MaatOperationRecord(phase: .preflighting, receipt: existing.receipt,
+                guidance: nil, intent: intent)
+            records[key] = next
+            if let reviewedContinuation, reviewedContinuation.evidence == key.evidence {
+                historyReads[key] = (next.generation, reviewedContinuation)
+            } else {
+                historyReads[key] = nil
+            }
             return true
         }
         records[key] = MaatOperationRecord(phase: .preflighting, receipt: nil, guidance: nil, intent: intent)
@@ -564,6 +591,7 @@ final class MaatCaseOperationStore: ObservableObject {
 
     func markRunning(_ key: MaatOperationKey) {
         guard var record = records[key], record.phase == .preflighting else { return }
+        historyReads[key] = nil
         record.phase = .running
         record.guidance = nil
         records[key] = record
@@ -582,16 +610,29 @@ final class MaatCaseOperationStore: ObservableObject {
 
     /// A completed or rejected action is replayable only after a separate,
     /// successful fresh read has verified the same open case and clean journal.
-    func authorizeReviewedRetry(_ key: MaatOperationKey, reviewedGeneration: UUID) {
+    @discardableResult
+    func authorizeReviewedRetry(_ key: MaatOperationKey, reviewedGeneration: UUID,
+                                continuation: MaatExactHistoryContinuation? = nil) -> Bool {
         guard let prior = records[key], prior.generation == reviewedGeneration,
-              !prior.phase.isInFlight else { return }
+              !prior.phase.isInFlight,
+              continuation.map({ prior.intent == .inactiveDisposition && isValidRetryContinuation($0, for: key) }) ?? true else { return false }
         historyReads[key] = nil
-        records[key] = MaatOperationRecord(
+        let retry = MaatOperationRecord(
             phase: .retryReady,
             receipt: prior.receipt,
             guidance: "Fresh casebook review succeeded. Confirm again to retry this same case action.",
             intent: prior.intent
         )
+        records[key] = retry
+        if let continuation {
+            // This cursor is only a terminal-page read handle for the typed
+            // inactive-disposition command. That command independently checks
+            // the current strict journal and host before recording, then
+            // rechecks under the mutation lock. It is never a general action
+            // freshness proof or a cached projection.
+            historyReads[key] = (retry.generation, continuation)
+        }
+        return true
     }
 
     func rejectRetryReview(_ key: MaatOperationKey, reviewedGeneration: UUID, guidance: String) {
@@ -602,19 +643,21 @@ final class MaatCaseOperationStore: ObservableObject {
     }
 
     func historyContinuation(for key: MaatOperationKey, generation: UUID) -> MaatExactHistoryContinuation? {
-        guard let saved = historyReads[key], saved.generation == generation else { return nil }
+        guard let saved = historyReads[key], saved.generation == generation,
+              isValidRetryContinuation(saved.continuation, for: key) else { return nil }
         return saved.continuation
     }
 
     func hasHistoryContinuation(for key: MaatOperationKey) -> Bool {
-        guard let record = records[key] else { return false }
+        guard let record = records[key],
+              record.phase == .historyIncomplete || record.phase == .needsReview else { return false }
         return historyContinuation(for: key, generation: record.generation) != nil
     }
 
     func pauseHistory(_ key: MaatOperationKey, generation: UUID,
                       continuation: MaatExactHistoryContinuation, retryReview: Bool = false) {
         guard var record = records[key], record.generation == generation,
-              continuation.evidence == key.evidence else { return }
+              isValidRetryContinuation(continuation, for: key) else { return }
         historyReads[key] = (generation, continuation)
         record.phase = retryReview ? .needsReview : .historyIncomplete
         record.guidance = "The exact history read is incomplete. Continue this review or start fresh; no new action has run."
@@ -626,5 +669,11 @@ final class MaatCaseOperationStore: ObservableObject {
         historyReads[key] = nil
         records[key] = MaatOperationRecord(phase: prior.phase, receipt: prior.receipt,
             guidance: "History progress was discarded. Start a fresh review before taking an action.", intent: prior.intent)
+    }
+
+    private func isValidRetryContinuation(_ continuation: MaatExactHistoryContinuation,
+                                          for key: MaatOperationKey) -> Bool {
+        continuation.evidence == key.evidence && !continuation.queryID.isEmpty &&
+            !continuation.snapshot.isEmpty && !continuation.cursor.isEmpty
     }
 }

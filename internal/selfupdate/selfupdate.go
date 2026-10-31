@@ -218,7 +218,11 @@ func ScanHostContext(ctx context.Context) (*DriftReport, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return BuildReport(self, siblings, pathBin), nil
+	report := buildReport(ctx, self, siblings, pathBin)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return report, nil
 }
 
 // discoverContext walks candidate install dirs, probing each sirsi-family binary it
@@ -294,6 +298,10 @@ func candidateDirs(selfPath string) []string {
 // BuildReport applies the drift rules to a discovered set. Pure and
 // deterministic — the unit the tests exercise.
 func BuildReport(self version.Info, siblings []Sibling, pathBin string) *DriftReport {
+	return buildReport(context.Background(), self, siblings, pathBin)
+}
+
+func buildReport(ctx context.Context, self version.Info, siblings []Sibling, pathBin string) *DriftReport {
 	r := &DriftReport{Self: self, Siblings: siblings}
 	for _, s := range siblings {
 		// Only compare when the sibling reported a real, stamped version.
@@ -310,24 +318,10 @@ func BuildReport(self version.Info, siblings []Sibling, pathBin string) *DriftRe
 		// Cask installation look drifted and sent the native app to a needless
 		// self-repair screen. Prefer filesystem identity when both paths exist;
 		// retain the conservative textual comparison for unavailable paths.
-		if !sameExecutable(pathBin, self.Path) {
+		if !sameExecutableContext(ctx, pathBin, self.Path) {
 			r.D3PathBin = filepath.Clean(pathBin)
 		}
 	}
 	r.Healthy = len(r.D2Mismatch) == 0 && r.D3PathBin == ""
 	return r
-}
-
-// sameExecutable recognizes two names for the same executable object. os.Stat
-// follows the Cask's intentional symlink, and os.SameFile compares the
-// platform identity rather than string paths. If either path cannot be
-// inspected, only an exact clean spelling is considered equal: missing or
-// ambiguous binaries must continue to surface as drift.
-func sameExecutable(left, right string) bool {
-	if filepath.Clean(left) == filepath.Clean(right) {
-		return true
-	}
-	leftInfo, leftErr := os.Stat(left)
-	rightInfo, rightErr := os.Stat(right)
-	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }

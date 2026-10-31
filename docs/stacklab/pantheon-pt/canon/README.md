@@ -27,8 +27,8 @@ evidenced.
 
 ## Start here and required canon
 
-[Certification](CERTIFICATION.md) separates verified wing identity and public140
-evidence from final composed141 acceptance. The nine required records are
+[Certification](CERTIFICATION.md) separates retained historical wing/publication
+evidence from the exact current corrective source and installed acceptance. The nine required records are
 [PRD](PRD.md), [Plan](PLAN.md), [User stories](USER_STORIES.md),
 [Security](SECURITY_THREAT_MODEL.md), [Design](DESIGN.md), [Runbook](RUNBOOK.md),
 [Changelog](CHANGELOG.md), [Traceability](TRACEABILITY_MATRIX.md) and
@@ -41,7 +41,7 @@ replacement boundaries. The remaining full-census diagrams are
 [Ra/Horus operations](DIAGRAMS_FABRIC_OPERATIONS.md) and
 [product operations](DIAGRAMS_PRODUCT_OPERATIONS.md). The84-group index covers
 the finite independent census; diagram counts are not installed acceptance.
-The inventory is regenerated from the committed141 composition named in
+The inventory is regenerated from the committed corrective composition named in
 CERTIFICATION. Final-head digest equality, publication and installed evidence
 remain separate acceptance steps.
 

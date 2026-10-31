@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "3501cf138e6ba8f575bf3d2d889ffc276354f80e",
-  "source_tree": "f9192a4de77bc59a413dbd2ab647e3f10b1aa6f8",
+  "source_commit": "4c17dc3d33b770b8d9e830f092cecbb846c3b6c1",
+  "source_tree": "15c1c7121640ff20ac8271233db88e4ccf1e691d",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -1064,7 +1064,7 @@
         },
         {
           "path": "cmd/sirsi/maatrepair_binary_drift_inactive_test.go",
-          "sha256": "80aa01415c1f22f13b2787b9f40cc78fbd23fcb2309d5bb41741408a1fc4443c"
+          "sha256": "97ccb65a490d778c46cec1ccdddd634b3e2dbb5c445b2b6c2aadb0864fb5b2fa"
         },
         {
           "path": "cmd/sirsi/maatrepair_binary_drift_test.go",
@@ -1932,13 +1932,17 @@
       "source": [
         {
           "path": "internal/caskrelease/cask.go",
-          "sha256": "4de1aa9b6345bf9379181a5f5e228000735b0acf2c2c9620ef2f908c89a26fc6"
+          "sha256": "de779baa000c53e384c7650d7adec5d7d277dc80835b9f8e7b21a2afbd348242"
         }
       ],
       "tests": [
         {
           "path": "internal/caskrelease/cask_test.go",
-          "sha256": "d451d28098f108430b23c35934a534b38630dee91d19e99aec1bffa7cc002011"
+          "sha256": "00ed84c2c70f4b1a5e3780a6e8893667b3558d01c611032b2f3f4df9c545e1ea"
+        },
+        {
+          "path": "internal/caskrelease/testdata/legacy-v0.24.153.rb",
+          "sha256": "35b1cd346608a086c1999a352bf0e64bb755c965db7521daa08519752af9e106"
         }
       ],
       "direct_local_imports": [],
@@ -4454,7 +4458,7 @@
         },
         {
           "path": "internal/maat/releasepreflight_test.go",
-          "sha256": "e5b127241838d4a084266bd232ea4708c345623ef0c1405e6daa3d326fb43a18"
+          "sha256": "6cf28e1a221601a179681f65c436b295a755ac858e1e2d574f5f8b4b1def63df"
         },
         {
           "path": "internal/maat/sourcescreen_test.go",
@@ -7617,6 +7621,14 @@
       "owner": "Pantheon source maintainer",
       "source": [
         {
+          "path": "internal/selfupdate/executable_compare_other.go",
+          "sha256": "cd31239ec44a041cf0e67f653a02afc64107a0930254e8e32385a3c20f8a2aa2"
+        },
+        {
+          "path": "internal/selfupdate/executable_compare_unix.go",
+          "sha256": "66afe55792ed47964d88548cf8883d50d6553c7531b17e4bef4fb7187ca0f150"
+        },
+        {
           "path": "internal/selfupdate/lock.go",
           "sha256": "8e5b4e8053f43db76cc612efdfb9d30113779ca901ef742c8faee1e6f3d7270c"
         },
@@ -7638,17 +7650,21 @@
         },
         {
           "path": "internal/selfupdate/selfupdate.go",
-          "sha256": "c06a2470a2878522fa76501bbae17732a6e3213b0ba76113f7a501803fd94a1f"
+          "sha256": "7c447285a51f2700316b6d6522735a71907f8f6aefe58ef2514d02db32180785"
         }
       ],
       "tests": [
+        {
+          "path": "internal/selfupdate/executable_compare_unix_test.go",
+          "sha256": "8a40d59fad2848bef439f3f7abf1ba1debefdf159ae863799d7d2e07a2e7c294"
+        },
         {
           "path": "internal/selfupdate/lock_test.go",
           "sha256": "c3a94c102d750ea1d10694ec0cd75b9d060cbe0dc23966fcd5f865ad85eeab75"
         },
         {
           "path": "internal/selfupdate/probe_bounded_unix_test.go",
-          "sha256": "8aeda7647233d0bb30db382da0729934a55016cc8d8990c366aa93e8bd843e11"
+          "sha256": "231a6db596a8f2855e4f73334326c7b5e10a17444c968e6cffb7073f8ad86f92"
         },
         {
           "path": "internal/selfupdate/provenance_test.go",
@@ -8946,7 +8962,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
-          "sha256": "3526b696f2fc30a24ff0e35647e86af63bd176dfc1454d63b739e54bff4647cf"
+          "sha256": "bcb6eb1cf7af465de26c7d6f29d700282b86e310b60ae4c48e10b4ad30153ded"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatDiagnosticCorrelation.swift",
@@ -8974,7 +8990,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatOperationState.swift",
-          "sha256": "38201af1217c7feca522547b11806b619d5744664d8d6ecba726f0f216d41c40"
+          "sha256": "99bdaf588f259bea4573071f00753c1170bc2d097def0b91c7e39f06fbfc7076"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatPreparedPreflightRecovery.swift",
@@ -9074,7 +9090,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/Views.swift",
-          "sha256": "3d1ccd80ea55312a2b82a8b31f6f934f8ed1618f28e2c80803520600dde80795"
+          "sha256": "bfa85a3b5d5e25eedc7bb52935d8b961b7207e2dba2edd7ee3b1deecac1197f4"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/WorkspaceSession.swift",
@@ -9188,7 +9204,7 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatOperationStateTests.swift",
-          "sha256": "cb8cd048c11bba28dfd71df47ee7dfacb6c94e8ae6521e2164a092a61ea9bf85"
+          "sha256": "ee649b40b7f7095f10c36efacf01d382bd9fe38e6ac726c63507f269302c80f1"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatPreparedPreflightRecoveryTests.swift",
@@ -9229,6 +9245,10 @@
         {
           "path": "macapp/Tests/SirsiMenubarTests/OutboxReachabilityTests.swift",
           "sha256": "8d8061ad35afb3f95d95aa250699231bbc44cdc665bd8889d840e99a8b1ac162"
+        },
+        {
+          "path": "macapp/Tests/SirsiMenubarTests/RaHandoffViewportTests.swift",
+          "sha256": "57c9c290463b3daf23dfb89dbdcf87e1056f31d70687c384ba15b5e22e8c99a0"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/RelayObservationTests.swift",
@@ -9761,7 +9781,7 @@
         },
         {
           "path": "scripts/test_artifact_modes.py",
-          "sha256": "145ce5da214a143eafdcb4244785b65ac95f3de903292c7b9b8584cac47a49c4"
+          "sha256": "cc3ce8b41db6b8b24ce47df897409f8d1196d6edd9206968507f5e8a837e9daa"
         },
         {
           "path": "scripts/test_ci_docs_only.py",
@@ -9909,11 +9929,11 @@
         },
         {
           "path": "contracts/stacklab/pantheon-native-workspace-v1.json",
-          "sha256": "f348297813a56624f11e4d463f61c10d6a1ac593510359dc45d2698ac9082e71"
+          "sha256": "2bdbb31ad7cc50320f3d064950a78ec353d9cf683b5e3bfed2bd2c686990d4c9"
         },
         {
           "path": "contracts/stacklab/pantheon-release-artifact-recipe-v1.json",
-          "sha256": "f199daecc9e086674789f16d961717df1ab787e2b771cc9b7fe09f36e4b29961"
+          "sha256": "bd56a4ddfd81cdef22a9484752eaf414e460b3eedb368b550c21fce4cb814d12"
         },
         {
           "path": "contracts/stacklab/pantheon.pt-wing-001-wing-v1.json",
@@ -10273,7 +10293,7 @@
         },
         {
           "path": ".github/workflows/release.yml",
-          "sha256": "f8bb379cfdeecdf5ca2c1ce3cff5ac8473ebcf70acd465c8abbc3604319ec83f"
+          "sha256": "4ec74ce66ff42371bf5d395bf77bb392a7de37af31db94274193d2bd001d10d3"
         }
       ]
     },

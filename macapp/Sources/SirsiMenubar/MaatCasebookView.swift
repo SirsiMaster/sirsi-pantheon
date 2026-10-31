@@ -3454,7 +3454,12 @@ private struct MaatCaseDetailView: View {
             }
             entry = selected
             invalidJournalIntegrity = nil
-            operations.authorizeReviewedRetry(key, reviewedGeneration: prior.generation)
+            guard operations.authorizeReviewedRetry(key, reviewedGeneration: prior.generation,
+                continuation: prior.intent == .inactiveDisposition ? read.retryReadCursor : nil) else {
+                operations.rejectRetryReview(key, reviewedGeneration: prior.generation,
+                    guidance: "The completed history cursor did not match this exact case. Review the casebook again before confirming an action.")
+                return
+            }
         case .invalidIntegrity(let integrity):
             invalidJournalIntegrity = integrity
             operations.rejectRetryReview(key, reviewedGeneration: prior.generation,

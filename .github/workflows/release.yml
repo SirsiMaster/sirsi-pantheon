@@ -159,7 +159,7 @@ jobs:
           fi
           echo "Developer ID Installer identity preflight passed."
 
-      - name: Build + sign + notarize DMG and PKG (arm64 — Intel Macs use Rosetta)
+      - name: Build + sign + notarize DMG and PKG (arm64 — Apple silicon)
         env:
           GOMAXPROCS: "1"
           GOFLAGS: "-p=1"
