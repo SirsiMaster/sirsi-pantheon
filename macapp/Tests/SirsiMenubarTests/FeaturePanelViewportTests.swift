@@ -270,11 +270,11 @@ final class FeaturePanelViewportTests: XCTestCase {
             guard let accessibility = element as? NSAccessibilityProtocol else {
                 throw AXFailure.nonAccessibilityElement
             }
-            let role = accessibility.accessibilityRole?.rawValue
-            let title = accessibility.accessibilityTitle
-            let description = accessibility.accessibilityLabel
-            let value = accessibility.accessibilityValue as? String
-            let children = accessibility.accessibilityChildren ?? []
+            let role = accessibility.accessibilityRole()?.rawValue
+            let title = accessibility.accessibilityTitle()
+            let description = accessibility.accessibilityLabel()
+            let value = accessibility.accessibilityValue() as? String
+            let children = accessibility.accessibilityChildren() ?? []
             for text in [title, description, value].compactMap({ $0 }) {
                 snapshot.strings.insert(text)
             }
@@ -297,7 +297,7 @@ final class FeaturePanelViewportTests: XCTestCase {
 
     @MainActor
     private func accessibilityFrame(of element: NSObject) -> NSRect? {
-        (element as? NSAccessibilityProtocol)?.accessibilityFrame
+        (element as? NSAccessibilityProtocol)?.accessibilityFrame()
     }
 
     private enum AXFailure: Error {

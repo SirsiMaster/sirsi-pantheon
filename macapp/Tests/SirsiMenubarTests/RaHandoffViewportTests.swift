@@ -229,11 +229,11 @@ final class RaHandoffViewportTests: XCTestCase {
                 throw MountedAXFailure.nonAccessibilityElement
             }
 
-            let role = accessibility.accessibilityRole?.rawValue
-            let title = accessibility.accessibilityTitle
-            let label = accessibility.accessibilityLabel
-            let value = accessibility.accessibilityValue as? String
-            let children = accessibility.accessibilityChildren ?? []
+            let role = accessibility.accessibilityRole()?.rawValue
+            let title = accessibility.accessibilityTitle()
+            let label = accessibility.accessibilityLabel()
+            let value = accessibility.accessibilityValue() as? String
+            let children = accessibility.accessibilityChildren() ?? []
             strings.formUnion([title, label, value].compactMap { $0 })
             if role == NSAccessibility.Role.button.rawValue,
                let name = [title, label].compactMap({ $0 }).first(where: { !$0.isEmpty }) {
@@ -254,7 +254,7 @@ final class RaHandoffViewportTests: XCTestCase {
     @MainActor
     private func accessibilityFrame(of element: NSObject) -> NSRect? {
         // AppKit accessibility frames use screen coordinates.
-        (element as? NSAccessibilityProtocol)?.accessibilityFrame
+        (element as? NSAccessibilityProtocol)?.accessibilityFrame()
     }
 
     private struct MountedAXButton {

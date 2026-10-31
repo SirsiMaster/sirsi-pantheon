@@ -229,11 +229,11 @@ final class StackLabAccessibilityTests: XCTestCase {
             guard let accessibility = element as? NSAccessibilityProtocol else {
                 throw AXFailure.nonAccessibilityElement
             }
-            let role = accessibility.accessibilityRole?.rawValue
-            let label = accessibility.accessibilityLabel
-            let value = accessibility.accessibilityValue as? String
-            let title = accessibility.accessibilityTitle
-            let children = accessibility.accessibilityChildren ?? []
+            let role = accessibility.accessibilityRole()?.rawValue
+            let label = accessibility.accessibilityLabel()
+            let value = accessibility.accessibilityValue() as? String
+            let title = accessibility.accessibilityTitle()
+            let children = accessibility.accessibilityChildren() ?? []
             for text in [label, value, title].compactMap({ $0 }) { snapshot.strings.insert(text) }
             if role == NSAccessibility.Role.button.rawValue, let name = title ?? label {
                 snapshot.buttons.append(AXButton(element: element, label: name))
