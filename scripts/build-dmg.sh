@@ -216,14 +216,19 @@ python3 -B "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "${BUNDLE_DIR}"
     "${APOLLO_INVENTORY_ARGS[@]}" \
     --write-frozen-digests "$FROZEN_APOLLO_DIGESTS"
 # END tested pre-sign package-inventory command
-read -r FROZEN_INFO_SHA256 FROZEN_PROFILE_SHA256 < <(python3 - "$FROZEN_APOLLO_DIGESTS" <<'PY'
+# BEGIN tested frozen Apollo digest receipt read
+if ! FROZEN_APOLLO_DIGEST_VALUES="$(python3 - "$FROZEN_APOLLO_DIGESTS" <<'PY'
 import re, sys
 values = {}
-for line in open(sys.argv[1], encoding="ascii"):
-    key, sep, value = line.rstrip("\n").partition("=")
-    if not sep or key in values:
-        raise SystemExit("invalid frozen Apollo digest receipt")
-    values[key] = value
+try:
+    with open(sys.argv[1], encoding="ascii") as receipt:
+        for line in receipt:
+            key, sep, value = line.rstrip("\n").partition("=")
+            if not sep or key in values:
+                raise SystemExit("invalid frozen Apollo digest receipt")
+            values[key] = value
+except (OSError, UnicodeError):
+    raise SystemExit("invalid frozen Apollo digest receipt")
 if set(values) != {"info_sha256", "apollo_profile_sha256"}:
     raise SystemExit("incomplete frozen Apollo digest receipt")
 if not re.fullmatch(r"[0-9a-f]{64}", values["info_sha256"]):
@@ -232,7 +237,17 @@ if values["apollo_profile_sha256"] != "absent" and not re.fullmatch(r"[0-9a-f]{6
     raise SystemExit("invalid frozen Apollo profile digest")
 print(values["info_sha256"], values["apollo_profile_sha256"])
 PY
-)
+)"; then
+    echo "ERROR: could not read the complete frozen Apollo digest receipt" >&2
+    exit 1
+fi
+FROZEN_INFO_SHA256="${FROZEN_APOLLO_DIGEST_VALUES%% *}"
+FROZEN_PROFILE_SHA256="${FROZEN_APOLLO_DIGEST_VALUES#* }"
+[[ "$FROZEN_APOLLO_DIGEST_VALUES" == "$FROZEN_INFO_SHA256 $FROZEN_PROFILE_SHA256" && "$FROZEN_INFO_SHA256" =~ ^[0-9a-f]{64}$ && ( "$FROZEN_PROFILE_SHA256" == "absent" || "$FROZEN_PROFILE_SHA256" =~ ^[0-9a-f]{64}$ ) ]] || {
+    echo "ERROR: invalid frozen Apollo digest receipt fields" >&2
+    exit 1
+}
+# END tested frozen Apollo digest receipt read
 FROZEN_APOLLO_ARGS=(--expected-info-sha256 "$FROZEN_INFO_SHA256" --expected-apollo-profile-sha256 "$FROZEN_PROFILE_SHA256")
 if [[ "$MODE" == "release" ]]; then
     FROZEN_APOLLO_ARGS+=(--require-frozen-digests)

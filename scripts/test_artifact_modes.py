@@ -4,6 +4,7 @@ import importlib.util
 import os
 import plistlib
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -267,6 +268,85 @@ export ARGV_CAPTURE="$7"
                         copied = bundle / "Contents/Resources/Apollo/native-profile.json"
                         self.assertEqual(copied.read_bytes(), profile_bytes)
                         self.assertEqual(stat.S_IMODE(copied.stat().st_mode), 0o644)
+
+    def test_frozen_digest_receipt_reader_under_macos_bash_32(self):
+        if sys.platform != "darwin":
+            self.skipTest("the production regression target is macOS /bin/bash 3.2")
+        version = subprocess.run(
+            ["/bin/bash", "-c", 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"'],
+            capture_output=True, text=True, timeout=5, check=True,
+        ).stdout
+        self.assertEqual(version, "3.2", "macOS package CI must exercise system Bash 3.2")
+
+        scripts = Path(__file__).resolve().parent
+        begin = "# BEGIN tested frozen Apollo digest receipt read"
+        end = "# END tested frozen Apollo digest receipt read"
+
+        def receipt_block(path):
+            source = path.read_text()
+            self.assertEqual(source.count(begin), 1, str(path))
+            self.assertEqual(source.count(end), 1, str(path))
+            start = source.index(begin) + len(begin)
+            finish = source.index(end, start)
+            return source[start:finish]
+
+        digest = hashlib.sha256(b"inert frozen Info.plist fixture").hexdigest()
+        profile = hashlib.sha256(b"inert Apollo profile fixture").hexdigest()
+        valid_disabled = f"info_sha256={digest}\napollo_profile_sha256=absent\n"
+        valid_enabled = f"info_sha256={digest}\napollo_profile_sha256={profile}\n"
+        cases = (
+            ("valid-disabled", valid_disabled, False, (digest, "absent")),
+            ("valid-enabled", valid_enabled, False, (digest, profile)),
+            ("invalid-digest", f"info_sha256={'z' * 64}\napollo_profile_sha256=absent\n", False, None),
+            ("missing-key", f"info_sha256={digest}\n", False, None),
+            ("empty", "", False, None),
+            ("duplicate-key", f"info_sha256={digest}\ninfo_sha256={digest}\napollo_profile_sha256=absent\n", False, None),
+            ("extra-key", valid_disabled + "unexpected=value\n", False, None),
+            ("absent-file", None, False, None),
+            ("parser-failure", valid_disabled, True, None),
+        )
+        python3 = shutil.which("python3")
+        self.assertIsNotNone(python3, "the receipt reader requires Python 3")
+        parser_path = str(Path(python3).parent)
+        harness = """set -euo pipefail
+FROZEN_APOLLO_DIGESTS="$1"
+"""
+        blocks = {builder: receipt_block(scripts / builder) for builder in ("build-dmg.sh", "build-pkg.sh")}
+        self.assertEqual(blocks["build-dmg.sh"], blocks["build-pkg.sh"], "paired builders must share receipt validation")
+        for builder, block in blocks.items():
+            for name, contents, fail_parser, expected in cases:
+                with self.subTest(builder=builder, case=name):
+                    case_root = self.root / "frozen receipt fixture" / builder / name
+                    case_root.mkdir(parents=True)
+                    receipt = case_root / "receipt.txt"
+                    if contents is not None:
+                        receipt.write_text(contents)
+                    if fail_parser:
+                        stub_bin = case_root / "stub-bin"
+                        stub_bin.mkdir()
+                        parser = stub_bin / "python3"
+                        parser.write_text("#!/bin/sh\nexit 19\n")
+                        parser.chmod(0o755)
+                        search_path = os.pathsep.join((str(stub_bin), parser_path, "/usr/bin", "/bin"))
+                    else:
+                        search_path = os.pathsep.join((parser_path, "/usr/bin", "/bin"))
+                    parsed = case_root / "parsed.txt"
+                    continued = case_root / "continued.txt"
+                    script = harness + block + "\nprintf '%s\\n%s\\n' \"$FROZEN_INFO_SHA256\" \"$FROZEN_PROFILE_SHA256\" > \"$2\"\n: > \"$3\"\n"
+                    result = subprocess.run(
+                        ["/bin/bash", "-c", script, "bash32-frozen-receipt-fixture", str(receipt), str(parsed), str(continued)],
+                        env={"PATH": search_path, "HOME": str(self.root)},
+                        stdin=subprocess.DEVNULL,
+                        capture_output=True, text=True, timeout=5, check=False,
+                    )
+                    if expected is None:
+                        self.assertNotEqual(result.returncode, 0, result.stderr)
+                        self.assertFalse(continued.exists(), "receipt failure continued into release verification")
+                        self.assertFalse(parsed.exists(), "receipt failure emitted digest fields")
+                    else:
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(parsed.read_text().splitlines(), list(expected))
+                        self.assertTrue(continued.exists(), "valid receipt did not continue to release verification")
 
     def test_supported_paired_builders_share_one_selected_receipt_without_pkg_recapture(self):
         root = Path(__file__).resolve().parent.parent

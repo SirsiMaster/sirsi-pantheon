@@ -102,16 +102,16 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	// The unified command and typed retained-app owner below bind the actual
 	// reviewed post137 O2/O4 source composed at7ad2bd6e; they are copied as
 	// inert source bytes, never executed by this release source preflight.
-	// The builder/workflow pins now bind the independently reviewed Apollo
-	// capability and shared pre-sign receipt source at a6a083ebd4a254b122e5443ff0978c648f42e207.
+	// The builder pins bind v149's explicit Apollo capability and shared
+	// pre-sign receipt route, including its checked Bash 3.2 receipt reader.
 	// Unchanged signing, notary and retained-app owner pins remain independent.
 	// No copied script is executed. Future route changes must deliberately
 	// update this provenance and the observer together.
 	pinned := map[string]string{
 		"cmd/sirsi/update.go":                  "6afdb9391a36adf4d1ca46d630bdeaa863f04002c4923ece204e41dafef09567",
 		"cmd/sirsi/update_app_darwin.go":       "bf03bf0ebba9c49b65382ecbaa2f0e35dd38f773a56722e2ea54edba77fcfa0b",
-		"scripts/build-dmg.sh":                 "6c1abe233814cd7b840c1e8eba51d3ff5a10b571dcaeec1201f41365fbdb8065",
-		"scripts/build-pkg.sh":                 "5d327d91596a9efb4b93436cc37ac02e90b850f0192a64f63a8a40572a0e55c3",
+		"scripts/build-dmg.sh":                 "2eae7c74a88e62f47a184d510974c1463baf139e63f9e40614f5d15fcdbe9385",
+		"scripts/build-pkg.sh":                 "82fd6b3377bf42d3be3ea68381f01067f75f7a91a8a470be5f71159be1cc66d6",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
 		".github/workflows/release.yml":        "c5ed5de422773ac81f134a7bf5fe1b5062927e0dc17c863b9e164c425131db84",
 		"tools/signing/sirsi-sign":             "95db0601b45c56604e77b4b1d8ef6ecca2bbc165570889e9ec46d63b16288605",
