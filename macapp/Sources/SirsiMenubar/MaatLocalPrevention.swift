@@ -119,7 +119,7 @@ struct MaatLocalRecoveryInspection: Decodable {
 }
 struct MaatLocalPreventionLaunch {
     let arguments: [String]
-    let authorize: @MainActor () -> Bool
+    let authorize: ProcessLaunchAuthorization
 }
 struct MaatLocalPreventionState {
     var generation = UUID()
