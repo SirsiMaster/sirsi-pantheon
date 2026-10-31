@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "81c78d4bd5f5e0ba95fc7658ea5b5a3a7d9ed0da",
-  "source_tree": "10635ac6956d886dd1885240cd9560cdc707294a",
+  "source_commit": "b2a07dd83b2d5b29c7a338039492e7b3ec87ed67",
+  "source_tree": "2af40b1b7ebcbe538439cad9acd708d3dd345f4d",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -4458,7 +4458,7 @@
         },
         {
           "path": "internal/maat/releasepreflight_test.go",
-          "sha256": "6cf28e1a221601a179681f65c436b295a755ac858e1e2d574f5f8b4b1def63df"
+          "sha256": "d4f5f1687541e2f38b06fc815947504689d86e29aecba6582adc0fa4486d4a41"
         },
         {
           "path": "internal/maat/sourcescreen_test.go",
@@ -10301,7 +10301,7 @@
         },
         {
           "path": ".github/workflows/release.yml",
-          "sha256": "4ec74ce66ff42371bf5d395bf77bb392a7de37af31db94274193d2bd001d10d3"
+          "sha256": "e9cfed7d577e7787fe691a843a8368c46ef11bddc64106669caf9deea787fbe4"
         }
       ]
     },

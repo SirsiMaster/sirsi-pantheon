@@ -1,5 +1,36 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-31 — v0.24.155 release candidate
+
+- Restrict release-step remote signing to the existing enrolled M1 signer; fail closed without falling back to M5. Signing verification remains unchanged.
+
+- Bound probe fixtures with finite child lifetimes and read-only natural-exit checks. Remove stale PID-file signaling and duplicate cleanup while retaining timeout, parent-deadline and inherited-output assertions.
+- Native relay health readers recognize the existing independently validated protected service-root group policy without an environment override. Explicit mismatched groups still refuse; publisher permissions and authentication are unchanged.
+- Native workspace state and selection callbacks explicitly use the main actor. Scroll bindings retain the same navigation/owner-generation fence using a sendable identity value, and test cleanup captures only its private suite name.
+- Restore Forward navigation within each workspace: Back and Forward retain the original detail identity, a new destination clears only that workspace’s forward branch, and Home clears its relevant history.
+- Add View → Forward (Command-]) with availability and dispatch bound to the selected workspace. Inactive views remain unmounted; history is not restored across app restart.
+- Refs: docs/ADR-030-NATIVE-MENUBAR-POPOVER.md, docs/user-guides/native-workspace-navigation.md, contracts/stacklab/pantheon-native-workspace-v1.json
+- The bounded native handoff viewport fixture uses modern AppKit accessibility getters and press dispatch, preserving its independent SwiftUI control oracle, exact button geometry, cancellation checks and identity limits.
+- The native app answers the local sibling scanner’s exact `version --json` request before app startup, using its own bundle stamp and executable URL. Missing, foreign or inconsistent identity still refuses; inactive-case completeness checks are unchanged.
+- Allow up to one second for the native app’s version probe after the observed cold-start response exceeded 200 ms. Other executable probes and pipe-drain bounds remain 200 ms; caller cancellation and the three-second inactive recheck deadline remain in force.
+- Trash browsing relies on the directory session’s existing descriptor-owning destructor instead of reading actor-isolated session state from an actor’s nonisolated destructor. Explicit close, cancellation fencing and release of all owned descriptors remain unchanged.
+- The Ma’at AppKit scroll coordinator and its existing main-queue callbacks explicitly retain main-actor ownership, without adding task hops or changing restoration, observer cleanup or stale-owner fences.
+- Ma’at workspace recovery fixtures explicitly label their injected diagnostic reader, preserving the same first-use and strict-journal assertions under current Swift closure matching.
+- Repin the same 2,162-blob inventory to the qualified native-probe budget correction, preserving the historical Cask fixture and Swift byte continuity. Record normal/race probe and inactive-disposition results, unverified accessibility checks and unmounted-fixture warnings without claiming installed-next-app or release certification.
+- The existing native process-launch authorization callback is explicitly MainActor and Sendable across remediation, relay maintenance and app-update adapters. Its fresh authorization still runs on the main actor immediately before launch.
+- Run the per-workspace Forward/Home reset fixture on the same main actor as workspace state, retaining its existing independent-history assertions.
+- Initialize weak references explicitly in the planner and diagnostic-resolution fixtures, preserving their original ownership and in-flight-operation assertions under the current compiler. These remain inert UI fixtures, not inference qualification.
+- Feature-panel and Stack Lab accessibility fixtures use supported AppKit protocol getters and press dispatch while retaining bounded traversal, identity tracking, their independent controls and viewport assertions.
+- Native Edit-menu actions use typed standard selectors while retaining nil targets and macOS responder-chain dispatch for Undo, Redo, Cut, Copy, Paste and Select All.
+- Bind all remaining diagnostic-record and correlation fixture closures to the explicit reader argument, preserving their original injected responses and assertions.
+- Record the native app’s shared-engine, navigation, authorization and own-version boundaries with the existing qualification and supported release route.
+- The Ma’at history deadline task calls its synchronous main-actor deadline transition directly while preserving the asynchronous completion callback and cancellation behavior.
+- Bind the corrective native/relay source inventory to code856eae50, retaining the canonical historical Cask fixture and exact counts. Keep focused qualification, eight unverified accessibility checks and installed154 evidence distinct from the pending next release.
+- Native workspace and owner-action callbacks explicitly retain their main-actor execution and Sendable contract under strict concurrency checking.
+- Call modern AppKit accessibility protocol getters in their imported method form across the three viewport/accessibility fixtures; preserve their existing controls and assertions.
+- Ma’at source-import previews remove terminal color sequences before bounding displayed error text, preserving the raw execution capture for evidence.
+- An inactive-finding action now distinguishes incomplete execution, command refusal, and invalid receipt, showing bounded readable backend diagnostics and directing exact-record inspection before retry. An unverified disposition is never reported as recorded or absent.
+
 ## 2026-10-31 — Native corrective snapshot after v0.24.154
 
 - Extend the code pin to `81c78d4b` for the native-only one-second cold-start allowance and finite, non-signaling probe fixtures. Normal and race each passed 13 top-level probe/disposition tests; global and non-native bounds remain unchanged.
