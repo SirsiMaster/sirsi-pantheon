@@ -2968,11 +2968,13 @@ private struct MaatCaseDetailView: View {
               preview.binding.count == 64 else {
             binaryDriftPreview = nil
             if capture.complete {
-                binaryDriftPreviewError = capture.result?.summary ?? (capture.stderr.isEmpty
+                let message = capture.result?.summary ?? (capture.stderr.isEmpty
                     ? "Ma'at could not produce a valid Homebrew-only preview. No updater was run."
                     : capture.stderr)
+                binaryDriftPreviewError = SirsiEngine.stripANSI(message)
             } else {
-                binaryDriftPreviewError = capture.issue ?? "Ma'at's updater preview was incomplete. No updater was run."
+                let message = capture.issue ?? "Ma'at's updater preview was incomplete. No updater was run."
+                binaryDriftPreviewError = SirsiEngine.stripANSI(message)
             }
             return
         }
