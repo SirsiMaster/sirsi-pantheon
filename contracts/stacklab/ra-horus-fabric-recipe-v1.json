@@ -189,6 +189,38 @@
       ]
     },
     {
+      "id": "thread-retirement-fence",
+      "source": [
+        "internal/routerstore/threads.go",
+        "internal/routerstore/migratestore.go",
+        "docs/ADR-057-OPERATIONAL-ENFORCEMENT-SUPERVISION.md",
+        "internal/routerstore/README.md"
+      ],
+      "tests": [
+        "internal/routerstore/threadprune_test.go",
+        "internal/routerstore/threadprune_postgres_test.go"
+      ],
+      "inputs": [
+        "exact observed thread ID/status/last-seen/host",
+        "existing authenticated lane scope and compatible G1 writer/server floor"
+      ],
+      "outputs": [
+        "truthful retired/no-op CAS result",
+        "retained non-live primary-key authority binding with empty user payload"
+      ],
+      "writes": [
+        "existing threads row status and payload only; preserve ID/agent/host/last-seen; no new schema or fence garbage collection"
+      ],
+      "upgrade_recipe": [
+        "verify compatible canonical server, direct-writer and rollback floor before G2 deployment",
+        "keep current reserved-status input and all scoped/unscoped upsert fences",
+        "use exact production retirement CAS in SQLite and disposable PostgreSQL fixtures",
+        "require causal physical-delete regression and real PostgreSQL lock-wait evidence",
+        "preserve raw migration and all-pruned import fences plus unrelated new-ID registration",
+        "source candidate only; app installation is not canonical service or mixed-writer rollout proof; no live pruning for qualification"
+      ]
+    },
+    {
       "id": "router-service",
       "source": [
         "internal/router",
