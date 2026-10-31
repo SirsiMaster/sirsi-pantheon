@@ -2192,6 +2192,7 @@ struct RaHandoffView: View {
                 Spacer()
                 Button("Cancel") { isPresented = false }
                     .disabled(sending)
+                    .accessibilityIdentifier("ra-handoff-cancel")
             }
             .padding(16)
 
@@ -2225,6 +2226,8 @@ struct RaHandoffView: View {
                                     }
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityIdentifier("ra-handoff-recipient-scroll")
                         }
                     }
 
@@ -2263,6 +2266,7 @@ struct RaHandoffView: View {
                 }
                 .padding(16)
             }
+            .accessibilityIdentifier("ra-handoff-form-scroll")
             Divider()
             Button {
                 sending = true
@@ -2280,9 +2284,11 @@ struct RaHandoffView: View {
             .buttonStyle(.borderedProminent)
             .tint(gold)
             .disabled(!canSend)
+            .accessibilityIdentifier("ra-handoff-send")
             .padding(16)
         }
-        .frame(minWidth: 460, minHeight: 560)
+        .frame(minWidth: 420, idealWidth: 620, maxWidth: 720,
+               minHeight: 420, idealHeight: 560, maxHeight: 680)
     }
 
     private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {
