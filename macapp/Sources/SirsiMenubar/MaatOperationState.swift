@@ -108,7 +108,7 @@ final class MaatHistoryRefreshStore: ObservableObject {
                 return
             }
             guard let self else { return }
-            await self.deadlineReached(for: burstID)
+            self.deadlineReached(for: burstID)
             await self.deadlineHandled()
         }
         await withTaskCancellationHandler {
