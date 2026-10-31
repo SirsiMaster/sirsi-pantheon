@@ -345,6 +345,7 @@ struct MaatOperationRecord: Equatable {
 
 enum MaatCasePreflightDecision: Equatable {
     case ready
+    case invalidIntegrity(MaatJournalIntegrity)
     case rejected(String)
 }
 
@@ -464,6 +465,9 @@ enum MaatOperationPreflight {
         guard !original.evidence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return .rejected("This case has no exact evidence identity. Refresh and review the case before trying again.")
         }
+        guard projection.journalIntegrity.invalidCount == 0 else {
+            return .invalidIntegrity(projection.journalIntegrity)
+        }
         guard let history = projection.history,
               history.scope == "all",
               history.countScope == "query",
@@ -482,9 +486,6 @@ enum MaatOperationPreflight {
               history.total == projection.cases.count,
               history.pageSize >= history.returned else {
             return .rejected("The exact case history is incomplete or changed. Refresh and review the case before trying again.")
-        }
-        guard projection.journalIntegrity.invalidCount == 0 else {
-            return .rejected("The decision journal reports invalid records. Review its integrity before taking this action.")
         }
         let evidenceMatches = projection.cases.filter { $0.evidence == original.evidence }
         guard evidenceMatches.count == 1 else {
