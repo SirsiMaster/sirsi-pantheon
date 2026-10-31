@@ -1,5 +1,53 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-31 — v0.24.153 release candidate
+
+- Honor the global `--json` contract for `sirsi router show` and `router reassign`: show emits the canonical typed item, and a successful reassign emits a compact item/status receipt. Preserve human output and return operation errors without success output. Add injected Cobra fixtures for both modes. Source candidate only; qualification and installed CLI verification remain separate.
+- Refs: `docs/user-guides/router-service.md`, `docs/stacklab/ra/canon/TRACEABILITY_MATRIX.md`, ADR-068, ADR-072 C5
+- The existing root lifecycle caller now requests a PID/start and spool-root bound
+  acknowledgment from the active relay before retiring it. The relay pauses new
+  forwarding duties and waits a bounded period for admitted request/outbox work;
+  timeout or unresolved local settlement keeps the selected process and endpoint
+  alive and refuses retirement. The default `Serve` join, existing artifact pins,
+  service authorization and one-time 0.24.147 unknown-outcome transition remain
+  unchanged. Late or unread response metadata is retained until the caller fully
+  reads and closes it; no outcome is replayed or reconstructed.
+- Post-send unknown outcomes from a first attempt are parked in the existing
+  non-retryable `failed/` custody before the response is published. If that park
+  fails or an existing destination would be replaced, inflight custody remains
+  and sticky settlement debt blocks retirement. The transfer uses atomic
+  destination-exclusive rename. If a never-reached request cannot be staged in
+  the ordered outbox, it receives a truthful not-sent response and is retained in
+  failed custody; failure of that transfer leaves inflight custody and sticky
+  debt. Failure to publish the not-sent response also leaves sticky settlement
+  debt, even when the envelope reached failed custody.
+  Age-based sweeping preserves `res/` and `inflight/` evidence; consuming error
+  bytes or elapsed time does not establish remote settlement. Parking records
+  local custody only; it does not resolve or certify the remote outcome.
+  The shared spool-agent name validator is available on Windows builds as well;
+  its existing character and length rules are unchanged.
+- Refs: `docs/ADR-062-ROUTER-SERVICE-RA-CONCURRENCY.md`, `docs/ADR-069-DURABLE-ORDERED-OUTBOX.md`, `docs/stacklab/pantheon-pt/canon/ROOT_RELAY_REFRESH.md`, `docs/runbooks/LEGACY-ROOT-RELAY-MAINTENANCE.md`
+- Admit only the exact clean 0.24.147 source revision to the existing legacy root-relay interruption profile. Fresh instance and endpoint checks remain required; retained envelopes remain outcome-unknown and are never replayed, and completed historical transactions are not reused. Refs: `docs/stacklab/pantheon-pt/canon/LEGACY_RELAY_APP_OPERATION_FENCE.md`, `docs/runbooks/LEGACY-ROOT-RELAY-MAINTENANCE.md`, ADR-062, ADR-069.
+- Fix Ma'at root System One scroll retention across sidebar workspace switches.
+  The session now rejects late native offset callbacks unless Ma'at is still
+  selected at its root. Add a mounted desktop/AppKit fixture for scroll,
+  unmount, stale callback, and remount restoration; the fixture waits until the
+  native observer is attached and initial restoration is complete before
+  scrolling. The offset remains window-local and recovery/detail panes remain
+  independent.
+- Refs: `docs/stacklab/pantheon-pt/canon/DIAGRAMS_RUNTIME_NATIVE.md` PT-P16,
+  `contracts/stacklab/pantheon-native-workspace-v1.json`, and
+  `docs/ADR-018-NATIVE-MAC-APP.md`.
+- The canonical Ma’at journal append now rejects short writes, attempts one close after write or sync failures, and reports close-only errors. Write or sync failures remain the primary error when close also fails. Per-call injected I/O fixtures cover complete writes and failure ordering without a package-global provider.
+- Refs: `docs/ADR-004-MAAT-QA-GOVERNANCE.md`, `docs/ADR-061-DURABLE-CONTINUOUS-EXECUTION-ENFORCEMENT.md`, `docs/stacklab/maat/canon/TRACEABILITY_MATRIX.md`, `contracts/stacklab/maat-system-one-recipe-v1.json`
+- Ma’at detail preflight now surfaces typed invalid-journal integrity before generic incomplete-history guidance and opens the existing confirmation-gated preserve-original repair. After repair, the native detail rereads complete exact history and refreshes only the same selected case; the named action remains refused until the operator confirms it again. No action is replayed automatically, and strict history/source/host checks and the existing repair backend are unchanged.
+- The regression fixture also covers a terminal exact-evidence page where one match is visible but dirty journal integrity correctly leaves completeness counters unset.
+- Refs: `docs/ADR-004-MAAT-QA-GOVERNANCE.md`, `docs/stacklab/maat/canon/TRACEABILITY_MATRIX.md`, `contracts/stacklab/maat-system-one-recipe-v1.json`
+- Cede journal fixtures now identify request and response projections by their kind and cede evidence ID, so equal-second timestamps cannot change which record an assertion evaluates. Duplicate and missing projections remain failures; record-order assumptions were removed.
+- Cede decision projections now record a factual event description when an optional response reason is blank, while preserving supplied context without inventing an actor's motive. They append through the canonical strict Ma’at journal validator and private mutation-locked writer. Scheduler transitions still commit first; a projection failure remains explicit and must not be retried.
+- Refresh the existing component inventory to corrective source baffa748f: 103 Go packages, one Swift target, and 2,155 source/data/test/support blobs, including the exact Root relay and Ma’at corrections.
+- Preserve historical certification evidence and open installed/runtime criteria. The metadata commit is checked by an external exact-blob comparison; the inventory never hashes itself or grants release/runtime certification.
+
 ## 2026-10-31 — v0.24.152 release candidate
 
 - Retain worker retirement keys while clearing retired payloads, so compatible stale writers cannot resurrect pruned identities. Exact lane, host and observation predicates remain enforced; normal readers hide fences and unrelated fresh registrations remain available.
