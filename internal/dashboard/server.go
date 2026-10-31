@@ -36,7 +36,12 @@ type Config struct {
 	// workstation's run/clean/slay/vault endpoints. It also skips the
 	// single-dashboard host lock, which belongs to a workstation.
 	CloudBoard bool
-	NotifyDB   *notify.Store
+	// MacConsoles names the Mac consoles a cloud board forwards workstation
+	// paths to (name → base URL, e.g. https://m1.<tailnet>.ts.net), and
+	// MacTransport is how it reaches them (the board's Tailscale proxy).
+	MacConsoles  map[string]string
+	MacTransport http.RoundTripper
+	NotifyDB     *notify.Store
 	// StatsFn returns the current system stats as JSON bytes.
 	// The menubar marshals its own StatsSnapshot; we pass it through.
 	StatsFn func() ([]byte, error)
@@ -196,6 +201,18 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/horus", s.handleHorus)
 	mux.HandleFunc("/vault", s.handleVault)
 	mux.HandleFunc("/router", s.handleRouterSurface)
+	// Liveness and the installable-app shell: the fallback page probes each Mac
+	// console's /healthz when the hosted board is down.
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
+	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, _ *http.Request) {
+		s.serveEmbedded(w, "ui/sw.js", "application/javascript; charset=utf-8")
+	})
+	mux.HandleFunc("/offline.html", func(w http.ResponseWriter, _ *http.Request) {
+		s.serveEmbedded(w, "ui/offline.html", "text/html; charset=utf-8")
+	})
+	mux.HandleFunc("/manifest.webmanifest", func(w http.ResponseWriter, _ *http.Request) {
+		s.serveEmbedded(w, "ui/manifest.webmanifest", "application/manifest+json")
+	})
 
 	// JSON API endpoints
 	mux.HandleFunc("/api/stats", s.apiStats)
@@ -240,7 +257,7 @@ func New(cfg Config) *Server {
 
 	s.handler = mux
 	if cfg.CloudBoard {
-		s.handler = cloudBoardOnly(mux)
+		s.handler = s.cloudBoardOnly(mux)
 	}
 	if cfg.ListenHost == "" {
 		cfg.ListenHost = "127.0.0.1"

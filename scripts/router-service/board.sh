@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 # Hosted router board (Cloud Run service sirsi-router-board): the owner's live
-# router console, readable from any device, behind Google sign-in limited to
+# router console, usable from any device, behind Google sign-in limited to
 # sirsi.ai accounts (IAP). It reads the ledger through the router service with
-# a read-only @observer token; no Mac builds or serves it.
+# a read-only @observer token. Mac controls run on the Mac a viewer picks: the
+# board joins the tailnet as tag:cloud-board and forwards them to that Mac's own
+# console (tailscale serve → 127.0.0.1:9119), which applies its own action
+# registry and confirm guard.
+#
+# Per Mac, once (host lane): the console LaunchAgent (ai.sirsi.router.surface)
+# and `tailscale serve --bg 9119`. Owner, once: a reusable ephemeral Tailscale
+# key tagged tag:cloud-board into secret sirsi-router-board-tailscale-key, and an
+# ACL letting tag:cloud-board reach the Macs on 443 only.
 #
 #   board.sh provision   one-time: service account, token secret, IAP binding target
 #   board.sh mint        one-time (and on rotation): mint the @observer token straight
@@ -18,6 +26,9 @@ ROOT=$(git rev-parse --show-toplevel)
 PROJECT=${PROJECT:-sirsi-nexus-live}; REGION=${REGION:-us-central1}; INSTANCE=${INSTANCE:-sirsi-router}
 SERVICE=sirsi-router-board; ROUTER=${ROUTER:-sirsi-router}; DOMAIN=${DOMAIN:-sirsi.ai}
 SA="$SERVICE@$PROJECT.iam.gserviceaccount.com"; SECRET=sirsi-router-board-token
+# Created by the owner (Tailscale admin → Keys: reusable, ephemeral, tag:cloud-board) and stored
+# with `gcloud secrets versions add sirsi-router-board-tailscale-key --data-file=-`; never by an agent.
+TS_SECRET=sirsi-router-board-tailscale-key
 JOB_SA=${JOB_SA:-claude-agent@$PROJECT.iam.gserviceaccount.com}
 G="gcloud --project=$PROJECT --quiet"
 run() { echo "+ $*" >&2; [ "${DRY_RUN:-0}" = 1 ] || "$@"; }
@@ -36,17 +47,35 @@ context() {
   (cd "$ROOT" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=$(git -C "$ROOT" describe --tags --always)" \
     -o "$1/sirsi" ./cmd/sirsi)
-  printf 'FROM gcr.io/distroless/static-debian12:nonroot\nCOPY sirsi /sirsi\nCOPY recipient-registry.json /.agents/idea-router/agents.json\nCOPY CHANGELOG.md /CHANGELOG.md\nWORKDIR /\nENTRYPOINT ["/sirsi"]\nCMD ["router","board-serve"]\n' >"$1/Dockerfile"
+  # The board joins the owner's tailnet (userspace, no TUN) as tag:cloud-board so it can drive each
+  # Mac's console at https://<mac>.<tailnet>.ts.net; without TS_AUTHKEY it starts read-only.
+  cat >"$1/board-entry.sh" <<'ENTRY'
+#!/bin/sh
+set -eu
+if [ -n "${TS_AUTHKEY:-}" ]; then
+  tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:1055 --state=mem: --statedir=/tmp/tailscale &
+  tailscale up --authkey="$TS_AUTHKEY" --hostname=sirsi-router-board --advertise-tags=tag:cloud-board --accept-dns=false
+  export SIRSI_BOARD_TS_PROXY=socks5://127.0.0.1:1055
+else
+  unset SIRSI_BOARD_MACS
+fi
+exec /sirsi router board-serve
+ENTRY
+  chmod +x "$1/board-entry.sh"
+  printf 'FROM tailscale/tailscale:v1.76.6\nCOPY sirsi /sirsi\nCOPY board-entry.sh /board-entry.sh\nCOPY recipient-registry.json /.agents/idea-router/agents.json\nCOPY CHANGELOG.md /CHANGELOG.md\nWORKDIR /\nENTRYPOINT ["/board-entry.sh"]\n' >"$1/Dockerfile"
 }
 
 case "${1:-}" in
 provision)
   run $G services enable iap.googleapis.com
   $G iam service-accounts describe "$SA" >/dev/null 2>&1 || \
-    run $G iam service-accounts create "$SERVICE" --display-name="Hosted router board (read-only)"
-  $G secrets describe "$SECRET" >/dev/null 2>&1 || run $G secrets create "$SECRET" --replication-policy=automatic
-  # Exactly one secret, nothing else: no Cloud SQL, no other secret.
-  run $G secrets add-iam-policy-binding "$SECRET" --member="serviceAccount:$SA" --role=roles/secretmanager.secretAccessor
+    run $G iam service-accounts create "$SERVICE" --display-name="Hosted router board"
+  # Exactly two secrets, nothing else: no Cloud SQL, no other secret. The Tailscale key's VALUE is
+  # added by the owner; this only creates the empty secret and the board's read access to it.
+  for s in "$SECRET" "$TS_SECRET"; do
+    $G secrets describe "$s" >/dev/null 2>&1 || run $G secrets create "$s" --replication-policy=automatic
+    run $G secrets add-iam-policy-binding "$s" --member="serviceAccount:$SA" --role=roles/secretmanager.secretAccessor
+  done
   ;;
 mint)
   # Same shape as migrate-job.sh: only VPC hosts reach the private-IP ledger. The job writes the new
@@ -66,10 +95,16 @@ deploy)
   CTX=$(mktemp -d); trap 'rm -rf "$CTX"' EXIT
   context "$CTX"
   PREV=$($G run services describe "$SERVICE" --region="$REGION" --format='value(status.traffic[0].revisionName)' 2>/dev/null || true)
+  # MACS names each Mac console on the tailnet, e.g. M1=https://m1.tail1234.ts.net,M5=…,Studio=…
+  MACS=${MACS:?"MACS=name=https://<mac>.<tailnet>.ts.net,… (each Mac: tailscale serve --bg 9119)"}
+  SECRETS="SIRSI_ROUTER_TOKEN=$SECRET:latest"
+  $G secrets describe "$TS_SECRET" >/dev/null 2>&1 && SECRETS="$SECRETS,TS_AUTHKEY=$TS_SECRET:latest"
+  # --no-cpu-throttling keeps the tailnet connection alive between requests; min-instances 0 still
+  # scales the board to nothing when nobody is looking.
   run $G beta run deploy "$SERVICE" --source "$CTX" --region="$REGION" --service-account="$SA" \
-    --no-allow-unauthenticated --iap --min-instances=0 --max-instances=2 --cpu=1 --memory=512Mi --timeout=120 \
-    --set-env-vars="SIRSI_ROUTER_URL=$URL,SIRSI_ROUTER_CLOUD_HOST=cloud-board,SIRSI_AGENT_ID=router-board" \
-    --set-secrets="SIRSI_ROUTER_TOKEN=$SECRET:latest" --labels=workstream=router-board
+    --no-allow-unauthenticated --iap --min-instances=0 --max-instances=2 --cpu=1 --memory=512Mi --timeout=300 \
+    --no-cpu-throttling --set-env-vars="^@^SIRSI_ROUTER_URL=$URL@SIRSI_ROUTER_CLOUD_HOST=cloud-board@SIRSI_AGENT_ID=router-board@SIRSI_BOARD_MACS=$MACS" \
+    --set-secrets="$SECRETS" --labels=workstream=router-board
   NUM=$($G projects describe "$PROJECT" --format='value(projectNumber)')
   # IAP must be allowed to invoke the service; only the sirsi.ai domain may pass IAP.
   run $G run services add-iam-policy-binding "$SERVICE" --region="$REGION" \

@@ -13,7 +13,7 @@ import (
 // internal/brand (ADR-038) so the dashboard cannot drift from the CLI, menubar
 // and Swift app.
 //
-//go:embed ui/index.html ui/app.css ui/app.js ui/maat-history.js ui/fabric.js
+//go:embed ui/index.html ui/app.css ui/app.js ui/maat-history.js ui/fabric.js ui/sw.js ui/offline.html ui/manifest.webmanifest
 var uiFS embed.FS
 
 // handleHome serves the dashboard at exactly "/". The previous terminal-style page

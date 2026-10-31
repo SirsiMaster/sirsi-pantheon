@@ -155,7 +155,7 @@ function render(){
  if(state.view==='mercury'){if(!stopMercury){el.replaceChildren();stopMercury=window.mountMercury(el)}return}
  if(stopMercury){stopMercury();stopMercury=null}
  if(state.view==='fleet'){el.innerHTML=(state.fleetErr?'<p class="stale-banner">Fleet refresh failed · '+esc(state.fleetErr)+'</p>':'')+vFleet();bindFabricLanes(el);return}
- if(state.view==='host'){el.innerHTML=vHost(state.data||{});return}
+ if(state.view==='host'){el.innerHTML=macPicker()+vHost(state.data||{});return}
  if(!state.data){el.innerHTML=(state.view==='overview'?fabricHeadlines():'')+(state.err?'<div class="card err-card"><h2>Router unavailable</h2>'+esc(state.err)+'</div>':skeleton());if(state.view==='overview')bindFabricHeadlines(el);return}
  var opened=Array.from(el.querySelectorAll('details[open]')).map(function(x){return x.dataset.release});el.innerHTML=(state.err?'<p class="stale-banner">Retained snapshot · '+esc(state.data.generated_at||'time unknown')+' · '+esc(state.err)+'</p>':'')+(state.view==='overview'?fabricHeadlines():'')+RENDER[state.view](state.data);el.querySelectorAll('details').forEach(function(x){x.open=opened.includes(x.dataset.release)});
  if(state.view==='lanes')bindLanes();
@@ -188,6 +188,17 @@ window.addEventListener('pagehide',function(){if(stopMercury){stopMercury();stop
 window.addEventListener('pageshow',function(){ageFabric();if(state.view==='mercury'&&!stopMercury)render()});
 document.addEventListener('visibilitychange',function(){if(!document.hidden)ageFabric()});
 window.addEventListener('hashchange',function(){var h=location.hash.slice(1);if(h&&h!==state.view&&VIEWS.some(function(v){return v[0]===h}))go(h)});
+// The hosted board answers /api/macs; a Mac's own console does not. On the board,
+// Host and every control run on the Mac chosen here, and the app installs with an
+// offline fallback that moves to a live Mac console if the board goes down.
+function macPicker(){
+ var m=state.macs;if(!m||!m.macs||!m.macs.length)return '';
+ return '<div class="card"><h2>Mac</h2><p class="sub">Host details and controls run on the Mac you choose'+(m.selected?' · now: <strong>'+esc(m.selected)+'</strong>':' · none chosen yet')+'.</p><p>'+m.macs.map(function(x){return '<a class="btn" href="/mac/'+encodeURIComponent(x.name)+'"'+(x.name===m.selected?' aria-current="true"':'')+'>'+esc(x.name)+'</a>'}).join(' ')+' <a class="btn" href="/classic">All controls</a></p></div>';
+}
+fetch('/api/macs',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(d){
+ if(!d)return;state.macs=d;if(state.view==='host')render();
+ if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('/sw.js').catch(function(){});
+}).catch(function(){});
 var h0=location.hash.slice(1);if(VIEWS.some(function(v){return v[0]===h0}))state.view=h0;
 render();load().then(function(){if(state.view==='fleet'&&!state.fleet)loadFleet()});
 var nextPoll=Date.now()+30000;
