@@ -9,7 +9,8 @@
 - Add per-call injected-open tests for exact flags, create refusal, existing
   lock fallback, open refusal, concurrent first creation, and symlink refusal;
   add invalid hardlink and public-mode fixtures. Existing nonblocking flock
-  and descriptor ownership remain in place.
+  and descriptor ownership remain in place. Keep refusal messages compatible
+  with the repository's spelling check.
 - The isolated 100-run race receipt on base `94a87488` recorded 98 failures
   and 2 passes with `open mutation lock: no such file or directory`. The
   matching Darwin `openat(O_CREAT)` without `O_EXCL` first-create failure is

@@ -198,10 +198,10 @@ func TestJournalMutationLockRefusesHardlinkedLeafBeforeCallback(t *testing.T) {
 		return nil
 	})
 	if err == nil || !strings.Contains(err.Error(), "owned private singly-linked regular file") {
-		t.Fatalf("hardlinked mutation lock error = %v, want identity refusal", err)
+		t.Fatalf("hard-linked mutation lock error = %v, want identity refusal", err)
 	}
 	if called {
-		t.Fatal("callback ran with hardlinked mutation lock")
+		t.Fatal("callback ran with hard-linked mutation lock")
 	}
 }
 
