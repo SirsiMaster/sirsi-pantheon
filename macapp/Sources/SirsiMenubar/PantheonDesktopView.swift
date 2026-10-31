@@ -336,19 +336,22 @@ enum PantheonWorkspace: String, CaseIterable, Identifiable {
     static func matching(_ search: String) -> [PantheonWorkspace] { allCases.filter { $0.matches(search) } }
 }
 
+typealias OpenPantheonWorkspaceAction = @MainActor @Sendable (PantheonWorkspace) -> Void
+typealias OpenPantheonOwnerActionsAction = @MainActor @Sendable () -> Void
+
 private struct OpenPantheonWorkspaceKey: EnvironmentKey {
-    static let defaultValue: ((PantheonWorkspace) -> Void)? = nil
+    static let defaultValue: OpenPantheonWorkspaceAction? = nil
 }
 
 private struct OpenPantheonOwnerActionsKey: EnvironmentKey {
-    static let defaultValue: (() -> Void)? = nil
+    static let defaultValue: OpenPantheonOwnerActionsAction? = nil
 }
 extension EnvironmentValues {
-    var openPantheonOwnerActions: (() -> Void)? {
+    var openPantheonOwnerActions: OpenPantheonOwnerActionsAction? {
         get { self[OpenPantheonOwnerActionsKey.self] }
         set { self[OpenPantheonOwnerActionsKey.self] = newValue }
     }
-    var openPantheonWorkspace: ((PantheonWorkspace) -> Void)? {
+    var openPantheonWorkspace: OpenPantheonWorkspaceAction? {
         get { self[OpenPantheonWorkspaceKey.self] }
         set { self[OpenPantheonWorkspaceKey.self] = newValue }
     }
