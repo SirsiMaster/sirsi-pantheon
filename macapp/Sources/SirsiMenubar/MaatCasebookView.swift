@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import AppKit
 
 // MaatWorkspaceView joins decision quality and retained local knowledge under
 // one operator authority. Seshat's ingestion compatibility commands are not a
@@ -16,13 +17,17 @@ import UniformTypeIdentifiers
     let opensReleasePreflight: Bool
     let apolloContext: ApolloPlan?
     let relayOutboxContext: RelayOutboxResolutionContext?
+    // Passed only to the root System One primary pane; recovery and pushed
+    // detail scroll views keep their own unretained native positions.
+    let primaryRootScrollPosition: Binding<CGFloat>?
 
     init(engine: SirsiEngine, preloadedCasebook: MaatCasebookProjection? = nil,
          preloadedKnowledge: MaatKnowledgeProjection? = nil,
          opensReleasePreflight: Bool = false, apolloContext: ApolloPlan? = nil,
          relayOutboxContext: RelayOutboxResolutionContext? = nil,
          systemOneHistory: MaatHistoryRefreshStore? = nil,
-         decisionHistory: MaatHistoryRefreshStore? = nil) {
+         decisionHistory: MaatHistoryRefreshStore? = nil,
+         primaryRootScrollPosition: Binding<CGFloat>? = nil) {
         self.engine = engine
         _systemOneHistory = StateObject(wrappedValue: systemOneHistory ?? MaatHistoryRefreshStore(projection: preloadedCasebook))
         _decisionHistory = StateObject(wrappedValue: decisionHistory ?? MaatHistoryRefreshStore(projection: preloadedCasebook))
@@ -31,6 +36,7 @@ import UniformTypeIdentifiers
         self.opensReleasePreflight = opensReleasePreflight
         self.apolloContext = apolloContext
         self.relayOutboxContext = relayOutboxContext
+        self.primaryRootScrollPosition = primaryRootScrollPosition
     }
 
     var body: some View {
@@ -105,7 +111,8 @@ import UniformTypeIdentifiers
                 case .systemOne:
                     MaatSystemOneView(engine: engine, section: $section, preloaded: preloadedCasebook,
                                       opensReleasePreflight: opensReleasePreflight,
-                                      historyStore: systemOneHistory, diagnosticRefresh: refreshDiagnosticHistory)
+                                      historyStore: systemOneHistory, diagnosticRefresh: refreshDiagnosticHistory,
+                                      primaryRootScrollPosition: primaryRootScrollPosition)
                 case .decisions:
                     MaatCasebookView(engine: engine, preloaded: preloadedCasebook, showsBackBar: false, historyStore: decisionHistory)
                 case .knowledge:
@@ -140,6 +147,191 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
     }
 }
 
+struct MaatRootScrollRestoration {
+    private let savedOffset: CGFloat
+    private(set) var resolved = false
+    private var lastObservedOffset: CGFloat?
+
+    init(savedOffset: CGFloat) {
+        self.savedOffset = savedOffset.isFinite ? max(0, savedOffset) : 0
+    }
+
+    mutating func layoutChanged(maximumOffset: CGFloat, ready: Bool) -> CGFloat? {
+        guard !resolved, ready, maximumOffset.isFinite else { return nil }
+        resolved = true
+        return min(savedOffset, max(0, maximumOffset))
+    }
+
+    mutating func userMoved(to offset: CGFloat) -> CGFloat {
+        resolved = true
+        return offset.isFinite ? max(0, offset) : 0
+    }
+
+    mutating func boundsChanged(to offset: CGFloat) -> CGFloat? {
+        guard offset.isFinite else { return nil }
+        let current = max(0, offset)
+        guard let lastObservedOffset else {
+            self.lastObservedOffset = current
+            return nil
+        }
+        guard current != lastObservedOffset else { return nil }
+        self.lastObservedOffset = current
+        return userMoved(to: current)
+    }
+
+    mutating func recordOffset(_ offset: CGFloat) {
+        guard offset.isFinite else { return }
+        lastObservedOffset = max(0, offset)
+    }
+}
+
+private struct MaatPrimaryScrollView<Content: View>: View {
+    @Environment(\.snapshotMode) private var snapshotMode
+    let position: Binding<CGFloat>?
+    let layoutReady: Bool
+    @ViewBuilder let content: Content
+
+    init(position: Binding<CGFloat>?, layoutReady: Bool, @ViewBuilder content: () -> Content) {
+        self.position = position
+        self.layoutReady = layoutReady
+        self.content = content()
+    }
+
+    var body: some View {
+        if snapshotMode {
+            content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            ScrollView {
+                if let position {
+                    content.background(alignment: .topLeading) {
+                        MaatPrimaryScrollOffsetProbe(position: position, layoutReady: layoutReady)
+                            .frame(width: 0, height: 0)
+                    }
+                } else {
+                    content
+                }
+            }
+        }
+    }
+}
+
+private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
+    @Binding var position: CGFloat
+    let layoutReady: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(position: $position, layoutReady: layoutReady)
+    }
+
+    func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.update(position: $position, layoutReady: layoutReady)
+        context.coordinator.connect(to: view)
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.disconnect()
+    }
+
+    final class Coordinator {
+        private var position: Binding<CGFloat>
+        private var layoutReady: Bool
+        private var restoration: MaatRootScrollRestoration
+        private weak var scrollView: NSScrollView?
+        private weak var observedClip: NSClipView?
+        private weak var observedDocument: NSView?
+        private var clipWasPostingBoundsChanges = false
+        private var documentWasPostingFrameChanges = false
+        private var observers: [NSObjectProtocol] = []
+        private var connectionScheduled = false
+        private var active = false
+
+        init(position: Binding<CGFloat>, layoutReady: Bool) {
+            self.position = position
+            self.layoutReady = layoutReady
+            restoration = MaatRootScrollRestoration(savedOffset: position.wrappedValue)
+        }
+
+        func update(position: Binding<CGFloat>, layoutReady: Bool) {
+            self.position = position
+            self.layoutReady = layoutReady
+        }
+
+        func connect(to probe: NSView) {
+            active = true
+            guard !connectionScheduled else { return }
+            connectionScheduled = true
+            DispatchQueue.main.async { [weak self, weak probe] in
+                guard let self else { return }
+                self.connectionScheduled = false
+                guard self.active, let scrollView = probe?.enclosingScrollView else { return }
+                if self.scrollView !== scrollView {
+                    self.removeObservers()
+                    self.scrollView = scrollView
+                    self.observe(scrollView)
+                }
+                self.restoration.recordOffset(scrollView.contentView.bounds.origin.y)
+                self.restoreFromReadyLayout()
+            }
+        }
+
+        func disconnect() {
+            active = false
+            removeObservers()
+            scrollView = nil
+        }
+
+        private func removeObservers() {
+            observers.forEach { NotificationCenter.default.removeObserver($0) }
+            observers.removeAll()
+            observedClip?.postsBoundsChangedNotifications = clipWasPostingBoundsChanges
+            observedDocument?.postsFrameChangedNotifications = documentWasPostingFrameChanges
+            observedClip = nil
+            observedDocument = nil
+        }
+
+        private func observe(_ scrollView: NSScrollView) {
+            let clip = scrollView.contentView
+            observedClip = clip
+            clipWasPostingBoundsChanges = clip.postsBoundsChangedNotifications
+            clip.postsBoundsChangedNotifications = true
+            observers.append(NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification, object: clip, queue: .main
+            ) { [weak self] _ in self?.boundsChanged() })
+            if let document = scrollView.documentView {
+                observedDocument = document
+                documentWasPostingFrameChanges = document.postsFrameChangedNotifications
+                document.postsFrameChangedNotifications = true
+                observers.append(NotificationCenter.default.addObserver(
+                    forName: NSView.frameDidChangeNotification, object: document, queue: .main
+                ) { [weak self] _ in self?.restoreFromReadyLayout() })
+            }
+        }
+
+        private func boundsChanged() {
+            guard let scrollView else { return }
+            let offset = max(0, scrollView.contentView.bounds.origin.y)
+            guard let captured = restoration.boundsChanged(to: offset) else { return }
+            position.wrappedValue = captured
+        }
+
+        private func restoreFromReadyLayout() {
+            guard let scrollView, let document = scrollView.documentView else { return }
+            let clip = scrollView.contentView
+            guard document.frame.height > 0, clip.bounds.height > 0,
+                  let target = restoration.layoutChanged(
+                    maximumOffset: document.frame.height - clip.bounds.height,
+                    ready: layoutReady
+                  ) else { return }
+            restoration.recordOffset(target)
+            clip.scroll(to: CGPoint(x: clip.bounds.origin.x, y: target))
+            scrollView.reflectScrolledClipView(clip)
+            position.wrappedValue = target
+        }
+    }
+}
+
 // MaatSystemOneView makes the local JEV-like system visible as an operational
 // surface, not a hidden field in an individual case. It projects only the
 // canonical Casebook: no ambient state is classified here and no local screen
@@ -168,15 +360,18 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
     @State private var didOpenReleasePreflight = false
     let opensReleasePreflight: Bool
     let diagnosticRefresh: (() async -> Void)?
+    let primaryRootScrollPosition: Binding<CGFloat>?
 
     init(engine: SirsiEngine, section: Binding<MaatWorkspaceSection>, preloaded: MaatCasebookProjection? = nil,
          opensReleasePreflight: Bool = false, historyStore: MaatHistoryRefreshStore? = nil,
-         diagnosticRefresh: (() async -> Void)? = nil) {
+         diagnosticRefresh: (() async -> Void)? = nil,
+         primaryRootScrollPosition: Binding<CGFloat>? = nil) {
         self.engine = engine
         _section = section
         _historyRefresh = StateObject(wrappedValue: historyStore ?? MaatHistoryRefreshStore(projection: preloaded))
         self.opensReleasePreflight = opensReleasePreflight
         self.diagnosticRefresh = diagnosticRefresh
+        self.primaryRootScrollPosition = primaryRootScrollPosition
     }
 
     var body: some View {
@@ -285,7 +480,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         let calibrations = casebook.cases.filter { $0.systemOneCalibration != nil }
         return ScrollViewReader { proxy in
             VStack(spacing: 0) {
-                MaybeScroll {
+                MaatPrimaryScrollView(position: primaryRootScrollPosition, layoutReady: !loading) {
                     VStack(alignment: .leading, spacing: 16) {
                         summary(screens: screens, calibrations: calibrations, history: casebook.history)
                         if loading {
