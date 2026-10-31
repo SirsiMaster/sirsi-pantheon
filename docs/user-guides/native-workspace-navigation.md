@@ -26,3 +26,7 @@ reconciled from the preserved worker patch
 Git object. The current implementation retains the new desktop design and its
 current persistence key, reads the legacy key as a fallback, forwards stack
 changes to both header and detail, and keeps per-frame identity on drill-downs.
+
+## Native version inspection
+
+Pantheon’s native executable supports `version --json` for the local sibling-health inventory. It reports its own stamped app version and executable path without opening another window or menu-bar instance. A missing or malformed native bundle stamp returns an error; it never borrows the adjacent CLI’s version.
