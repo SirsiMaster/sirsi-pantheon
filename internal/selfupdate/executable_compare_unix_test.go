@@ -108,7 +108,15 @@ func TestSameExecutableRejectsFIFOWithoutBlockingAndCapsHashInput(t *testing.T) 
 	largeLeft, largeRight := filepath.Join(root, "large-left"), filepath.Join(root, "large-right")
 	largeSize := maxExecutableCompareBytes + 1
 	for _, path := range []string{largeLeft, largeRight} {
-		if err := os.Truncate(path, largeSize); err != nil {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o700)
+		if err != nil {
+			t.Fatalf("create sparse oversized fixture %q: %v", path, err)
+		}
+		if err := file.Truncate(largeSize); err != nil {
+			_ = file.Close()
+			t.Fatalf("truncate sparse oversized fixture %q: %v", path, err)
+		}
+		if err := file.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}
