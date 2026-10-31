@@ -224,6 +224,48 @@ final class MaatOperationStateTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testInvalidJournalPreflightSurfacesRepairBeforeIncompleteHistoryAndRequiresFreshActionConfirmation() throws {
+        let entry = caseEntry(id: "retained-case", evidence: "diagnostic:retained", actionID: "repair-retained")
+        XCTAssertEqual(entry.nextAction?.actionID, "repair-retained")
+        let integrity = MaatJournalIntegrity(invalidCount: 1, issues: [
+            MaatJournalIssue(line: 91971, digest: "sha256:fixture", reason: "missing required field")
+        ])
+        let dirtyTerminal = MaatCasebookProjection(
+            cases: [entry],
+            summary: MaatCasebookSummary(total: 1, open: 1, urgent: 0, high: 0, resolved: 0),
+            journalIntegrity: integrity,
+            history: MaatHistoryWindow(scope: "all", queryID: "query:terminal", snapshot: "sha256:terminal",
+                returned: 1, candidateMatches: 1, countScope: "query", evidenceMatches: 1,
+                evidenceMatchesComplete: nil, candidateMatchesComplete: false, pageSize: 2,
+                coverage: "complete", hasMore: false, hasMoreKnown: false, nextCursor: nil,
+                totalComplete: false, total: nil, scannedRecords: nil, scannedBytes: nil)
+        )
+        XCTAssertEqual(
+            MaatOperationPreflight.evaluate(original: entry, exitStatus: 0, timedOut: false,
+                launchError: nil, projection: dirtyTerminal),
+            .invalidIntegrity(integrity),
+            "A terminal exact-evidence page keeps derived completeness false while invalid journal records remain; surface that typed refusal before generic history incompleteness."
+        )
+
+        let key = MaatOperationKey(case: entry)
+        let operations = MaatCaseOperationStore()
+        XCTAssertTrue(operations.begin(key, intent: .standard))
+        operations.rejectPreflight(key, guidance: "Preserve and review the journal before continuing.")
+        let refusedGeneration = try XCTUnwrap(operations.record(for: key)?.generation)
+        XCTAssertEqual(operations.record(for: key)?.phase, .needsReview)
+
+        XCTAssertEqual(evaluate(original: entry, latest: entry), .ready,
+            "Only a fresh complete strict read of the same named case can unlock another confirmation.")
+        operations.authorizeReviewedRetry(key, reviewedGeneration: refusedGeneration)
+        XCTAssertEqual(operations.record(for: key)?.phase, .retryReady)
+        XCTAssertNil(operations.record(for: key)?.receipt, "Repair completion must not synthesize or replay an action receipt.")
+
+        XCTAssertTrue(operations.begin(key, intent: .standard), "The named action begins only after a separate confirmation.")
+        XCTAssertEqual(operations.record(for: key)?.phase, .preflighting)
+        XCTAssertNil(operations.record(for: key)?.receipt)
+    }
+
     func testActualHistoryLoaderRequiresZeroExitAndRetainsPriorPageOnFailure() throws {
         let emptyJSON = #"{"cases":[],"summary":{"total":0,"open":0,"urgent":0,"high":0,"resolved":0},"journal_integrity":{"invalid_count":0,"issues":[]},"history":{"scope":"system-one","query_id":"query:empty","snapshot":"sha256:empty","returned":0,"candidate_matches":0,"count_scope":"query","candidate_matches_complete":true,"page_size":50,"coverage":"complete","has_more":false,"has_more_known":true,"total_complete":true,"total":0}}"#
         let bytes = Data(emptyJSON.utf8)
@@ -1300,7 +1342,8 @@ final class MaatOperationStateTests: XCTestCase {
         XCTAssertRejected(evaluate(original: original, latest: original, timedOut: true))
         XCTAssertRejected(evaluate(original: original, latest: original, launchError: "unavailable"))
         XCTAssertRejected(evaluate(original: original, latest: original, projection: false))
-        XCTAssertRejected(evaluate(original: original, latest: original, invalidCount: 1))
+        XCTAssertEqual(evaluate(original: original, latest: original, invalidCount: 1),
+            .invalidIntegrity(MaatJournalIntegrity(invalidCount: 1, issues: [])))
         XCTAssertRejected(evaluate(original: original, latest: nil))
         XCTAssertRejected(evaluate(original: original, latest: original, duplicateCaseID: true))
         XCTAssertRejected(evaluate(original: original, latest: original, duplicateEvidence: true))

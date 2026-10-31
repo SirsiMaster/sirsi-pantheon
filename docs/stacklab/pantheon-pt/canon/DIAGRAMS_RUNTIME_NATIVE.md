@@ -265,7 +265,11 @@ flowchart TD
   SEL --> STACK[Maintain independent in-memory stack; retain only Ma'at root primary-pane offset]
   DEF --> STACK
   STACK --> NAV[User navigates or scrolls within section]
-  NAV --> HEAD[Publish current section header and destination]
+  NAV --> OWNER{Ma'at root primary pane still selected and at root?}
+  OWNER -->|yes| SAVE[Retain native viewport offset in this window session]
+  OWNER -->|no| IGNORE[Ignore stale callback from an unmounted section or detail]
+  SAVE --> HEAD[Publish current section header and destination]
+  IGNORE --> HEAD
 ```
 
 ```mermaid
@@ -284,13 +288,18 @@ stateDiagram-v2
   Selected --> StackA: section A active
   StackA --> StackB: select section B, preserve A stack
   StackB --> StackA: return to A, restore A stack
+  StackA --> StackB: late Ma'at native offset callback is rejected after selection changes
   Defaulted --> StackA: default section selected
 ```
 
 Recovery: invalid selection defaults; stacks and the Ma'at root primary-pane
-offset are window-session-local. Recovery and detail panes have separate
-unbound scroll ownership. Only the selected section persists, and no operation
-or confirmation is restored.
+offset are window-session-local. Native offset writes are accepted only while
+Ma'at remains selected at its root, so a final bounds callback from a subtree
+being unmounted cannot replace the retained position. Section or Ma'at stack
+changes rotate that viewport owner's identity, so a delayed callback remains
+stale even if the user returns before it arrives. Recovery and detail panes
+have separate unbound scroll ownership. Only the selected section persists,
+and no operation or confirmation is restored.
 
 <a id="pt-p17"></a>
 ## PT-P17 — Native observation freshness
@@ -595,7 +604,9 @@ sequenceDiagram
   Pref-->>Session: valid identifier or missing/invalid value
   Session->>Session: select known section or documented default
   Session-->>View: independent in-memory destination stack; Ma'at root primary offset at depth zero
-  View-->>Session: navigation event
+  View->>Session: native scroll offset callback
+  Session->>Session: accept only for selected Ma'at root navigation
+  Session-->>View: retain offset for same-window remount
   Session-->>View: updated destination/header
 ```
 

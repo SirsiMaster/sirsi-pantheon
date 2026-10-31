@@ -215,6 +215,10 @@ private struct MaatPrimaryScrollView<Content: View>: View {
     }
 }
 
+final class MaatPrimaryScrollProbeView: NSView {
+    var viewportObservationReady = false
+}
+
 private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
     @Binding var position: CGFloat
     let layoutReady: Bool
@@ -223,7 +227,11 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
         Coordinator(position: $position, layoutReady: layoutReady)
     }
 
-    func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
+    func makeNSView(context: Context) -> NSView {
+        let view = MaatPrimaryScrollProbeView(frame: .zero)
+        view.identifier = NSUserInterfaceItemIdentifier("maat.system-one.primary-root-scroll-probe")
+        return view
+    }
 
     func updateNSView(_ view: NSView, context: Context) {
         context.coordinator.update(position: $position, layoutReady: layoutReady)
@@ -239,6 +247,7 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
         private var layoutReady: Bool
         private var restoration: MaatRootScrollRestoration
         private weak var scrollView: NSScrollView?
+        private weak var probeView: MaatPrimaryScrollProbeView?
         private weak var observedClip: NSClipView?
         private weak var observedDocument: NSView?
         private var clipWasPostingBoundsChanges = false
@@ -266,7 +275,9 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
                 guard let self else { return }
                 self.connectionScheduled = false
                 guard self.active, let scrollView = probe?.enclosingScrollView else { return }
+                self.probeView = probe as? MaatPrimaryScrollProbeView
                 if self.scrollView !== scrollView {
+                    self.probeView?.viewportObservationReady = false
                     self.removeObservers()
                     self.scrollView = scrollView
                     self.observe(scrollView)
@@ -278,8 +289,10 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
 
         func disconnect() {
             active = false
+            probeView?.viewportObservationReady = false
             removeObservers()
             scrollView = nil
+            probeView = nil
         }
 
         private func removeObservers() {
@@ -312,22 +325,36 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
         private func boundsChanged() {
             guard let scrollView else { return }
             let offset = max(0, scrollView.contentView.bounds.origin.y)
-            guard let captured = restoration.boundsChanged(to: offset) else { return }
-            position.wrappedValue = captured
+            if let captured = restoration.boundsChanged(to: offset) {
+                position.wrappedValue = captured
+            }
+            markViewportReadyIfRestored()
         }
 
         private func restoreFromReadyLayout() {
             guard let scrollView, let document = scrollView.documentView else { return }
             let clip = scrollView.contentView
-            guard document.frame.height > 0, clip.bounds.height > 0,
-                  let target = restoration.layoutChanged(
-                    maximumOffset: document.frame.height - clip.bounds.height,
-                    ready: layoutReady
-                  ) else { return }
-            restoration.recordOffset(target)
-            clip.scroll(to: CGPoint(x: clip.bounds.origin.x, y: target))
-            scrollView.reflectScrolledClipView(clip)
-            position.wrappedValue = target
+            guard document.frame.height > 0, clip.bounds.height > 0 else { return }
+            if let target = restoration.layoutChanged(
+                maximumOffset: document.frame.height - clip.bounds.height,
+                ready: layoutReady
+            ) {
+                restoration.recordOffset(target)
+                clip.scroll(to: CGPoint(x: clip.bounds.origin.x, y: target))
+                scrollView.reflectScrolledClipView(clip)
+                position.wrappedValue = target
+            }
+            markViewportReadyIfRestored()
+        }
+
+        private func markViewportReadyIfRestored() {
+            guard layoutReady, restoration.resolved,
+                  let scrollView, let probeView,
+                  probeView.enclosingScrollView === scrollView,
+                  observedClip === scrollView.contentView,
+                  (scrollView.documentView?.frame.height ?? 0) > 0,
+                  scrollView.contentView.bounds.height > 0 else { return }
+            probeView.viewportObservationReady = true
         }
     }
 }
@@ -2669,7 +2696,7 @@ func maatCasebookHistoryArguments(scope: String, query: String = "", cursor: Str
 private struct MaatCaseDetailView: View {
     @ObservedObject var engine: SirsiEngine
     @ObservedObject var operations: MaatCaseOperationStore
-    let entry: MaatCase
+    @State private var entry: MaatCase
     @State private var conclusion = ""
     @State private var confirmAction = false
     @State private var evidenceCopied = false
@@ -2688,6 +2715,13 @@ private struct MaatCaseDetailView: View {
     @State private var failureMemoryHistoryKey: MaatOperationKey?
     @State private var failureMemoryHistoryAction: MaatFailureMemoryAction?
     @State private var retryReviewBusy = false
+    @State private var invalidJournalIntegrity: MaatJournalIntegrity?
+
+    init(engine: SirsiEngine, operations: MaatCaseOperationStore, entry: MaatCase) {
+        _engine = ObservedObject(wrappedValue: engine)
+        _operations = ObservedObject(wrappedValue: operations)
+        _entry = State(initialValue: entry)
+    }
 
     private var operationKey: MaatOperationKey { MaatOperationKey(case: entry) }
     private var operationRecord: MaatOperationRecord? { operations.record(for: operationKey) }
@@ -2710,6 +2744,11 @@ private struct MaatCaseDetailView: View {
                         Text(entry.status.capitalized)
                             .sirsiFont(.caption, weight: .semibold)
                             .foregroundStyle(entry.status == "resolved" ? .green : .orange)
+                    }
+                    if let invalidJournalIntegrity {
+                        MaatJournalIntegrityCard(engine: engine, integrity: invalidJournalIntegrity) {
+                            await refreshAfterIntegrityRepair()
+                        }
                     }
                     detailSection("Assessment", entry.assessed.isEmpty ? entry.why : entry.assessed)
                     detailSection("Determination", entry.determination)
@@ -3008,13 +3047,22 @@ private struct MaatCaseDetailView: View {
             return
         }
         let projection = MaatOperationPreflight.decodeProjection(from: read.data)
-        guard case .ready = MaatOperationPreflight.evaluate(
+        let preflight = MaatOperationPreflight.evaluate(
             original: entry,
             exitStatus: read.exitStatus,
             timedOut: read.timedOut,
             launchError: read.launchError,
             projection: projection
-        ) else {
+        )
+        switch preflight {
+        case .ready:
+            invalidJournalIntegrity = nil
+        case .invalidIntegrity(let integrity):
+            invalidJournalIntegrity = integrity
+            failureMemoryMessage = "The decision journal contains invalid records. Review and preserve the original before continuing."
+            return
+        case .rejected:
+            invalidJournalIntegrity = nil
             failureMemoryMessage = "The reviewed Ma'at case changed or could not be re-read. Refresh this case before continuing."
             return
         }
@@ -3149,7 +3197,7 @@ private struct MaatCaseDetailView: View {
                 Button {
                     confirmAction = true
                 } label: {
-                    Label("Confirm this exact update", systemImage: "wrench.and.screwdriver.fill")
+                    Label(operationRecord?.phase == .retryReady ? "Confirm reviewed update" : "Confirm this exact update", systemImage: "wrench.and.screwdriver.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -3275,11 +3323,18 @@ private struct MaatCaseDetailView: View {
             launchError: read.launchError,
             projection: projection
         ) {
+        case .invalidIntegrity(let integrity):
+            invalidJournalIntegrity = integrity
+            recordBinaryDriftInactive = false
+            operations.rejectPreflight(key, guidance: "The decision journal contains invalid records. Review and preserve the original before continuing.")
+            return
         case .rejected(let guidance):
+            invalidJournalIntegrity = nil
             recordBinaryDriftInactive = false
             operations.rejectPreflight(key, guidance: guidance)
             return
         case .ready:
+            invalidJournalIntegrity = nil
             break
         }
 
@@ -3390,9 +3445,58 @@ private struct MaatCaseDetailView: View {
             projection: projection
         ) {
         case .ready:
+            guard let projection,
+                  let selected = projection.cases.first(where: { $0.id == entry.id && $0.evidence == entry.evidence }) else {
+                invalidJournalIntegrity = nil
+                operations.rejectRetryReview(key, reviewedGeneration: prior.generation,
+                    guidance: "The exact selected case could not be refreshed. Review the casebook before confirming an action.")
+                return
+            }
+            entry = selected
+            invalidJournalIntegrity = nil
             operations.authorizeReviewedRetry(key, reviewedGeneration: prior.generation)
+        case .invalidIntegrity(let integrity):
+            invalidJournalIntegrity = integrity
+            operations.rejectRetryReview(key, reviewedGeneration: prior.generation,
+                guidance: "The decision journal still contains invalid records. Review and preserve the original before continuing.")
         case .rejected(let guidance):
+            invalidJournalIntegrity = nil
             operations.rejectRetryReview(key, reviewedGeneration: prior.generation, guidance: guidance)
+        }
+    }
+
+    @MainActor private func refreshAfterIntegrityRepair() async {
+        let key = operationKey
+        if let record = operations.record(for: key) {
+            guard !record.phase.isInFlight else { return }
+            await reviewRetry()
+            return
+        }
+
+        let read = await MaatOperationPreflight.readCompleteExactHistory(evidence: entry.evidence) { args, timeout in
+            await SirsiEngine.runJSONRead(args: args, timeoutSeconds: timeout)
+        }
+        guard !Task.isCancelled, read.continuation == nil else {
+            failureMemoryMessage = "The exact case history remains incomplete. Review it again before confirming the named action."
+            return
+        }
+        let projection = MaatOperationPreflight.decodeProjection(from: read.data)
+        switch MaatOperationPreflight.evaluate(original: entry, exitStatus: read.exitStatus,
+            timedOut: read.timedOut, launchError: read.launchError, projection: projection) {
+        case .ready:
+            guard let selected = projection?.cases.first(where: { $0.id == entry.id && $0.evidence == entry.evidence }) else {
+                failureMemoryMessage = "The exact selected case could not be refreshed. Review it before confirming the named action."
+                return
+            }
+            entry = selected
+            invalidJournalIntegrity = nil
+            failureMemoryMessage = "The casebook was repaired and this exact case was refreshed. Confirm its named action again before continuing."
+        case .invalidIntegrity(let integrity):
+            invalidJournalIntegrity = integrity
+            failureMemoryMessage = "The decision journal still contains invalid records. Review and preserve the original before continuing."
+        case .rejected(let guidance):
+            invalidJournalIntegrity = nil
+            failureMemoryMessage = guidance
         }
     }
 
@@ -4211,7 +4315,7 @@ struct MaatKnownFailureProposal: Decodable, Identifiable {
     }
 }
 
-struct MaatJournalIntegrity: Decodable {
+struct MaatJournalIntegrity: Decodable, Equatable {
     let invalidCount: Int
     let countIsLowerBound:Bool
     let issues: [MaatJournalIssue]
@@ -4240,7 +4344,7 @@ struct MaatJournalIntegrity: Decodable {
     }
 }
 
-struct MaatJournalIssue: Decodable, Identifiable {
+struct MaatJournalIssue: Decodable, Identifiable, Equatable {
     let line: Int
     let digest: String
     let reason: String

@@ -460,12 +460,35 @@ func (j *FileDecisionJournal) appendLocked(decision Decision) error {
 	if err != nil {
 		return fmt.Errorf("maat decision journal: open: %w", err)
 	}
-	defer f.Close()
-	if _, err := f.Write(append(encoded, '\n')); err != nil {
-		return fmt.Errorf("maat decision journal: append: %w", err)
+	return appendDecisionRecord(f, append(encoded, '\n'))
+}
+
+type decisionAppendFile interface {
+	io.Writer
+	Sync() error
+	Close() error
+}
+
+// appendDecisionRecord reports incomplete writes and every durability/close
+// failure. The earliest write or sync failure takes precedence over a later
+// close failure, but Close is always attempted exactly once.
+func appendDecisionRecord(file decisionAppendFile, record []byte) error {
+	n, writeErr := file.Write(record)
+	if writeErr == nil && n != len(record) {
+		writeErr = io.ErrShortWrite
 	}
-	if err := f.Sync(); err != nil {
-		return fmt.Errorf("maat decision journal: sync: %w", err)
+	var appendErr error
+	if writeErr != nil {
+		appendErr = fmt.Errorf("maat decision journal: append: %w", writeErr)
+	} else if syncErr := file.Sync(); syncErr != nil {
+		appendErr = fmt.Errorf("maat decision journal: sync: %w", syncErr)
+	}
+	closeErr := file.Close()
+	if appendErr != nil {
+		return appendErr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("maat decision journal: close: %w", closeErr)
 	}
 	return nil
 }

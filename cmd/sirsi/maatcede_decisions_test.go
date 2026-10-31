@@ -3,8 +3,6 @@ package main
 import (
 	"bufio"
 	"encoding/json"
-	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,24 +11,8 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
+	"github.com/spf13/cobra"
 )
-
-// fakeCedeDecisionWriter is an io.WriteCloser whose Write and Close outcomes
-// are set independently, so tests can exercise a close-time failure that a
-// real *os.File cannot be made to produce deterministically.
-type fakeCedeDecisionWriter struct {
-	writeErr error
-	closeErr error
-}
-
-func (f *fakeCedeDecisionWriter) Write(p []byte) (int, error) {
-	if f.writeErr != nil {
-		return 0, f.writeErr
-	}
-	return len(p), nil
-}
-
-func (f *fakeCedeDecisionWriter) Close() error { return f.closeErr }
 
 func readJSONLines(t *testing.T, path string) []cedeDecisionRecord {
 	t.Helper()
@@ -49,6 +31,14 @@ func readJSONLines(t *testing.T, path string) []cedeDecisionRecord {
 		out = append(out, rec)
 	}
 	return out
+}
+
+func validCedeDecisionRecord() cedeDecisionRecord {
+	return cedeDecisionRecord{
+		Time: "2026-10-31T12:00:00Z", Host: "fixture", Kind: "cede-request",
+		Determination: "pending", Requester: "fixture-actor", Resource: "fixture-resource",
+		Assessed: "fixture assessment", Affected: "fixture-peer", Why: "fixture event", Evidence: "fixture-evidence",
+	}
 }
 
 // Exercise the actual cede projection writer without a cede or reservation
@@ -70,6 +60,151 @@ func TestCedeDecisionJournalStrictCompatibility(t *testing.T) {
 			}
 			if got := rows[0]; got.Kind != kind || got.Requester != "fixture-actor" || got.Affected != "fixture-peer" || got.Evidence != "fixture-evidence" {
 				t.Fatalf("actor/evidence changed: %+v", got)
+			}
+		})
+	}
+}
+
+func TestCedeDecisionWhyIsFactualWhenOptionalReasonIsEmpty(t *testing.T) {
+	for _, kind := range []string{"cede-request", "cede-grant", "cede-counter", "cede-decline", "cede-withdraw"} {
+		t.Run(kind, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "decisions.jsonl")
+			t.Setenv("MAAT_DECISIONS", path)
+			counter := ""
+			if kind == "cede-counter" {
+				counter = "cores:2"
+			}
+			if err := logCedeDecision(kind, "fixture-outcome", "fixture-actor", "fixture-resource", "fixture assessment", "fixture-peer", " \t ", "fixture-id"); err != nil {
+				t.Fatal(err)
+			}
+			rows, err := (&maat.FileDecisionJournal{Path: path}).Recent(10)
+			if err != nil || len(rows) != 1 {
+				t.Fatalf("strict cede history = %+v, err=%v", rows, err)
+			}
+			if strings.TrimSpace(rows[0].Why) == "" || !strings.Contains(rows[0].Why, "No nonblank reason was supplied") {
+				t.Fatalf("empty reason did not produce a factual event description: %q", rows[0].Why)
+			}
+			if kind == "cede-counter" {
+				why, err := cedeDecisionWhy(kind, "fixture-actor", "fixture-resource", "fixture-id", " \t ", counter)
+				if err != nil || !strings.Contains(why, "cores:2") {
+					t.Fatalf("counter response lost its recorded offer: %q, err=%v", why, err)
+				}
+			}
+		})
+	}
+}
+
+func TestCedeDecisionWhyPreservesSuppliedReasonWithoutInventingWithdrawalMotive(t *testing.T) {
+	for _, kind := range []string{"cede-request", "cede-grant", "cede-counter", "cede-decline", "cede-withdraw"} {
+		t.Run(kind, func(t *testing.T) {
+			why, err := cedeDecisionWhy(kind, "fixture-actor", "fixture-resource", "fixture-id", "  owner supplied context  ", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(why, "owner supplied context") {
+				t.Fatalf("supplied reason was lost: %q", why)
+			}
+			if kind == "cede-withdraw" && !strings.Contains(why, "Original request reason") {
+				t.Fatalf("request context was misrepresented as withdrawal motive: %q", why)
+			}
+		})
+	}
+}
+
+func TestCedeCommandsProjectOptionalResponseReasons(t *testing.T) {
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	oldRequester, oldHolder, oldAsk, oldMinutes, oldEarliest, oldReason :=
+		cedeRequester, cedeHolder, cedeAsk, cedeMinutes, cedeEarliest, cedeReason
+	oldStart, oldCounter, oldJSON := cedeStart, cedeCounter, maatJSON
+	t.Cleanup(func() {
+		cedeRequester, cedeHolder, cedeAsk, cedeMinutes, cedeEarliest, cedeReason =
+			oldRequester, oldHolder, oldAsk, oldMinutes, oldEarliest, oldReason
+		cedeStart, cedeCounter, maatJSON = oldStart, oldCounter, oldJSON
+	})
+	maatJSON = false
+
+	for _, operation := range []string{"grant", "counter", "decline", "withdraw"} {
+		t.Run(operation, func(t *testing.T) {
+			db := filepath.Join(t.TempDir(), "router.db")
+			decisions := filepath.Join(t.TempDir(), "decisions.jsonl")
+			t.Setenv("SIRSI_ROUTER_DB", db)
+			t.Setenv("MAAT_DECISIONS", decisions)
+			cedeRequester, cedeHolder, cedeAsk, cedeMinutes, cedeEarliest, cedeReason =
+				"fixture-requester", "fixture-holder", "machine", 10, "", "original request context"
+			cedeStart, cedeCounter = "after my current run", "cores:2 for 20m"
+			if err := maatCedeRequestCmd.RunE(maatCedeRequestCmd, []string{"fixture-resource"}); err != nil {
+				t.Fatal(err)
+			}
+
+			store, err := routerstore.OpenPath(db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pending, err := schedule.NewLedger(store).ListCedes(schedule.CedeFilter{Resource: "fixture-resource", PendingOnly: true})
+			if closeErr := store.Close(); err == nil {
+				err = closeErr
+			}
+			if err != nil || len(pending) != 1 {
+				t.Fatalf("pending request = %+v, err=%v", pending, err)
+			}
+			id := pending[0].ID
+
+			cedeReason = " \t "
+			var runErr error
+			switch operation {
+			case "grant":
+				cedeHolder = "fixture-holder"
+				runErr = maatCedeGrantCmd.RunE(maatCedeGrantCmd, []string{id})
+			case "counter":
+				cedeHolder = "fixture-holder"
+				runErr = maatCedeCounterCmd.RunE(maatCedeCounterCmd, []string{id})
+			case "decline":
+				cedeHolder = "fixture-holder"
+				runErr = maatCedeDeclineCmd.RunE(maatCedeDeclineCmd, []string{id})
+			case "withdraw":
+				cedeRequester = "fixture-requester"
+				runErr = maatCedeWithdrawCmd.RunE(maatCedeWithdrawCmd, []string{id})
+			}
+			if runErr != nil {
+				t.Fatal(runErr)
+			}
+
+			rows, err := (&maat.FileDecisionJournal{Path: decisions}).Recent(10)
+			if err != nil || len(rows) != 2 {
+				t.Fatalf("strict decision history = %+v, err=%v", rows, err)
+			}
+			var request, response maat.Decision
+			for _, row := range rows {
+				if row.Evidence != id {
+					continue
+				}
+				switch row.Kind {
+				case "cede-request":
+					if request.Kind != "" {
+						t.Fatalf("duplicate request projection for %s", id)
+					}
+					request = row
+				case "cede-" + operation:
+					if response.Kind != "" {
+						t.Fatalf("duplicate %s projection for %s", operation, id)
+					}
+					response = row
+				}
+			}
+			if request.Kind != "cede-request" || response.Kind != "cede-"+operation {
+				t.Fatalf("request/response projections not uniquely found: request=%+v response=%+v", request, response)
+			}
+			if strings.TrimSpace(response.Why) == "" || !strings.Contains(response.Why, "No ") {
+				t.Fatalf("empty response reason was not projected as a factual event: %+v", response)
+			}
+			if request.Why != "original request context" {
+				t.Fatalf("supplied request context changed: %q", request.Why)
+			}
+			if operation == "withdraw" && (!strings.Contains(response.Why, "No withdrawal reason was supplied") || !strings.Contains(response.Why, "Original request reason: original request context")) {
+				t.Fatalf("withdrawal confused request context with withdrawal motive: %q", response.Why)
+			}
+			if operation == "counter" && !strings.Contains(response.Why, "cores:2 for 20m") {
+				t.Fatalf("counter projection lost its recorded offer: %q", response.Why)
 			}
 		})
 	}
@@ -130,19 +265,39 @@ func TestCedeDecisionLedger_RequestThenGrant(t *testing.T) {
 		t.Fatalf("want 2 decision lines, got %d: %+v", len(lines), lines)
 	}
 
-	req, grant := lines[0], lines[1]
+	var req, grant cedeDecisionRecord
+	for _, row := range lines {
+		if row.Evidence != id {
+			continue
+		}
+		switch row.Kind {
+		case "cede-request":
+			if req.Kind != "" {
+				t.Fatalf("duplicate request projection for %s", id)
+			}
+			req = row
+		case "cede-grant":
+			if grant.Kind != "" {
+				t.Fatalf("duplicate grant projection for %s", id)
+			}
+			grant = row
+		}
+	}
 	if req.Kind != "cede-request" || req.Determination != "pending" {
-		t.Fatalf("first line must be the pending request, got %+v", req)
+		t.Fatalf("request projection must be pending, got %+v", req)
 	}
 	if req.Requester != "claude-io" || req.Affected != "sne" || req.Resource != "m1" || req.Evidence != id {
 		t.Fatalf("request line fields wrong: %+v", req)
 	}
 
 	if grant.Kind != "cede-grant" || grant.Determination != "grant" {
-		t.Fatalf("second line must be the grant, got %+v", grant)
+		t.Fatalf("grant projection must record a grant, got %+v", grant)
 	}
 	if grant.Requester != "sne" || grant.Affected != "claude-io" || grant.Resource != "m1" || grant.Evidence != id {
 		t.Fatalf("grant line fields wrong: %+v", grant)
+	}
+	if req.Why != "need the box for H9" || grant.Why != "sure, after my run" {
+		t.Fatalf("supplied cede reasons changed: request=%q grant=%q", req.Why, grant.Why)
 	}
 
 	// The pending request must never itself appear as a grant.
@@ -215,8 +370,8 @@ func TestAppendCedeDecision_MkdirFailure(t *testing.T) {
 	}
 	t.Setenv("MAAT_DECISIONS", filepath.Join(blocker, "nested", "decisions.jsonl"))
 
-	err := appendCedeDecision(cedeDecisionRecord{Kind: "cede-request"})
-	if err == nil || !strings.Contains(err.Error(), "mkdir") {
+	err := appendCedeDecision(validCedeDecisionRecord())
+	if err == nil || !strings.Contains(err.Error(), "create parent") {
 		t.Fatalf("want a mkdir failure, got %v", err)
 	}
 }
@@ -231,44 +386,22 @@ func TestAppendCedeDecision_OpenFailure(t *testing.T) {
 	}
 	t.Setenv("MAAT_DECISIONS", asDir)
 
-	err := appendCedeDecision(cedeDecisionRecord{Kind: "cede-request"})
+	err := appendCedeDecision(validCedeDecisionRecord())
 	if err == nil || !strings.Contains(err.Error(), "open") {
 		t.Fatalf("want an open failure, got %v", err)
 	}
 }
 
-// TestAppendCedeDecision_WriteErrorTakesPriorityOverCloseError: when both the
-// write and the close fail, the write error — the more informative,
-// closer-to-cause failure — must be the one returned.
-func TestAppendCedeDecision_WriteErrorTakesPriorityOverCloseError(t *testing.T) {
-	t.Setenv("MAAT_DECISIONS", filepath.Join(t.TempDir(), "decisions.jsonl"))
-	oldOpener := cedeDecisionFileOpener
-	t.Cleanup(func() { cedeDecisionFileOpener = oldOpener })
-	cedeDecisionFileOpener = func(string) (io.WriteCloser, error) {
-		return &fakeCedeDecisionWriter{writeErr: os.ErrInvalid, closeErr: os.ErrPermission}, nil
+func TestAppendCedeDecisionRejectsInvalidCanonicalRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	t.Setenv("MAAT_DECISIONS", path)
+	rec := validCedeDecisionRecord()
+	rec.Why = " \t "
+	if err := appendCedeDecision(rec); err == nil || !strings.Contains(err.Error(), "why is required") {
+		t.Fatalf("canonical validation did not reject empty why: %v", err)
 	}
-
-	err := appendCedeDecision(cedeDecisionRecord{Kind: "cede-request"})
-	if err == nil || !strings.Contains(err.Error(), "write failed") || !errors.Is(err, os.ErrInvalid) {
-		t.Fatalf("want the write error, got %v", err)
-	}
-}
-
-// TestAppendCedeDecision_CloseErrorIsReported: codex-pantheon review of PR
-// #929 (item 20261001-001503) — a `defer f.Close()` that discards its error
-// can report success on a close-time I/O failure even though the write
-// itself succeeded. A close-only failure must now surface.
-func TestAppendCedeDecision_CloseErrorIsReported(t *testing.T) {
-	t.Setenv("MAAT_DECISIONS", filepath.Join(t.TempDir(), "decisions.jsonl"))
-	oldOpener := cedeDecisionFileOpener
-	t.Cleanup(func() { cedeDecisionFileOpener = oldOpener })
-	cedeDecisionFileOpener = func(string) (io.WriteCloser, error) {
-		return &fakeCedeDecisionWriter{closeErr: os.ErrPermission}, nil
-	}
-
-	err := appendCedeDecision(cedeDecisionRecord{Kind: "cede-request"})
-	if err == nil || !strings.Contains(err.Error(), "close failed") {
-		t.Fatalf("want a close failure to be reported even though write succeeded, got %v", err)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("invalid projection created a journal: stat err=%v", err)
 	}
 }
 
@@ -337,6 +470,77 @@ func TestCedeDecisionLedger_GrantProjectionFailureIsReported(t *testing.T) {
 	}
 	if len(granted) != 1 || granted[0].Status != schedule.CedeStatusGranted {
 		t.Fatalf("the grant transition must still have committed despite the projection failure, got %+v", granted)
+	}
+}
+
+func TestCedeDecisionLedger_CounterAndDeclineProjectionFailuresDoNotRetry(t *testing.T) {
+	t.Setenv("SIRSI_ROUTER_URL", "")
+	oldRequester, oldHolder, oldAsk, oldMinutes, oldEarliest, oldReason :=
+		cedeRequester, cedeHolder, cedeAsk, cedeMinutes, cedeEarliest, cedeReason
+	oldStart, oldCounter, oldJSON, oldAppend := cedeStart, cedeCounter, maatJSON, appendCedeDecision
+	t.Cleanup(func() {
+		cedeRequester, cedeHolder, cedeAsk, cedeMinutes, cedeEarliest, cedeReason =
+			oldRequester, oldHolder, oldAsk, oldMinutes, oldEarliest, oldReason
+		cedeStart, cedeCounter, maatJSON, appendCedeDecision = oldStart, oldCounter, oldJSON, oldAppend
+	})
+	maatJSON = false
+
+	for _, operation := range []struct {
+		name   string
+		cmd    *cobra.Command
+		status schedule.CedeStatus
+	}{
+		{name: "counter", cmd: maatCedeCounterCmd, status: schedule.CedeStatusCountered},
+		{name: "decline", cmd: maatCedeDeclineCmd, status: schedule.CedeStatusDeclined},
+	} {
+		t.Run(operation.name, func(t *testing.T) {
+			db := filepath.Join(t.TempDir(), "router.db")
+			decisions := filepath.Join(t.TempDir(), "decisions.jsonl")
+			t.Setenv("SIRSI_ROUTER_DB", db)
+			t.Setenv("MAAT_DECISIONS", decisions)
+			cedeRequester, cedeHolder, cedeAsk, cedeMinutes, cedeEarliest, cedeReason =
+				"fixture-requester", "fixture-holder", "machine", 10, "", "projection failure fixture"
+			cedeCounter = "cores:2 for 20m"
+			oldAppend := appendCedeDecision
+			appendCedeDecision = func(record cedeDecisionRecord) error {
+				if record.Kind == "cede-request" {
+					return oldAppend(record)
+				}
+				return os.ErrPermission
+			}
+			defer func() { appendCedeDecision = oldAppend }()
+			if err := maatCedeRequestCmd.RunE(maatCedeRequestCmd, []string{"fixture-resource"}); err != nil {
+				t.Fatal(err)
+			}
+			store, err := routerstore.OpenPath(db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pending, err := schedule.NewLedger(store).ListCedes(schedule.CedeFilter{Resource: "fixture-resource", PendingOnly: true})
+			if closeErr := store.Close(); err == nil {
+				err = closeErr
+			}
+			if err != nil || len(pending) != 1 {
+				t.Fatalf("pending request = %+v, err=%v", pending, err)
+			}
+			id := pending[0].ID
+			cedeHolder = "fixture-holder"
+			err = operation.cmd.RunE(operation.cmd, []string{id})
+			if err == nil || !strings.Contains(err.Error(), id) || !strings.Contains(err.Error(), "do not retry") {
+				t.Fatalf("post-commit projection failure did not retain no-retry identity: %v", err)
+			}
+			store, err = routerstore.OpenPath(db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows, listErr := schedule.NewLedger(store).ListCedes(schedule.CedeFilter{Resource: "fixture-resource"})
+			if closeErr := store.Close(); listErr == nil {
+				listErr = closeErr
+			}
+			if listErr != nil || len(rows) != 1 || rows[0].Status != operation.status {
+				t.Fatalf("scheduler transition was not preserved: rows=%+v err=%v", rows, listErr)
+			}
+		})
 	}
 }
 

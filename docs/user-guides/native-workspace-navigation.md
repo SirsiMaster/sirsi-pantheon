@@ -11,9 +11,11 @@ views are unmounted: navigation retention does not keep hidden polling tasks
 running. Ma'at's root System One primary pane retains its vertical scroll
 position when switching to another workspace and back during the same window
 session. Its recovery pane and navigation details keep separate native scroll
-ownership. The offset is not persisted across app restarts. Root-local drafts
-and transient query results are not guaranteed across workspace switches or
-process restart.
+ownership. Only native offset callbacks received while Ma'at is still selected
+at its root can update the retained position; a late callback from an unmounted
+workspace is ignored. The offset is not persisted across app restarts. Root-local
+drafts and transient query results are not guaranteed across workspace switches
+or process restart.
 
 Provenance: the independent navigation idea and initial three tests were
 reconciled from the preserved worker patch

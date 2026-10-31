@@ -20,6 +20,7 @@
 | Successful bounded execution can clean up its own registration | `CloseThread`, `wakeidentity_test.go` | actual119 false-positive retained; official120 actual M1/M5/Studio bounded controls exit0 with closed executors/released reservations; real observer refusal retained | bounded native lifecycle verified; not model or all-lane workload proof |
 | Observer remains natively owned after restart | `adoptWorkerThread`, `Heartbeat`, `CloseThread` | exact generation reuse, persisted readback, checked heartbeat, transient recovery and terminal/no-revival controls | source-bound accident guard; separate raw-service consumer identity not claimed |
 | A2A identity/body/correlation/errors | `dispatch`, `routerstore` | contract assessment and tests | source-bound |
+| CLI item inspection and reassignment honor global `--json` | `cmd/sirsi/routercmd.go`, `cmd/sirsi/routerreassigncmd.go`, `cmd/sirsi/router_show_reassign_json_test.go`; ADR-068 and ADR-072 C5 | typed canonical item for `show`; compact `{id,to,status}` success receipt for `reassign`; injected read/mutation failure and unchanged human-output fixtures | source candidate; qualification and installed CLI verification remain separate |
 | Read acknowledgement is distinct | `AckItem`, schema v22+ | recipient-only ack tests | source-bound |
 | Cloud canonical service | `router serve`, GCP recipe | historical deploy receipts; current readback pending permissions | open-live |
 | Codex least-privilege delivery | `router relay`, spool contract | M1/M5 relay evidence | host-verified prior receipt |

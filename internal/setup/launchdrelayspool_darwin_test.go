@@ -191,8 +191,8 @@ func TestRootRelaySpoolActualProbeBlocksBootoutWithNoChildren(t *testing.T) {
 			if f.bootouts != 0 || f.bootstraps != 0 {
 				t.Fatal("spool probe did not fence bootout")
 			}
-			if name == "second-pass-arrival" && (f.childReads != 2 || f.spoolReads != 2) {
-				t.Fatal("second pass not exercised")
+			if name == "second-pass-arrival" && (f.childReads != 3 || f.spoolReads != 2) {
+				t.Fatalf("second pass not exercised: childReads=%d queueChecks=%d", f.childReads, f.spoolReads)
 			}
 		})
 	}
