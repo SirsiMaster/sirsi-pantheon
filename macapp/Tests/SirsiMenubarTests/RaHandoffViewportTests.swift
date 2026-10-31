@@ -26,6 +26,8 @@ final class RaHandoffViewportTests: XCTestCase {
                     .environment(\.sirsiTypeScale, typeScale)
                 let sizingHost = NSHostingView(rootView: content)
                 let fitting = sizingHost.fittingSize
+                XCTAssertTrue(fitting.width.isFinite && fitting.height.isFinite,
+                              "The mounted production sheet must produce finite fitting dimensions")
                 XCTAssertGreaterThanOrEqual(fitting.width, 420)
                 XCTAssertLessThanOrEqual(fitting.width, 720,
                                          "The production sheet must cap its ideal width despite 43 long recipients")
@@ -54,16 +56,36 @@ final class RaHandoffViewportTests: XCTestCase {
 
                 let root = try XCTUnwrap(window.contentView)
                 let views = descendants(of: root)
-                let recipientScroll = try XCTUnwrap(
-                    views.first { $0.identifier?.rawValue == "ra-handoff-recipient-scroll" } as? NSScrollView
-                )
+                let scrollViews = views.compactMap { $0 as? NSScrollView }
                 let formScroll = try XCTUnwrap(
-                    views.first { $0.identifier?.rawValue == "ra-handoff-form-scroll" } as? NSScrollView
+                    scrollViews.first { scroll in
+                        guard let document = scroll.documentView else { return false }
+                        return document.bounds.height > scroll.contentView.bounds.height + 1
+                    },
+                    "Expected an actual native NSScrollView whose form document overflows vertically"
                 )
-                let cancel = try XCTUnwrap(views.first { $0.identifier?.rawValue == "ra-handoff-cancel" })
-                let send = try XCTUnwrap(views.first { $0.identifier?.rawValue == "ra-handoff-send" })
+                // Existing probes set NSView.identifier directly; do not assume a SwiftUI
+                // accessibility identifier is mirrored there. Find native scrolls by geometry.
+                let recipientScroll = try XCTUnwrap(
+                    descendants(of: formScroll).compactMap { $0 as? NSScrollView }.first { scroll in
+                        guard let document = scroll.documentView else { return false }
+                        return document.bounds.width > scroll.contentView.bounds.width + 1
+                    },
+                    "Expected an actual nested NSScrollView whose recipient document overflows horizontally"
+                )
+                let buttons = try accessibilityButtons(in: window)
+                let cancelMatches = buttons.filter { $0.label == "Cancel" }
+                let sendMatches = buttons.filter { $0.label == "Send to Ra fabric" }
+                XCTAssertEqual(cancelMatches.count, 1, "Cancel must have one unambiguous native accessibility button")
+                XCTAssertEqual(sendMatches.count, 1, "Send must have one unambiguous native accessibility button")
+                let cancel = try XCTUnwrap(cancelMatches.first,
+                                           "Expected Cancel in the mounted native accessibility tree")
+                let send = try XCTUnwrap(sendMatches.first,
+                                         "Expected Send in the mounted native accessibility tree")
 
-                XCTAssertLessThanOrEqual(recipientScroll.frame.width, width,
+                let recipientFrame = root.convert(recipientScroll.bounds, from: recipientScroll)
+                let formFrame = root.convert(formScroll.bounds, from: formScroll)
+                XCTAssertLessThanOrEqual(recipientFrame.width, width,
                                          "Recipient content must scroll inside the bounded sheet")
                 XCTAssertGreaterThan(
                     try XCTUnwrap(recipientScroll.documentView).bounds.width,
@@ -75,10 +97,14 @@ final class RaHandoffViewportTests: XCTestCase {
                     formScroll.contentView.bounds.height,
                     "The form must remain vertically scrollable at minimum sheet height"
                 )
-                XCTAssertFalse(isDescendant(cancel, of: formScroll), "Cancel must remain fixed above the form scroll region")
-                XCTAssertFalse(isDescendant(send, of: formScroll), "Send must remain fixed below the form scroll region")
-                XCTAssertTrue(root.bounds.contains(cancel.convert(cancel.bounds, to: root)))
-                XCTAssertTrue(root.bounds.contains(send.convert(send.bounds, to: root)))
+                let contentScreenFrame = window.convertToScreen(root.convert(root.bounds, to: nil))
+                let formScreenFrame = window.convertToScreen(root.convert(formFrame, to: nil))
+                let cancelFrame = try XCTUnwrap(cancel.frame, "Cancel must expose its native accessibility frame")
+                let sendFrame = try XCTUnwrap(send.frame, "Send must expose its native accessibility frame")
+                XCTAssertTrue(contentScreenFrame.contains(cancelFrame), "Cancel must be visible inside the sheet")
+                XCTAssertTrue(contentScreenFrame.contains(sendFrame), "Send must be visible inside the sheet")
+                XCTAssertFalse(formScreenFrame.intersects(cancelFrame), "Cancel must remain fixed outside the form scroll region")
+                XCTAssertFalse(formScreenFrame.intersects(sendFrame), "Send must remain fixed outside the form scroll region")
             }
         }
     }
@@ -97,12 +123,42 @@ final class RaHandoffViewportTests: XCTestCase {
     }
 
     @MainActor
-    private func isDescendant(_ view: NSView, of ancestor: NSView) -> Bool {
-        var current = view.superview
-        while let candidate = current {
-            if candidate === ancestor { return true }
-            current = candidate.superview
+    private func accessibilityButtons(in window: NSWindow) throws -> [MountedAXButton] {
+        var pending: [Any] = [window]
+        var visited: Set<ObjectIdentifier> = []
+        var buttons: [MountedAXButton] = []
+        while let next = pending.popLast() {
+            guard let element = next as? NSObject else { throw MountedAXFailure.nonObjectChild }
+            guard visited.insert(ObjectIdentifier(element)).inserted else { continue }
+            guard visited.count <= 10_000 else { throw MountedAXFailure.treeTooLarge }
+
+            let role = element.accessibilityAttributeValue(.role) as? String
+            let title = element.accessibilityAttributeValue(.title) as? String
+            let description = element.accessibilityAttributeValue(.description) as? String
+            if role == NSAccessibility.Role.button.rawValue,
+               let label = [title, description].compactMap({ $0 }).first(where: { !$0.isEmpty }) {
+                let position = element.accessibilityAttributeValue(.position) as? NSValue
+                let size = element.accessibilityAttributeValue(.size) as? NSValue
+                let frame: NSRect?
+                if let position, let size {
+                    frame = NSRect(origin: position.pointValue, size: size.sizeValue)
+                } else {
+                    frame = nil
+                }
+                buttons.append(MountedAXButton(label: label, frame: frame))
+            }
+            pending.append(contentsOf: element.accessibilityAttributeValue(.children) as? [Any] ?? [])
         }
-        return false
+        return buttons
+    }
+
+    private struct MountedAXButton {
+        let label: String
+        let frame: NSRect?
+    }
+
+    private enum MountedAXFailure: Error {
+        case nonObjectChild
+        case treeTooLarge
     }
 }
