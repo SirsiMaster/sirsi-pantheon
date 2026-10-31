@@ -275,11 +275,72 @@ enum MaatOperationPhase: Equatable {
     }
 }
 
+enum MaatOperationIntent: Equatable {
+    case standard
+    case binaryDriftUpdater
+    case inactiveDisposition
+}
+
+enum MaatConfirmedResolutionSelection: Equatable {
+    case standard
+    case binaryDriftUpdater
+    case inactiveDisposition
+
+    init(inactiveDisposition: Bool, actionKind: String, actionID: String) {
+        guard actionKind == "maat_repair", actionID == "binary-drift" else {
+            self = .standard
+            return
+        }
+        self = inactiveDisposition ? .inactiveDisposition : .binaryDriftUpdater
+    }
+
+    var operationIntent: MaatOperationIntent {
+        switch self {
+        case .standard: return .standard
+        case .binaryDriftUpdater: return .binaryDriftUpdater
+        case .inactiveDisposition: return .inactiveDisposition
+        }
+    }
+}
+
+struct MaatOperationProgress: Equatable {
+    let title: String
+    let detail: String
+}
+
 struct MaatOperationRecord: Equatable {
-    let generation = UUID()
+    let generation: UUID
     var phase: MaatOperationPhase
     var receipt: MaatOperationReceipt?
     var guidance: String?
+    var intent: MaatOperationIntent
+
+    init(phase: MaatOperationPhase, receipt: MaatOperationReceipt?, guidance: String?,
+         intent: MaatOperationIntent = .standard) {
+        generation = UUID()
+        self.phase = phase
+        self.receipt = receipt
+        self.guidance = guidance
+        self.intent = intent
+    }
+
+    var progress: MaatOperationProgress? {
+        guard phase.isInFlight else { return nil }
+        switch intent {
+        case .standard:
+            return nil
+        case .binaryDriftUpdater:
+            return MaatOperationProgress(title: "Applying the reviewed updater…",
+                detail: "This operation stays locked until the owned updater exits and Ma’at records a fresh verification or an explicit failure. The updater is bounded to two minutes before verification.")
+        case .inactiveDisposition:
+            if phase == .preflighting {
+                return MaatOperationProgress(title: "Confirming the exact case…",
+                    detail: "Ma’at is reading retained case history before the fresh binary scan. No updater is run.")
+            }
+            return MaatOperationProgress(title: "Rechecking the binary finding…",
+                detail: "Ma’at is checking current sibling binaries and recording the exact observation. No updater is run.")
+        }
+    }
 }
 
 enum MaatCasePreflightDecision: Equatable {
@@ -482,20 +543,21 @@ final class MaatCaseOperationStore: ObservableObject {
     /// Synchronous on MainActor: the first confirmed tap claims this key
     /// before any suspension, so a second tap cannot launch a duplicate.
     @discardableResult
-    func begin(_ key: MaatOperationKey) -> Bool {
+    func begin(_ key: MaatOperationKey, intent: MaatOperationIntent = .standard) -> Bool {
         if let existing = records[key] {
             if existing.phase == .historyIncomplete {
                 var resumed = existing
                 resumed.phase = .preflighting
+                resumed.intent = intent
                 records[key] = resumed
                 return true
             }
             guard existing.phase == .retryReady else { return false }
             historyReads[key] = nil
-            records[key] = MaatOperationRecord(phase: .preflighting, receipt: existing.receipt, guidance: nil)
+            records[key] = MaatOperationRecord(phase: .preflighting, receipt: existing.receipt, guidance: nil, intent: intent)
             return true
         }
-        records[key] = MaatOperationRecord(phase: .preflighting, receipt: nil, guidance: nil)
+        records[key] = MaatOperationRecord(phase: .preflighting, receipt: nil, guidance: nil, intent: intent)
         return true
     }
 
@@ -509,12 +571,12 @@ final class MaatCaseOperationStore: ObservableObject {
     func rejectPreflight(_ key: MaatOperationKey, guidance: String) {
         historyReads[key] = nil
         let prior = records[key]
-        records[key] = MaatOperationRecord(phase: .needsReview, receipt: prior?.receipt, guidance: guidance)
+        records[key] = MaatOperationRecord(phase: .needsReview, receipt: prior?.receipt, guidance: guidance, intent: prior?.intent ?? .standard)
     }
 
     func complete(_ key: MaatOperationKey, receipt: MaatOperationReceipt) {
         historyReads[key] = nil
-        records[key] = MaatOperationRecord(phase: .completed, receipt: receipt, guidance: nil)
+        records[key] = MaatOperationRecord(phase: .completed, receipt: receipt, guidance: nil, intent: records[key]?.intent ?? .standard)
     }
 
     /// A completed or rejected action is replayable only after a separate,
@@ -526,7 +588,8 @@ final class MaatCaseOperationStore: ObservableObject {
         records[key] = MaatOperationRecord(
             phase: .retryReady,
             receipt: prior.receipt,
-            guidance: "Fresh casebook review succeeded. Confirm again to retry this same case action."
+            guidance: "Fresh casebook review succeeded. Confirm again to retry this same case action.",
+            intent: prior.intent
         )
     }
 
@@ -534,7 +597,7 @@ final class MaatCaseOperationStore: ObservableObject {
         guard let prior = records[key], prior.generation == reviewedGeneration,
               !prior.phase.isInFlight else { return }
         historyReads[key] = nil
-        records[key] = MaatOperationRecord(phase: .needsReview, receipt: prior.receipt, guidance: guidance)
+        records[key] = MaatOperationRecord(phase: .needsReview, receipt: prior.receipt, guidance: guidance, intent: prior.intent)
     }
 
     func historyContinuation(for key: MaatOperationKey, generation: UUID) -> MaatExactHistoryContinuation? {
@@ -561,6 +624,6 @@ final class MaatCaseOperationStore: ObservableObject {
         guard let prior = records[key], !prior.phase.isInFlight else { return }
         historyReads[key] = nil
         records[key] = MaatOperationRecord(phase: prior.phase, receipt: prior.receipt,
-            guidance: "History progress was discarded. Start a fresh review before taking an action.")
+            guidance: "History progress was discarded. Start a fresh review before taking an action.", intent: prior.intent)
     }
 }

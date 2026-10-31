@@ -65,8 +65,10 @@ owns its refresh action and preserves edited plans and case context. Overview
 and Apollo bind Command-R to their observation reads; refreshing never starts
 a storage scan. Each workspace retains its own in-memory drill-down stack;
 inactive views unmount and stop their tasks. Selection persists across launches,
-without replaying operations or confirmations. Root-local drafts and scroll
-restoration are not guaranteed. The Mac
+without replaying operations or confirmations. Ma'at's root System One primary
+pane retains its vertical scroll position for the current window session;
+recovery and detail panes remain separate scroll owners. The offset is not
+persisted across app restarts. Root-local drafts are not guaranteed. The Mac
 window supports minimize, close and resize and preserves one menu-bar companion.
 
 ## Delivery

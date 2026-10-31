@@ -28,6 +28,50 @@ final class WorkspaceSessionTests: XCTestCase {
         XCTAssertFalse(session.navigation(for: .maat).atRoot)
     }
 
+    func testMaatPrimaryViewportIsRootOnlyAndRetainsItsIdentityAcrossDetails() throws {
+        let store = defaults()
+        let session = PantheonWorkspaceSession(defaults: store)
+        let maat = session.navigation(for: .maat)
+        session.select(.maat)
+        let rootPosition = try XCTUnwrap(session.maatPrimaryRootScrollPosition(for: maat))
+        rootPosition.wrappedValue = 684.5
+
+        session.select(.horus)
+        XCTAssertNil(session.maatPrimaryRootScrollPosition(for: session.navigation(for: .horus)))
+        session.select(.maat)
+        XCTAssertEqual(session.maatPrimaryRootScrollPosition(for: maat)?.wrappedValue, 684.5)
+
+        maat.push(Text("Ma'at detail"))
+        XCTAssertNil(session.maatPrimaryRootScrollPosition(for: maat),
+                     "detail navigation frames do not inherit the root viewport owner")
+        maat.pop()
+        XCTAssertEqual(session.maatPrimaryRootScrollPosition(for: maat)?.wrappedValue, 684.5)
+
+        let restored = PantheonWorkspaceSession(defaults: store)
+        XCTAssertEqual(restored.section, .maat)
+        XCTAssertEqual(restored.maatPrimaryRootScrollPosition(for: restored.navigation(for: .maat))?.wrappedValue, 0,
+                       "root scroll offset stays in the window session rather than persisting across launches")
+    }
+
+    func testMaatPrimaryScrollRestoresClampedOffsetOnceAfterReadyLayout() {
+        var restoration = MaatRootScrollRestoration(savedOffset: 600)
+        XCTAssertNil(restoration.layoutChanged(maximumOffset: 300, ready: false))
+        XCTAssertEqual(restoration.layoutChanged(maximumOffset: 300, ready: true), 300)
+        XCTAssertNil(restoration.layoutChanged(maximumOffset: 700, ready: true))
+    }
+
+    func testMaatPrimaryBoundsCallbackTracksFractionalMovementBeforeDeferredRestore() {
+        var restoration = MaatRootScrollRestoration(savedOffset: 600)
+        restoration.recordOffset(0)
+        XCTAssertNil(restoration.layoutChanged(maximumOffset: 300, ready: false))
+        XCTAssertEqual(restoration.boundsChanged(to: 0.5), 0.5)
+        XCTAssertEqual(restoration.boundsChanged(to: 1), 1)
+        XCTAssertEqual(restoration.boundsChanged(to: 1.5), 1.5)
+        XCTAssertNil(restoration.boundsChanged(to: 1.5), "unchanged callbacks do not alter the accepted baseline")
+        XCTAssertTrue(restoration.resolved)
+        XCTAssertNil(restoration.layoutChanged(maximumOffset: 300, ready: true))
+    }
+
     func testRestoreKeepsOnlySectionIdentityWithoutReplayingDrilldowns() {
         let store = defaults()
         let first = PantheonWorkspaceSession(defaults: store)

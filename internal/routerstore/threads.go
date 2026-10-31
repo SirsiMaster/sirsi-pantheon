@@ -68,9 +68,8 @@ type ThreadBinding struct {
 // ErrThreadUnknown: no registered thread with that id.
 var ErrThreadUnknown = errors.New("routerstore: thread not registered")
 
-// threadStatusPruned is reserved store-internal status for a future retained
-// fence. G1 only protects compatible readers and writers; it never creates or
-// garbage-collects a fence.
+// threadStatusPruned is the reserved store-internal retirement fence. Pruning
+// retains this key; ordinary writers cannot create, revive or collect it.
 const threadStatusPruned = "pruned"
 
 func rejectPrunedThreadInput(records ...ThreadRecord) error {
@@ -423,16 +422,15 @@ WHERE thread_id=? AND status='suspended' AND last_seen_at=? AND (host='' OR ?=''
 // with no host identity; the service always stamps the session host) passes
 // through unchanged.
 
-const deleteThreadSQL = `DELETE FROM threads WHERE thread_id=? AND status=? AND last_seen_at=? AND (host='' OR ?='' OR host=?) AND status<>'pruned'`
+const retireThreadSQL = `UPDATE threads SET status='pruned',payload=? WHERE thread_id=? AND status=? AND last_seen_at=? AND (host='' OR ?='' OR host=?) AND status<>'pruned'`
 
-// DeleteThreadCAS physically removes only the exact ordinary row observed by
-// the pruning read and only when it is on the caller's host. G1 preserves any
-// existing pruned fence, including for an explicit pruned-status request. It
-// creates no fences and physical deletion retains the stale-insert residual.
-// A concurrent heartbeat/status transition changes last_seen/status and makes
-// this a safe no-op rather than deleting live truth.
+// DeleteThreadCAS retires only the exact ordinary row observed by the pruning
+// read on the caller's host. It clears user payload while retaining the primary
+// key and authority identity, so a stale INSERT cannot recreate the thread.
+// A concurrent heartbeat/status transition makes retirement a safe no-op.
+// The existing API name and affected-row contract remain unchanged.
 func (s *SQLiteStore) DeleteThreadCAS(threadID, status, lastSeenAt, host string) (bool, error) {
-	result, err := s.db.Exec(deleteThreadSQL, threadID, status, lastSeenAt, host, host)
+	result, err := s.db.Exec(retireThreadSQL, []byte("{}"), threadID, status, lastSeenAt, host, host)
 	if err != nil {
 		return false, fmt.Errorf("routerstore: delete thread %q: %w", threadID, err)
 	}
@@ -444,7 +442,7 @@ func (s *SQLiteStore) DeleteThreadCAS(threadID, status, lastSeenAt, host string)
 }
 
 // DeleteThreadCASScoped binds both lane ownership and the observed row identity
-// to the delete statement; an agent reassignment cannot race a preflight check.
+// to the retirement statement; an agent reassignment cannot race a preflight check.
 func (s *SQLiteStore) DeleteThreadCASScoped(threadID, status, lastSeenAt, host string, scope []string) (bool, error) {
 	if len(scope) == 0 {
 		return false, ErrLaneScope
@@ -455,8 +453,8 @@ func (s *SQLiteStore) DeleteThreadCASScoped(threadID, status, lastSeenAt, host s
 	}
 	defer func() { _ = tx.Rollback() }()
 	ph, scopeArgs := scopeInClause(scope)
-	args := append([]any{threadID, status, lastSeenAt, host, host}, scopeArgs...)
-	result, err := tx.Exec(deleteThreadSQL+` AND agent IN (`+ph+`)`, args...)
+	args := append([]any{[]byte("{}"), threadID, status, lastSeenAt, host, host}, scopeArgs...)
+	result, err := tx.Exec(retireThreadSQL+` AND agent IN (`+ph+`)`, args...)
 	if err != nil {
 		return false, err
 	}

@@ -62,10 +62,9 @@ type Store interface {
 	Complete(id, token, result string) error
 	CompleteTaskLease(agent, taskID, token, resultRef string) error
 	Counters() (DispatchCounters, error)
-	// DeleteThreadCAS physically removes the exact ordinary row in guard-only
-	// G1. Existing pruned fences are preserved, even for explicit pruned status;
-	// only a physical delete returns true. G1 creates no fences and retains the
-	// absent-row stale-insert residual.
+	// DeleteThreadCAS retires the exact ordinary row to a retained pruned key
+	// with empty user payload. Existing fences remain unchanged. True means
+	// this CAS retired one row; stale predicates and repeat retirement are no-ops.
 	DeleteThreadCAS(threadID, status, lastSeenAt, host string) (bool, error)
 	ExportItem(dir, id string) (string, error)
 	ExportMarkdown(dir string) (int, error)

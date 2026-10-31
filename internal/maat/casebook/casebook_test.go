@@ -1,8 +1,12 @@
 package casebook
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 )
@@ -16,6 +20,40 @@ func casebookCaseByEvidence(cases []Case, evidence string) (Case, bool) {
 		}
 	}
 	return Case{}, false
+}
+
+func casebookFixtureBinaryDriftSource(t *testing.T, journal *maat.FileDecisionJournal, mixed bool) maat.Decision {
+	t.Helper()
+	host := "fixture-host"
+	hostDigest := sha256.Sum256([]byte(host))
+	statuses := []maat.DiagnosticStatus{{Check: "binary-drift", Severity: 3}}
+	if mixed {
+		statuses = append(statuses, maat.DiagnosticStatus{Check: "RAM Pressure", Severity: 2})
+	}
+	observation := maat.DiagnosticObservation{
+		Schema: maat.DiagnosticObservationSchema, SourceSHA256: strings.Repeat("a", 64),
+		HostSHA256: hex.EncodeToString(hostDigest[:]), ObservedAtUTC: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC),
+		Score: 90, Statuses: statuses,
+	}
+	verdict, err := observation.Verdict()
+	if err != nil {
+		t.Fatal(err)
+	}
+	written, err := maat.RecordSystemOne(journal, "fixture", verdict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err := journal.RecentTolerant(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.Evidence == written.Evidence {
+			return row
+		}
+	}
+	t.Fatal("normalized canonical System One source was not readable from the journal")
+	return maat.Decision{}
 }
 
 func (j *casebookTestJournal) Append(d maat.Decision) error {
@@ -63,6 +101,101 @@ func TestSourceScreenV2ProjectsReviewWithoutHostRepairAuthority(t *testing.T) {
 			}
 			if c.SystemOne.Model.Calibration != "unqualified" || !strings.Contains(c.SystemOne.FloorEvidence, "declared-only") {
 				t.Fatal("projection lost provenance")
+			}
+		})
+	}
+}
+
+func TestBinaryDriftInactiveDispositionResolvesOnlyItsExactSingleFindingSource(t *testing.T) {
+	makeSource := func(extra bool) maat.Decision {
+		journal := &maat.FileDecisionJournal{Path: filepath.Join(t.TempDir(), "casebook.jsonl")}
+		return casebookFixtureBinaryDriftSource(t, journal, extra)
+	}
+	decisionFor := func(source maat.Decision) maat.Decision {
+		decision, err := maat.BuildBinaryDriftInactiveDisposition("fixture owner", maat.BinaryDriftInactiveDisposition{
+			OriginEvidence: source.Evidence, Host: "fixture-host",
+			ObservedFromUTC:    time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC),
+			ObservedThroughUTC: time.Date(2026, 10, 31, 12, 0, 1, 0, time.UTC),
+			ObservationSHA256:  strings.Repeat("b", 64),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return decision
+	}
+
+	source := makeSource(false)
+	view := Build([]maat.Decision{source, decisionFor(source)})
+	resolved, ok := casebookCaseByEvidence(view.Cases, source.Evidence)
+	if !ok || len(view.Cases) != 1 || resolved.Status != StatusResolved || resolved.NextAction != nil || resolved.VerifiedRepairEvidence != "" || resolved.BinaryDriftInactiveDisposition == nil {
+		t.Fatalf("exact inactive disposition projection = %+v", view.Cases)
+	}
+
+	collision := makeSource(false)
+	duplicate := collision
+	duplicate.Kind, duplicate.SystemOne = "reservation", nil
+	for _, projected := range []struct {
+		name string
+		view View
+	}{
+		{"memory", Build([]maat.Decision{collision, duplicate, decisionFor(collision)})},
+		{"page", BuildPage([]maat.Decision{collision}, []maat.Decision{duplicate, decisionFor(collision)}, nil)},
+	} {
+		open, ok := casebookCaseByEvidence(projected.view.Cases, collision.Evidence)
+		if !ok || open.Status != StatusOpen || open.BinaryDriftInactiveDisposition != nil {
+			t.Fatalf("%s projection ignored a different-kind exact-evidence collision: %+v", projected.name, projected.view.Cases)
+		}
+	}
+
+	mixed := makeSource(true)
+	mixedView := Build([]maat.Decision{mixed, decisionFor(mixed)})
+	open, ok := casebookCaseByEvidence(mixedView.Cases, mixed.Evidence)
+	if !ok || open.Status != StatusOpen || open.VerifiedRepairEvidence != "" {
+		t.Fatalf("mixed screen was incorrectly discharged: %+v", open)
+	}
+}
+
+func TestRejectedInactiveDispositionRetainsPriorRepairEvidence(t *testing.T) {
+	makeSource := func() maat.Decision {
+		journal := &maat.FileDecisionJournal{Path: filepath.Join(t.TempDir(), "casebook.jsonl")}
+		return casebookFixtureBinaryDriftSource(t, journal, false)
+	}
+	for _, pending := range []bool{false, true} {
+		name, kind, determination := "verified-outcome", "diagnostic verified repair", "resolved"
+		if pending {
+			name, kind, determination = "pending-attempt", "diagnostic repair attempt", "started"
+		}
+		t.Run(name, func(t *testing.T) {
+			source := makeSource()
+			rejected, err := maat.BuildBinaryDriftInactiveDisposition("fixture owner", maat.BinaryDriftInactiveDisposition{
+				OriginEvidence: source.Evidence, Host: "different-host",
+				ObservedFromUTC:    time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC),
+				ObservedThroughUTC: time.Date(2026, 10, 31, 12, 0, 1, 0, time.UTC),
+				ObservationSHA256:  strings.Repeat("b", 64),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			repair := maat.Decision{Time: "2026-10-31T12:00:02Z", Host: "fixture-host", Kind: kind,
+				Requester: "fixture", Resource: "binary-drift", Determination: determination, Why: "retained fixture",
+				Evidence: "repair:" + name, OriginEvidence: source.Evidence}
+			for _, project := range []struct {
+				name string
+				view View
+			}{
+				{"memory", Build([]maat.Decision{source, rejected, repair})},
+				{"page", BuildPage([]maat.Decision{source}, []maat.Decision{rejected, repair}, nil)},
+			} {
+				item, ok := casebookCaseByEvidence(project.view.Cases, source.Evidence)
+				if !ok {
+					t.Fatalf("%s projection lost source: %+v", project.name, project.view.Cases)
+				}
+				if pending && item.PendingRepairAttemptEvidence != repair.Evidence {
+					t.Fatalf("%s projection lost pending attempt: %+v", project.name, item)
+				}
+				if !pending && item.RepairOutcomeEvidence != repair.Evidence {
+					t.Fatalf("%s projection lost valid outcome: %+v", project.name, item)
+				}
 			}
 		})
 	}

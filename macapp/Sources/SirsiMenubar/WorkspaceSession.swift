@@ -7,6 +7,9 @@ final class PantheonWorkspaceSession: ObservableObject {
     static let selectionKey = "pantheon.workspace"
     private let defaults: UserDefaults
     private let stacks: [PantheonWorkspace: Nav]
+    // Only Ma'at's root System One pane retains a viewport; details and the
+    // separate recovery pane do not share this owner.
+    private var maatPrimaryRootScrollOffset: CGFloat = 0
     private var observations: [AnyCancellable] = []
     private let apolloRootDraft = ApolloPlannerDraft()
     @Published private(set) var section: PantheonWorkspace
@@ -31,6 +34,17 @@ final class PantheonWorkspaceSession: ObservableObject {
 
     var navigation: Nav { navigation(for: section) }
     func navigation(for workspace: PantheonWorkspace) -> Nav { stacks[workspace]! }
+
+    func maatPrimaryRootScrollPosition(for navigation: Nav) -> Binding<CGFloat>? {
+        guard section == .maat, navigation === stacks[.maat], navigation.atRoot else { return nil }
+        return Binding(
+            get: { self.maatPrimaryRootScrollOffset },
+            set: { value in
+                guard value.isFinite else { return }
+                self.maatPrimaryRootScrollOffset = max(0, value)
+            }
+        )
+    }
 
     func select(_ workspace: PantheonWorkspace) {
         guard section != workspace else { return }

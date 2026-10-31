@@ -240,7 +240,9 @@ struct PantheonDesktopView: View {
         case .command: PantheonControlCenterView(engine: engine)
         case .apollo: session.apolloPlanner(engine: engine)
         case .mercury: MercuryWorkspaceView(engine: engine)
-        case .maat: MaatWorkspaceView(engine: engine)
+        case .maat:
+            MaatWorkspaceView(engine: engine,
+                              primaryRootScrollPosition: session.maatPrimaryRootScrollPosition(for: nav))
         case .ra: RaFabricView(engine: engine)
         case .activity: ActivityView(engine: engine)
         case .stackLab: StackLabView(engine: engine)

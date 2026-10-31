@@ -3,6 +3,62 @@ import XCTest
 
 final class MaatOperationStateTests: XCTestCase {
     @MainActor
+    func testInactiveDispositionProgressTracksSelectedOperationAcrossRemount() {
+        let entry = caseEntry(id: "binary-drift-case", kind: "system one screen", evidence: "screen:binary-drift",
+            resource: "binary-drift", actionID: "binary-drift", actionEvidence: "screen:binary-drift",
+            why: "fixture", determination: "block")
+        let key = MaatOperationKey(case: entry)
+        let store = MaatCaseOperationStore()
+        XCTAssertTrue(store.begin(key, intent: .inactiveDisposition))
+        XCTAssertEqual(store.record(for: key)?.progress?.title, "Confirming the exact case…")
+        XCTAssertFalse(store.record(for: key)?.progress?.detail.contains("two minutes") == true)
+        store.markRunning(key)
+
+        // The operation record belongs to the shared store, so a replacement
+        // detail view reads the same operation-specific progress copy.
+        let remountedRecord = store.record(for: key)
+        XCTAssertEqual(remountedRecord?.intent, .inactiveDisposition)
+        XCTAssertEqual(remountedRecord?.progress?.title, "Rechecking the binary finding…")
+        XCTAssertTrue(remountedRecord?.progress?.detail.contains("No updater is run") == true)
+        XCTAssertFalse(remountedRecord?.progress?.detail.contains("two minutes") == true)
+
+        XCTAssertNil(MaatOperationRecord(phase: .running, receipt: nil, guidance: nil).progress)
+        let updater = MaatOperationRecord(phase: .running, receipt: nil, guidance: nil, intent: .binaryDriftUpdater)
+        XCTAssertEqual(updater.progress?.title, "Applying the reviewed updater…")
+        XCTAssertTrue(updater.progress?.detail.contains("two minutes") == true)
+    }
+
+    @MainActor
+    func testConfirmedUpdaterSelectionReplacesRefusedInactiveIntentAfterFreshReview() {
+        let entry = caseEntry(id: "binary-drift-case", kind: "system one screen", evidence: "screen:binary-drift",
+            resource: "binary-drift", actionID: "binary-drift", actionEvidence: "screen:binary-drift",
+            why: "fixture", determination: "block")
+        let key = MaatOperationKey(case: entry)
+        let store = MaatCaseOperationStore()
+
+        XCTAssertTrue(store.begin(key, intent: .inactiveDisposition))
+        store.rejectPreflight(key, guidance: "Exact history refused this inactive disposition.")
+        let refusedGeneration = store.record(for: key)!.generation
+        XCTAssertEqual(store.record(for: key)?.intent, .inactiveDisposition)
+
+        store.authorizeReviewedRetry(key, reviewedGeneration: refusedGeneration)
+        XCTAssertEqual(store.record(for: key)?.phase, .retryReady)
+        XCTAssertEqual(store.record(for: key)?.intent, .inactiveDisposition)
+
+        let selection = MaatConfirmedResolutionSelection(
+            inactiveDisposition: false,
+            actionKind: "maat_repair",
+            actionID: "binary-drift"
+        )
+        XCTAssertEqual(selection, .binaryDriftUpdater)
+        XCTAssertTrue(store.begin(key, intent: selection.operationIntent))
+        XCTAssertEqual(store.record(for: key)?.intent, .binaryDriftUpdater)
+        store.markRunning(key)
+        XCTAssertEqual(store.record(for: key)?.progress?.title, "Applying the reviewed updater…")
+        XCTAssertTrue(store.record(for: key)?.progress?.detail.contains("two minutes") == true)
+    }
+
+    @MainActor
     func testUpdaterHistoryLinksSurviveLoaderSearchAndExactActionPreflight() async throws {
         for mode in ["binary-only", "other-finding", "failed-floor", "failed", "pending"] {
             let resolved = mode == "binary-only"

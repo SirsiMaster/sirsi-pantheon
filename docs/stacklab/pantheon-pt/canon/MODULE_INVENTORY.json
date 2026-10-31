@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "958db55b58ddbd6560ce5d0da8f0a6f56488f225",
-  "source_tree": "587f652d166b6156c3d9611771c9461696d8ae18",
+  "source_commit": "d037da1fb8ab38d989e6e00bddbb16772ee76b51",
+  "source_tree": "6e96e72ade37d0ebe3e2f9a972bb64f3a55db87f",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -62,11 +62,19 @@
         },
         {
           "path": "cmd/sirsi/apollo.go",
-          "sha256": "6260b89883a9b6658c0e79d5c174522fdb189d91b57d355d968288f14c15f189"
+          "sha256": "467db254b410ad4ddb99e56dc62b40912dbe00d5cfbc39c741b1293c860dc4f5"
+        },
+        {
+          "path": "cmd/sirsi/apollo_app.go",
+          "sha256": "f229ba5284bc81a8382b7f3883fded5b998980351205e8e21a29ccc6e17d8b5d"
         },
         {
           "path": "cmd/sirsi/apollo_native.go",
-          "sha256": "2b2177219f118cd4e8a221715a3db60ac658d8d3db250a6216db8ade3ac093a5"
+          "sha256": "7f5cf328f889671cb070617fb28ef0035a8784a1c1174df3879a6606d644050d"
+        },
+        {
+          "path": "cmd/sirsi/apollo_native_bundle.go",
+          "sha256": "569d76ab452b66b48e790c2282b4d2bf0663ce93eb2b73cb35b6776fd7686844"
         },
         {
           "path": "cmd/sirsi/ask.go",
@@ -81,6 +89,10 @@
           "sha256": "b646ea5dfa3c9fedb862bf6e48a95ca950d109fb5db6fadde9467f346c95e578"
         },
         {
+          "path": "cmd/sirsi/billingevidence.go",
+          "sha256": "0cb57884583a47743fee00abacc8223b3980dd4f50e6be56e7fb35db2f993333"
+        },
+        {
           "path": "cmd/sirsi/braincmd.go",
           "sha256": "7a51190c9f39efb45b95f742f2f8377875a128ab5a91706e9413776b1c6781cf"
         },
@@ -93,8 +105,12 @@
           "sha256": "3f86e56897adce4324f1bd1e5b8870773bacbb7db79c70f8e572e17f49af37e5"
         },
         {
+          "path": "cmd/sirsi/ccdobserve.go",
+          "sha256": "d40c34274a0f06bb69c8dbecd070b2c11cf3152eb37eb7b62690e925689db818"
+        },
+        {
           "path": "cmd/sirsi/ccdreap.go",
-          "sha256": "d9a7afda478d4704ef466b2588fb98c5a7aa3da1cdfcb5d1d2b24ab37de964d3"
+          "sha256": "4a49f4d6f1dee18695f65db275d9eba3fa9a025855004f13e5d76cf28910903f"
         },
         {
           "path": "cmd/sirsi/censuscmd.go",
@@ -122,7 +138,7 @@
         },
         {
           "path": "cmd/sirsi/dashboard.go",
-          "sha256": "68cd866c4f4b6efa9295b81dca7f6868abe3a3fb7e12b7754a762547a63eee52"
+          "sha256": "c7760af4a7bfcd492120cddf6ff5b18bbd549d4799202140091fc9cd02d95768"
         },
         {
           "path": "cmd/sirsi/dashboard_stats.go",
@@ -310,7 +326,11 @@
         },
         {
           "path": "cmd/sirsi/maatknownfail.go",
-          "sha256": "ef2640b0070a8d7f6339868c4d8639fae05c4f5634c7e47e88dc830ecf8d10dc"
+          "sha256": "a9c882be0e017bf1102dac9fbaf448236f7de425edb2923e93485730df0f2347"
+        },
+        {
+          "path": "cmd/sirsi/maatlifecycle.go",
+          "sha256": "d905b11d46aa84f5c489e7c91a769a5921a8cae2db711edc097366525a3c90b0"
         },
         {
           "path": "cmd/sirsi/maatmemory.go",
@@ -346,7 +366,11 @@
         },
         {
           "path": "cmd/sirsi/maatrepair_binary_drift.go",
-          "sha256": "48e66a9a19f8ffd1dc50acfd564849e92c64d1eeac1795e868df230467aaef73"
+          "sha256": "d82aa2421ec9a66ebef4777f5481f12479a9e5c88c4a2cdfb3ed7c9d200945bb"
+        },
+        {
+          "path": "cmd/sirsi/maatrepair_binary_drift_inactive.go",
+          "sha256": "b164134828e5c9c9af582477783d739f124e518ab065a4509eec9d48dcb4e466"
         },
         {
           "path": "cmd/sirsi/maatrepair_liveness.go",
@@ -358,7 +382,7 @@
         },
         {
           "path": "cmd/sirsi/maatschedule.go",
-          "sha256": "e380c607ace05dd64145710fda8a623746010010167faa651ba6be775a2c8cc3"
+          "sha256": "eb1c7cd03faf0636ff9e5da09bd67b3365fcee922c696515d7f1726fe9bee1fa"
         },
         {
           "path": "cmd/sirsi/maatscreen.go",
@@ -366,7 +390,7 @@
         },
         {
           "path": "cmd/sirsi/maatsubmit.go",
-          "sha256": "28eb0dbb8b4d38f6ef776da996544d73502fc4f3d3aeb8c96639479a868ade6b"
+          "sha256": "0ebbd037a9b66f9856bea43a41a3834b4bf8fb1d3400113de03dd86c09a47331"
         },
         {
           "path": "cmd/sirsi/maattriage.go",
@@ -422,7 +446,7 @@
         },
         {
           "path": "cmd/sirsi/packageinventorycmd.go",
-          "sha256": "ee32e464f5f76d18ffac639e3fcd82bd3d71b8e0403d2de0cf160f6cb9263022"
+          "sha256": "7facdb47f6d46c7c0cdbb03c6379a24d0089b11eef1d388b9d48353641ceab98"
         },
         {
           "path": "cmd/sirsi/permissions.go",
@@ -498,7 +522,7 @@
         },
         {
           "path": "cmd/sirsi/routerfabriccmd.go",
-          "sha256": "55e613bcf67c8d3cea0628debe0936e820f181e2e26c00ca4c720ec54a0cd944"
+          "sha256": "1984f6eeb385ce0ed4fb4653dc76006bb6581ad098ea7ad4c197023cb2a12b75"
         },
         {
           "path": "cmd/sirsi/routerfleetcmd.go",
@@ -626,7 +650,7 @@
         },
         {
           "path": "cmd/sirsi/stacklabcmd.go",
-          "sha256": "d27eeaebf14d0770c97b20684a24bdb49e0b595cb5f72634c53c39edf55123b4"
+          "sha256": "b9b463f8ea97685a5204593efe19f93d2cdbfb9cf77cc14f649a59e005a65529"
         },
         {
           "path": "cmd/sirsi/stacklablocal.go",
@@ -670,7 +694,7 @@
         },
         {
           "path": "cmd/sirsi/threadcmd.go",
-          "sha256": "1030800b8c61ca0d473224d0015dd2867f9691e1bc98b2590d71a4fae1ae172e"
+          "sha256": "2c16d317c9e3c8d91c556a82b946242f1e9482b0d3a7f251ae666b35d15eb616"
         },
         {
           "path": "cmd/sirsi/threadcmd_unix.go",
@@ -686,7 +710,7 @@
         },
         {
           "path": "cmd/sirsi/threadensure.go",
-          "sha256": "db1b9519b48d41f831ab741b1ea547898b472c68142737644bc38bac3b522a90"
+          "sha256": "bb24feeb4c93fbcea0d9f9e928116f6d498041783fd3f6aa2e9c9fef4d51da7d"
         },
         {
           "path": "cmd/sirsi/threadscout.go",
@@ -763,12 +787,20 @@
           "sha256": "f042aa401bde92c9cd51084650e1a8111611706e4a435a60e3f938490f4543f6"
         },
         {
+          "path": "cmd/sirsi/apollo_app_test.go",
+          "sha256": "6fd67eada56532f29839b7ca3c182a9b2b7a9f6e643b490a1f1e33ac76a6054e"
+        },
+        {
           "path": "cmd/sirsi/apollo_cluster_test.go",
           "sha256": "0f204d2c5299affc960567696727976e272c66601dd5eead835b034ddcf2f3fc"
         },
         {
+          "path": "cmd/sirsi/apollo_native_bundle_test.go",
+          "sha256": "ed95d79f05673c7fddb48348896b06f1e71cbc5de7727b1604754bfebdc2c0c7"
+        },
+        {
           "path": "cmd/sirsi/apollo_native_test.go",
-          "sha256": "9860655ad24d6f1f4614afd6eeba8f38dd860154a74251454f3f12cb2e127394"
+          "sha256": "a022271fc653e26c3997e0f1321030490c7190ea753976776a589a6ef03ae25e"
         },
         {
           "path": "cmd/sirsi/ask_requirements_test.go",
@@ -783,8 +815,16 @@
           "sha256": "0461e0fbc6619f2f972604ead3af03a630df4f218c4db0178aba283b87b7f24f"
         },
         {
+          "path": "cmd/sirsi/billingevidence_test.go",
+          "sha256": "b35d9c188fa71d0aa24fbdec3097e0e3b683e54f4b20fa67d02aff2190933363"
+        },
+        {
           "path": "cmd/sirsi/brainroute_io7_test.go",
           "sha256": "d5abf818d078387e1d8326e1ba327d5ba7ce767bbc0d994295a8b5f6c3e94c51"
+        },
+        {
+          "path": "cmd/sirsi/ccdobserve_test.go",
+          "sha256": "4a4e0908c0056a887b578ef6237ffe1063af21c45321afd3caa7a105b40ce574"
         },
         {
           "path": "cmd/sirsi/ccdreap_dedupe_test.go",
@@ -836,7 +876,7 @@
         },
         {
           "path": "cmd/sirsi/fabric_host_test.go",
-          "sha256": "ef9855c19a3ee6142888aae72e5afae7c3e5e9e674a613cbbfdf68624fc04f40"
+          "sha256": "7a8b65be1344385270348a84a7fc15e4a1274d0c207fc4e9dffa662e8b9e65f7"
         },
         {
           "path": "cmd/sirsi/fleetcheck_selftest_test.go",
@@ -908,7 +948,7 @@
         },
         {
           "path": "cmd/sirsi/integration_test.go",
-          "sha256": "7ca7d03dd6c58b954c118136fc86b3044d6b404ed805c147d8ed337bbfa6c40b"
+          "sha256": "4dca2032f90c1037e662c410f2fe2ad45ba985b77aae57d1cb267388d4a7d139"
         },
         {
           "path": "cmd/sirsi/launchdhorus_test.go",
@@ -943,6 +983,10 @@
           "sha256": "105720a155cbb35e8ffd8d03e8cd3cc1005ee3a44f2cf94eed161921929e8ea7"
         },
         {
+          "path": "cmd/sirsi/maat_exactread_test.go",
+          "sha256": "00b90ae987dbf5a93c939c7e75d1f5997f6399d00f3d0f2b08e52b4cf4271f9d"
+        },
+        {
           "path": "cmd/sirsi/maat_progress_test.go",
           "sha256": "5db1e2bcb3c896f36ced31488e41dab6b5985e18813f4392be9490b39612fd7b"
         },
@@ -952,7 +996,7 @@
         },
         {
           "path": "cmd/sirsi/maat_test_helpers_test.go",
-          "sha256": "9bd0f1bc0a5d868f00294b245cfe18ed03db4e771a1874fc143c22eb792680fd"
+          "sha256": "a9243761ed54fe518e70caeaa688c4fc9fc3e12de0f6f48457be7ce21671917f"
         },
         {
           "path": "cmd/sirsi/maat_visibility_test.go",
@@ -991,6 +1035,14 @@
           "sha256": "328682301e6255a1b3b43688fbf7e6961758f5c47026a34215ad44adcb80ef43"
         },
         {
+          "path": "cmd/sirsi/maatlifecycle_acceptance_test.go",
+          "sha256": "4273667d310b7a89825dddb41d039b4a7444a8078e75e201f372e21451c92537"
+        },
+        {
+          "path": "cmd/sirsi/maatlifecycle_test.go",
+          "sha256": "b581361d478da8b77adf6e979ddc7db19ae1912cb36ac60f499e9176371ff89a"
+        },
+        {
           "path": "cmd/sirsi/maatmemory_local_test.go",
           "sha256": "d0cef32281c496662852b308203c186ac611972bc0d973ba15ebd4ecfef5ade8"
         },
@@ -1011,8 +1063,12 @@
           "sha256": "fafbccdfc5712e2b076db4f8cd96bcd6a7b58c1208f57417644a40d8a092b747"
         },
         {
+          "path": "cmd/sirsi/maatrepair_binary_drift_inactive_test.go",
+          "sha256": "80aa01415c1f22f13b2787b9f40cc78fbd23fcb2309d5bb41741408a1fc4443c"
+        },
+        {
           "path": "cmd/sirsi/maatrepair_binary_drift_test.go",
-          "sha256": "5dcae45ef09615c442e232a53f742378034383d9e3e1985580d5d4b421e395f0"
+          "sha256": "603e7e3254b7795599469ecb1707ed2fc54fb6cfc2b8577f266432df9864ef66"
         },
         {
           "path": "cmd/sirsi/maatrepair_liveness_test.go",
@@ -1044,7 +1100,7 @@
         },
         {
           "path": "cmd/sirsi/maatsubmit_test.go",
-          "sha256": "faad6b8cb4a07743536c8ccf2db375c178f23f6b1864a0abca264da363590e52"
+          "sha256": "8c68592237f64980b595d99416e30dabe33cc0b64c250e4f15c68870fb030dcd"
         },
         {
           "path": "cmd/sirsi/maattriage_memory_test.go",
@@ -1085,6 +1141,14 @@
         {
           "path": "cmd/sirsi/owned_updater_unix_test.go",
           "sha256": "a7eea24b48de21ded83eca9bddbdb6e435523680726c43967ab6a11d14b62556"
+        },
+        {
+          "path": "cmd/sirsi/provider_env_test.go",
+          "sha256": "accfcb910cca6c8d34a100940cee65ca9514c1414c88c017a6df3c1365a9a5b0"
+        },
+        {
+          "path": "cmd/sirsi/provider_isolation_test.go",
+          "sha256": "ffbf7670fcb7f874dfd3ee6460224c0934028f4965acd5a0095c565a04c79fdd"
         },
         {
           "path": "cmd/sirsi/recovery_test.go",
@@ -1212,7 +1276,7 @@
         },
         {
           "path": "cmd/sirsi/stacklabcmd_test.go",
-          "sha256": "bf2ba3f80498fa118f512e77fd648b6514d0498ada7645a17aff2a7ef5f06e34"
+          "sha256": "e1be004048eb6574c949cb8e14a780f593d7b951aa2500993c15fa22343196d3"
         },
         {
           "path": "cmd/sirsi/stacklablocal_test.go",
@@ -1252,7 +1316,7 @@
         },
         {
           "path": "cmd/sirsi/threadensure_test.go",
-          "sha256": "1cb3d7eb9539927f94e846d73f1de77b8224a7c6e9c67d46c77e3b90f27ac751"
+          "sha256": "fc64680bb3f532fc53f93f537f7081b00cc632876f4c4d8c24da5d47480d626f"
         },
         {
           "path": "cmd/sirsi/threadglyph_test.go",
@@ -1261,6 +1325,10 @@
         {
           "path": "cmd/sirsi/threadlist_observer_test.go",
           "sha256": "f9fe22ef381508d3843797288c8d248c21e1f8f158bd778fc385a0f6a3df517a"
+        },
+        {
+          "path": "cmd/sirsi/threadregister_alias_test.go",
+          "sha256": "f87223229a858ffce510a00a5a295a2e5746cd30249d6fae834ce604b3b5d404"
         },
         {
           "path": "cmd/sirsi/threadregister_portfolio_test.go",
@@ -1299,6 +1367,7 @@
         "internal/agentguard",
         "internal/apollo",
         "internal/autoheal",
+        "internal/billingevidence",
         "internal/brain",
         "internal/brand",
         "internal/caskrelease",
@@ -1326,6 +1395,7 @@
         "internal/maat/decision",
         "internal/maat/knowledge",
         "internal/maat/knownfail",
+        "internal/maat/lifecycleevidence",
         "internal/maat/localreceipt",
         "internal/maat/schedule",
         "internal/machineid",
@@ -1340,6 +1410,7 @@
         "internal/oplog",
         "internal/osiris",
         "internal/output",
+        "internal/packageinventory",
         "internal/packageinventorycmd",
         "internal/platform",
         "internal/prd",
@@ -1553,13 +1624,13 @@
       "source": [
         {
           "path": "cmd/sirsi-package-inventory/main.go",
-          "sha256": "fc22c62d729230fddeda503acceaedfcc3ed7a8eb5ece894ae4a631b7a240d5c"
+          "sha256": "0dc2d47e43b9f68e802d0ea2f0d0bfe38cb48da63a77eb3f1d52ddf54c8d42c7"
         }
       ],
       "tests": [
         {
           "path": "cmd/sirsi-package-inventory/main_test.go",
-          "sha256": "6e8f7b7f1d2baefc2946987072a6d422b792133a6dc4e3e50063b5866bdeae29"
+          "sha256": "9bd9b8b8d741aef272f4f22788a2d59249fe7212fec473c014820534d65c86c2"
         }
       ],
       "direct_local_imports": [
@@ -1624,11 +1695,15 @@
       "source": [
         {
           "path": "internal/apollo/catalog.go",
-          "sha256": "124b8dfe05090b392d02599c7eef4e55dd7afeaf02e42c4495ff698aeda40fa7"
+          "sha256": "fd9edbfd157a2165def83fe1ed5b7628ae06207c25b1fe427291235464888a80"
         },
         {
           "path": "internal/apollo/cluster.go",
           "sha256": "d02554738fdd609d6d176904f807977b49088e234d2043082e51fe2e0b966d83"
+        },
+        {
+          "path": "internal/apollo/installed_app.go",
+          "sha256": "5a88432efaa9db2050b38ab7dc9496a9c65025a2ec9b2dd0e3d399b8823d4364"
         },
         {
           "path": "internal/apollo/maatauthority.go",
@@ -1655,6 +1730,10 @@
         {
           "path": "internal/apollo/cluster_test.go",
           "sha256": "a1130438d41046f767401d471e734dd4b15eb04e04bc32713258cc9656d13264"
+        },
+        {
+          "path": "internal/apollo/installed_app_test.go",
+          "sha256": "67afd62d3ea0e418c4153d5671fe2f229b78462f5c99e3b1ab54800f1a090249"
         },
         {
           "path": "internal/apollo/maatauthority_test.go",
@@ -1703,6 +1782,26 @@
         "internal/router",
         "internal/stele"
       ],
+      "release_state": "source-inventory-only; qualification is recorded separately",
+      "upgrade_boundary": "Replace this package/target through normal source review and rebuild the unified payload; callers and all applicable contracts must remain compatible."
+    },
+    {
+      "id": "internal/billingevidence",
+      "kind": "go-package",
+      "owner": "Pantheon source maintainer",
+      "source": [
+        {
+          "path": "internal/billingevidence/report.go",
+          "sha256": "8a4ac538809e83b86c2c43f8b0fe11ae6efdc2245cdfa1979433435f341eb319"
+        }
+      ],
+      "tests": [
+        {
+          "path": "internal/billingevidence/report_test.go",
+          "sha256": "8ec22a062b4a208e624f7849a82c0381ebb539a45d6e7b85a72fedc7110f86e1"
+        }
+      ],
+      "direct_local_imports": [],
       "release_state": "source-inventory-only; qualification is recorded separately",
       "upgrade_boundary": "Replace this package/target through normal source review and rebuild the unified payload; callers and all applicable contracts must remain compatible."
     },
@@ -1960,6 +2059,14 @@
       "kind": "go-package",
       "owner": "Pantheon source maintainer",
       "source": [
+        {
+          "path": "internal/completionproof/entryfixture/agent_completion_gate.py",
+          "sha256": "a4953e61937d8bf03dfe9fbbcd6a0decb3fa44ad56fd4550fab0b0444cbf8ab9"
+        },
+        {
+          "path": "internal/completionproof/entryfixture/capture_and_forward.py",
+          "sha256": "765a9092bc928efcfec1d5fc5da4b1080f0a1c571a05a6f5633b55f21a1dfecd"
+        },
         {
           "path": "internal/completionproof/entryfixture/fixture.go",
           "sha256": "c97e38e0906d7be30f5002601ecc678df84f96401f16d123dd08890e93478ab0"
@@ -2327,6 +2434,506 @@
         {
           "path": "internal/desktoprecovery/gateway.go",
           "sha256": "bf278bbc04b372ba28e1f92e43a0a900eb85a0ceda92face204cc10fd7050bea"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/AUTHORS",
+          "sha256": "b7c868b6b25784a9d1fdc45bebc8899183b957304306c7df809fbcbdcc59b80b"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/LICENSE.txt",
+          "sha256": "3ccd2242d7f5b6c5ae831a486f63cce1f18d8cd11c511f6a7a7251673763b2d1"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/error-handler.js",
+          "sha256": "ab2fc1aa8dc6e8350829071ffc6b1da0417e217fce42d94f92028cc472d811a2"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/alt.svg",
+          "sha256": "08d2be2a1a200809dac3ce461fc33419a19680094eaf342b159c6d34dc1873af"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/clipboard.svg",
+          "sha256": "23310928c7a7dbd0c97a0dff4e086271cc71988b0c94f5752eb8ca6b15e5702f"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/connect.svg",
+          "sha256": "8eb54058c2fa5199801969ad48b33fe0f638521aeeef21ee13d04c2b0713826a"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/ctrl.svg",
+          "sha256": "025fd57dfac68c3a7319547b3fefc2ecddf95372f0ff1ae7513e1daf54ea8f39"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/ctrlaltdel.svg",
+          "sha256": "d9c86992a2b675ce0cf6fe9866ff3749685af9c6e10abbbe2d648ebc9197697a"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/disconnect.svg",
+          "sha256": "c45ea31510f9d4fafe659e111a98cbef357f5734bfd206ff93020a2ee84073cd"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/drag.svg",
+          "sha256": "d2d93f1708af4101f265202901dda2a97d0b0b6b1da953b613ddf333a5e6444f"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/error.svg",
+          "sha256": "02f6ea97617acea7a5b5833e247d531e7d7536de35d9f175143e36d7d3db384e"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/esc.svg",
+          "sha256": "dec7fae5b8c8b896477fc883665afea8b90a127d5bb4726ad4c63f379585bf48"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/expander.svg",
+          "sha256": "0bb019cc0c2057cdbf028300336327fe6c020d538a9e0d57bd524c414f359953"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/fullscreen.svg",
+          "sha256": "95b819517f4327adae416327fac7b6df99399bf59a7077199733136433201f8c"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/handle.svg",
+          "sha256": "d00aefaa3835d996764b7d8bf5cd607817afd12276a1eb60fad3be64a7971cd7"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/handle_bg.svg",
+          "sha256": "3182137766268f9f3bc09dfc54641b082c2d729d1b53b18890fdcbcb3dd3d852"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/Makefile",
+          "sha256": "a4b52d6e5bbd98ba3cb66130282f607f9aa6ee1c023c83f4ee69efdc59d32139"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc-icon-sm.svg",
+          "sha256": "f2731d6be43d423441509bed8e249e468540eb560d0674b86f4cb702ce6610d2"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc-icon.svg",
+          "sha256": "c20f15d42937f51316e391c62a31747b629283f2b746e0181dea488c569d15d2"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc-ios-120.png",
+          "sha256": "68af1b5fe14edfa2acfc2b9f12347c07a21b790da8aed0885f91852adb4dda2d"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc-ios-152.png",
+          "sha256": "d12dc6600f9495eaa81b1419065e520f08dc035b3a2efabcc8ec9d15620fe74a"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc-ios-167.png",
+          "sha256": "69117fbed10a1f7ce751b51576db96d09b9d62c9c0e3caae7bc2c93b6fdc1af0"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc-ios-180.png",
+          "sha256": "4053691ee642373acc680c7b0b05bf76d58de02e3a8aff936b641f02c6cb347e"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc-ios-40.png",
+          "sha256": "60062b1c13c7986cd279cef087006affb929b05ed6785089791726c6f89a13bd"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc-ios-58.png",
+          "sha256": "3ee3c3c7415277988ad71956baa01c4a54a1ac686afe3917f21f688b475fe065"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc-ios-60.png",
+          "sha256": "0d49f935880a201b0773bb0ee45b44147931de3ba177d3311b9ba7c5548eea34"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc-ios-80.png",
+          "sha256": "f01572257f754834bec34ea8190f9448369220cf2e63d9c40328fc2ac777d7f7"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc-ios-87.png",
+          "sha256": "c4377dc0aedeb8e4977f75db193047ad4d0efa32ee90aae32f79fc713ad5fcf1"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc-ios-icon.svg",
+          "sha256": "b119428f165680cd574a7576cb8addcadcb92a9387ea406afa3f4d4b8d152050"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/icons/novnc.ico",
+          "sha256": "4c18969eab94fad8bd57b871774a876d407e36b9fbd09f8a2626cfc68e5e8069"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/info.svg",
+          "sha256": "8858addc5e09635b12d08e8fb0a392a9bd95d145f1ae9d215c2d17d1e9942b4c"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/keyboard.svg",
+          "sha256": "972aee889a350a32ba52e4fb6a02365bf0a621f7d5928aadae400ad20b755a72"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/power.svg",
+          "sha256": "a8dc95319f1e7dc8113d32d4ef91b5999ba6b951b2f1671bd659df637d7f1e69"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/settings.svg",
+          "sha256": "1bf8205b88bec57d68431d3e7feedd4614818128a6af35d0110c72bf44ed793d"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/tab.svg",
+          "sha256": "cc094522ff219426069bab9504efad4fb49fd28365e5fac32d996ac05d79ff3f"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/toggleextrakeys.svg",
+          "sha256": "ad3e3791d9211fe908fffdce34978c2e63543db93a68ae6407941be2fe6a17fd"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/warning.svg",
+          "sha256": "8cec002c2eea0ea5967e9f4b3f5dc5a6859fbda6d5a083da39dd714ca451a6a8"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/images/windows.svg",
+          "sha256": "df2714b363da9a701b24157719ef0635cc8327f2f35bd03dcdc3345164cb5d9e"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/README",
+          "sha256": "57942b80a520c531c853c780cb4a22594c37e5eb132725e93959343e287815c0"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/cs.json",
+          "sha256": "1fe53ea59c9e45c6fa491ff2cd19fc9972495fa5a85b316056c9c223abd4f06b"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/de.json",
+          "sha256": "9e9fb98565d05a20083ca9af1228035c348fc215942a49985b66e2fa23beb976"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/el.json",
+          "sha256": "978753b7c4733b8771f74be763f6111a18ccfa2ab7172bd7eef18d2165f5301a"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/es.json",
+          "sha256": "703a2d8e41889fc5aa7c4d697756c97f0a5a5b4023b2d127144d4ac84ac3d0dc"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/fr.json",
+          "sha256": "09d34528aea5d99ba03fcc834516c42aacac251c1632dfaa0aa8534ad9043f71"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/it.json",
+          "sha256": "a6484ef073dfcc62b2e94dfb884e31b9691842d6755175ef061d4743bea954bb"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/ja.json",
+          "sha256": "67dbbdc92c1a1c38f0810db1af6982f815165daf9ad476fdeabb9a15c93d8726"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/ko.json",
+          "sha256": "5051a8b449598cd88cc2f4cbf84e2397826b1b9bbda5e093f2c4b53b17c8584e"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/nl.json",
+          "sha256": "4bd1f8b58bc45a3149190da04b0ec4e1d9072ef02a7598d2118295f524e9239a"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/pl.json",
+          "sha256": "1edc33cab4a26d25afd481d7055372005f8d38c723ca303c149702dee57a9d0b"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/pt_BR.json",
+          "sha256": "cd131e981ed6c1ea7970a0d0792ee39b270870fb46434f8778b43641254298d8"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/ru.json",
+          "sha256": "549bf9599d37308d9a2d4181eead07b9968b5f8378f76f55a75c51cf3d83f9cc"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/sv.json",
+          "sha256": "9cf4f2ee0e008182812814c9487d837153d19538733cfe4fa3a88e74b5699aa2"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/tr.json",
+          "sha256": "fd696be5b7ef26a3d224a6ca8ec547aa5563d810ef44b07fa626c28a4ed1d5ea"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/zh_CN.json",
+          "sha256": "6987ea916db64f7ffb2903152b1e5a7afdb81b73e2f64a114c0487de97866b9d"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/locale/zh_TW.json",
+          "sha256": "23438420dcd339a4fe1b213966aa9c4af7db002890341dce92a2ff4a308bca91"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/localization.js",
+          "sha256": "cf74aeef3873903c0f0f952ae5d8d95d299875e757c0fbc65e6b324d254fdd59"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/sounds/CREDITS",
+          "sha256": "ba02a560dd53bd8cfb0f31ed7dea65ae75bcb64e05a643149ecda84b37646d24"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/sounds/bell.mp3",
+          "sha256": "c8fa1cee36d6e0c0a11d09ad836079178253ca7a6cbdc059cd5b99ba25d20dd1"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/sounds/bell.oga",
+          "sha256": "7bb1ae73f3db55d99ea1826f114ce161002ac71879ad4649d9e001bc4efb1bdc"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/styles/Orbitron700.ttf",
+          "sha256": "961f73310e1006c3a91482349466684d2f2b6b2395ad46769bfb2c2ab2535cdd"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/styles/Orbitron700.woff",
+          "sha256": "014dbca522dec17453fde78412d4f2295bb7293b24e1130b9a2f668c237aa943"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/styles/base.css",
+          "sha256": "2b6523b5abba4686c33e1efb0c1ba789b4fb8e6ba7084d638e2e45d83b94f3c5"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/styles/constants.css",
+          "sha256": "fa23ebba9bee8fa2aa970a1667b740ba3d6a452864a67ab28a6c36f750eece75"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/styles/input.css",
+          "sha256": "e0eada7369900beb54ecbfe5227d593655e94bade94629f97bcefac1ae8c321d"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/ui.js",
+          "sha256": "770176ac9adb1de0a1ee322c7d3149715fc1e4160d66ac0c3a6243deb664d9b4"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/app/webutil.js",
+          "sha256": "717a031caabde9ff9e3e937f0875367789a5f8916e24f22756f97c8bf6d19a3e"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/base64.js",
+          "sha256": "76d6b7ec73aed8cbc72b49b8b865bcb334acc59a6b0e96b19bc39c9e8e053ae3"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/crypto/aes.js",
+          "sha256": "00b9a69185f913b882270c4cc7a076b4dd3a083981edb91c1e55db22f8ffcef3"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/crypto/bigint.js",
+          "sha256": "e7880d27af8bf439579f6fc40d7b81fd379a9babb1d13c83999effd8c64823ab"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/crypto/crypto.js",
+          "sha256": "e6006697ce1d195c951ef1e986172d17174e533909df19e07be583ac75dd344b"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/crypto/des.js",
+          "sha256": "91d8c8ed596d2beda7da9dd68c9ae1d325c673822e3ccfc8a4091e121c99a316"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/crypto/dh.js",
+          "sha256": "9102454282ba646ee4a4ce34c5db5d2a9979179f9d4606737fc6bb7a669e5ebe"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/crypto/md5.js",
+          "sha256": "364c0f0d44d3f8fd608c18a0e1253e5a77e9b8e4c48e3c6503a0f45c9bb2ff8d"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/crypto/rsa.js",
+          "sha256": "83875db9e5d978ea0eb2a1e2af8afbb7dedfb0f18eca2bab75c2756285037476"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/decoders/copyrect.js",
+          "sha256": "da3b571e10984438ea49559738e11034b5d0c85154a68eac1a6bf9ef10e5aa02"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/decoders/h264.js",
+          "sha256": "96d47901c5e26dc02256b152aa642490d936bbcc395f59ffd580356118edff84"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/decoders/hextile.js",
+          "sha256": "63eb86247bea83119af75f3d145a4515a2411ff28a72492d2d7b925268d50163"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/decoders/jpeg.js",
+          "sha256": "0644c6a81007bdeddcf08e2ac0015f9d683a342da167f6f3dd0598956e16c5bf"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/decoders/raw.js",
+          "sha256": "bc7d4517213dc1df8626e8198eadf32b2c1946f75228b31387d3916963af0727"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/decoders/rre.js",
+          "sha256": "b3380dbc75310769ef24e956e1fa1f13d8217f8b1d7d6f5c9d08db9a336a4c0d"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/decoders/tight.js",
+          "sha256": "a7f01df99922be812ea21c5e46597b76379a5d8267f99ec8bea9a202bec34130"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/decoders/tightpng.js",
+          "sha256": "38bd2fd200f5c8e9b0905eca2389fb8e6ad2151de886e4fa9a9c59cc1c7696f0"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/decoders/zlib.js",
+          "sha256": "1d1c05cdca4840ff46082103ab35aa7696b41504bec91ebd74fae9e0e5f61380"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/decoders/zrle.js",
+          "sha256": "6853c115f97a1d4de39ca71ab8b519a05916bb8c173aa8112ce4881cbb612cbd"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/deflator.js",
+          "sha256": "ceb6763eb3fcc53f34d08534a8d1df9b63af3a95c58f8d96d238ef5ce639ad1f"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/display.js",
+          "sha256": "257694ea2ad5634fcf0528cdb91eb5a76b3e4b3820ec55c7fa691d89fe4fa277"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/encodings.js",
+          "sha256": "4975904fe1da6dc22b53ecb8462ec7c9a43e99db72dba4aab9f625c4177e355d"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/inflator.js",
+          "sha256": "b1955cbd1608619911b8dfd451fae07f38c5767098f6f47e4a2a1682c11feb65"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/input/domkeytable.js",
+          "sha256": "5eb985e1a412d1be6b606ba0d7e912fc0842d873d252bd7ec8a363670dfc800c"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/input/fixedkeys.js",
+          "sha256": "6bb21b0a2d5f5d7ad73e75b80ddc1d844ac770c4426b312d5740f2443455f0c0"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/input/gesturehandler.js",
+          "sha256": "c04b67fdae6ac061c7d51cb5ee8ca296ee9c7c80aa246cee5751e74eefe61758"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/input/keyboard.js",
+          "sha256": "46f82adef772b726ae3db144fb9c12b3d03374b7c803b8a5106e422a10ddcdba"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/input/keysym.js",
+          "sha256": "4ddf0e21f07328358974d91aa2d7f839ba2116688b28e43d3f6f4e2eae8c45cf"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/input/keysymdef.js",
+          "sha256": "76f338d45fb73b7decb7d8b4ef6e95edf7ce9583722c5220642a9be85fc2cc89"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/input/util.js",
+          "sha256": "2e156ea656404afcb6cc54dd85cbe5dd2dd0ba209ae9a6fb1b78ec5db17d01ce"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/input/vkeys.js",
+          "sha256": "9a1ce4393e1aa4ace5dcdcf7e032f4a1c03a9cb964b4e0e7b7fcffd3a982eb84"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/input/xtscancodes.js",
+          "sha256": "f0fc982627e1c02feaac1bd50d7fdd3bcbb05f0062b910d8002f47d1b08967a6"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/ra2.js",
+          "sha256": "4aeffb60af9c163365170e2af392acb6f0a7c21a0cb6827f85dd776d33277bee"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/rfb.js",
+          "sha256": "563a8c8469dfb55d1deee05262a311637d0e6fe8f65ae34c8222ee22e34e8a93"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/util/browser.js",
+          "sha256": "e45d2a95c9b4388042e52e19f280edd791cc2be9749d93f851afb7d0a2d055bc"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/util/cursor.js",
+          "sha256": "adabe605d73f38e5f29abd302489d4b9e98a9e495823a06a2edbe7f6744856fa"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/util/element.js",
+          "sha256": "13845321fc5abccc1de25594082d8db15405af56c5f4fc32b3bdd0878bd891e3"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/util/events.js",
+          "sha256": "ec7f4da0407ea67f5d6f5ce53bd9b3342155feb9407707de3992c5261e460ead"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/util/eventtarget.js",
+          "sha256": "9481965aa6cee36ae2decdccc6ca5203c9371a8afc33346ad4170e471766e0da"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/util/int.js",
+          "sha256": "b1c4b7dec2e7767322b3464f3c186b13138cdf341c621db44ddd06ce78180c01"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/util/logging.js",
+          "sha256": "c3a49715c9f908d5bb385de5787e99b824faf34d26036d993eea4740bac9d482"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/util/strings.js",
+          "sha256": "77d0604c7bf9e95de780f8cb9764d918ae24c86811a0a1c5b08cd30e50ad2a3a"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/core/websock.js",
+          "sha256": "6abe99c285e775ee43dfdbfb73c0a24052e633491232ee90446f20ffea743f16"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/defaults.json",
+          "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/LICENSE",
+          "sha256": "3bc404ffa7888053253eedcc5a667619aa08dc1be0bea400e5ff28c51602180f"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/README.md",
+          "sha256": "f78ded7db9ffa4be474ce75020659f165d97adc4276ef5c7fcd698a3aa03e6ce"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/lib/utils/common.js",
+          "sha256": "0749bc4661ed186714b90e7f2321c9625a8ce7c680563bfe3ac6df7aa332bf28"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/lib/zlib/adler32.js",
+          "sha256": "7412dd3ecc015888b99292f45e4d4ba69abc77f208508c9a1c93e8dfe54ba6cd"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/lib/zlib/constants.js",
+          "sha256": "9d2c0dd36349e6eec9d41a37f965b2ff7e7374fbf00fb139e3116d428b551898"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/lib/zlib/crc32.js",
+          "sha256": "897fa9eabd2bb239ec632326dbff85bc72cc81d4da80265cde59520db339f405"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/lib/zlib/deflate.js",
+          "sha256": "d2a498ad04bb5d1f67ba01696c31a2e88e8b88e4fc6c36c635294d1c445b22c1"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/lib/zlib/gzheader.js",
+          "sha256": "9f9b2da72593769fcc97d397ceb771bb11d5b96f202759e2ed014c2be24d40d7"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/lib/zlib/inffast.js",
+          "sha256": "ec1e0f7abeec681a0d5e3da46d06f499969cbf265eaaa5e21a135d2a9b878c16"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/lib/zlib/inflate.js",
+          "sha256": "321582ddc4023e47aa981a71caed0e1dad8b58f0d9e93a0b0a34fe7e3c45e05f"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/lib/zlib/inftrees.js",
+          "sha256": "94780cbdef562bcd0434c7e6f4faca1ff6be6980bf7305a200809d98d419d9c7"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/lib/zlib/messages.js",
+          "sha256": "7860a8d3c873c28e4f5f92db9ca3e45006e21b084210d87b8b7775cddccf05ed"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/lib/zlib/trees.js",
+          "sha256": "ad9cb5245b9e39edd164234d6ca19febb9dba683f1f99a67af48d62931d91426"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vendor/pako/lib/zlib/zstream.js",
+          "sha256": "240917347c379b1ad33b8bf07cc6981557173bc3408f35e9875866a14b9967b2"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vnc.html",
+          "sha256": "df7dbd37428667773afe5ddc7cee916e200ef27dcc748186c48ce13e8cd32242"
+        },
+        {
+          "path": "internal/desktoprecovery/novnc/vnc_lite.html",
+          "sha256": "451f085c5805fcf62427ba9f32a8dc507c174b5622a748582875d395711ad628"
         }
       ],
       "tests": [
@@ -3250,7 +3857,11 @@
       "source": [
         {
           "path": "internal/ledger/fabric.go",
-          "sha256": "ffd8e873b720e28641607f3540edd8f33ed12246aa9ebb7b740dc46455338e9d"
+          "sha256": "3107152f74912847b1b59f118f9a4a6110473df33cb0ed82aba7c4c3a58baab4"
+        },
+        {
+          "path": "internal/ledger/fabric_classification.go",
+          "sha256": "9c993bc4f863b0282d40ae456d70d83b852e5a7bd6aafc6d69651648bdff3346"
         },
         {
           "path": "internal/ledger/fabric_facts.go",
@@ -3258,7 +3869,7 @@
         },
         {
           "path": "internal/ledger/fabric_generation.go",
-          "sha256": "74e499f9e91a172ff405c893b767111b5c58a50026431014c67abb40926a6a8a"
+          "sha256": "470bb150dbac1da77dfa1856555923d4d6f9488d35d6ba504cda2f7aa83dd6af"
         },
         {
           "path": "internal/ledger/fabric_metadata.go",
@@ -3267,6 +3878,10 @@
         {
           "path": "internal/ledger/fabric_presentation.go",
           "sha256": "f8ec0ab9e1daebb98af9c2f1d73e796565433352df7b754f7fd5498c3ed50385"
+        },
+        {
+          "path": "internal/ledger/fabric_stage.go",
+          "sha256": "b73eb0d9068d519d32daa33d9b534e3c98481afa27d55cf3eb767aad78ecb416"
         },
         {
           "path": "internal/ledger/fabric_tasks.go",
@@ -3283,6 +3898,10 @@
           "sha256": "ef911b7fbbcc30c6abe2c1a487db90015e5399870256281e8e103ac72b9c7ef3"
         },
         {
+          "path": "internal/ledger/fabric_classification_test.go",
+          "sha256": "2f19c992c475b47044bc530b6c6ef22dbc0ba27925fea61fd891e94ad33eb5cb"
+        },
+        {
           "path": "internal/ledger/fabric_coalescing_test.go",
           "sha256": "375fffa9c527821bf4321c6f01dcf01dfd69b66ab8ca53121e8f6b049a596acd"
         },
@@ -3297,6 +3916,10 @@
         {
           "path": "internal/ledger/fabric_join_test.go",
           "sha256": "0381e733b9af844de4863ee0269714e8d6bbf7c413c6ec49aea16715694de784"
+        },
+        {
+          "path": "internal/ledger/fabric_stage_test.go",
+          "sha256": "a32c17bbf3330ae5d10abca9dd3b5c3daaaf6107eda0c03b2cf458900785a0d1"
         },
         {
           "path": "internal/ledger/fabric_tasks_test.go",
@@ -3325,7 +3948,7 @@
       "source": [
         {
           "path": "internal/liveness/livenesswatch.go",
-          "sha256": "62f7ac44c26216c5deb23762e737c085a353fe33c14756c21f667307add62d22"
+          "sha256": "50a16e0011d13c7bd089ce71e652f404590c8c7ff784e2fc150723db1543e236"
         },
         {
           "path": "internal/liveness/localinstall_unix.go",
@@ -3351,7 +3974,7 @@
       "tests": [
         {
           "path": "internal/liveness/livenesswatch_test.go",
-          "sha256": "94fb4b65dc69d819003036c1a045ed8bef44074420888c78134633336cd94781"
+          "sha256": "226308dd9c50578e507e6e803e29ec7c2e3dd37327c60395a3c3a747883ff92d"
         },
         {
           "path": "internal/liveness/localinstall_darwin_test.go",
@@ -3444,6 +4067,10 @@
       "owner": "Pantheon source maintainer",
       "source": [
         {
+          "path": "internal/maat/binary_drift_disposition.go",
+          "sha256": "53aecbbc4da055a08b058d6b92072f38dab5eea9815444caa8c8dca9ac317621"
+        },
+        {
           "path": "internal/maat/canon.go",
           "sha256": "9492435a88aa2aa0dee24cb53e7f43b35d9f0ea7ab43e95398a9e9684b286e10"
         },
@@ -3457,7 +4084,7 @@
         },
         {
           "path": "internal/maat/decisions.go",
-          "sha256": "0fe50b55afeb6a8516e7201b9a0f052d99a2da680c77ece9aa581e38d232e506"
+          "sha256": "e496d5f3693301429d00ef2b2e275786e9c7d58be2b50a7809bdcf16ecd0d3d9"
         },
         {
           "path": "internal/maat/diagnostic_observation.go",
@@ -3481,15 +4108,15 @@
         },
         {
           "path": "internal/maat/history_prefix_unix.go",
-          "sha256": "d0f665a4e7acbf0349c1ca220432315efb36adb11d5edea47fff11ae770fbee3"
+          "sha256": "bf59b8716c2896f16b39b8d0acf0c0f5d149c5dae40d584432608a4a4fdfd67e"
         },
         {
           "path": "internal/maat/history_prefix_windows.go",
-          "sha256": "15bf3ebb1b68597d0f4f9af6e404505fe9effed35be540dbce716fb8132ddd61"
+          "sha256": "4894dcb02a3201c1ff20b55e4281cf86074b8fd9f63dac14baddec69db6f0fa2"
         },
         {
           "path": "internal/maat/history_query.go",
-          "sha256": "b9ce0836cbcc8649225a7b528dc7fb477c79af45b9b061d9c6f26a1998354457"
+          "sha256": "b4042ec970ec44932a9313a5f836a4be6e2548201d1b3e2ef6b1f18a527ddd99"
         },
         {
           "path": "internal/maat/history_query_batch.go",
@@ -3501,7 +4128,7 @@
         },
         {
           "path": "internal/maat/journalrepair_unix.go",
-          "sha256": "e54b00fd61cc7edf0462c25b0c19a3217b595ffceb0b3bad7686936190f3247d"
+          "sha256": "575ddc12409d1e78a72fa49a2fb16066fa5e4529d1015c1e7c85abdff463dc4f"
         },
         {
           "path": "internal/maat/journalrepair_windows.go",
@@ -3596,6 +4223,34 @@
           "sha256": "daf6e72c16b3a5f1e59272a670904f04ce07d768ab5b4fa677f748aff9f90822"
         },
         {
+          "path": "internal/maat/qualification.go",
+          "sha256": "4fa7e78f8a5f8923fd7698e8099effef58d3783b587549b5b152d6c1e1cd32a2"
+        },
+        {
+          "path": "internal/maat/qualificationacceptance-v1.json",
+          "sha256": "752cb8037bf39231f8c4ad28596a19c752b2cbd67c6357dca587dc0726606522"
+        },
+        {
+          "path": "internal/maat/qualificationauthority_darwin.go",
+          "sha256": "052c8788be644b2b3b252dec8285d4ac37bc79168675695a9183619ca3cb8c6e"
+        },
+        {
+          "path": "internal/maat/qualificationauthority_other.go",
+          "sha256": "1951f01efaffc73bb84f05a77bd6f4ab9b097d40bbde0d93bca9b374d8e90a03"
+        },
+        {
+          "path": "internal/maat/qualificationjournal.go",
+          "sha256": "7ba9296ad800ec4830fd41e3996439bd82749dfc8b76ca618ceaf693e3e7fae3"
+        },
+        {
+          "path": "internal/maat/qualificationjournal_unix.go",
+          "sha256": "7324b521ad8c17bd3266b523b51f4379e243e7ce26e4b2fe998848b8947e7edb"
+        },
+        {
+          "path": "internal/maat/qualificationjournal_windows.go",
+          "sha256": "1b69fc03f87781561ad72884ecf041efe6f4f19a2172cb53f22b1a5ec1fdf282"
+        },
+        {
           "path": "internal/maat/releasepreflight.go",
           "sha256": "fa43ecd1a351ffccf71737bdc62b43fdea4a1ea7fa314ae7cdcbd93ab8afe711"
         },
@@ -3663,15 +4318,15 @@
         },
         {
           "path": "internal/maat/history_query_test.go",
-          "sha256": "ba545d89e8f6593906686280bb52d706ea9e25c66b35309e4c30b30c178dbb5a"
+          "sha256": "82ba5ddcbc6ed058d7bd3f318e544fb1362c33053689bbb5975686143d33bd05"
         },
         {
           "path": "internal/maat/history_repair_query_test.go",
-          "sha256": "141ef6096cf07eba043e17ce1f3088a19d664683217b26b24c33c051d59740c6"
+          "sha256": "ec288b694e9222cebb81a953b5332b21d3825e0b5d0ab98231b39dce93a92def"
         },
         {
           "path": "internal/maat/journalrepair_unix_test.go",
-          "sha256": "9a08c87c9a7259a95614460ff709ed807f2fe639e3f17de5e1e99d9525c91037"
+          "sha256": "175d5e694fb19783c334821339edc30c4d857a0614ace7394185973a2251c301"
         },
         {
           "path": "internal/maat/maat_coverage_sprint_test.go",
@@ -3782,8 +4437,20 @@
           "sha256": "074f08e610207752d66d4c37cda213226dbc677be2cf9024435323267b970462"
         },
         {
+          "path": "internal/maat/qualification_authority_darwin_test.go",
+          "sha256": "f9c6b11368f0d43243013430df0b6c7b6812765f6c7185401c1982b5e55b139a"
+        },
+        {
+          "path": "internal/maat/qualification_authority_other_test.go",
+          "sha256": "2848fd2ab593f59c4d5a9b85ad826b5a3a655ff9da58ebad2feceef383eefdf8"
+        },
+        {
+          "path": "internal/maat/qualification_test.go",
+          "sha256": "85b7b4e6c03df3440750be6492d3f8c562083a2f85dfe983124eae26cd0d0db3"
+        },
+        {
           "path": "internal/maat/releasepreflight_test.go",
-          "sha256": "e1c0ad826768ea6230b96139ecd4c3218ee01afdb65eda701b4d0abec113dcdb"
+          "sha256": "e5b127241838d4a084266bd232ea4708c345623ef0c1405e6daa3d326fb43a18"
         },
         {
           "path": "internal/maat/sourcescreen_test.go",
@@ -3795,6 +4462,7 @@
         }
       ],
       "direct_local_imports": [
+        "internal/packagedengine",
         "internal/platform",
         "internal/routerstore",
         "internal/stele",
@@ -3810,21 +4478,25 @@
       "source": [
         {
           "path": "internal/maat/casebook/casebook.go",
-          "sha256": "3d1333a796962ac43f67d7fbf527c551702f4d9a0da7c9b39a68058d43d9070b"
+          "sha256": "f3cad1a88842a8b371cfdf183649917d0c2f058224eaa804d77b2316e2395acd"
         }
       ],
       "tests": [
         {
           "path": "internal/maat/casebook/casebook_test.go",
-          "sha256": "109424ad13eef84ba5a7dab8bf16d2838b0d32ffde69b01adaedc82c9c4c0c01"
+          "sha256": "a2825de26d3dbc09255bfc636b0d4f19e3144a1e26c33910b9679980a4215669"
         },
         {
           "path": "internal/maat/casebook/history_repair_test.go",
-          "sha256": "391ae5e50ebd58c6014323ff8ff5543c6db42b385a8a88528e4dcff62b9bf252"
+          "sha256": "dde45f1377cc0c7f67f827f452c57dacfb6c6b8f59a95752f1491751ceafeb31"
         },
         {
           "path": "internal/maat/casebook/history_test.go",
           "sha256": "1bf9163cd64cb52f62ce7dbf46aeb8bc863df9911d6b0bde5b576e28f7f05687"
+        },
+        {
+          "path": "internal/maat/casebook/qualification_test.go",
+          "sha256": "f0cc38b16581d255b1b17b374828e63e96db006f8fd674a53eaf4d1b1de921e9"
         },
         {
           "path": "internal/maat/casebook/releasepreflight_test.go",
@@ -3957,12 +4629,20 @@
       "owner": "Pantheon source maintainer",
       "source": [
         {
+          "path": "internal/maat/knownfail/catalog-history/68b1ee17ac49d4c087c54bd4860eee597181fd45.json",
+          "sha256": "e8a1b1a1e295f3ff02eef4342d4bd315555960d561458687c8ee1be034b2b178"
+        },
+        {
+          "path": "internal/maat/knownfail/catalog.json",
+          "sha256": "80145ab40c50d156607fc3155e7840f194398f7674d42f7bdc39b553586473d8"
+        },
+        {
           "path": "internal/maat/knownfail/knownfail.go",
           "sha256": "fa02ad63d1e901adf9d9d40f57c1582ccf185557a7de72bcfb8270bf37991049"
         },
         {
           "path": "internal/maat/knownfail/proposal.go",
-          "sha256": "90768068e75ec2e74e5231512de192b06b9a92296255437f7cdbf38deabaf501"
+          "sha256": "6ec97a29f93455a8bcd8b2c7eed873ba5c7be80604297ca4903db76a95dfd7f9"
         },
         {
           "path": "internal/maat/knownfail/registrar.go",
@@ -3976,7 +4656,7 @@
         },
         {
           "path": "internal/maat/knownfail/proposal_test.go",
-          "sha256": "603004aad70853bda7a45abeb7fc9d121e4652fe1bc0130eae056e07352b0f50"
+          "sha256": "6dd8e008ef1325771b469b5953cf25d497af4081c5a4d8474aed1cdefa942337"
         },
         {
           "path": "internal/maat/knownfail/registrar_test.go",
@@ -3984,6 +4664,41 @@
         }
       ],
       "direct_local_imports": [],
+      "release_state": "source-inventory-only; qualification is recorded separately",
+      "upgrade_boundary": "Replace this package/target through normal source review and rebuild the unified payload; callers and all applicable contracts must remain compatible."
+    },
+    {
+      "id": "internal/maat/lifecycleevidence",
+      "kind": "go-package",
+      "owner": "Pantheon source maintainer",
+      "source": [
+        {
+          "path": "internal/maat/lifecycleevidence/installed_darwin.go",
+          "sha256": "914d2155eefd32e2638b02444262b496820ad0532bac3c8a894a5a0d0606155f"
+        },
+        {
+          "path": "internal/maat/lifecycleevidence/installed_other.go",
+          "sha256": "e17351533730d437796562bb85d9f5fe5cbcebe92facac32d72a19814e4a9057"
+        },
+        {
+          "path": "internal/maat/lifecycleevidence/router.go",
+          "sha256": "09cbd6a819ef535a57eff964e8e76a9428c8da74a2cbe8c35b67d03f44dd8257"
+        }
+      ],
+      "tests": [
+        {
+          "path": "internal/maat/lifecycleevidence/installed_other_test.go",
+          "sha256": "2a019b3e855dc3887197fde73539e751ec1587c3045c9b04ae8e419b503a2bf4"
+        },
+        {
+          "path": "internal/maat/lifecycleevidence/router_test.go",
+          "sha256": "4a61665ab1322fdd39036c2771ea2433f0bf43ee00bbe082a3b81dca2858ae8a"
+        }
+      ],
+      "direct_local_imports": [
+        "internal/maat",
+        "internal/routerstore"
+      ],
       "release_state": "source-inventory-only; qualification is recorded separately",
       "upgrade_boundary": "Replace this package/target through normal source review and rebuild the unified payload; callers and all applicable contracts must remain compatible."
     },
@@ -4045,6 +4760,10 @@
           "sha256": "9b18a98d4babd3db5d643a483d6b637ca50493ab24a134f9af2b6b41805acc08"
         },
         {
+          "path": "internal/maat/schedule/exactread.go",
+          "sha256": "0d9662b428840dbe30ab6916acbfe679c204644895c78c24d1b8162144015fe9"
+        },
+        {
           "path": "internal/maat/schedule/plan.go",
           "sha256": "aff199c432b0b01777b1acb4e7a499c2feb8f35e87710def555cce1a4a6473fc"
         },
@@ -4066,11 +4785,11 @@
         },
         {
           "path": "internal/maat/schedule/podjournal_unix.go",
-          "sha256": "e5cf76214f89cdf80d909604779c2a2607e020e2a4365e712ae34729072318c8"
+          "sha256": "6374ce89acf8b5aab3be1ccd07df5dee73d46a4e654ef15961cfae11a9c0a11a"
         },
         {
           "path": "internal/maat/schedule/podrouting.go",
-          "sha256": "fb4f2e92c98803ecafba9fb4a73e60ca219ce3c1f0e7bddd2ceabe7c506cf433"
+          "sha256": "c0226b6fab28e4733b5a7df526d460acefb5de4b2c02f4c3a0936e70429bbdec"
         },
         {
           "path": "internal/maat/schedule/reservation.go",
@@ -4099,12 +4818,20 @@
           "sha256": "9ceceff05f13ceb1730896dea7f2ae16efeff7729eafdac86d065ba20dd5ef42"
         },
         {
+          "path": "internal/maat/schedule/exactread_test.go",
+          "sha256": "e1b375603b9aefb9fd7cefd3fa988b89b855a434ef0f5d2452a5a5a3c7ddf6bd"
+        },
+        {
           "path": "internal/maat/schedule/plan_test.go",
           "sha256": "391ec8ff51bea21b817fb55252022739cc43ec77764a907b6dc9457ca554d706"
         },
         {
           "path": "internal/maat/schedule/podclient_test.go",
           "sha256": "6c0d11840208594ee930382fa9e261b94edf9fe3c10172cf5e01dfc9ec49c2b2"
+        },
+        {
+          "path": "internal/maat/schedule/podfence_unix_test.go",
+          "sha256": "b03649a151c5afc4ab023d366c7b3176502dfbe2a6d841eeb2edff570df4c019"
         },
         {
           "path": "internal/maat/schedule/podhttp_unix_test.go",
@@ -4325,6 +5052,10 @@
       "owner": "Pantheon source maintainer",
       "source": [
         {
+          "path": "internal/mercury/dashboard-v1.schema.json",
+          "sha256": "c2edd45be3da6b2f01f936fe7285dd415c6088d3987b210cd43d037557bf65eb"
+        },
+        {
           "path": "internal/mercury/presentation.go",
           "sha256": "e23ae7caff0d548483cf6e0841895e8c9f0c3f191168475f576d480f7c834033"
         },
@@ -4335,6 +5066,10 @@
         {
           "path": "internal/mercury/scene.go",
           "sha256": "06d9d4c02b44258b11bdb8b99b93f5682063305571ca9ab02d756772a23a834d"
+        },
+        {
+          "path": "internal/mercury/testdata/samples.json",
+          "sha256": "e58ba60295eefe5a09ac70ba5b1d77f5b0ae37a04eeb4242a75422241635b02a"
         }
       ],
       "tests": [
@@ -4622,19 +5357,39 @@
       "upgrade_boundary": "Replace this package/target through normal source review and rebuild the unified payload; callers and all applicable contracts must remain compatible."
     },
     {
+      "id": "internal/packagedengine",
+      "kind": "go-package",
+      "owner": "Pantheon source maintainer",
+      "source": [
+        {
+          "path": "internal/packagedengine/authority_unix.go",
+          "sha256": "257cf6f4a290427cd8220cc3dab7539250950a5a9cdb077700fa9c12730b3442"
+        }
+      ],
+      "tests": [
+        {
+          "path": "internal/packagedengine/authority_unix_test.go",
+          "sha256": "90a40294528f584a88ee061c0afe34a74798092d8115e5203d49a64c6ecc4c94"
+        }
+      ],
+      "direct_local_imports": [],
+      "release_state": "source-inventory-only; qualification is recorded separately",
+      "upgrade_boundary": "Replace this package/target through normal source review and rebuild the unified payload; callers and all applicable contracts must remain compatible."
+    },
+    {
       "id": "internal/packageinventory",
       "kind": "go-package",
       "owner": "Pantheon source maintainer",
       "source": [
         {
           "path": "internal/packageinventory/inventory.go",
-          "sha256": "e96de96cb6371220bbdffdb1dd5630943b7be0701424b827c8c0dd436d9ea462"
+          "sha256": "93e9cb9ca80af21bcfc7e8c9d608aa38d5780bc7cabebb73d63429821cf1dae3"
         }
       ],
       "tests": [
         {
           "path": "internal/packageinventory/inventory_test.go",
-          "sha256": "0406e4f6697a0d6d76f3fe628ff26429a12b0d1bd9f24356d2ef12cc024cceca"
+          "sha256": "da41f37df75d42acb99896a1c346899d67f871b1c7f0c666c492aa9d288636b9"
         },
         {
           "path": "internal/packageinventory/source_contracts_test.go",
@@ -4652,13 +5407,13 @@
       "source": [
         {
           "path": "internal/packageinventorycmd/verify.go",
-          "sha256": "c636efbb3a65948851b5a7d081aafcc5dca438c423d1b0f5428695ba05f40687"
+          "sha256": "3d5819331ae2160a4f23ce6a5f8ab141b33ba8f726bd182357d00348fb168f19"
         }
       ],
       "tests": [
         {
           "path": "internal/packageinventorycmd/verify_test.go",
-          "sha256": "20f36b9760a1a872b950ff52de44626123d53c873ff401c24610aecabf75f2da"
+          "sha256": "a22ecae937a524f6c4b75b25908154308120cd53d336db91d6bfc47b8cfb2068"
         }
       ],
       "direct_local_imports": [
@@ -5115,7 +5870,7 @@
         },
         {
           "path": "internal/router/lanestate.go",
-          "sha256": "34c48a77027cedcd4e22ec8abd6d33fddeef9149ec9c2d293f6842ddf675ad11"
+          "sha256": "155dd2360169c57720a8f3b1b2dbe61bab2a3f243236736057490bd3fcd1a040"
         },
         {
           "path": "internal/router/launchdkickstart.go",
@@ -5215,7 +5970,7 @@
         },
         {
           "path": "internal/router/sessionmarker.go",
-          "sha256": "67fb843d926a29a54131ef4570a23c949835012e42e22aa65c07634921119cea"
+          "sha256": "e25a3a936b6bfda306cc73794636d4f9a3764a0bd22ff6849abaa38ee2e1eebf"
         },
         {
           "path": "internal/router/sessionreaper.go",
@@ -5259,11 +6014,11 @@
         },
         {
           "path": "internal/router/threads.go",
-          "sha256": "16696f733bd0bef7e0a3ff2d8c28e76db9fe40ba7af6d4a6a5628eb1103cf52c"
+          "sha256": "d708fcafe6a918b48bfae4f691a956a961d5f424274bbbe5c9afbec4d5be1ff5"
         },
         {
           "path": "internal/router/wake.go",
-          "sha256": "681a3c704b1dc99a7e6acc814bd0059f9d21c7357790e9edd2ec287428e85667"
+          "sha256": "8bdfedd893ced38151263ac1c413045c9dc3c99a17a600df79c7355f3d131fb5"
         },
         {
           "path": "internal/router/wakeconsumer_reload.go",
@@ -5445,7 +6200,7 @@
         },
         {
           "path": "internal/router/lanestate_test.go",
-          "sha256": "6afd15e40914d062ee4eb660478c45ccfb0a0d2be8fbe387ff7a64a44612d7b9"
+          "sha256": "8cd29ca6fe2e5a0b44f416ca8c07fa5896803b74d03505b3e7c4179232dc5752"
         },
         {
           "path": "internal/router/launchdkickstart_test.go",
@@ -5576,8 +6331,12 @@
           "sha256": "931c2038b5ec451a6b6c90a8ba7fdacca8723646d9b91f9b4c019b83294407ea"
         },
         {
+          "path": "internal/router/session_resume_reap_test.go",
+          "sha256": "376f0f26d44869ad2b0ee744d007da0ab873b19e55d573d8e7b0904e14d0880b"
+        },
+        {
           "path": "internal/router/sessionmarker_test.go",
-          "sha256": "431a32c59128733f44ebe27ababb55fe32597594b2bec2e517c5ad283e9bb0ae"
+          "sha256": "b5b0e584f4ebfb8ddc6242f72c8976e249fabf69b51fcfa21198fbb1eebcf08c"
         },
         {
           "path": "internal/router/sessionreaper_test.go",
@@ -5624,6 +6383,14 @@
           "sha256": "1cc7ecf9b52fcfd5addb625603f99c9184e9d18e9154ca318b975e5de448a155"
         },
         {
+          "path": "internal/router/threadprune_regression_test.go",
+          "sha256": "4ad8029bb3dc318a743dabd15bad4fb49d04ea169ac08afa1a716a80efdd87af"
+        },
+        {
+          "path": "internal/router/threads_shared_runtime_test.go",
+          "sha256": "8c8f857ea898f3677c747f01f43088e57066e4e29ad7fe54181e1e18b0c05db0"
+        },
+        {
           "path": "internal/router/threads_test.go",
           "sha256": "c2b1c287ce040983c98328743f26808c0176f758c5e2bedfd4b1a76b679bd693"
         },
@@ -5634,6 +6401,10 @@
         {
           "path": "internal/router/threadtimestamp_test.go",
           "sha256": "088af1d5e338d39635f0686651a6ace2757fdc97c339be74e902e30e9dfc03fe"
+        },
+        {
+          "path": "internal/router/wake_attended_d4_test.go",
+          "sha256": "f7274843f49296dde20be0e15cc1ba7e1a440dc7f65b4e0072728d661d7a3605"
         },
         {
           "path": "internal/router/wake_consumer_output_test.go",
@@ -5649,7 +6420,7 @@
         },
         {
           "path": "internal/router/wake_loop_dispatch_test.go",
-          "sha256": "af5927af2777ea6af89ae6a776eb184a4174144934d0f44ad02efb785f6fa575"
+          "sha256": "058b6fea7c352a925ece20d9e623a749237a524ea66a49ba867a341e97a2f1f7"
         },
         {
           "path": "internal/router/wake_loop_read_test.go",
@@ -5673,7 +6444,7 @@
         },
         {
           "path": "internal/router/wakeconsumer_reload_test.go",
-          "sha256": "91963f31858af05dff9cba7d580bd0ce40987bb43193d153e4dec1e9fe7fbffd"
+          "sha256": "312b0cdc8fac64a1ea5470ace3463f778b3bfcaf70d203d69e570c4e08ef8f8a"
         },
         {
           "path": "internal/router/wakeidentity_test.go",
@@ -5948,7 +6719,7 @@
         },
         {
           "path": "internal/routerstore/lanestate.go",
-          "sha256": "4051d142bc296b604b7082c16c33a673320f7018d6a1cd5fce6c65923a96b748"
+          "sha256": "a8e5328d387524e966919b7c464f1e6d003709d81d2af7a5c1d98ad5cfe19cee"
         },
         {
           "path": "internal/routerstore/lease.go",
@@ -5960,7 +6731,7 @@
         },
         {
           "path": "internal/routerstore/maatscheduler.go",
-          "sha256": "3f84f8f7c2626a512ad6a79e8dfcfebda1a740ff360fa1026f3465a2e457f10a"
+          "sha256": "ba4ab99676114d025227d07cab77fb9987d1edc837c3006bc1c8b806f08d18bf"
         },
         {
           "path": "internal/routerstore/mailboxreconcile.go",
@@ -5985,6 +6756,14 @@
         {
           "path": "internal/routerstore/open_postgres.go",
           "sha256": "9a977fef2b39691b447d059a4696d8810b20d9d4f917d1da6c41b2312fdf4173"
+        },
+        {
+          "path": "internal/routerstore/pg/roles.sql",
+          "sha256": "7f3a8224a6fce277d540238239b3be85d976b1f128c7c7e76a10ff76e14e7e99"
+        },
+        {
+          "path": "internal/routerstore/pg/schema.sql",
+          "sha256": "55ec51d5ff2f94786a23427602701978fce762b61fe4209f294cf4b09dca0336"
         },
         {
           "path": "internal/routerstore/readcompat.go",
@@ -6024,7 +6803,7 @@
         },
         {
           "path": "internal/routerstore/serve.go",
-          "sha256": "355e2c84898d013224064704392d27cd51088e4ca9b414ea03f3719d6c0a99b6"
+          "sha256": "f65e44e5e01177ba7d5410671faaa7320a9190b13a7b5dba54cc0fe8a9644b3e"
         },
         {
           "path": "internal/routerstore/sessions.go",
@@ -6036,7 +6815,7 @@
         },
         {
           "path": "internal/routerstore/spool.go",
-          "sha256": "4ee8d40df305391197b6597a4f51eb17dbc19c52944920d1d85b15de76b07b01"
+          "sha256": "bcb2c8a632e5e8e890c0c2cde8444fccac7b1bc5a30d6bc42f28e00b420a23e7"
         },
         {
           "path": "internal/routerstore/spooladmission_unix.go",
@@ -6104,7 +6883,7 @@
         },
         {
           "path": "internal/routerstore/store_iface.go",
-          "sha256": "30b5e966598f595ce26f05f464f630c70febf1574a6a6edeec69b3f4907f628a"
+          "sha256": "208bc716fa8889086c717fddb249e6824d286a034db1fe761d12d150575377ce"
         },
         {
           "path": "internal/routerstore/taskeligibility.go",
@@ -6120,7 +6899,7 @@
         },
         {
           "path": "internal/routerstore/tasklease.go",
-          "sha256": "70552007854894a979c9c795f49899d34b681fdca4ef2d3193b2ec941e02ea68"
+          "sha256": "202a4333b876c4ada6fcbd82eaf8245adcde433252a5e9e4c118b487717896f7"
         },
         {
           "path": "internal/routerstore/tasklease_log.go",
@@ -6140,7 +6919,7 @@
         },
         {
           "path": "internal/routerstore/threads.go",
-          "sha256": "e9d7ea7470c6af5a1c1a0da3d7c0875ca732d0fb77c0b64b9ff814365dfeb5df"
+          "sha256": "1a81fdb11b2b10ebb649c1aa48bb7dbca6ac624f7cfd259558d804d488cdab83"
         },
         {
           "path": "internal/routerstore/wakeevents.go",
@@ -6234,7 +7013,7 @@
         },
         {
           "path": "internal/routerstore/lanestate_currentfailure_test.go",
-          "sha256": "641a6a79f3686f4e3144984d7ccd7997d035a5d21d8129ca0b874ff0a88cef99"
+          "sha256": "bb523b68810d8a9aefe83c8d2efc74885ada9ad72a0e91126f14dc5603cc9ab9"
         },
         {
           "path": "internal/routerstore/lanestate_test.go",
@@ -6251,6 +7030,10 @@
         {
           "path": "internal/routerstore/listpage_test.go",
           "sha256": "aaaddd68057539c61b2ab09fd879285144b82ed86300aaf907156e65f402ae4b"
+        },
+        {
+          "path": "internal/routerstore/maat_exactread_test.go",
+          "sha256": "36ab4f558958f1694548a31837f3c60d03ceb280c63f570124b183cc29d947d3"
         },
         {
           "path": "internal/routerstore/maatcpufloororder_test.go",
@@ -6326,7 +7109,7 @@
         },
         {
           "path": "internal/routerstore/remote_test.go",
-          "sha256": "70a4793c3e6e756d90b107d6e436fa120a72be6e1ca10a3fb6e86bd679c3b1a8"
+          "sha256": "b00f6cdc80fe035fe250e7aa7e4a87f06a2392b0381abdacdf0c0d2f3f9e3364"
         },
         {
           "path": "internal/routerstore/reopen_test.go",
@@ -6413,6 +7196,10 @@
           "sha256": "4cbacc8f0403c80df11a1e389b500627239a98e440bc7f6a45ae8d4e5637fec9"
         },
         {
+          "path": "internal/routerstore/spooldrain_test.go",
+          "sha256": "829407d6c3f2e84154a7c7017d81f71f9265f4c7f6e951d16d7ee0ec913c5535"
+        },
+        {
           "path": "internal/routerstore/spoolhealth_test.go",
           "sha256": "34b6a75cf4f60c78afd5ed37980fd6c8b683c32cbfd8780712ce124e679a31fa"
         },
@@ -6463,6 +7250,10 @@
         {
           "path": "internal/routerstore/store_test.go",
           "sha256": "b65ac461e81a263c6acb5d1a22dfede87bde230e75797025cdd82549da5ed73e"
+        },
+        {
+          "path": "internal/routerstore/taskclaim_session_binding_test.go",
+          "sha256": "f4fa29350b751b8bb6eb9ff5aa4c4b127ab69bba7f57ef710a7eb75e4cac8541"
         },
         {
           "path": "internal/routerstore/taskeligibility_test.go",
@@ -6530,7 +7321,15 @@
         },
         {
           "path": "internal/routerstore/threadinsertonly_test.go",
-          "sha256": "78c6f37472c1f77b6e1b387e0a54b67cf6ab7208231d55767ab2d62e0351446f"
+          "sha256": "8e53d99d595134369b10ae43face88b5853490f2b82193ebbb8f1bf437a93c36"
+        },
+        {
+          "path": "internal/routerstore/threadprune_postgres_test.go",
+          "sha256": "36a597d3e08abd9eebad38ccb9221c9f1bd520dd0b210bdc77e87e19f0b8d352"
+        },
+        {
+          "path": "internal/routerstore/threadprune_test.go",
+          "sha256": "7c32bc622b24e29cc5d16ee54f499f2e7536051a51926e9aeec3c2e7f1c3cbba"
         },
         {
           "path": "internal/routerstore/threads_test.go",
@@ -7131,7 +7930,7 @@
         },
         {
           "path": "internal/setup/podauthority.go",
-          "sha256": "297cdd77eebf2cac8655d08cd085605d0d643c5a0c92eb7094c9702c48cc5585"
+          "sha256": "68e4094e363cf8ca63f773d225b4a3b819330e2aa6df605fbadcc4f7e07fc590"
         },
         {
           "path": "internal/setup/podauthority_darwin.go",
@@ -7297,7 +8096,7 @@
         },
         {
           "path": "internal/setup/podauthority_test.go",
-          "sha256": "9b0ad89c2f5e2d6db06c29d18d5f5f6733bc0cedfb1379640c25cbbec8bd441a"
+          "sha256": "3345642b86f2ae8eac6cafa16203d6bf8b30588101efdb7998b450b1f786d923"
         },
         {
           "path": "internal/setup/routerdaemons_test.go",
@@ -7334,6 +8133,7 @@
       ],
       "direct_local_imports": [
         "internal/maat/schedule",
+        "internal/packagedengine",
         "internal/router",
         "internal/routerstore",
         "internal/servicedrain"
@@ -7404,7 +8204,7 @@
         },
         {
           "path": "internal/stacklab/remote.go",
-          "sha256": "cf3a583cffdfac36d2f6c8e365321ba77665edc5a8b8888062b6f6e1a1526db7"
+          "sha256": "a4613eefb920a8dcf994570e380f55aa046ac0d9a2d0c21e47c5ff1ac751b026"
         },
         {
           "path": "internal/stacklab/wing.go",
@@ -7430,7 +8230,7 @@
         },
         {
           "path": "internal/stacklab/maat_recipe_test.go",
-          "sha256": "edf2d6258da7afbca9c22b3b993bdfa36a6bc909035fca07c58dd50844f26b93"
+          "sha256": "84b15090b0d5f48a573d68b0a811119726af65e23d96b7c1a0ff737f8278a7fd"
         },
         {
           "path": "internal/stacklab/mercury_consumer_recipe_test.go",
@@ -7442,11 +8242,15 @@
         },
         {
           "path": "internal/stacklab/package_contract_test.go",
-          "sha256": "d0a587580f522b0dc0c5d4577337d94eaa4e1652f6a5ec7f906d2323a6ea7ce4"
+          "sha256": "db049fc2cc58e363dbd8ff94c41e81f70b6c8a0181b169d2fc37c7364684fbe0"
         },
         {
           "path": "internal/stacklab/podauthority_recipe_test.go",
           "sha256": "855513fbf03cbbd761e284a21c49df5c8b91684025645834e972dd3bd4e8ab97"
+        },
+        {
+          "path": "internal/stacklab/remote_test.go",
+          "sha256": "171d3c24a2433886d69f9e17513f729dd31e1ef354b026bb15923d9437696142"
         }
       ],
       "direct_local_imports": [],
@@ -7601,6 +8405,18 @@
         {
           "path": "internal/thoth/sync.go",
           "sha256": "a355bb142dd93cf5d028f741d46929bc00b9d291cb5c8579342858a2315ff5a8"
+        },
+        {
+          "path": "internal/thoth/templates/journal.md",
+          "sha256": "16a7c96f2eec869e2b135926c68d39e8a39ea32a0ec0a0bbcf18c1025a663f96"
+        },
+        {
+          "path": "internal/thoth/templates/memory.yaml",
+          "sha256": "ec66e061d308b2ebc9f3873b6fe35c42d3bf491bb41a89320d0ea84865bab94b"
+        },
+        {
+          "path": "internal/thoth/templates/session-start.md",
+          "sha256": "f9defda18d4157db8c58b187b7a5b68c5473c9109a49ea5f8dce15aad3fde817"
         }
       ],
       "tests": [
@@ -8042,7 +8858,7 @@
       "source": [
         {
           "path": "macapp/Sources/SirsiMenubar/ApolloRunPlannerView.swift",
-          "sha256": "dbfc2d3088966f39dedc163e234d825d9aa495239c234b522e756b81f0ee6ed0"
+          "sha256": "ab38305a3bf68c5f2ec7c360cff5fa56c95f532d949267b41933cffc814f9e3b"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/AppDelegate.swift",
@@ -8081,6 +8897,10 @@
           "sha256": "b7d528f6b3564c4088f25ff468153b12ff6ab8531df5dbb22858e11c591711dd"
         },
         {
+          "path": "macapp/Sources/SirsiMenubar/DiagnosticRepairAction.swift",
+          "sha256": "0815b92151936517eaa390ce176ff7a8c83615be8c60c2c479830da70e36d118"
+        },
+        {
           "path": "macapp/Sources/SirsiMenubar/FleetStatePresentation.swift",
           "sha256": "1b72361ade19e9df81da3f3dd08f1eaed4f0fe8f986a8ec28e3c83aa4ebacce1"
         },
@@ -8110,7 +8930,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
-          "sha256": "ffeb80e5e85ad00319dc327956f622d44b59d024d08b0736d0dfa886b4d1a9ec"
+          "sha256": "87af96bed8b0259aff99fbdfa88ab74d5bc7a7d6843d0930752520aca4820fc9"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatDiagnosticCorrelation.swift",
@@ -8129,12 +8949,16 @@
           "sha256": "4fe7c0c0559861a54cefc2cde301b03a4909a9de0202ee24a7f696d17982ce3f"
         },
         {
+          "path": "macapp/Sources/SirsiMenubar/MaatLifecycle.swift",
+          "sha256": "6aea907a4daf3a0b8c9b99ff5d064e8b7f8c6c790924234048569d808dbbf1b6"
+        },
+        {
           "path": "macapp/Sources/SirsiMenubar/MaatLocalPrevention.swift",
           "sha256": "f458543530bdf17231cf6f33b982395d83ae38f964de6e06217f76840c701f2d"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatOperationState.swift",
-          "sha256": "38152b76756dd57dbebbe7725f0eb3ad321c9f60db188af9b83aea2e9b0bd8f9"
+          "sha256": "d8c6ed4ed6d321415e080a8ef742436ece7ee7831e761fc9a359a0fa17761506"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatPreparedPreflightRecovery.swift",
@@ -8150,7 +8974,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatWorkspaceRecoveryFrame.swift",
-          "sha256": "474c6b88487d3ba6b506ecbff214f055a03b1f26b0db6cf95f47855df2d732ca"
+          "sha256": "a83949aab13acfde95b09112fed06ce4ace06ed4bfaac530cca029da16cb415f"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MenubarInstanceLease.swift",
@@ -8182,7 +9006,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/PantheonDesktopView.swift",
-          "sha256": "320d52271df415507eee0fd11b2be1a96b6336b7ef3482f2b79ae4b00e33747b"
+          "sha256": "c0c082d68bc593570222c0a771258194989f0f5c7e9e9730f9aa5851677c1131"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/RelayOutboxResolution.swift",
@@ -8197,6 +9021,10 @@
           "sha256": "a8ea4f3d38bc0043a58720d8fb4e673422f5a84c3243ceddaa26429868ce4835"
         },
         {
+          "path": "macapp/Sources/SirsiMenubar/ResultPresentation.swift",
+          "sha256": "5a5ba4023c77f44b9871f0dcd4c24a59ca089992fc3d7dcad00bb65684b58153"
+        },
+        {
           "path": "macapp/Sources/SirsiMenubar/SirsiEngine.swift",
           "sha256": "1b1ed835a4349d391c81899475b5e9e86ea57ec8cb8636094d1ac6e0e9b30b1a"
         },
@@ -8206,7 +9034,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/StackLabCatalogView.swift",
-          "sha256": "dcecc7ecf1f23af78a6aec62ff6ff22824e4cd1d53f1f4ef339063e5e4173bfd"
+          "sha256": "884e9f98d48c65854c1cfa63c4c33f3c2dba5beac42fa725e3226d78666eb4a5"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/StackLabLocalView.swift",
@@ -8214,7 +9042,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/StackLabView.swift",
-          "sha256": "c0d3278cea08d7a9e8d7aac56671a2be08b8046a86e6be3aa38908103dbb0f4e"
+          "sha256": "3c93b16cd764af5790e1c072fb24e5ba9f11996984b82ac2a66e667b74a618c8"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/TrashBrowseFailure.swift",
@@ -8230,11 +9058,11 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/Views.swift",
-          "sha256": "5a57e3543a7489c3496c31038805770e3341e79024e6f0595d2b89670ef083a0"
+          "sha256": "3d1ccd80ea55312a2b82a8b31f6f934f8ed1618f28e2c80803520600dde80795"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/WorkspaceSession.swift",
-          "sha256": "3e9ab8a973108780f593c913c66ae6c5acb6eac0dcf95b1bc9003e37b309294a"
+          "sha256": "22ba80744e2ef6694dec2d29afbda12531389f32d8029cf743f545de3129e6b6"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/main.swift",
@@ -8260,7 +9088,15 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/CoreContractsTests.swift",
-          "sha256": "be818f2069f01f3f9405e81fa13c601cfd416043a1adec2c11bd4a86c8c4c2a8"
+          "sha256": "178089638c95a92b23f5d9ad2fe194a6f467b80ba8b4a92361647b9fbf313759"
+        },
+        {
+          "path": "macapp/Tests/SirsiMenubarTests/DiagnosticRepairActionTests.swift",
+          "sha256": "ca11ce49b47ff51eadd888aba48f288ba75762a5db491209282fc099cae57143"
+        },
+        {
+          "path": "macapp/Tests/SirsiMenubarTests/FeaturePanelViewportTests.swift",
+          "sha256": "58c0c731790b7b90538354d6ed6147df718970667de005f28fc3c59dc76062e2"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/FleetRenderingTests.swift",
@@ -8327,12 +9163,16 @@
           "sha256": "442882ebd310914f6b591608b96bc418675ff70f868b98a3391f755c57942cb7"
         },
         {
+          "path": "macapp/Tests/SirsiMenubarTests/MaatLifecycleTests.swift",
+          "sha256": "25a2ad6c1814482afe1acc66108b43d34762e4efc8bb869a26de6581325c993c"
+        },
+        {
           "path": "macapp/Tests/SirsiMenubarTests/MaatLocalPreventionTests.swift",
           "sha256": "fcf8e6d899f6bbbab6f5324c951e980b3107fc5f01dca6efd4e2c355cbfc1373"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatOperationStateTests.swift",
-          "sha256": "fb62c2c0503b816513b1da61657c514bb11059a66d0d42bc61ac3851529c402c"
+          "sha256": "523a881081a17e1c64a963a68e21dcb4470d35e7a78fece484e4a2b54bf8a1bb"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatPreparedPreflightRecoveryTests.swift",
@@ -8387,6 +9227,14 @@
           "sha256": "f2b9f70e16d75612cb73c94a3917a196520017842e556e515633b3a628d72251"
         },
         {
+          "path": "macapp/Tests/SirsiMenubarTests/ResultPresentationTests.swift",
+          "sha256": "68d1a47b4b6fd0764b443f33fe35f18d0259701157a016ad9667e6e138aee3c7"
+        },
+        {
+          "path": "macapp/Tests/SirsiMenubarTests/ResultScrollViewportTests.swift",
+          "sha256": "222539c8468f93722a6ba85f1de0c41c51876d7c5d8a9688485f8fa06d06795a"
+        },
+        {
           "path": "macapp/Tests/SirsiMenubarTests/RouterBoardReadTests.swift",
           "sha256": "ea56b2d41db34f783e8c91bea0c9401d9eb9d7219a0aca29ec60c6e6478fa7a0"
         },
@@ -8416,7 +9264,7 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/WorkspaceSessionTests.swift",
-          "sha256": "5fb9d6d5259c71c846c7c040ce2e0f18dfb2da5a4e541d6ca7296c2a99b2cc9e"
+          "sha256": "ae069a2482c41917dad5b1aac6b2b0cc98f37924bb7e5c4840350ae1b1dc2f71"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/WorkspaceTests.swift",
@@ -8437,7 +9285,7 @@
       "files": [
         {
           "path": "scripts/PACKAGING.md",
-          "sha256": "5176b44070fd0ddcc690141e9ade89c30f8e88aa4077bf633ca67e74ce5f3a15"
+          "sha256": "84a2ff90a85e9668b001f1b8add378a7ef455e63417fbf240c65cbeb46602b92"
         },
         {
           "path": "scripts/artifact_modes.py",
@@ -8489,11 +9337,11 @@
         },
         {
           "path": "scripts/build-dmg.sh",
-          "sha256": "aad1c9c9d0404e96e6e80a54e83c1992f7094b359dac282eb896cbaa0b05e3c4"
+          "sha256": "2eae7c74a88e62f47a184d510974c1463baf139e63f9e40614f5d15fcdbe9385"
         },
         {
           "path": "scripts/build-pkg.sh",
-          "sha256": "5a95ed756f6b632b044c12bbdfd18eb81e327bb649f03293eceb01135b4f627a"
+          "sha256": "82fd6b3377bf42d3be3ea68381f01067f75f7a91a8a470be5f71159be1cc66d6"
         },
         {
           "path": "scripts/build-windows-installer.sh",
@@ -8621,11 +9469,11 @@
         },
         {
           "path": "scripts/maat/README.md",
-          "sha256": "3e7cbbb0a7bcdee392ed2befa260f8c832fafd0ab15c7c9c18db4796a74ea5a4"
+          "sha256": "a0d4dc6e5747ce1fce92eb6a6cff0faca6a95c50baacab8571e0e66c815e6288"
         },
         {
           "path": "scripts/maat/admitted-run.py",
-          "sha256": "40464ab65377395b61a5e4d271cf31d819049bf70e7b87d71c1959e3ffd0870d"
+          "sha256": "dc041d0bfe1d943ec0bc8e46602f31d980582135bb582285c4b1fee39e2e8e30"
         },
         {
           "path": "scripts/maat/apollo-bounded-qualification.sh",
@@ -8673,7 +9521,7 @@
         },
         {
           "path": "scripts/maat/test_admitted_run.py",
-          "sha256": "4b8dfda0c78da4043e3bf3c168bd8a38b884074452a98f5b98efba250ffd2d15"
+          "sha256": "2602938ef6c161e28f5687e38e1bac6935ce62809f0bd128d6f6638449140a0b"
         },
         {
           "path": "scripts/maat/test_heavy_launch.py",
@@ -8688,8 +9536,12 @@
           "sha256": "7d23c2543bf1eda702497b2b13ec93223f20f15150573fe9453dd75e5dcdd39c"
         },
         {
+          "path": "scripts/maat/test_local_native_group.py",
+          "sha256": "23534539f07b564c714cea088a47837430e6f989f908fb03194905d62ca98fa4"
+        },
+        {
           "path": "scripts/maat/test_local_native_wait.py",
-          "sha256": "4bf1cb35d900514b8d2e731688b9e6297cce2415a85cd8f9c400fd12eb9b195a"
+          "sha256": "620589db6d96f97767788c1fea2fab63f6fc1ea52d086fa0a801ab28d5817254"
         },
         {
           "path": "scripts/maat/test_local_recovery.py",
@@ -8718,6 +9570,10 @@
         {
           "path": "scripts/maat/testdata/apollo-bounded-qualification/wrong-start-time.json",
           "sha256": "f0b6d6dcd9f793af4656fad6806f46f0bb8fe2d4285d8a815d1297b2d5e31e55"
+        },
+        {
+          "path": "scripts/new-apollo-digest-receipt.sh",
+          "sha256": "3351ae01d0fb38fd83b3cc9ba0ecf343a02682fefed2afccfd374e5c4a15a6d6"
         },
         {
           "path": "scripts/notarize-release-artifact.sh",
@@ -8805,11 +9661,15 @@
         },
         {
           "path": "scripts/router-service/stage.sh",
-          "sha256": "a059786d2181213b5958056747e51b0b8b528858de3441890aacc1023b8b2193"
+          "sha256": "ecefd155cb57f13960172fa8322693fd51c192e5255df9a663add31c023c548a"
         },
         {
           "path": "scripts/router-service/stage.test.sh",
           "sha256": "68551042659aa9b8577d36591db8d22760fdc92e2105a67fded9258784bf4e91"
+        },
+        {
+          "path": "scripts/router-service/staged-tag.test.sh",
+          "sha256": "4e7d4de5c2aba59fd7efb0eb7d91864e2d7ce6a34887aaeba80e109fd49a5214"
         },
         {
           "path": "scripts/router-service/test-apply-schema-order.sh",
@@ -8830,6 +9690,14 @@
         {
           "path": "scripts/router-service/test-write-env.sh",
           "sha256": "ab1e1674e5a0e179424d65644250d2ceb026c376f4e933db0dd69f69daed09d8"
+        },
+        {
+          "path": "scripts/router-service/traffic-target.sh",
+          "sha256": "89af5dceaaa2aeed7485fbffc6709e5c88937486c0f106543bf5ef52b7f4718a"
+        },
+        {
+          "path": "scripts/router-service/traffic-target.test.sh",
+          "sha256": "cc78237ccae92e11cc61448cd05e9ad0894336b715a17d52ee70783e4b0a4a19"
         },
         {
           "path": "scripts/router/ai.sirsi.claude-worker.claude-home.plist.template",
@@ -8877,7 +9745,7 @@
         },
         {
           "path": "scripts/test_artifact_modes.py",
-          "sha256": "17ff55ae57375a0b89bc5304c8598272198a519b78477f930a29b8f8dce720ee"
+          "sha256": "145ce5da214a143eafdcb4244785b65ac95f3de903292c7b9b8584cac47a49c4"
         },
         {
           "path": "scripts/test_ci_docs_only.py",
@@ -8917,7 +9785,7 @@
         },
         {
           "path": "scripts/verify-commercial-release-contract.sh",
-          "sha256": "60ad9a3c69f54645e2e1839cb8f7ba397829074035e3fd07de1619351d8f49a0"
+          "sha256": "992a8f036b147c712da4764a745a965df7a6debae44484c4dd80af373b3d35ce"
         },
         {
           "path": "scripts/verify-maat-credential-preflight-contract.sh",
@@ -8976,6 +9844,10 @@
       "qualification": "source inventory only; deployed/optional/support classification requires recipe and package evidence",
       "files": [
         {
+          "path": "contracts/maat/source-lifecycle-v1.json",
+          "sha256": "abb7bec6ff26a74261a43d03347eb90a4a147744b71c4ed19b344bb0de1b8273"
+        },
+        {
           "path": "contracts/maat/source-screen-v2-fixture.json",
           "sha256": "114a68ee699e2ec897f92903b42a043cdbddfdce93a74cb9419d97300b106f22"
         },
@@ -8997,7 +9869,7 @@
         },
         {
           "path": "contracts/stacklab/maat-system-one-recipe-v1.json",
-          "sha256": "159814c102ae3bc55467a981bdf6ca87144db43bc50d6cad1ad23e96229c4c5d"
+          "sha256": "a5ec3f9a319d386cc5cb89ed4bfa30b155949a67016c9542081a65c09ae31ea6"
         },
         {
           "path": "contracts/stacklab/maat-wing-v1.json",
@@ -9013,7 +9885,7 @@
         },
         {
           "path": "contracts/stacklab/model-router-v1-recipe-v1.json",
-          "sha256": "84c5aca50bc2fb6efe1e7655d50bd0b9604bc631a6dec3c5747770bb31bf9d1b"
+          "sha256": "eaf2dbeeafaca759a1cf7dd9a6000efd8b7d2d20105ff939a46e790e4c85cc04"
         },
         {
           "path": "contracts/stacklab/native-stacklab-surface-recipe-v1.json",
@@ -9021,11 +9893,11 @@
         },
         {
           "path": "contracts/stacklab/pantheon-native-workspace-v1.json",
-          "sha256": "7077d8b41833c027bc2631792790b684e0878456b98b68bacb0ac55a0f46eecb"
+          "sha256": "b99536e1366336aba7e6e3bb2ca06f01b2ca09a93b76996a23eb76e62207750d"
         },
         {
           "path": "contracts/stacklab/pantheon-release-artifact-recipe-v1.json",
-          "sha256": "d76cff7886f9e5110104d34ace82d8aa5e8a02b0c9f2ec34f6d451a08392b155"
+          "sha256": "f199daecc9e086674789f16d961717df1ab787e2b771cc9b7fe09f36e4b29961"
         },
         {
           "path": "contracts/stacklab/pantheon.pt-wing-001-wing-v1.json",
@@ -9033,7 +9905,7 @@
         },
         {
           "path": "contracts/stacklab/ra-horus-fabric-recipe-v1.json",
-          "sha256": "1a41e10f05113c369e3079462bafc4e8979a3aec7b6787663f7a35ead56e2dcd"
+          "sha256": "df9dd37c16778efe4273bde7b639b3e936e3b1504e8364a77b17850122633993"
         },
         {
           "path": "contracts/stacklab/ra-horus-fabric-wing-v1.json",
@@ -9353,7 +10225,7 @@
         },
         {
           "path": ".github/workflows/ci.yml",
-          "sha256": "13bd5deab686a9cc66568beeed1de753d40e07b5cc93be0338085ffac63adc95"
+          "sha256": "cf5e28e9945507be0bdb623dd0d85ca06a4e8807021950e7cdcb9df7fb5dd1b9"
         },
         {
           "path": ".github/workflows/claude.yml",
@@ -9385,7 +10257,7 @@
         },
         {
           "path": ".github/workflows/release.yml",
-          "sha256": "358eb25b8064ca362254809d53ff2d8aaaf4bb09563483f629b5edf3c57715ee"
+          "sha256": "f8bb379cfdeecdf5ca2c1ce3cff5ac8473ebcf70acd465c8abbc3604319ec83f"
         }
       ]
     },

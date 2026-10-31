@@ -4,17 +4,49 @@ Owner: Codex Pantheon (source/canon), SSA (independent review, release and selec
 runtime adoption), Ra (fabric and registry coordination).
 The finite84-group source canon was independently accepted at `f6760af1` and
 normally merged as `24b4e50b3df08505c7669091eb9aae9142c8ca42` on 2026-10-27.
-The composed source inventory now binds committed candidate `958db55b58ddbd6560ce5d0da8f0a6f56488f225`,
-tree `587f652d166b6156c3d9611771c9461696d8ae18`, with101 packages/targets,
-858 source files,860 test files and226 supporting files (1,944 total).
-The inventory itself and these record updates are a subsequent metadata commit;
-final acceptance must compare every inventoried final-head blob to its digest
-and bind that final commit/tree in an external receipt. The inventory never
-pretends to contain its own final commit hash. Retained e26 evidence stays historical.
-Published baseline: **v0.24.141**, source `c1651420728e90063f55ffd314659e6b51cacd9e`,
-tree `6df024d51f8ed52af7fe8c0fb80ae984e531f279`. This corrective source branch is
-not a new published release. Public140 remains an immutable historical baseline. This document defines acceptance and
-records scoped evidence; it is not a certificate merely because the file exists.
+The previous retained source inventory bound historical candidate
+`958db55b58ddbd6560ce5d0da8f0a6f56488f225`, tree
+`587f652d166b6156c3d9611771c9461696d8ae18`: 101 packages/targets, 858 source
+files, 860 test files and 226 supporting files (1,944 total). Those counts
+describe that snapshot only; they are not the final inventory or a completeness
+claim for the subsequent corrective source.
+
+
+The refreshed `MODULE_INVENTORY.json` pins corrective code commit
+`d037da1fb8ab38d989e6e00bddbb16772ee76b51`, tree
+`6e96e72ade37d0ebe3e2f9a972bb64f3a55db87f`. It enumerates 103 Go packages
+and one Swift target: 1,020 source/data files, 899 test files and 232 supporting
+files (2,151 listed blobs). Source/data includes direct `go:embed` assets that
+were absent from the previous inventory; the five dashboard assets already in
+support sets remain listed once. Literal imports and declared embed paths are
+a source view, not compiler-resolved dependencies or proof of packaged payload.
+`internal/apollo/INSTALLED_APP.md` and other prose/proof records stay outside this
+declared code/asset inventory and remain covered by their existing canon.
+
+The metadata commit follows this code snapshot. Its exact final commit/tree and
+every listed blob must be bound by the external final-byte comparison receipt;
+the inventory excludes itself and never attempts a self-hash. The process
+census and integrated runtime/release criteria below retain their original scope.
+
+Last verified prior publication: **v0.24.151**, source
+`b1ddd106440ca1856a47224375cf7996dc2987de`, tree
+`a7c9b8cf90467966444b36b8e7a7cdb4ce7c5c84`. SSA's publication/install terminal
+receipt is `~/.sirsi/evidence/pantheon-outage-20261030/SSA-pantheon151-publication-install-terminal-20261031.md`,
+SHA-256 `11753e040ad3d0245f102950788f9e0db5437885cd9d2d924d7b7ec86e16887a`;
+the original publisher readback receipt is SHA-256
+`5a9ce11f2ddb0db14b821437c814f415ebd6fd039723af917a7fa391bb324bc8`.
+Main's actual Ma'at CORE receipt is
+`~/.sirsi/evidence/pantheon-freeze-zero-ledger-20261030/Main-installed151-maat-core-upgrade-and-native-projection.json`,
+SHA-256 `f19545b657c657d01e73c3d9eb8d43a77ddab1087639b05151bb2b343f7cc923`.
+It records bounded first-use/record evidence on 147 and 151 upgrade,
+readiness, exact read, and native projection; it does not certify the whole
+product. At the committed code snapshot above, the corrective source had not
+yet been published. Later publication and supported installation are established
+by their exact external release/adoption receipts; this source record does not
+predeclare their result. Public140 and the detailed
+140/141 evidence below remain immutable historical records. This document
+defines acceptance and records scoped evidence; it is not a certificate merely
+because the file exists.
 
 ## Binding criteria
 
@@ -36,9 +68,9 @@ versioned source and evidence, never a particular host or agent memory.
 | ID / requirements | Acceptance | Actual evidence and scope | Owner / remaining action |
 |---|---|---|---|
 | PT-C01 / REQ11 | Origin/main wing, declared roster and byte-identical universal registry pin | Owning Pantheon24b4e50b and central Stack Lab8097b5d46e481e7437904da186848aee98934eaf independently read back2026-10-27T18:23:47Z: active and pin each3,111 bytes, same Git blob0560f9ae782dbf837acf1e7f76a58b2aa2ad0d9e and SHA256743e7148cf2e68e58b742231dc3064d1a0be968cf1ccfd239d3d4be3b39e7d21; exact PINNED line agrees. Main readback receipt SHAd2ce62684a5a4867252be52adff5f76ef059ef10a13c97aa273b1f229aa9122d; earlier27a7 evidence retained in history | PASS for current source wing identity; not release or runtime certification. Mirror synchronization remains C11 |
-| PT-C02 / REQ02,11 | Nine maintained records accurately cover current product | Nine records and84-group finite census independently accepted at f676, normally merged as24b4e50b; final composed-source refresh is this candidate | Main/SSA: preserve that acceptance scope and independently check the final refresh; product/runtime acceptance remains separate |
-| PT-C03 / REQ08,11 | Complete component/dependency/upgrade and process-diagram coverage | 84 groups,286 parsed Mermaid blocks; original finite-census semantics reviewed at f676 and corrective slices carry bounded reviews. MODULE_INVENTORY enumerates1,944 committed file digests from958db55b, including joined worker/UI/legacy/bootstrap and memory-copy corrections | Main: prove final-head digest equality and review bounded corrective crosswalks; no runtime claim from diagrams or source inventory |
-| PT-C04 / REQ01,02,05 | Exact clean composed source, full Go/Swift correctness/security/resource qualification and Ma’at A17 assessment | Exact c165 tree equals qualified clean PR head3d5663dd. Full no-short normal Go8504PASS/29SKIP/0FAIL and race8504PASS/29SKIP/0FAIL, full vet exit0; independent SSA readback accepts receipt SHA9cd8b34af9b0ffdcd015ce553c9cfa14f6b4deae22022b8ee41b76e0c85704c5. Full default Swift346PASS/13SKIP/0FAIL receipt SHA77ee4325243bfc00805a67f8db7161cc5c0d11a321f10075d0186263f2acbc1d. Exact PR protected CI40568582554 attempt1 green; post-merge CI cancellation is retained, not called a pass. Earlier owned test-harness failures remain preserved | Actual full installed141 A17 audit at clean c165 returned91/100,83PASS/11WARN/3FAIL; disposition SHA4fd6db55a5c66363ec7f5dbbf65f82b1028fd3ce50e957e43562dcd1c14b8012. Numeric85 threshold met; FAIL remains for historical canon linkage2/10, mailops19.8% and servicedrain34.7% vs50%. Current corrective source meaningfully raises mailops to63.6% and servicedrain to51.0% against unchanged50% floors; four-package normal/race each1843PASS/2explicitSKIP, receipt SHA9e84c924c9bfe3a5d7d4a9601d1069e89f1a10d0f22e8dbbed8b93c7c6487569. This does not rewrite c165 or constitute a new full audit. Main/SSA: bind the independently accepted historical crosswalk without rewriting commits (SSA review SHA57eee0a04a4b9462b1959a2acb1fe9db5adc391c3a9d20be008cd5924cefcf7e; original20%/FAIL preserved), qualify correction delta. Counts/score are not resource/installed certification |
+| PT-C02 / REQ02,11 | Nine maintained records accurately cover current product | Nine records and84-group finite census independently accepted at f676 and normally merged as24b4e50b; the following corrective-source refresh is pending its final inventory and review | Main/SSA: preserve that acceptance scope and independently check the final refresh; product/runtime acceptance remains separate |
+| PT-C03 / REQ08,11 | Complete component/dependency/upgrade and process-diagram coverage | 84 groups,286 parsed Mermaid blocks; original finite-census semantics reviewed at f676 and corrective slices carry bounded reviews. The historical inventory enumerated1,944 digests from958db55b; the corrective d037 inventory now enumerates2,151 source/data/test/support blobs across104 packages/targets, including direct embedded assets. External final-head comparison remains separate from source classification and process/runtime qualification | Main: bind the final source inventory and review bounded corrective crosswalks; no runtime claim from diagrams or source inventory |
+| PT-C04 / REQ01,02,05 | Exact clean composed source, full Go/Swift correctness/security/resource qualification and Ma’at A17 assessment | Exact c165 tree equals qualified clean PR head3d5663dd. Full no-short normal Go8504PASS/29SKIP/0FAIL and race8504PASS/29SKIP/0FAIL, full vet exit0; independent SSA readback accepts receipt SHA9cd8b34af9b0ffdcd015ce553c9cfa14f6b4deae22022b8ee41b76e0c85704c5. Full default Swift346PASS/13SKIP/0FAIL receipt SHA77ee4325243bfc00805a67f8db7161cc5c0d11a321f10075d0186263f2acbc1d. Exact PR protected CI40568582554 attempt1 green; post-merge CI cancellation is retained, not called a pass. Earlier owned test-harness failures remain preserved | Actual full installed141 A17 audit at clean c165 returned91/100,83PASS/11WARN/3FAIL; disposition SHA4fd6db55a5c66363ec7f5dbbf65f82b1028fd3ce50e957e43562dcd1c14b8012. Numeric85 threshold met; FAIL remains for historical canon linkage2/10, mailops19.8% and servicedrain34.7% vs50%. Historical corrective snapshot958db55b raises mailops to63.6% and servicedrain to51.0% against unchanged50% floors; four-package normal/race each1843PASS/2explicitSKIP, receipt SHA9e84c924c9bfe3a5d7d4a9601d1069e89f1a10d0f22e8dbbed8b93c7c6487569. This does not rewrite c165 or constitute a new full audit. Main/SSA: bind the independently accepted historical crosswalk without rewriting commits (SSA review SHA57eee0a04a4b9462b1959a2acb1fe9db5adc391c3a9d20be008cd5924cefcf7e; original20%/FAIL preserved), qualify correction delta. Counts/score are not resource/installed certification |
 | PT-C05 / REQ03,10 | Same signed/notarized/stapled one-engine Python-free app in DMG and PKG | Public141 pair independently downloaded, exact size/SHA and staples matched; Application/Installer Team9D382WV988 and trusted notary verified. SSA exact signed-pair summary SHA6ab2c759b1b88ed1b22f374f01d56c2f604424e1ff9a215ac9bd38e3b87686f0 binds canonical inventory accepted=true,29entries,2expected engines,python_free=true (inventory SHAebfb0fcf99ab335d8bd27880196d5aa0b9b56457fbd68cfd0f4db9235f3a9a9b); package/app/built CLI+GUI hashes equal, expected resources/modes checked | PASS for exact observed canonical inventory, resource/mode and same-payload evidence. SSA linkage observation SHA f0186aca36fe3253d109307937b55b4685ef5be404e81f1f819e77ed2f695e75 lists only Apple/System/Swift dependencies for the two exact hash-pinned payload binaries. No Python dylib listed. Runtime resource behavior and transitive library closure remain distinct; no host-wide Python-free or all-runtime claim |
 | PT-C06 / REQ02,03 | One exact tag/release and canonical cask with remote bytes | Public141 release425936406 at20:13:02Z, annotated tag6b23bb53977a1be34881ab0d19cabb39d3864461 peels c165. Independent public pair receipt SHAef7ae3963e90ecde07ec3bbf19e5d65adbcefe21e4468d648d06b0c9d24c9007. Cask at tap a4388a1fa081a4b913ea9fe054596f765beddc65, exact bytes SHA54125c3e428b7125dcc91a3d63ca6ea88030e32f89e250a71cfae876ffc22a19; independent readback SHAc26f0ee53802c366857d3d39b401cd18cf0df6867ea4b37507e0a557727abec1 | PASS for observed public141 tag/assets/cask only. SSA owns one subsequent corrective publisher; never rewrite141 or infer installed functionality from download hashes |
 | PT-C07 / REQ04,09 | Supported install/upgrade/rollback/uninstall, loaded adoption and cleanup | ACTUAL hosted run40627882045 attempt1 at exacte613: unmodified commercial cask install140 → upgrade141 → exact reinstall rollback140 → uninstall all exited0 on macOS15.7.9 ARM64/uid501. Three PATH CLI version/source/digest joins and strict Team9/Gatekeeper checks passed; rollback digest equals initial140. Terminal4eccd47dc66b2b227082d84b09dba052342984ae7ebdf071429ef4c03154ee82 has original_failure=null and cleanup_debt=[]. SSA independently rehashed118 raw logs/59 calls and read final namespace/tap restoration | PASS for this exact140/141 commercial cask lifecycle and bounded cleanup profile only. Selected141 loaded-adoption observations remain historical evidence; this does not qualify142 packages, new GUI/fonts/menus, all-worker/fleet drain, M5-off behavior or physical VM disk erasure. SSA owns the separate142 release and installed acceptance |
@@ -64,7 +96,21 @@ SSA subsequently clarified the existing numeric85 criterion; that appended
 record is SHA256 `a76c6ffe57716133de27f9361ae814834209000f2072ac40760083ecc13d7106`.
 Neither record changes the original audit FAIL or creates a zero-findings gate.
 
-## Published141 artifact identity
+## Published151 baseline and scoped receipts
+
+- Annotated tag `c06550cba35164e7e2b36bf16d57ecfd87dbd02a` peels to the exact
+  baseline commit and tree above. Release `v0.24.151` was published as release
+  `429815923` through SSA's sole publisher.
+- DMG: 22,335,527 bytes, SHA-256
+  `4ec0b630dd2af73744ffb033077f3c912ccd0bce634486131ea033a296a08777`.
+- PKG: 33,435,066 bytes, SHA-256
+  `8280d9115fef50f32556ee7b173783b8cbefb1ab62dbf638b7751ae70733eb11`.
+- SSA's terminal receipt records successful publication, trusted signing,
+  notarization and staple validation. The bounded selected-host installs and
+  Main's actual CORE receipt do not establish whole-product or fleet-wide
+  certification.
+
+## Historical published141 artifact identity
 
 - DMG: 22,041,017 bytes, SHA256 `5b1db570ef2fadaba3c60c1ad4e9bd1e3b3931cc82f77773525c7a20cba70334`.
 - PKG: 33,072,685 bytes, SHA256 `5f22ec60ded3d76933f344f00095e7599af49766c264adad920cefa7c696d674`.
@@ -76,7 +122,7 @@ Neither record changes the original audit FAIL or creates a zero-findings gate.
 - Public141 proof directory under the retained evidence root below:
   `public141-independent-download-readback-20261027/`.
 
-The current correction remains source work until independently qualified,
+The following correction remains source work until independently qualified,
 merged, released and observed through the normal supported adoption path.
 
 ## Immutable historical public140 proof
@@ -97,8 +143,11 @@ evidence; they neither restrict product portability nor replace its content hash
 
 ## Certification decision
 
-**Wing identity: verified for the observed origin record. Full integrated141
-certification: NOT YET ESTABLISHED.** Remaining rows are executable obligations,
+**Wing identity: verified for the observed origin record. Full integrated
+certification: NOT YET ESTABLISHED.** Historical 140/141 criterion outcomes
+remain tied to their stated source and receipts; publication and scoped 151
+observations do not promote them or certify the subsequent correction. Remaining
+rows are executable obligations,
 not new features or owner approval requests. Update this record with exact final
 receipts and independent verdict after the one corrective release/adoption;
 never silently promote historical or component proof to whole-app completion.

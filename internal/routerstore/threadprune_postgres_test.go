@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestThreadPrunePostgresG1WaitingMutationsSeeCommittedG2Fence(t *testing.T) {
+func TestThreadPrunePostgresWaitingMutationsSeeProductionRetirement(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		run  func(*SQLiteStore, ThreadRecord) (bool, error)
@@ -63,7 +63,8 @@ func testG1PostgresWaitingMutation(t *testing.T, mutate func(*SQLiteStore, Threa
 		t.Fatal(err)
 	}
 	defer func() { _ = blocker.Rollback() }()
-	// Hold accepted b1 G2 fixture SQL uncommitted, not G1's physical delete.
+	// Hold the shared production retirement SQL uncommitted. This is the same
+	// predicate and payload used by DeleteThreadCAS, not a fixture-only producer.
 	retired, err := blocker.Exec(retireThreadSQL, []byte("{}"), r.ThreadID, r.Status, r.LastSeenAt, r.Host, r.Host)
 	if err != nil {
 		t.Fatal(err)

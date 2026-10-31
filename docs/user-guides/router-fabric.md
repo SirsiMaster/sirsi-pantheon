@@ -30,3 +30,15 @@ operation remains occupied until that worker exits. Context cancellation stops
 client-side waiting where supported, but does not retract remote work already
 dispatched. The legacy non-contextual fallback may also remain active until its
 call returns.
+
+## Retired thread history
+
+Thread pruning removes an exact old registration from ordinary views while
+retaining its internal retirement key. Its old user payload is cleared. This
+prevents a delayed heartbeat from making the old registration reappear. A
+normal new session can still register under a new ID; resuming the retired ID
+does not restore it. No new command or permission is required.
+
+The correction must first reach the canonical router store owner with its
+compatible-writer checks. Installing a newer desktop client alone does not
+upgrade that service or prove the fix is active across the fabric.
