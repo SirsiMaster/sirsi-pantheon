@@ -177,7 +177,7 @@ func TestQueryHistoryRetainsRepairLinksWhenTypedAcceptanceIsRejected(t *testing.
 				t.Fatal(err)
 			}
 			repair := Decision{Time: "2026-10-31T12:00:03Z", Host: "fixture", Kind: kind, Requester: "fixture",
-				Resource: "binary-drift", Determination: determination, Why: "inert retained repair", Evidence: "repair:" + kind, OriginEvidence: source.Evidence}
+				Resource: "binary-drift", Assessed: "inert retained repair", Determination: determination, Why: "inert retained repair", Evidence: "repair:" + kind, OriginEvidence: source.Evidence}
 			appendHistoryFixtures(t, journal, acceptance, repair)
 			page, err := journal.QueryHistory(HistoryQuery{Scope: HistoryScopeSystemOne, QueryKey: "rejected-typed-" + kind, Limit: 1,
 				MatchState: func(_ Decision, state HistoryMatchState) bool {
