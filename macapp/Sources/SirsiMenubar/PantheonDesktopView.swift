@@ -35,6 +35,7 @@ struct PantheonDesktopView: View {
     private var nav: Nav { session.navigation(for: section) }
 
     var body: some View {
+        let openWorkspace: OpenPantheonWorkspaceAction = { workspace in session.select(workspace) }
         HStack(spacing: 0) {
             sidebar.frame(width: 218)
             Rectangle().fill(PantheonTheme.separator).frame(width: 1)
@@ -49,7 +50,7 @@ struct PantheonDesktopView: View {
                 .id(section)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .environmentObject(nav)
-                .environment(\.openPantheonWorkspace, select)
+                .environment(\.openPantheonWorkspace, openWorkspace)
                 .environment(\.openPantheonOwnerActions, {
                     session.open(.maat, detail: OwnerActionsListView(engine: engine))
                 })
