@@ -1303,6 +1303,9 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			// zero value would make madeProgress(0, depth) false and march a
 			// healthy lane toward quarantine after ten restarts.
 			run.depthAtDispatch = -1
+			// Its exit must be scored and refreshed like any dispatched run's,
+			// never replaced in the same tick under the loaded configuration.
+			scored = false
 			log.Printf("wake-loop %s: adopted already-running consumer pid %d from durable marker (loop restarted)",
 				agentID, adopted.pid)
 		}
@@ -1558,6 +1561,10 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 				})
 			}
 		} else if !quotaBlocked && consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
+			// An exit seen only here (after the scoring check above) is next
+			// tick's to score and refresh; replacing it now would skip the
+			// #636 progress backoff and dispatch under a stale configuration.
+			(run == nil || scored) &&
 			time.Now().After(nextDispatchAllowed) &&
 			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) &&
 			!measurementWindowOpen(agentID, depth) && !attendedSessionOwnsInbox(routerRoot, agentID, depth) &&
