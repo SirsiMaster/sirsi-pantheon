@@ -150,7 +150,6 @@ final class RaHandoffViewportTests: XCTestCase {
     }
 
     @MainActor
-    @MainActor
     private func readAccessibilityButtons(in window: NSWindow) throws -> MountedAXSnapshot {
         var pending: [Any] = [window]
         var visited: Set<ObjectIdentifier> = []
