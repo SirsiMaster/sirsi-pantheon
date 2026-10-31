@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "4c17dc3d33b770b8d9e830f092cecbb846c3b6c1",
-  "source_tree": "15c1c7121640ff20ac8271233db88e4ccf1e691d",
+  "source_commit": "856eae5077616b612bf89cb23e78a1f13c44682e",
+  "source_tree": "24d3c63c56ca345d22993c44de1dccfe841bee59",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -6851,7 +6851,7 @@
         },
         {
           "path": "internal/routerstore/spoolhealth.go",
-          "sha256": "4789c04f1f5f87a71335133e02765e81bed8fb2de9a39813ac00651483fa7f6b"
+          "sha256": "737c4523aa6f46a831fd0e5abb726c003eda673f75b25c0ff8559af25704686e"
         },
         {
           "path": "internal/routerstore/spoolmaintenance_capability.go",
@@ -6887,7 +6887,7 @@
         },
         {
           "path": "internal/routerstore/spoolobservation_unix.go",
-          "sha256": "e73df1fced4bf15ee903519613d61f9f8f143c831506e3343888a34fd5400a27"
+          "sha256": "1a2ae13cac16fecb2ad201cfd9d6f239edc5c3630902e28945737f139e822f4e"
         },
         {
           "path": "internal/routerstore/spoolrepair_unix.go",
@@ -7221,7 +7221,7 @@
         },
         {
           "path": "internal/routerstore/spoolhealth_test.go",
-          "sha256": "34b6a75cf4f60c78afd5ed37980fd6c8b683c32cbfd8780712ce124e679a31fa"
+          "sha256": "43f64f0decfe12cec0036ef04394e17ff6fd674fd525e0bf9e60342660c7aace"
         },
         {
           "path": "internal/routerstore/spoolmaintenance_identity_darwin_test.go",
@@ -7253,7 +7253,7 @@
         },
         {
           "path": "internal/routerstore/spoolobservation_unix_test.go",
-          "sha256": "f20b20d368c74ad8ac26497295e03f363a8d6965090ea719108a478e216ce45b"
+          "sha256": "3c20967650d160dde0c026f856235ea28b56fb30031f79ddd0814037f994d1ec"
         },
         {
           "path": "internal/routerstore/spoolrepair_test.go",
@@ -8894,15 +8894,15 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/AppDelegate.swift",
-          "sha256": "ddc0dfdc218810a6b738603d7c5754096588d6ecbf0de38a55539df9c0e9878e"
+          "sha256": "e55458834a10442c78b57635ecb25c6138b157ad220c1cb78608452a58ef7f79"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/ApplicationMenu.swift",
-          "sha256": "15bd5e04d36e6011d7a0190a0761526c41cf73b10919c41393709b59c72ef49c"
+          "sha256": "356eba2850cb74c0a175974a710fa2edd37cbd9a8a9080d9aa6d7603b80229d3"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/CLIArguments.swift",
-          "sha256": "3f399bfa8f20088450dbd29a9aa4b6af8c889151998ad23f300b4045c0136f67"
+          "sha256": "b2a8faf3c4068932fad17ac122aeda0cd2aedee0b959bb5dfce4da3869e4cada"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/CanonicalFabric.swift",
@@ -8938,7 +8938,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/LegacyRelayMaintenance.swift",
-          "sha256": "ca0cce4366e190842defd14225ad087a83c2f8edc6b5ef0dde168fa72fc2a8d6"
+          "sha256": "04b625a313af28389dcc3e5d4315c5f58a1ae1f7cc66b3973fca7087dc93b9ab"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/LegacyRelayMaintenancePanel.swift",
@@ -8950,19 +8950,19 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/LegacyRelayPreflight.swift",
-          "sha256": "b9f18568e474dcd17fdde08f46605acdbf994f844976e6907d345c993d4e40c9"
+          "sha256": "7bcfa5634a55bfdac3e761d83bbf4af14373a7f71c2a76083b9ffc81fefecea3"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/LegacyRelayPrivilegedBridge.swift",
-          "sha256": "a8545e04ae4620a0d906c8f5338c771ad1589c5425d3a6da1475ffb7fc4145f6"
+          "sha256": "6d6f0e219530e5110281311cd3c8ab2d30db8e55e49e26f782c0d12b4b99f640"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatAppUpdate.swift",
-          "sha256": "a8d6e0238f1a8b80e4f1a0b16f446d185f749dcbf3ade60ba1220b112dae100d"
+          "sha256": "594292fbedb2c126c6d49911da758bf91fe21314e2c1c9e2f7cd7a373d18eb0c"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
-          "sha256": "bcb6eb1cf7af465de26c7d6f29d700282b86e310b60ae4c48e10b4ad30153ded"
+          "sha256": "63b1decf03515f48cdde36996178563086851412378416e9e0c21dfd52ae3ab0"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatDiagnosticCorrelation.swift",
@@ -8986,11 +8986,11 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatLocalPrevention.swift",
-          "sha256": "f458543530bdf17231cf6f33b982395d83ae38f964de6e06217f76840c701f2d"
+          "sha256": "c82a6d57c147f5ea39713b1de860d52e71949109c37c19a5b8cd4ad866a17f96"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatOperationState.swift",
-          "sha256": "99bdaf588f259bea4573071f00753c1170bc2d097def0b91c7e39f06fbfc7076"
+          "sha256": "0e08be3b8c7553a3dbc316b51d61f99c01b33c92bdb0983f0974e6259a4f9581"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatPreparedPreflightRecovery.swift",
@@ -9002,7 +9002,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatSourceImport.swift",
-          "sha256": "cb8506b4b6d34ac7cf648fac62b0bbc8769ee6e79e4a0e4c85b8a32a7fac7770"
+          "sha256": "d15cf844068688dbd971305b074e49229312df72a8e81145e97b60ec3d131853"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatWorkspaceRecoveryFrame.swift",
@@ -9033,12 +9033,16 @@
           "sha256": "039e9538e1b44d8e525c0fc28ee98be825933245f3d4ddecdbb25ec66b7dabec"
         },
         {
+          "path": "macapp/Sources/SirsiMenubar/NativeVersionProtocol.swift",
+          "sha256": "2d21705eefd850a544d9477d5f2cd6c83ef5bbb74acba8cf02ca65edaf2e78f0"
+        },
+        {
           "path": "macapp/Sources/SirsiMenubar/ObservationFreshness.swift",
           "sha256": "967f3090cb6afef0209a0b6af3efe12716d86ff2de9216be749ec4553d27334d"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/PantheonDesktopView.swift",
-          "sha256": "a8625ecafa7493e6f6c0d991956925c8d77d2d3781b91b30a0186890137d9121"
+          "sha256": "82bf07a4c07ea72bcfae23264c7ed1f21128f6d1c01a11e9c9aeb10a0297c930"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/RelayOutboxResolution.swift",
@@ -9050,7 +9054,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/RemediationExecution.swift",
-          "sha256": "a8ea4f3d38bc0043a58720d8fb4e673422f5a84c3243ceddaa26429868ce4835"
+          "sha256": "b73512c38818c7f10569410c87a01a2abf66463ba551108328f9331a8803eaf5"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/ResultPresentation.swift",
@@ -9058,7 +9062,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/SirsiEngine.swift",
-          "sha256": "1b1ed835a4349d391c81899475b5e9e86ea57ec8cb8636094d1ac6e0e9b30b1a"
+          "sha256": "c7a16b8123db7590fa93d342d8183d0de99daeb93a7239cff456de2cd386a6ab"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/Snapshot.swift",
@@ -9082,7 +9086,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/TrashBrowseSession.swift",
-          "sha256": "bceb6adca1085bba11adba8569f8ec0ffad9546d0fc9235a5865939b5401ea92"
+          "sha256": "46dcc687fd07f9c910d5fb7a23c24b9f4ea3da7e767d28bbcf6cd52148e63bf2"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/TrashReceipt.swift",
@@ -9090,29 +9094,29 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/Views.swift",
-          "sha256": "bfa85a3b5d5e25eedc7bb52935d8b961b7207e2dba2edd7ee3b1deecac1197f4"
+          "sha256": "5c04256a67eb63f5146d6b7e49bcecba02cb35aac5928523793ddf8fbcfb4b88"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/WorkspaceSession.swift",
-          "sha256": "0d64bd72054bf448dde9ce1f7a745f655c61b434d1b55aaadc86589d5b46c6e2"
+          "sha256": "b3dbb34762ceffef464517467d91cfa224a6a7d75416e3f262fb5307c43f9a25"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/main.swift",
-          "sha256": "1efcd8b18aaa8325b108373fc7ea1b390b25208698e16f3678f9aea5072e18ba"
+          "sha256": "fcbd5c7c3f802772bb29838683f09e52b5c9bc7543a562de14f8269fc71be19e"
         }
       ],
       "tests": [
         {
           "path": "macapp/Tests/SirsiMenubarTests/ApolloPlanContinuityTests.swift",
-          "sha256": "ec624ad6ae681d5e96746a69805a455d4b2b0bfbbf8046623dafd118d5d4b33d"
+          "sha256": "37074d7c665d7d61a757df2014a35809c0954158b882df70a854b93c3b8c0785"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/ApplicationMenuTests.swift",
-          "sha256": "b6b06f2076b60efb2924671a59f900ccf6424d35da4b703a4f757c77a8df2404"
+          "sha256": "d67e26c3407d96048e7a5d90e7eb171db60f4a682724a1d649ef2da27649fb75"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/CLIArgumentsTests.swift",
-          "sha256": "0bee421551394ecbd699fe2780da8412efaf1a121874961e734a00a34ed4b637"
+          "sha256": "417d9097d13e4c001e1ab773ba5786ad33f60f00db5980274c80c7bbfe17f98b"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/CanonicalFabricTests.swift",
@@ -9128,7 +9132,7 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/FeaturePanelViewportTests.swift",
-          "sha256": "58c0c731790b7b90538354d6ed6147df718970667de005f28fc3c59dc76062e2"
+          "sha256": "6766e5c34e132acbc1faf0261b99c6fee8991f8ec3d69c94330f215c4d066a93"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/FleetRenderingTests.swift",
@@ -9184,11 +9188,11 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatDiagnosticRecordTests.swift",
-          "sha256": "cdc258fb1b86e44ccf5d40bb3e32ddadcdae48a31536b0b9750dd0bef00672e0"
+          "sha256": "5d31b2e905ab6094e375c664ee6f56eeef8c0dbb7e9f72bbd9027359d94009d6"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatDiagnosticResolutionTests.swift",
-          "sha256": "87fcbdc61aa2587f9e9368d45f0298b41e819a251c73bdbe83067ec18e54b376"
+          "sha256": "06a0285a935336862ddecf04e60caa5daf58ae98f42de4b56472a827f8d346c8"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatKnowledgeArchiveTests.swift",
@@ -9204,7 +9208,7 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatOperationStateTests.swift",
-          "sha256": "ee649b40b7f7095f10c36efacf01d382bd9fe38e6ac726c63507f269302c80f1"
+          "sha256": "d9e58e394725952572e4ec44c8b3654f15a0f664676916156193cfe30b08870f"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatPreparedPreflightRecoveryTests.swift",
@@ -9216,11 +9220,11 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatSourceImportTests.swift",
-          "sha256": "8ad76c7a19d3264b036330d327fe4607998b73e931aced6aac30e00a072e030b"
+          "sha256": "7a4004f8ba289cc25b9d05f257e848f35346123541f6baad94ec02272ed00ac5"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatWorkspaceRecoveryEntryTests.swift",
-          "sha256": "b04882bf1e074791f92c53033121c222165292730b29faf4268a3e60bcb8333f"
+          "sha256": "7d4c5efc4f5f9d23b712acb3ac9cfa3973da3e1a76b748f08873c929710d6fb5"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MercuryParityTests.swift",
@@ -9239,6 +9243,10 @@
           "sha256": "d61e9c43f81707e4efaf9c5475d499152deabd1b0b480aa7eb62e8d203b36f44"
         },
         {
+          "path": "macapp/Tests/SirsiMenubarTests/NativeVersionProtocolTests.swift",
+          "sha256": "6f8cda8e9c79f455485e10ae561fda8d69dd9000533b0cdbd0e620d90e3b5a11"
+        },
+        {
           "path": "macapp/Tests/SirsiMenubarTests/ObservationFreshnessTests.swift",
           "sha256": "9ae55fce52011888c9426547acd06788a9f5ecfd5ea677152a614ca2ab9b1272"
         },
@@ -9248,7 +9256,7 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/RaHandoffViewportTests.swift",
-          "sha256": "57c9c290463b3daf23dfb89dbdcf87e1056f31d70687c384ba15b5e22e8c99a0"
+          "sha256": "9d874160d0905ef6b4902e63c8de9a249a151224c446bd3321da7a5d6dbf404c"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/RelayObservationTests.swift",
@@ -9280,7 +9288,7 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/StackLabAccessibilityTests.swift",
-          "sha256": "208812c7c52c4c91f4d52ed2b2d55ad360e90b4494d7c168b6e213d796787f54"
+          "sha256": "16dff26ba719cca0f35eee1ec75c07b5fbfbd08686276db2e5d6f2bfabf49c31"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/StackLabLocalTests.swift",
@@ -9300,7 +9308,7 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/WorkspaceSessionTests.swift",
-          "sha256": "ae069a2482c41917dad5b1aac6b2b0cc98f37924bb7e5c4840350ae1b1dc2f71"
+          "sha256": "d7f0b731e956243a939e0dcce6356a8faa64201f9e68b9055a4b16a24eec1ec9"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/WorkspaceTests.swift",
@@ -9905,7 +9913,7 @@
         },
         {
           "path": "contracts/stacklab/maat-system-one-recipe-v1.json",
-          "sha256": "edec5095f9066b9047e08f50ed3110db2b74f3036e449c1fe2c20d3049991c81"
+          "sha256": "943a89377820818211f2124311af4eccc0eca0e5583e70ca1a27c366fa8396b8"
         },
         {
           "path": "contracts/stacklab/maat-wing-v1.json",
@@ -9929,7 +9937,7 @@
         },
         {
           "path": "contracts/stacklab/pantheon-native-workspace-v1.json",
-          "sha256": "2bdbb31ad7cc50320f3d064950a78ec353d9cf683b5e3bfed2bd2c686990d4c9"
+          "sha256": "4e56bf7ed08b4dcb4abcd26b9ac3d553fd8c2b420414244cf618d86330e28f5a"
         },
         {
           "path": "contracts/stacklab/pantheon-release-artifact-recipe-v1.json",
@@ -9941,7 +9949,7 @@
         },
         {
           "path": "contracts/stacklab/ra-horus-fabric-recipe-v1.json",
-          "sha256": "3807e1cf1b3f59609734d92a5be66cb2ea70ce552e261c8e0f242fd4b86d85d8"
+          "sha256": "f6dfd04e0c88c0769a0d83ff5e2e9828791ea84a4ea5d51096d337072182d3c2"
         },
         {
           "path": "contracts/stacklab/ra-horus-fabric-wing-v1.json",

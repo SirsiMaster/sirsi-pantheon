@@ -1,5 +1,13 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-31 — Native corrective snapshot after v0.24.154
+
+- Pin code `856eae50` and its 2,162 declared source/data/test/support blobs, preserving the explicit historical Cask golden-test dependency.
+- Record Forward navigation, protected service-root reader policy, native own-bundle version response, main-actor ownership and bounded inactive-action diagnostics in existing recipes.
+- Scope strict qualification accurately: 134 focused tests passed; eight accessibility checks remain UNVERIFIED; Release build and three temporary version-protocol cases passed. No inference, installed-next-app or release certification is inferred.
+- Retain signed installed154 publication and actual root/sheet readbacks separately from the new corrective source.
+- Refs: CERTIFICATION.md, MODULE_INVENTORY.json, TRACEABILITY_MATRIX.md, ADR-030, ADR-070.
+
 ## 2026-10-31 — v0.24.154 release candidate
 
 - On macOS and Linux, binary-drift detection treats distinct regular executable files as equivalent only when bounded reads from retained descriptors yield the same SHA-256 and both names still resolve to unchanged device/inode/mode/owner/link-count/size/mtime/ctime metadata. Nonblocking opens reject special-file substitutions before reading. Missing, non-regular, unreadable, changed, oversized, or unequal targets remain drift; equal path spelling keeps its existing behavior. This observes byte equivalence during the scan and makes no claim about later path or execution continuity. Version-based sibling checks remain independent.
