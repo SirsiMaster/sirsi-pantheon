@@ -33,7 +33,7 @@ func TestRelayDrainWaitsForSettledForward(t *testing.T) {
 				if os.Getenv("SIRSI_TEST_RELAY_FAST_CANCEL_CONTROL") == "1" {
 					// Use the exact fast-return serving path, retaining a fixture-only
 					// join for teardown. That join is NOT used by the assertion.
-					done <- rl.serve(ctx, &controlDuties)
+					done <- rl.serve(ctx, &controlDuties, false)
 					return
 				}
 				done <- rl.ServeDrained(ctx, time.Second)
@@ -216,7 +216,7 @@ func TestRelayUnknownOutboxParkingFailureNeverRequeues(t *testing.T) {
 	}
 }
 
-func TestRelayFastCancellationDoesNotProveDrain(t *testing.T) {
+func TestRelayServeCancellationWaitsForSettlement(t *testing.T) {
 	rl, spool, entered, release := newHeldDrainRelay(t, false)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -226,25 +226,20 @@ func TestRelayFastCancellationDoesNotProveDrain(t *testing.T) {
 	cancel()
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
+		t.Fatalf("Serve returned before its admitted worker settled: %v", err)
 	case <-time.After(300 * time.Millisecond):
-		t.Fatal("legacy fast cancellation contract changed")
 	}
 	if _, err := os.Stat(filepath.Join(spool, "lane", "inflight", "held.json")); err != nil {
-		t.Fatalf("control did not retain the outstanding duty: %v", err)
+		t.Fatalf("Serve lost outstanding custody while waiting: %v", err)
 	}
 	release()
-	deadline := time.Now().Add(time.Second)
-	for {
-		if _, err := os.Stat(filepath.Join(spool, "lane", "inflight", "held.json")); os.IsNotExist(err) {
-			break
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Serve after settlement: %v", err)
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("control's released duty did not settle")
-		}
-		time.Sleep(time.Millisecond)
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not return after its admitted worker settled")
 	}
 }
 

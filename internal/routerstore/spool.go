@@ -662,7 +662,7 @@ type Relay struct {
 // Serve polls the spool until ctx is done. Each request file is forwarded once;
 // its response file is written atomically; stale files are swept with a log line.
 func (rl *Relay) Serve(ctx context.Context) (result error) {
-	return rl.serve(ctx, nil)
+	return rl.serve(ctx, nil, true)
 }
 
 // ErrRelayDrainIncomplete means the serving loop stopped but an admitted duty
@@ -673,8 +673,8 @@ var ErrRelayDrainIncomplete = errors.New("relay: admitted duties have not draine
 // not record their response or release already-settled in-flight custody.
 var ErrRelaySettlementIncomplete = errors.New("relay: response or outcome custody remains unsettled")
 
-// ServeDrained retains Serve's cancellation contract while providing a bounded
-// join for existing relay workers. It does not cancel an HTTP request whose
+// ServeDrained uses the existing serving path but replaces Serve's unbounded
+// worker join with a bounded result. It does not cancel an HTTP request whose
 // mutation outcome may be unknown. Timed-out duties remain owned by this
 // process; this is not producer quiescence, remote authorization, or proof that
 // an already-loaded legacy binary cooperates.
@@ -686,7 +686,7 @@ func (rl *Relay) ServeDrained(ctx context.Context, drainTimeout time.Duration) e
 		return errors.New("relay: use a new instance for each drained serving lifetime")
 	}
 	serving, cancel := context.WithCancel(ctx)
-	err := rl.serve(serving, nil)
+	err := rl.serve(serving, nil, false)
 	cancel()
 	done := make(chan struct{})
 	go func() { rl.workers.Wait(); close(done) }()
@@ -703,7 +703,7 @@ func (rl *Relay) ServeDrained(ctx context.Context, drainTimeout time.Duration) e
 	}
 }
 
-func (rl *Relay) serve(ctx context.Context, duties *sync.WaitGroup) (result error) {
+func (rl *Relay) serve(ctx context.Context, duties *sync.WaitGroup, waitWorkers bool) (result error) {
 	if rl.Client == nil {
 		c, err := newRelayHTTPClientFor(rl.Base)
 		if err != nil {
@@ -761,6 +761,9 @@ func (rl *Relay) serve(ctx context.Context, duties *sync.WaitGroup) (result erro
 	for {
 		select {
 		case <-ctx.Done():
+			if waitWorkers {
+				rl.workers.Wait()
+			}
 			return rl.settlementError()
 		default:
 		}
@@ -783,6 +786,9 @@ func (rl *Relay) serve(ctx context.Context, duties *sync.WaitGroup) (result erro
 		// independent lane workers keep draining without this polling delay.
 		select {
 		case <-ctx.Done():
+			if waitWorkers {
+				rl.workers.Wait()
+			}
 			return rl.settlementError()
 		case <-time.After(spoolPoll):
 		}

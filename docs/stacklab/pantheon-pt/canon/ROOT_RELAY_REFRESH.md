@@ -39,11 +39,11 @@ remain mandatory; this plan does not authorize a live apply.
 
 ### Implementation order and legacy constraint
 
-First close the relay's source-level cancellation gap: current `Relay.Serve`
-can return while lane workers/forward goroutines still own requests. New-runtime
-completion must distinguish fast cancellation from an acknowledged drain and
-must account for both fresh requests and serial held-outbox retries. Preserve
-finite deadlines, at-most-once handling and independent lane progress.
+Current `Relay.Serve` waits for lane workers and forward goroutines after
+cancellation, but has no bounded shutdown result. The explicit drain path must
+add a finite deadline without changing that existing contract, and must account
+for both fresh requests and serial held-outbox retries. Preserve at-most-once
+handling and independent lane progress.
 
 Then integrate the supported producer/pass control with the existing lifecycle
 controller and each actual role. Use closed owner-authorized control, not a
@@ -75,9 +75,10 @@ response leaves its original inflight record intact; startup unknown-outcome
 publication obeys the same rule. If an unknown held-request outcome cannot be
 parked, it stays inflight and never returns to the retryable outbox. Existing
 atomic file publication is not a new crash-durability certification.
-The original `Serve` retains its prompt cancellation contract and is explicitly
-not a drain acknowledgment. Each Relay instance has one serving lifetime;
-reusing retired lane channels refuses instead of silently losing wakes.
+The original `Serve` retains its unbounded join behavior. Callers requiring a
+bounded result must use `ServeDrained`; neither API is CLI or installed-service
+integration. Each drained Relay instance is one-shot; reusing retired lane
+channels refuses instead of silently losing wakes.
 
 This checkpoint does **not** switch the installed CLI to terminate on a drain
 timeout. The remaining authorized control must keep the process alive on a
