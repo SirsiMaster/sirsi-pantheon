@@ -157,7 +157,7 @@ jobs:
           /usr/bin/python3 -B scripts/maat/fabric-endpoints.test.py -v
           /usr/bin/python3 -B scripts/maat/fabric-run.test.py -v
 
-      - name: Public artifact modes and native replacement metadata (model-free)
+      - name: Public artifact modes, native replacement, and Bash 3.2 package argv (model-free)
         run: |
           python3 -B -m unittest discover -s scripts -p 'test_artifact_modes.py' -v
           python3 -B -m unittest discover -s scripts -p 'test_package_info_contract.py' -v

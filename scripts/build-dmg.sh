@@ -163,7 +163,10 @@ cp "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" "${BUNDLE_DIR}/Contents/Re
 cp -R "${PROJECT_ROOT}/contracts/stacklab" "${BUNDLE_DIR}/Contents/Resources/StackLab"
 # Private fleet profiles are deliberate build inputs, never source-tree
 # discoveries or post-signature edits. Bind their exact bytes before signing.
-APOLLO_PROFILE_ARGS=()
+# BEGIN tested Apollo inventory argument construction
+# Keep this array nonempty under macOS Bash 3.2 with nounset; the profile pair
+# is appended only when supplied.
+APOLLO_INVENTORY_ARGS=(--apollo-capability "$APOLLO_CAPABILITY")
 if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
     mkdir -p "${BUNDLE_DIR}/Contents/Resources/Apollo"
     cp "$PANTHEON_APOLLO_PROFILE" "${BUNDLE_DIR}/Contents/Resources/Apollo/native-profile.json"
@@ -171,9 +174,9 @@ if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
     # assigns root ownership. The input remains private; this profile contains
     # paths and public identities, never credentials or private keys.
     chmod 0644 "${BUNDLE_DIR}/Contents/Resources/Apollo/native-profile.json"
-    APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
+    APOLLO_INVENTORY_ARGS+=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
 fi
-APOLLO_INVENTORY_ARGS=(--apollo-capability "$APOLLO_CAPABILITY" "${APOLLO_PROFILE_ARGS[@]}")
+# END tested Apollo inventory argument construction
 # The supported caller selects a fresh path shared with the paired PKG build.
 # The writer is create-only; stale paths remain untouched for reconciliation.
 FROZEN_APOLLO_DIGESTS="${PANTHEON_APOLLO_DIGEST_RECEIPT:-}"
@@ -201,6 +204,7 @@ fi
 python3 -B "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "${BUNDLE_DIR}"
 # Verify the independently selected capability and exact profile before either
 # local codesign or the remote signing client can receive the app.
+# BEGIN tested pre-sign package-inventory command
 "${BUILD_DIR}/sirsi" package-inventory \
     --app "${BUNDLE_DIR}" \
     --version "${VERSION}" \
@@ -211,6 +215,7 @@ python3 -B "${PROJECT_ROOT}/scripts/artifact_modes.py" --bundle "${BUNDLE_DIR}"
     --brand-logo "${PROJECT_ROOT}/docs/assets/sirsi-logo-white.png" \
     "${APOLLO_INVENTORY_ARGS[@]}" \
     --write-frozen-digests "$FROZEN_APOLLO_DIGESTS"
+# END tested pre-sign package-inventory command
 read -r FROZEN_INFO_SHA256 FROZEN_PROFILE_SHA256 < <(python3 - "$FROZEN_APOLLO_DIGESTS" <<'PY'
 import re, sys
 values = {}

@@ -6,6 +6,7 @@ import plistlib
 from pathlib import Path
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -169,6 +170,103 @@ class ArtifactModesTests(unittest.TestCase):
             self.assertTrue(receipt.parent.is_dir())
             selected.append(receipt)
         self.assertNotEqual(selected[0], selected[1])
+
+    def test_profile_inventory_argv_under_macos_bash_32(self):
+        if sys.platform != "darwin":
+            self.skipTest("the production regression target is macOS /bin/bash 3.2")
+        version = subprocess.run(
+            ["/bin/bash", "-c", 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"'],
+            capture_output=True, text=True, timeout=5, check=True,
+        ).stdout
+        self.assertEqual(version, "3.2", "macOS package CI must exercise system Bash 3.2")
+
+        scripts = Path(__file__).resolve().parent
+        root = scripts.parent
+        capture_markers = (
+            "# BEGIN tested Apollo inventory argument construction",
+            "# END tested Apollo inventory argument construction",
+        )
+        command_markers = (
+            "# BEGIN tested pre-sign package-inventory command",
+            "# END tested pre-sign package-inventory command",
+        )
+
+        def source_block(path, markers):
+            source = path.read_text()
+            self.assertEqual(source.count(markers[0]), 1, str(path))
+            self.assertEqual(source.count(markers[1]), 1, str(path))
+            start = source.index(markers[0]) + len(markers[0])
+            end = source.index(markers[1], start)
+            return source[start:end]
+
+        profile_bytes = b'{"fixture":"profile path contains spaces"}\n'
+        for builder in ("build-dmg.sh", "build-pkg.sh"):
+            builder_path = scripts / builder
+            argument_block = source_block(builder_path, capture_markers)
+            command_block = source_block(builder_path, command_markers)
+            for capability in ("disabled", "enabled"):
+                with self.subTest(builder=builder, capability=capability):
+                    case_root = self.root / builder / capability
+                    bundle = case_root / "owned bundle with spaces"
+                    build_dir = case_root / "owned build bin"
+                    project_root = case_root / "project fixture"
+                    bundle.mkdir(parents=True)
+                    build_dir.mkdir(parents=True)
+                    project_root.mkdir(parents=True)
+                    capture = case_root / "captured argv.txt"
+                    fake_cli = build_dir / "sirsi"
+                    fake_cli.write_text(
+                        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$ARGV_CAPTURE\"\n"
+                    )
+                    fake_cli.chmod(0o755)
+
+                    profile = ""
+                    profile_path = None
+                    if capability == "enabled":
+                        profile_path = case_root / "private profile fixture.json"
+                        profile_path.write_bytes(profile_bytes)
+                        profile = str(profile_path)
+
+                    harness = """set -euo pipefail
+APOLLO_CAPABILITY="$1"
+if [[ -n "$2" ]]; then
+    PANTHEON_APOLLO_PROFILE="$2"
+    export PANTHEON_APOLLO_PROFILE
+else
+    unset PANTHEON_APOLLO_PROFILE
+fi
+BUNDLE_DIR="$3"
+APP_PATH="$3"
+BUILD_DIR="$4"
+PROJECT_ROOT="$5"
+VERSION=fixture
+FROZEN_APOLLO_DIGESTS="$6"
+FROZEN_APOLLO_ARGS=(--expected-info-sha256 fixture --expected-apollo-profile-sha256 absent)
+export ARGV_CAPTURE="$7"
+""" + argument_block + "\n" + command_block
+                    result = subprocess.run(
+                        [
+                            "/bin/bash", "-c", harness, "bash32-apollo-argv-fixture",
+                            capability, profile, str(bundle), str(build_dir), str(project_root),
+                            str(case_root / "owned digest receipt"), str(capture),
+                        ],
+                        env={"PATH": "/usr/bin:/bin", "HOME": str(self.root)},
+                        capture_output=True, text=True, timeout=5, check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    argv = capture.read_text().splitlines()
+                    index = argv.index("--apollo-capability")
+                    boundary = "--write-frozen-digests" if builder == "build-dmg.sh" else "--expected-info-sha256"
+                    end = argv.index(boundary, index)
+                    expected = ["--apollo-capability", capability]
+                    if capability == "enabled":
+                        expected.extend(["--apollo-profile", profile])
+                    self.assertEqual(argv[index:end], expected)
+
+                    if builder == "build-dmg.sh" and profile_path is not None:
+                        copied = bundle / "Contents/Resources/Apollo/native-profile.json"
+                        self.assertEqual(copied.read_bytes(), profile_bytes)
+                        self.assertEqual(stat.S_IMODE(copied.stat().st_mode), 0o644)
 
     def test_supported_paired_builders_share_one_selected_receipt_without_pkg_recapture(self):
         root = Path(__file__).resolve().parent.parent
