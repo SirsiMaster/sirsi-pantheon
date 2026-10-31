@@ -150,6 +150,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
 struct MaatRootScrollRestoration {
     private let savedOffset: CGFloat
     private(set) var resolved = false
+    private var lastObservedOffset: CGFloat?
 
     init(savedOffset: CGFloat) {
         self.savedOffset = savedOffset.isFinite ? max(0, savedOffset) : 0
@@ -164,6 +165,23 @@ struct MaatRootScrollRestoration {
     mutating func userMoved(to offset: CGFloat) -> CGFloat {
         resolved = true
         return offset.isFinite ? max(0, offset) : 0
+    }
+
+    mutating func boundsChanged(to offset: CGFloat) -> CGFloat? {
+        guard offset.isFinite else { return nil }
+        let current = max(0, offset)
+        guard let lastObservedOffset else {
+            self.lastObservedOffset = current
+            return nil
+        }
+        guard current != lastObservedOffset else { return nil }
+        self.lastObservedOffset = current
+        return userMoved(to: current)
+    }
+
+    mutating func recordOffset(_ offset: CGFloat) {
+        guard offset.isFinite else { return }
+        lastObservedOffset = max(0, offset)
     }
 }
 
@@ -228,7 +246,6 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
         private var observers: [NSObjectProtocol] = []
         private var connectionScheduled = false
         private var active = false
-        private var lastObservedOffset: CGFloat?
 
         init(position: Binding<CGFloat>, layoutReady: Bool) {
             self.position = position
@@ -254,7 +271,7 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
                     self.scrollView = scrollView
                     self.observe(scrollView)
                 }
-                self.lastObservedOffset = max(0, scrollView.contentView.bounds.origin.y)
+                self.restoration.recordOffset(scrollView.contentView.bounds.origin.y)
                 self.restoreFromReadyLayout()
             }
         }
@@ -263,7 +280,6 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
             active = false
             removeObservers()
             scrollView = nil
-            lastObservedOffset = nil
         }
 
         private func removeObservers() {
@@ -296,9 +312,8 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
         private func boundsChanged() {
             guard let scrollView else { return }
             let offset = max(0, scrollView.contentView.bounds.origin.y)
-            defer { lastObservedOffset = offset }
-            guard let lastObservedOffset, abs(offset - lastObservedOffset) > 0.5 else { return }
-            position.wrappedValue = restoration.userMoved(to: offset)
+            guard let captured = restoration.boundsChanged(to: offset) else { return }
+            position.wrappedValue = captured
         }
 
         private func restoreFromReadyLayout() {
@@ -309,7 +324,7 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
                     maximumOffset: document.frame.height - clip.bounds.height,
                     ready: layoutReady
                   ) else { return }
-            lastObservedOffset = target
+            restoration.recordOffset(target)
             clip.scroll(to: CGPoint(x: clip.bounds.origin.x, y: target))
             scrollView.reflectScrolledClipView(clip)
             position.wrappedValue = target

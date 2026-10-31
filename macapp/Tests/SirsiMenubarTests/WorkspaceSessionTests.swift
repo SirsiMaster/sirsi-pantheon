@@ -60,10 +60,15 @@ final class WorkspaceSessionTests: XCTestCase {
         XCTAssertNil(restoration.layoutChanged(maximumOffset: 700, ready: true))
     }
 
-    func testMaatPrimaryScrollUserMovementWinsWhileLayoutRestoreIsDeferred() {
+    func testMaatPrimaryBoundsCallbackTracksFractionalMovementBeforeDeferredRestore() {
         var restoration = MaatRootScrollRestoration(savedOffset: 600)
+        restoration.recordOffset(0)
         XCTAssertNil(restoration.layoutChanged(maximumOffset: 300, ready: false))
-        XCTAssertEqual(restoration.userMoved(to: 20), 20)
+        XCTAssertEqual(restoration.boundsChanged(to: 0.5), 0.5)
+        XCTAssertEqual(restoration.boundsChanged(to: 1), 1)
+        XCTAssertEqual(restoration.boundsChanged(to: 1.5), 1.5)
+        XCTAssertNil(restoration.boundsChanged(to: 1.5), "unchanged callbacks do not alter the accepted baseline")
+        XCTAssertTrue(restoration.resolved)
         XCTAssertNil(restoration.layoutChanged(maximumOffset: 300, ready: true))
     }
 
