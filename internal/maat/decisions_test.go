@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,6 +68,69 @@ func TestFileDecisionJournalIdempotentReadbackRejectsMalformedTail(t *testing.T)
 	}
 	if err := journal.AppendIdempotent(decision); err == nil {
 		t.Fatal("idempotent readback accepted a valid match ahead of a malformed journal tail")
+	}
+}
+
+type fakeDecisionAppendFile struct {
+	shortWrite bool
+	writeErr   error
+	syncErr    error
+	closeErr   error
+	calls      []string
+}
+
+func (f *fakeDecisionAppendFile) Write(record []byte) (int, error) {
+	f.calls = append(f.calls, "write")
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	if f.shortWrite {
+		return len(record) - 1, nil
+	}
+	return len(record), nil
+}
+
+func (f *fakeDecisionAppendFile) Sync() error {
+	f.calls = append(f.calls, "sync")
+	return f.syncErr
+}
+
+func (f *fakeDecisionAppendFile) Close() error {
+	f.calls = append(f.calls, "close")
+	return f.closeErr
+}
+
+func TestAppendDecisionRecordCompletesWriteSyncCloseAndPrioritizesFailures(t *testing.T) {
+	writeFailure, syncFailure, closeFailure := errors.New("write failed"), errors.New("sync failed"), errors.New("close failed")
+	for _, tt := range []struct {
+		name       string
+		shortWrite bool
+		writeErr   error
+		syncErr    error
+		closeErr   error
+		wantErr    error
+		wantStage  string
+		wantCalls  string
+	}{
+		{name: "complete", wantCalls: "write,sync,close"},
+		{name: "write error precedes close", writeErr: writeFailure, syncErr: syncFailure, closeErr: closeFailure, wantErr: writeFailure, wantStage: "append", wantCalls: "write,close"},
+		{name: "short write is rejected", shortWrite: true, closeErr: closeFailure, wantErr: io.ErrShortWrite, wantStage: "append", wantCalls: "write,close"},
+		{name: "sync error precedes close", syncErr: syncFailure, closeErr: closeFailure, wantErr: syncFailure, wantStage: "sync", wantCalls: "write,sync,close"},
+		{name: "close error is returned", closeErr: closeFailure, wantErr: closeFailure, wantStage: "close", wantCalls: "write,sync,close"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			file := &fakeDecisionAppendFile{shortWrite: tt.shortWrite, writeErr: tt.writeErr, syncErr: tt.syncErr, closeErr: tt.closeErr}
+			err := appendDecisionRecord(file, []byte("fixture record\n"))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("append error = %v, want errors.Is(_, %v)", err, tt.wantErr)
+			}
+			if tt.wantStage != "" && !strings.Contains(err.Error(), tt.wantStage) {
+				t.Fatalf("append error %q does not identify stage %q", err, tt.wantStage)
+			}
+			if got := strings.Join(file.calls, ","); got != tt.wantCalls {
+				t.Fatalf("I/O calls = %q, want %q", got, tt.wantCalls)
+			}
+		})
 	}
 }
 
