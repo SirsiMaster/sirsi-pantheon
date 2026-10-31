@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "856eae5077616b612bf89cb23e78a1f13c44682e",
-  "source_tree": "24d3c63c56ca345d22993c44de1dccfe841bee59",
+  "source_commit": "81c78d4bd5f5e0ba95fc7658ea5b5a3a7d9ed0da",
+  "source_tree": "10635ac6956d886dd1885240cd9560cdc707294a",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -7650,7 +7650,7 @@
         },
         {
           "path": "internal/selfupdate/selfupdate.go",
-          "sha256": "7c447285a51f2700316b6d6522735a71907f8f6aefe58ef2514d02db32180785"
+          "sha256": "98c5b8c3145dbaed23e438f7ec2c746f67b124db267376ade2585e2b3e23971a"
         }
       ],
       "tests": [
@@ -7664,7 +7664,7 @@
         },
         {
           "path": "internal/selfupdate/probe_bounded_unix_test.go",
-          "sha256": "231a6db596a8f2855e4f73334326c7b5e10a17444c968e6cffb7073f8ad86f92"
+          "sha256": "059442db9eb66018f991a1bc69731caeeb8aa36d7892385241ba0d892a714cab"
         },
         {
           "path": "internal/selfupdate/provenance_test.go",
@@ -9913,7 +9913,7 @@
         },
         {
           "path": "contracts/stacklab/maat-system-one-recipe-v1.json",
-          "sha256": "943a89377820818211f2124311af4eccc0eca0e5583e70ca1a27c366fa8396b8"
+          "sha256": "6c5a0228e1a84d58684c5cf43e3959a5b9ef0675cdf9e2665f4ebe03dcb48131"
         },
         {
           "path": "contracts/stacklab/maat-wing-v1.json",

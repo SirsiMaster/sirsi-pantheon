@@ -2,6 +2,9 @@
 
 ## 2026-10-31 — Native corrective snapshot after v0.24.154
 
+- Extend the code pin to `81c78d4b` for the native-only one-second cold-start allowance and finite, non-signaling probe fixtures. Normal and race each passed 13 top-level probe/disposition tests; global and non-native bounds remain unchanged.
+- Preserve the 33 unmounted SwiftUI fixture runtime warnings as a qualification limit, alongside the eight UNVERIFIED accessibility checks.
+
 - Pin code `856eae50` and its 2,162 declared source/data/test/support blobs, preserving the explicit historical Cask golden-test dependency.
 - Record Forward navigation, protected service-root reader policy, native own-bundle version response, main-actor ownership and bounded inactive-action diagnostics in existing recipes.
 - Scope strict qualification accurately: 134 focused tests passed; eight accessibility checks remain UNVERIFIED; Release build and three temporary version-protocol cases passed. No inference, installed-next-app or release certification is inferred.
