@@ -83,6 +83,38 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	if first != 1 {
 		t.Fatalf("first Run routed %d items to codex-pantheon, want exactly 1\n%s", first, buf.String())
 	}
+	items, err := work.ListInbox(root, "codex-pantheon")
+	if err != nil {
+		t.Fatalf("ListInbox after first Run: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("first Run inbox has %d items, want exactly 1", len(items))
+	}
+	routedBody := items[0].Instructions
+	for _, want := range []string{
+		"The launchd liveness watch found the warm gemma broker unresponsive",
+		"Measured observation (not current action authority):",
+		"Host: " + mustTestHostname(t),
+		"Finding detail: no port file (broker not running)",
+		"Recheck the current state and exact target before acting.",
+	} {
+		if !strings.Contains(routedBody, want) {
+			t.Errorf("routed liveness finding missing %q: %q", want, routedBody)
+		}
+	}
+	bracket := strings.SplitN(routedBody, "Observation bracket UTC: ", 2)
+	if len(bracket) != 2 {
+		t.Fatalf("routed liveness finding has no UTC observation bracket: %q", routedBody)
+	}
+	bracketFields := strings.Fields(bracket[1])
+	if len(bracketFields) < 3 || bracketFields[1] != "through" {
+		t.Fatalf("invalid UTC observation bracket: %q", bracket[1])
+	}
+	observedFrom, fromErr := time.Parse(time.RFC3339Nano, bracketFields[0])
+	observedThrough, throughErr := time.Parse(time.RFC3339Nano, bracketFields[2])
+	if fromErr != nil || throughErr != nil || observedThrough.Before(observedFrom) {
+		t.Fatalf("invalid ordered UTC observation bracket %q (start: %v, end: %v)", bracketFields[:3], fromErr, throughErr)
+	}
 
 	buf.Reset()
 	if err := Run(root, &buf); err != nil {
@@ -94,6 +126,15 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	if !strings.Contains(buf.String(), "skip") {
 		t.Errorf("second Run should report a dedup skip, got:\n%s", buf.String())
 	}
+}
+
+func mustTestHostname(t *testing.T) string {
+	t.Helper()
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatalf("os.Hostname: %v", err)
+	}
+	return host
 }
 
 // TestProbeSessionLeak_Threshold confirms the leaked-session probe stays OK
@@ -177,6 +218,44 @@ func TestPickWorst_SeverityOrder(t *testing.T) {
 	nonFixable := Finding{Check: "menubar", OK: false, Fixable: false}
 	if w := pickWorst([]Finding{okFinding, nonFixable}); w != nil {
 		t.Errorf("no fixable non-OK finding → nil, got %+v", w)
+	}
+}
+
+func TestRoutedObservationBodyPreservesGuidanceAndAddsMeasuredProvenance(t *testing.T) {
+	started := time.Date(2026, 10, 31, 7, 4, 5, 123456789, time.UTC)
+	finished := time.Date(2026, 10, 31, 7, 4, 6, 987654321, time.UTC)
+	finding := Finding{
+		Body:   "Keep the existing generic remediation guidance unchanged.",
+		Detail: "connection failed in 2s (refused)",
+	}
+	got := routedObservationBody(finding, "horus-m1", started, finished)
+	for _, want := range []string{
+		finding.Body + "\n\n",
+		"Measured observation (not current action authority):",
+		"Host: horus-m1",
+		"Observation bracket UTC: 2026-10-31T07:04:05.123456789Z through 2026-10-31T07:04:06.987654321Z",
+		"Finding detail: " + finding.Detail,
+		"Recheck the current state and exact target before acting.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("routed observation body missing %q: %q", want, got)
+		}
+	}
+}
+
+func TestRoutedObservationBodyBoundsDetailAndLabelsUnavailableHost(t *testing.T) {
+	started := time.Date(2026, 10, 31, 7, 0, 0, 0, time.UTC)
+	finished := started.Add(time.Second)
+	longDetail := strings.Repeat("x", maxRoutedFindingDetailBytes+100)
+	got := routedObservationBody(Finding{Detail: longDetail}, " ", started, finished)
+	if !strings.Contains(got, "Host: unavailable") {
+		t.Fatalf("missing unavailable-host label: %q", got)
+	}
+	if !strings.Contains(got, strings.Repeat("x", maxRoutedFindingDetailBytes)+"… [truncated]") {
+		t.Fatalf("detail was not bounded with an explicit truncation marker: %q", got)
+	}
+	if strings.Contains(got, strings.Repeat("x", maxRoutedFindingDetailBytes+1)) {
+		t.Fatal("routed detail exceeded its byte bound")
 	}
 }
 
