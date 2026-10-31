@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.153] — 2026-10-31
 
+- Synchronize the wake-loop terminal observer fixture at the existing post-heartbeat boundary, then verify an authoritative terminal readback and no revival. Production heartbeat and lifecycle retry behavior remain unchanged. Refs: ADR-061 and the Ra traceability matrix.
+
+- Refresh the component inventory to the synchronized fixture source `3501cf13` (2,155 listed blobs); release and installed-runtime certification remain separate.
+
 - Honor the global `--json` contract for `sirsi router show` and `router reassign`: show emits the canonical typed item, and a successful reassign emits a compact item/status receipt. Preserve human output and return operation errors without success output. Add injected Cobra fixtures for both modes. Source candidate only; qualification and installed CLI verification remain separate.
 
 - Refs: `docs/user-guides/router-service.md`, `docs/stacklab/ra/canon/TRACEABILITY_MATRIX.md`, ADR-068, ADR-072 C5

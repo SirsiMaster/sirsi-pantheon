@@ -2,6 +2,9 @@
 
 ## 2026-10-31 — v0.24.153 release candidate
 
+- Synchronize the wake-loop terminal observer fixture at the existing post-heartbeat boundary and verify terminal readback and no revival; production lifecycle behavior remains unchanged. Refs: ADR-061 and the Ra traceability matrix.
+- Refresh the component inventory to synchronized fixture source `3501cf13` (2,155 listed blobs); release and installed-runtime certification remain separate.
+
 - Honor the global `--json` contract for `sirsi router show` and `router reassign`: show emits the canonical typed item, and a successful reassign emits a compact item/status receipt. Preserve human output and return operation errors without success output. Add injected Cobra fixtures for both modes. Source candidate only; qualification and installed CLI verification remain separate.
 - Refs: `docs/user-guides/router-service.md`, `docs/stacklab/ra/canon/TRACEABILITY_MATRIX.md`, ADR-068, ADR-072 C5
 - The existing root lifecycle caller now requests a PID/start and spool-root bound
