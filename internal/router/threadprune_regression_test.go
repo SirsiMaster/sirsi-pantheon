@@ -79,6 +79,10 @@ func TestStoreOnlySeededAndN2ProducedPruneFencesSurviveRegistration(t *testing.T
 	// Exercise the current N2 producer through the real registry consumer path:
 	// persist terminal state, prune it from the loaded registry, then save the
 	// removal. This must create the second retained fence without a SQL insert.
+	staleProduced, err := LoadThreadRegistry(root) // this writer retains the ACTIVE N2 baseline
+	if err != nil {
+		t.Fatal(err)
+	}
 	terminal, err := LoadThreadRegistry(root)
 	if err != nil {
 		t.Fatal(err)
@@ -100,9 +104,30 @@ func TestStoreOnlySeededAndN2ProducedPruneFencesSurviveRegistration(t *testing.T
 	if binding, err := store.ThreadBinding(produced.ThreadID); err != nil || binding.Status != "pruned" || binding.Agent != produced.AgentID || binding.Host != host || binding.LastSeenAt != old.Format(routerstore.AudienceTS) {
 		t.Fatalf("N2-produced retirement fence: %+v err=%v", binding, err)
 	}
+	staleProduced.Threads[produced.ThreadID].CurrentItem = "dirty-heartbeat-after-n2-prune"
+	staleProduced.Threads[produced.ThreadID].LastSeenAt = now
+	if err := SaveThreadRegistry(root, staleProduced); !errors.Is(err, ErrLostLifecycleFence) {
+		t.Fatalf("stale active N2 baseline did not lose fence: %v", err)
+	}
+	if _, err := RegisterThread(root, &Thread{ThreadID: produced.ThreadID, AgentID: produced.AgentID, Host: host,
+		MachineID: produced.MachineID, Surface: produced.Surface, SessionID: produced.SessionID}); !errors.Is(err, ErrLostLifecycleFence) {
+		t.Fatalf("explicit N2-retired ID pin did not fail closed: %v", err)
+	}
+
+	// Leave a third aged terminal record for RegisterThread's own
+	// PruneClosed/SaveThreadRegistry pass; do not pre-prune this consumer case.
+	visible, err := LoadThreadRegistry(root)
+	if err != nil || len(visible.Threads) != 0 {
+		t.Fatalf("unexpected visible records before registration prune: %+v err=%v", visible, err)
+	}
+	visible.Threads["registration-pruned"] = &Thread{ThreadID: "registration-pruned", AgentID: "fixture-lane", Host: host,
+		MachineID: "fixture-machine", Surface: "worker", SessionID: "registration-pruned-conversation", Status: ThreadStatusClosed, LastSeenAt: old}
+	if err := SaveThreadRegistry(root, visible); err != nil {
+		t.Fatal(err)
+	}
 
 	// An ordinary registration for the same stable conversation gets a fresh
-	// runtime ID and retains both the independently seeded and N2-produced keys.
+	// runtime ID, prunes the third terminal itself, and retains both older keys.
 	fresh, err := RegisterThread(root, &Thread{AgentID: produced.AgentID, Host: host,
 		MachineID: produced.MachineID, Surface: produced.Surface, SessionID: produced.SessionID})
 	if err != nil {
@@ -116,7 +141,7 @@ func TestStoreOnlySeededAndN2ProducedPruneFencesSurviveRegistration(t *testing.T
 		t.Fatalf("fresh runtime not exclusively visible: %+v err=%v", visible, err)
 	}
 	var fences int
-	if err := raw.QueryRow(`SELECT count(*) FROM threads WHERE status='pruned'`).Scan(&fences); err != nil || fences != 2 {
+	if err := raw.QueryRow(`SELECT count(*) FROM threads WHERE status='pruned'`).Scan(&fences); err != nil || fences != 3 {
 		t.Fatalf("ordinary registration lost or created a retirement fence: count=%d err=%v", fences, err)
 	}
 	for _, want := range []struct {
@@ -124,6 +149,7 @@ func TestStoreOnlySeededAndN2ProducedPruneFencesSurviveRegistration(t *testing.T
 	}{
 		{seed.ThreadID, seed.AgentID, old.Format(routerstore.AudienceTS)},
 		{produced.ThreadID, produced.AgentID, old.Format(routerstore.AudienceTS)},
+		{"registration-pruned", "fixture-lane", old.Format(routerstore.AudienceTS)},
 	} {
 		binding, err := store.ThreadBinding(want.id)
 		if err != nil || binding.ThreadID != want.id || binding.Status != "pruned" || binding.Agent != want.agent || binding.Host != host || binding.LastSeenAt != want.lastSeen {
