@@ -14,7 +14,8 @@
   checked cleanup failures do the same. The maintenance endpoint remains owned
   through held workers, including after a drain timeout, and closes only after
   those workers finish. The production cleanup fixture binds expected custody
-  paths to the canonical spool root used by the relay.
+  paths to the canonical spool root used by the relay. Remove the unused
+  untracked discovery wrapper; serving continues through tracked discovery.
 
 This is the first source checkpoint in the existing native lifecycle plan, not
 an installed service refresh, producer-ingress fence or legacy migration proof.

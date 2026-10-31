@@ -884,10 +884,6 @@ func (rl *Relay) discoverTracked(ctx context.Context, duties *sync.WaitGroup) in
 	return delivered
 }
 
-func (rl *Relay) discover(ctx context.Context) int {
-	return rl.discoverTracked(ctx, nil)
-}
-
 // relayLaneParallel bounds concurrent forwards within ONE lane. A lane is an agent id, and every
 // wake loop on a host without SIRSI_AGENT_ID shares the hostname lane: measured on the M5
 // 2026-10-16, that lane forwarded serially at ~1 req/s (each forward is a Cloud Run round trip)
