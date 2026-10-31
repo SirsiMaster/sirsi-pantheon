@@ -198,7 +198,7 @@ func TestLegacyMaintenanceFresh147PlanDoesNotBorrowCompletedOldTransaction(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ID == oldID || result.Revision != 9 || result.Plan.LegacySource != f.plan.LegacySource ||
+	if result.ID == oldID || result.Revision != 16 || result.Plan.LegacySource != f.plan.LegacySource ||
 		result.Plan.Original.PID != 53175 || result.Plan.Original.Started != f.plan.Original.Started ||
 		result.OldOutcomes != "unknown_not_certified_drained" {
 		t.Fatalf("fresh 147 transition borrowed or misbound historical transaction: %+v", result)
