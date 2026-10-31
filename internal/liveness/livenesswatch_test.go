@@ -77,37 +77,15 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
 
 	var buf bytes.Buffer
-	started := time.Date(2026, 10, 31, 7, 4, 5, 123456789, time.UTC)
-	finished := time.Date(2026, 10, 31, 7, 4, 6, 987654321, time.UTC)
-	if err := runWithObservationProviders(root, &buf, func() (string, error) { return "horus-fixture", nil }, fixedObservationClock(started, finished)); err != nil {
+	if err := Run(root, &buf); err != nil {
 		t.Fatalf("first Run: %v", err)
 	}
 	first := openCount(t, root, "codex-pantheon")
 	if first != 1 {
 		t.Fatalf("first Run routed %d items to codex-pantheon, want exactly 1\n%s", first, buf.String())
 	}
-	items, err := work.ListInbox(root, "codex-pantheon")
-	if err != nil {
-		t.Fatalf("ListInbox after first Run: %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("first Run inbox has %d items, want exactly 1", len(items))
-	}
-	routedBody := items[0].Instructions
-	for _, want := range []string{
-		"The launchd liveness watch found the warm gemma broker unresponsive",
-		"Measured observation (not current action authority):",
-		"Host: horus-fixture",
-		"Observation bracket UTC: 2026-10-31T07:04:05.123456789Z through 2026-10-31T07:04:06.987654321Z",
-		"Finding detail: no port file (broker not running)",
-		"Recheck the current state and exact target before acting.",
-	} {
-		if !strings.Contains(routedBody, want) {
-			t.Errorf("routed liveness finding missing %q: %q", want, routedBody)
-		}
-	}
 	buf.Reset()
-	if err := runWithObservationProviders(root, &buf, func() (string, error) { return "horus-fixture", nil }, fixedObservationClock(started, finished)); err != nil {
+	if err := Run(root, &buf); err != nil {
 		t.Fatalf("second Run: %v", err)
 	}
 	if second := openCount(t, root, "codex-pantheon"); second != 1 {
@@ -129,38 +107,67 @@ func fixedObservationClock(started, finished time.Time) func() time.Time {
 	}
 }
 
-func TestRun_RoutesUnavailableHostWhenHostnameLookupFails(t *testing.T) {
-	root := t.TempDir()
-	writeLivenessTestAgents(t, root)
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	installFakeBrokerPlist(t, home)
-	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
+func TestRun_RoutesMeasuredObservationWithInjectedProviders(t *testing.T) {
+	started := time.Date(2026, 10, 31, 7, 4, 5, 123456789, time.UTC)
+	finished := time.Date(2026, 10, 31, 7, 4, 6, 987654321, time.UTC)
+	finding := Finding{
+		Check:   "gemma-broker",
+		Detail:  "fixture connection refused after 2s",
+		Fixable: true,
+		Title:   "fixture measured liveness finding",
+		Body:    "Keep this existing generic remediation guidance.",
+	}
 
-	started := time.Date(2026, 10, 31, 8, 0, 0, 0, time.UTC)
-	finished := started.Add(time.Second)
-	var buf bytes.Buffer
-	err := runWithObservationProviders(root, &buf, func() (string, error) {
-		return "", os.ErrPermission
-	}, fixedObservationClock(started, finished))
-	if err != nil {
-		t.Fatalf("Run with hostname lookup failure: %v", err)
+	tests := []struct {
+		name     string
+		host     string
+		hostErr  error
+		wantHost string
+	}{
+		{name: "resolved host", host: "horus-fixture", wantHost: "Host: horus-fixture"},
+		{name: "hostname error", hostErr: os.ErrPermission, wantHost: "Host: unavailable"},
 	}
-	items, err := work.ListInbox(root, "codex-pantheon")
-	if err != nil {
-		t.Fatalf("ListInbox: %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("hostname lookup failure routed %d findings, want 1", len(items))
-	}
-	for _, want := range []string{
-		"Host: unavailable",
-		"Observation bracket UTC: 2026-10-31T08:00:00Z through 2026-10-31T08:00:01Z",
-		"Finding detail: no port file (broker not running)",
-	} {
-		if !strings.Contains(items[0].Instructions, want) {
-			t.Errorf("routed finding after hostname error missing %q: %q", want, items[0].Instructions)
-		}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeLivenessTestAgents(t, root)
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
+
+			hostname := func() (string, error) { return tc.host, tc.hostErr }
+			probeFindings := func(home string) []Finding { return []Finding{finding} }
+			var buf bytes.Buffer
+			if err := runWithObservationProviders(root, &buf, hostname, fixedObservationClock(started, finished), probeFindings); err != nil {
+				t.Fatalf("first run: %v", err)
+			}
+			items, err := work.ListInbox(root, "codex-pantheon")
+			if err != nil {
+				t.Fatalf("ListInbox: %v", err)
+			}
+			if len(items) != 1 {
+				t.Fatalf("first run routed %d findings, want 1", len(items))
+			}
+			for _, want := range []string{
+				finding.Body + "\n\n",
+				tc.wantHost,
+				"Observation bracket UTC: 2026-10-31T07:04:05.123456789Z through 2026-10-31T07:04:06.987654321Z",
+				"Finding detail: " + finding.Detail,
+				"not current action authority",
+				"Recheck the current state and exact target before acting.",
+			} {
+				if !strings.Contains(items[0].Instructions, want) {
+					t.Errorf("routed finding missing %q: %q", want, items[0].Instructions)
+				}
+			}
+
+			buf.Reset()
+			if err := runWithObservationProviders(root, &buf, hostname, fixedObservationClock(started, finished), probeFindings); err != nil {
+				t.Fatalf("second run: %v", err)
+			}
+			if count := openCount(t, root, "codex-pantheon"); count != 1 || !strings.Contains(buf.String(), "skip") {
+				t.Errorf("second run did not preserve dispatch dedup: open count=%d output=%q", count, buf.String())
+			}
+		})
 	}
 }
 

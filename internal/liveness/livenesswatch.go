@@ -245,26 +245,30 @@ type Finding struct {
 // for the worst current owner-fixable blocker. routerRoot is the idea-router
 // root (…/.agents/idea-router). Read-and-route only — never kills a process.
 func Run(routerRoot string, w io.Writer) error {
-	return runWithObservationProviders(routerRoot, w, os.Hostname, time.Now)
+	return runWithObservationProviders(routerRoot, w, os.Hostname, time.Now, currentLivenessFindings)
 }
 
-func runWithObservationProviders(routerRoot string, w io.Writer, hostname func() (string, error), now func() time.Time) error {
-	observationStartedAt := now().UTC()
-	host, err := hostname()
-	if err != nil || strings.TrimSpace(host) == "" {
-		host = "unavailable"
-	}
-	home, _ := os.UserHomeDir()
+func currentLivenessFindings(home string) []Finding {
 	// Preserve severity order: broker, sampled memory spiral, session-candidate
 	// count, then menubar. These are separate signals; candidate counts alone do
 	// not establish the cause of memory pressure.
-	findings := []Finding{
+	return []Finding{
 		probeLaunchdDisabled(),
 		probeGemma(home),
 		probeMemoryDeath(),
 		probeSessionLeak(),
 		probeMenubar(),
 	}
+}
+
+func runWithObservationProviders(routerRoot string, w io.Writer, hostname func() (string, error), now func() time.Time, probeFindings func(home string) []Finding) error {
+	observationStartedAt := now().UTC()
+	host, err := hostname()
+	if err != nil || strings.TrimSpace(host) == "" {
+		host = "unavailable"
+	}
+	home, _ := os.UserHomeDir()
+	findings := probeFindings(home)
 	observationFinishedAt := now().UTC()
 
 	for _, f := range findings {
