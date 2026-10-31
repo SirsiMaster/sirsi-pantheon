@@ -102,6 +102,46 @@ func ValidateBinaryDriftInactiveSource(source Decision, evidence, host string) e
 	return nil
 }
 
+// ValidateBinaryDriftInactiveCase performs one strict journal pass for the
+// exact source, host, and prior-action fence before a fresh observation.
+func ValidateBinaryDriftInactiveCase(journal *FileDecisionJournal, evidence, host string) error {
+	if journal == nil || strings.TrimSpace(evidence) == "" {
+		return errors.New("binary-drift inactive disposition requires exact source evidence")
+	}
+	var source Decision
+	sourceCount := 0
+	conflict := false
+	if _, err := journal.scanStrict(func(row Decision) bool {
+		if row.Evidence == evidence {
+			source, sourceCount = row, sourceCount+1
+		}
+		if row.OriginEvidence != evidence && row.ResolutionFor != evidence {
+			return false
+		}
+		switch row.Kind {
+		case "diagnostic repair attempt", "diagnostic verified repair", "diagnostic owner review":
+			conflict = true
+		case "diagnostic owner acceptance":
+			if row.BinaryDriftInactiveDisposition == nil || row.OriginEvidence != evidence || row.ResolutionFor != evidence {
+				conflict = true
+			}
+		}
+		return false
+	}); err != nil {
+		return fmt.Errorf("binary-drift inactive disposition: inspect strict journal history: %w", err)
+	}
+	if sourceCount != 1 {
+		return errors.New("binary-drift inactive disposition requires one unique System One source case")
+	}
+	if err := ValidateBinaryDriftInactiveSource(source, evidence, host); err != nil {
+		return err
+	}
+	if conflict {
+		return errors.New("binary-drift source already has an owner or updater decision")
+	}
+	return nil
+}
+
 func validBinaryDriftInactiveSource(source Decision, evidence, host string) bool {
 	verdict := source.SystemOne
 	if verdict == nil || ValidateMaatVerdict(*verdict) != nil || !DiagnosticHostMatches(verdict.Subject, host) || !verdict.Floor.Passed || len(verdict.Findings) != 1 || !IsCanonicalHostDiagnosticFinding(*verdict, verdict.Findings[0], "binary-drift") || (verdict.Findings[0].Severity != "major" && verdict.Findings[0].Severity != "block") {
@@ -141,6 +181,7 @@ func (j *FileDecisionJournal) AppendBinaryDriftInactiveDispositionOnce(decision 
 		var sameEvidence *Decision
 		conflictingRelated := false
 		hasSameCaseDisposition := false
+		sameCaseDispositionCount := 0
 		var origin Decision
 		originCount := 0
 		if _, err := j.scanStrict(func(existing Decision) bool {
@@ -150,6 +191,7 @@ func (j *FileDecisionJournal) AppendBinaryDriftInactiveDispositionOnce(decision 
 			}
 			if existing.Kind == decision.Kind && existing.OriginEvidence == decision.OriginEvidence && existing.BinaryDriftInactiveDisposition != nil {
 				hasSameCaseDisposition = true
+				sameCaseDispositionCount++
 				copy := existing
 				sameEvidence = &copy
 				return false
@@ -168,7 +210,7 @@ func (j *FileDecisionJournal) AppendBinaryDriftInactiveDispositionOnce(decision 
 			return errors.New("binary-drift case already has an updater or owner decision; refresh the exact case")
 		}
 		if hasSameCaseDisposition {
-			if sameEvidence == nil || sameEvidence.Evidence != decision.Evidence || !sameInactiveObservationIdentity(*sameEvidence.BinaryDriftInactiveDisposition, *decision.BinaryDriftInactiveDisposition) {
+			if sameCaseDispositionCount != 1 || sameEvidence == nil || sameEvidence.Evidence != decision.Evidence || !sameInactiveObservationIdentity(*sameEvidence.BinaryDriftInactiveDisposition, *decision.BinaryDriftInactiveDisposition) {
 				return errors.New("binary-drift case already has a different inactive disposition")
 			}
 			result = *sameEvidence
@@ -192,19 +234,6 @@ func (j *FileDecisionJournal) AppendBinaryDriftInactiveDispositionOnce(decision 
 		return Decision{}, false, fmt.Errorf("maat decision journal: append inactive disposition: %w", err)
 	}
 	return result, appended, nil
-}
-
-func (j *FileDecisionJournal) FindBinaryDriftInactiveDisposition(origin string) (Decision, int, error) {
-	var found Decision
-	count := 0
-	_, err := j.scanStrict(func(decision Decision) bool {
-		if decision.Kind == "diagnostic owner acceptance" && decision.OriginEvidence == origin && decision.BinaryDriftInactiveDisposition != nil {
-			found = decision
-			count++
-		}
-		return false
-	})
-	return found, count, err
 }
 
 func sameInactiveObservationIdentity(left, right BinaryDriftInactiveDisposition) bool {

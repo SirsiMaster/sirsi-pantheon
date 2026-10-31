@@ -1238,7 +1238,7 @@ func diagnosticFixExpectation(kind: String, check: String) -> String? {
     case "relief" where check == "Jetsam Events (7d)":
         return "This is a 7-day record of past memory-pressure events. Relieving a live cause may help prevent more events; the historical count changes only as the window advances."
     case "relief":
-        return "This is a current reading. Relieving an active cause may ease pressure, but memory is not guaranteed to be reclaimed immediately. Recheck after the workload or system state changes."
+        return "This is a current reading. Relieving an active cause may ease pressure, but it does not guarantee an immediate change to this reading. Recheck after the workload or system state changes."
     case "guidance":
         return "This acts only while the issue is happening live. If it isn't happening right now, you'll get steps to prevent it — the status won't change immediately."
     case "instant" where check == "App Crashes (7d)":

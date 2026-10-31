@@ -248,9 +248,13 @@ var maatRepairBinaryDriftCmd = &cobra.Command{
 			if maatRepairBinaryDriftCaseEvidence == "" {
 				return errors.New("inactive-finding disposition requires the exact System One case evidence")
 			}
-			journal, err := newMaatDecisionJournal()
+			decisionJournal, err := newMaatDecisionJournal()
 			if err != nil {
 				return fmt.Errorf("Ma'at inactive-finding disposition: open Casebook: %w", err)
+			}
+			journal, ok := decisionJournal.(*maat.FileDecisionJournal)
+			if !ok || journal == nil {
+				return errors.New("Ma'at inactive-finding disposition requires the canonical file journal")
 			}
 			receipt, err := recordMaatBinaryDriftInactiveDispositionWith(
 				cmd.Context(), journal, maatRepairBinaryDriftCaseEvidence, maatTriageHostname, time.Now, maatRepairScanDriftContext,

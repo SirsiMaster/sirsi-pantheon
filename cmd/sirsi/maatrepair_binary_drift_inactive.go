@@ -34,8 +34,7 @@ func recordMaatBinaryDriftInactiveDispositionWith(
 		return maatBinaryDriftInactiveDispositionReceipt{}, fmt.Errorf("Ma'at binary-drift disposition: resolve current host: %w", err)
 	}
 	host = strings.TrimSpace(host)
-	_, err := validateMaatBinaryDriftInactiveCase(journal, evidence, host)
-	if err != nil {
+	if err := maat.ValidateBinaryDriftInactiveCase(journal, evidence, host); err != nil {
 		return maatBinaryDriftInactiveDispositionReceipt{}, err
 	}
 	from := now().UTC()
@@ -83,42 +82,4 @@ func recordMaatBinaryDriftInactiveDispositionWith(
 		ObservedFromUTC: observation.ObservedFromUTC, ObservedThroughUTC: observation.ObservedThroughUTC,
 		FindingState: "no longer active", RepairPerformed: false,
 	}, nil
-}
-
-func validateMaatBinaryDriftInactiveCase(journal *maat.FileDecisionJournal, evidence, host string) (maat.Decision, error) {
-	if strings.TrimSpace(evidence) == "" {
-		return maat.Decision{}, errors.New("Ma'at binary-drift disposition: exact source case evidence is required")
-	}
-	source, count, err := journal.FindUniqueByEvidence(evidence)
-	if err != nil {
-		return maat.Decision{}, fmt.Errorf("Ma'at binary-drift disposition: read exact source case: %w", err)
-	}
-	if count != 1 || source.Kind != "system one screen" || source.SystemOne == nil {
-		return maat.Decision{}, errors.New("Ma'at binary-drift disposition: exact unique System One source case was not found")
-	}
-	verdict := *source.SystemOne
-	if err := maat.ValidateMaatVerdict(verdict); err != nil {
-		return maat.Decision{}, fmt.Errorf("Ma'at binary-drift disposition: source case is invalid: %w", err)
-	}
-	if err := maat.ValidateBinaryDriftInactiveSource(source, evidence, host); err != nil {
-		return maat.Decision{}, fmt.Errorf("Ma'at binary-drift disposition: %w", err)
-	}
-	for _, kind := range []string{"diagnostic repair attempt", "diagnostic verified repair", "diagnostic owner review"} {
-		found, err := journal.HasRelatedEvidence(kind, evidence)
-		if err != nil {
-			return maat.Decision{}, fmt.Errorf("Ma'at binary-drift disposition: inspect prior owner or updater decisions: %w", err)
-		}
-		if found {
-			return maat.Decision{}, errors.New("Ma'at binary-drift disposition: source case already has an owner or updater decision")
-		}
-	}
-	if found, err := journal.HasRelatedEvidence("diagnostic owner acceptance", evidence); err != nil {
-		return maat.Decision{}, fmt.Errorf("Ma'at binary-drift disposition: inspect prior owner acceptance: %w", err)
-	} else if found {
-		_, typedCount, err := journal.FindBinaryDriftInactiveDisposition(evidence)
-		if err != nil || typedCount != 1 {
-			return maat.Decision{}, errors.New("Ma'at binary-drift disposition: source case already has another owner acceptance")
-		}
-	}
-	return source, nil
 }

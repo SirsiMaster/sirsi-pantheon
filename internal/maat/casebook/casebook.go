@@ -171,7 +171,7 @@ func Build(decisions []maat.Decision) View {
 	states := linkedCaseStates(decisions)
 	cases := make([]Case, 0, len(decisions))
 	for _, decision := range decisions {
-		if isBinaryDriftDispositionArtifact(decision, decisions) {
+		if isBinaryDriftDispositionArtifact(decision, states) {
 			continue
 		}
 		if decision.Kind == "diagnostic owner acceptance" && decision.ResolutionFor != "" {
@@ -212,9 +212,11 @@ func projectLinkedCase(decision maat.Decision, linked maat.HistoryMatchState) Ca
 func linkedCaseStates(decisions []maat.Decision) map[string]maat.HistoryMatchState {
 	states := make(map[string]maat.HistoryMatchState)
 	screens := make(map[string]maat.Decision)
+	screenCounts := make(map[string]int)
 	for _, row := range decisions {
 		if row.Kind == "system one screen" && row.SystemOne != nil {
 			screens[row.Evidence] = row
+			screenCounts[row.Evidence]++
 		}
 	}
 	for _, decision := range decisions {
@@ -222,7 +224,7 @@ func linkedCaseStates(decisions []maat.Decision) map[string]maat.HistoryMatchSta
 		if row.Kind == "diagnostic owner acceptance" && row.ResolutionFor != "" {
 			if row.BinaryDriftInactiveDisposition != nil {
 				source, ok := screens[row.ResolutionFor]
-				if ok && row.OriginEvidence == row.ResolutionFor && maat.ValidateBinaryDriftInactiveSource(source, row.ResolutionFor, row.Host) == nil {
+				if ok && screenCounts[row.ResolutionFor] == 1 && row.OriginEvidence == row.ResolutionFor && maat.ValidateBinaryDriftInactiveSource(source, row.ResolutionFor, row.Host) == nil {
 					state := states[row.ResolutionFor]
 					if state.Resolution == nil || row.Time > state.Resolution.Time {
 						state.Resolved, state.Resolution = true, &row
@@ -256,16 +258,12 @@ func linkedCaseStates(decisions []maat.Decision) map[string]maat.HistoryMatchSta
 	return states
 }
 
-func isBinaryDriftDispositionArtifact(decision maat.Decision, decisions []maat.Decision) bool {
+func isBinaryDriftDispositionArtifact(decision maat.Decision, states map[string]maat.HistoryMatchState) bool {
 	if decision.BinaryDriftInactiveDisposition == nil || decision.ResolutionFor == "" || decision.OriginEvidence != decision.ResolutionFor {
 		return false
 	}
-	for _, source := range decisions {
-		if source.Evidence == decision.ResolutionFor && source.Kind == "system one screen" {
-			return maat.ValidateBinaryDriftInactiveSource(source, decision.ResolutionFor, decision.Host) == nil
-		}
-	}
-	return false
+	resolution := states[decision.ResolutionFor].Resolution
+	return resolution != nil && resolution.Evidence == decision.Evidence
 }
 
 func hasOwnerReview(decisions []maat.Decision, evidence string) bool {
@@ -407,14 +405,15 @@ func historyDecisions(candidates []maat.HistoryCandidate) []maat.Decision {
 // BuildPage projects only the selected cases while using related outcomes to
 // compute their status. Related records never become extra rows in the page.
 func BuildPage(decisions, related []maat.Decision, reviewedResolutionFor []string) View {
-	states := linkedCaseStates(append(append([]maat.Decision(nil), decisions...), related...))
+	allDecisions := append(append([]maat.Decision(nil), decisions...), related...)
+	states := linkedCaseStates(allDecisions)
 	reviewed := make(map[string]bool, len(reviewedResolutionFor))
 	for _, evidence := range reviewedResolutionFor {
 		reviewed[evidence] = true
 	}
 	cases := make([]Case, 0, len(decisions))
 	for _, decision := range decisions {
-		if isBinaryDriftDispositionArtifact(decision, append(append([]maat.Decision(nil), decisions...), related...)) {
+		if isBinaryDriftDispositionArtifact(decision, states) {
 			continue
 		}
 		if decision.Kind == "diagnostic owner acceptance" && reviewed[decision.ResolutionFor] {

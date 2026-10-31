@@ -3050,15 +3050,16 @@ private struct MaatCaseDetailView: View {
         guard let action = entry.nextAction else { return }
         guard action.kind != "owner_acceptance" || !confirmedNote.isEmpty else { return }
         let key = operationKey
-        guard operations.begin(key) else { return }
-        guard let generation = operations.record(for: key)?.generation else { return }
+        guard operations.begin(key) else { recordBinaryDriftInactive = false; return }
+        guard let generation = operations.record(for: key)?.generation else { recordBinaryDriftInactive = false; return }
 
         let read = await MaatOperationPreflight.readCompleteExactHistory(evidence: entry.evidence,
             continuing: operations.historyContinuation(for: key, generation: generation)) { args, timeout in
             await SirsiEngine.runJSONRead(args: args, timeoutSeconds: timeout)
         }
-        guard operations.record(for: key)?.generation == generation else { return }
+        guard operations.record(for: key)?.generation == generation else { recordBinaryDriftInactive = false; return }
         guard !Task.isCancelled else {
+            recordBinaryDriftInactive = false
             operations.rejectPreflight(key, guidance: "The exact history read was cancelled. No Ma'at action ran; review again before retrying.")
             return
         }
@@ -3075,6 +3076,7 @@ private struct MaatCaseDetailView: View {
             projection: projection
         ) {
         case .rejected(let guidance):
+            recordBinaryDriftInactive = false
             operations.rejectPreflight(key, guidance: guidance)
             return
         case .ready:
@@ -3458,10 +3460,18 @@ struct MaatBinaryDriftInactiveDispositionReceipt: Decodable {
     }
 
     func isValid(for evidence: String) -> Bool {
-        schema == "sirsi.maat.binary-drift-inactive-disposition-receipt.v1" &&
-        caseEvidence == evidence && !dispositionEvidence.isEmpty && !host.isEmpty &&
-        !observedFromUTC.isEmpty && !observedThroughUTC.isEmpty && findingState == "no longer active" &&
-        !repairPerformed
+        let prefix = "maat-binary-drift-inactive:sha256="
+        guard schema == "sirsi.maat.binary-drift-inactive-disposition-receipt.v1",
+              caseEvidence == evidence, dispositionEvidence.hasPrefix(prefix),
+              String(dispositionEvidence.dropFirst(prefix.count)).count == 64,
+              String(dispositionEvidence.dropFirst(prefix.count)).allSatisfy({ ("0"..."9").contains($0) || ("a"..."f").contains($0) }),
+              !host.isEmpty, findingState == "no longer active", !repairPerformed else { return false }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let from = fractional.date(from: observedFromUTC) ?? ISO8601DateFormatter().date(from: observedFromUTC)
+        let through = fractional.date(from: observedThroughUTC) ?? ISO8601DateFormatter().date(from: observedThroughUTC)
+        guard let from, let through else { return false }
+        return through >= from
     }
 }
 
