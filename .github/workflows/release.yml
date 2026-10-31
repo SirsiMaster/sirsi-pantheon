@@ -161,6 +161,8 @@ jobs:
 
       - name: Build + sign + notarize DMG and PKG (arm64 — Apple silicon)
         env:
+          # Use the enrolled M1 signer only; never fall back to the M5 measurement host.
+          SIRSI_SIGN_HOSTS: sirsi-m1
           GOMAXPROCS: "1"
           GOFLAGS: "-p=1"
           PANTHEON_BUILD_JOBS: "1"

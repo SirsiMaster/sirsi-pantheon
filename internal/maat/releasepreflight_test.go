@@ -85,6 +85,25 @@ func TestPreflightReleaseContractBlocksDuplicateCaskPublisher(t *testing.T) {
 	t.Fatalf("cask publication finding = %+v", preflight.Verdict.Findings)
 }
 
+func TestReleasePublisherSelectsOnlyM1Signer(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "release.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(raw)
+	step := "      - name: Build + sign + notarize DMG and PKG (arm64 — Apple silicon)\n"
+	start := strings.Index(workflow, step)
+	if start < 0 {
+		t.Fatal("release signing step is missing")
+	}
+	rest := workflow[start+len(step):]
+	end := strings.Index(rest, "      - name:")
+	if end < 0 || strings.Count(workflow, "SIRSI_SIGN_HOSTS:") != 1 ||
+		!strings.Contains(rest[:end], "\n          SIRSI_SIGN_HOSTS: sirsi-m1\n") {
+		t.Fatal("release signing step must select only the enrolled M1 signer")
+	}
+}
+
 func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	t.Helper()
 	root := t.TempDir()
@@ -113,8 +132,8 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 		"scripts/build-dmg.sh":                 "2eae7c74a88e62f47a184d510974c1463baf139e63f9e40614f5d15fcdbe9385",
 		"scripts/build-pkg.sh":                 "82fd6b3377bf42d3be3ea68381f01067f75f7a91a8a470be5f71159be1cc66d6",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
-		// Reviewed 153 workflow label correction; all pinned release behavior remains exact.
-		".github/workflows/release.yml": "4ec74ce66ff42371bf5d395bf77bb392a7de37af31db94274193d2bd001d10d3",
+		// The 155 workflow also selects the enrolled M1 signer for the release step.
+		".github/workflows/release.yml": "e9cfed7d577e7787fe691a843a8368c46ef11bddc64106669caf9deea787fbe4",
 		"tools/signing/sirsi-sign":      "95db0601b45c56604e77b4b1d8ef6ecca2bbc165570889e9ec46d63b16288605",
 	}
 	for _, requirement := range releaseContractRequirements {
