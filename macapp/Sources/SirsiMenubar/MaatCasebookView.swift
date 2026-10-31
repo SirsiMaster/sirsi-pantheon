@@ -242,7 +242,7 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
         coordinator.disconnect()
     }
 
-    final class Coordinator {
+    @MainActor final class Coordinator {
         private var position: Binding<CGFloat>
         private var layoutReady: Bool
         private var restoration: MaatRootScrollRestoration
@@ -272,18 +272,20 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
             guard !connectionScheduled else { return }
             connectionScheduled = true
             DispatchQueue.main.async { [weak self, weak probe] in
-                guard let self else { return }
-                self.connectionScheduled = false
-                guard self.active, let scrollView = probe?.enclosingScrollView else { return }
-                self.probeView = probe as? MaatPrimaryScrollProbeView
-                if self.scrollView !== scrollView {
-                    self.probeView?.viewportObservationReady = false
-                    self.removeObservers()
-                    self.scrollView = scrollView
-                    self.observe(scrollView)
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.connectionScheduled = false
+                    guard self.active, let scrollView = probe?.enclosingScrollView else { return }
+                    self.probeView = probe as? MaatPrimaryScrollProbeView
+                    if self.scrollView !== scrollView {
+                        self.probeView?.viewportObservationReady = false
+                        self.removeObservers()
+                        self.scrollView = scrollView
+                        self.observe(scrollView)
+                    }
+                    self.restoration.recordOffset(scrollView.contentView.bounds.origin.y)
+                    self.restoreFromReadyLayout()
                 }
-                self.restoration.recordOffset(scrollView.contentView.bounds.origin.y)
-                self.restoreFromReadyLayout()
             }
         }
 
@@ -311,14 +313,18 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
             clip.postsBoundsChangedNotifications = true
             observers.append(NotificationCenter.default.addObserver(
                 forName: NSView.boundsDidChangeNotification, object: clip, queue: .main
-            ) { [weak self] _ in self?.boundsChanged() })
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.boundsChanged() }
+            })
             if let document = scrollView.documentView {
                 observedDocument = document
                 documentWasPostingFrameChanges = document.postsFrameChangedNotifications
                 document.postsFrameChangedNotifications = true
                 observers.append(NotificationCenter.default.addObserver(
                     forName: NSView.frameDidChangeNotification, object: document, queue: .main
-                ) { [weak self] _ in self?.restoreFromReadyLayout() })
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.restoreFromReadyLayout() }
+                })
             }
         }
 
