@@ -42,7 +42,6 @@ struct PantheonDesktopView: View {
                 .id(section)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .environmentObject(nav)
-                .environment(\.workspaceScrollPosition, session.scrollPosition(for: section))
                 .environment(\.openPantheonWorkspace, select)
                 .environment(\.openPantheonOwnerActions, {
                     session.open(.maat, detail: OwnerActionsListView(engine: engine))
@@ -241,7 +240,9 @@ struct PantheonDesktopView: View {
         case .command: PantheonControlCenterView(engine: engine)
         case .apollo: session.apolloPlanner(engine: engine)
         case .mercury: MercuryWorkspaceView(engine: engine)
-        case .maat: MaatWorkspaceView(engine: engine)
+        case .maat:
+            MaatWorkspaceView(engine: engine,
+                              primaryRootScrollPosition: session.maatPrimaryRootScrollPosition(for: nav))
         case .ra: RaFabricView(engine: engine)
         case .activity: ActivityView(engine: engine)
         case .stackLab: StackLabView(engine: engine)

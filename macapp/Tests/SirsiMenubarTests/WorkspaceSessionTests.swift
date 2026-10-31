@@ -28,26 +28,43 @@ final class WorkspaceSessionTests: XCTestCase {
         XCTAssertFalse(session.navigation(for: .maat).atRoot)
     }
 
-    func testScrollPositionsRemainPerWorkspaceAndWindowSessionLocal() {
+    func testMaatPrimaryViewportIsRootOnlyAndRetainsItsIdentityAcrossDetails() throws {
         let store = defaults()
         let session = PantheonWorkspaceSession(defaults: store)
-        session.scrollPosition(for: .maat).wrappedValue = 684.5
-        session.scrollPosition(for: .horus).wrappedValue = 92
+        let maat = session.navigation(for: .maat)
+        session.select(.maat)
+        let rootPosition = try XCTUnwrap(session.maatPrimaryRootScrollPosition(for: maat))
+        rootPosition.wrappedValue = 684.5
 
         session.select(.horus)
-        XCTAssertEqual(session.scrollPosition(for: .horus).wrappedValue, 92)
+        XCTAssertNil(session.maatPrimaryRootScrollPosition(for: session.navigation(for: .horus)))
         session.select(.maat)
-        XCTAssertEqual(session.scrollPosition(for: .maat).wrappedValue, 684.5)
+        XCTAssertEqual(session.maatPrimaryRootScrollPosition(for: maat)?.wrappedValue, 684.5)
 
-        session.scrollPosition(for: .maat).wrappedValue = -.infinity
-        XCTAssertEqual(session.scrollPosition(for: .maat).wrappedValue, 684.5)
-        session.scrollPosition(for: .maat).wrappedValue = -10
-        XCTAssertEqual(session.scrollPosition(for: .maat).wrappedValue, 0)
+        maat.push(Text("Ma'at detail"))
+        XCTAssertNil(session.maatPrimaryRootScrollPosition(for: maat),
+                     "detail navigation frames do not inherit the root viewport owner")
+        maat.pop()
+        XCTAssertEqual(session.maatPrimaryRootScrollPosition(for: maat)?.wrappedValue, 684.5)
 
         let restored = PantheonWorkspaceSession(defaults: store)
         XCTAssertEqual(restored.section, .maat)
-        XCTAssertEqual(restored.scrollPosition(for: .maat).wrappedValue, 0,
-                       "scroll offsets stay in the window session rather than persisting across launches")
+        XCTAssertEqual(restored.maatPrimaryRootScrollPosition(for: restored.navigation(for: .maat))?.wrappedValue, 0,
+                       "root scroll offset stays in the window session rather than persisting across launches")
+    }
+
+    func testMaatPrimaryScrollRestoresClampedOffsetOnceAfterReadyLayout() {
+        var restoration = MaatRootScrollRestoration(savedOffset: 600)
+        XCTAssertNil(restoration.layoutChanged(maximumOffset: 300, ready: false))
+        XCTAssertEqual(restoration.layoutChanged(maximumOffset: 300, ready: true), 300)
+        XCTAssertNil(restoration.layoutChanged(maximumOffset: 700, ready: true))
+    }
+
+    func testMaatPrimaryScrollUserMovementWinsWhileLayoutRestoreIsDeferred() {
+        var restoration = MaatRootScrollRestoration(savedOffset: 600)
+        XCTAssertNil(restoration.layoutChanged(maximumOffset: 300, ready: false))
+        XCTAssertEqual(restoration.userMoved(to: 20), 20)
+        XCTAssertNil(restoration.layoutChanged(maximumOffset: 300, ready: true))
     }
 
     func testRestoreKeepsOnlySectionIdentityWithoutReplayingDrilldowns() {
