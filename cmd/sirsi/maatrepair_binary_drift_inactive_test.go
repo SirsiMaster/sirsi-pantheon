@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -213,4 +214,95 @@ func TestRecordBinaryDriftInactiveDispositionRefusesChangedEvidenceAndJournalFai
 			t.Fatal("prior updater attempt was overwritten")
 		}
 	})
+}
+
+func TestRecordBinaryDriftInactiveDispositionRechecksJournalAfterFreshScan(t *testing.T) {
+	tests := []struct {
+		name   string
+		append func(*testing.T, *maat.FileDecisionJournal, string)
+	}{
+		{
+			name: "duplicate source evidence",
+			append: func(t *testing.T, journal *maat.FileDecisionJournal, evidence string) {
+				t.Helper()
+				rows, _, err := journal.RecentTolerant(10)
+				if err != nil || len(rows) != 1 || rows[0].Evidence != evidence {
+					t.Fatalf("read source fixture: rows=%d err=%v", len(rows), err)
+				}
+				if err := journal.Append(rows[0]); err != nil {
+					t.Fatalf("append duplicate source fixture: %v", err)
+				}
+			},
+		},
+		{
+			name: "new owner review",
+			append: func(t *testing.T, journal *maat.FileDecisionJournal, evidence string) {
+				t.Helper()
+				if _, err := maat.RecordDiagnosticOwnerReview(journal, "fixture", maat.DiagnosticOwnerReview{
+					Check: "binary-drift", Message: "appended during recheck", OriginEvidence: evidence,
+				}); err != nil {
+					t.Fatalf("append owner review fixture: %v", err)
+				}
+			},
+		},
+		{
+			name: "different inactive disposition",
+			append: func(t *testing.T, journal *maat.FileDecisionJournal, evidence string) {
+				t.Helper()
+				disposition, err := maat.BuildBinaryDriftInactiveDisposition("fixture", maat.BinaryDriftInactiveDisposition{
+					OriginEvidence: evidence, Host: "fixture-host",
+					ObservedFromUTC:    time.Date(2026, 10, 31, 12, 0, 1, 0, time.UTC),
+					ObservedThroughUTC: time.Date(2026, 10, 31, 12, 0, 2, 0, time.UTC),
+					ObservationSHA256:  strings.Repeat("b", 64),
+				})
+				if err != nil {
+					t.Fatalf("build typed disposition fixture: %v", err)
+				}
+				if err := journal.Append(disposition); err != nil {
+					t.Fatalf("append typed disposition fixture: %v", err)
+				}
+			},
+		},
+		{
+			name: "new malformed row",
+			append: func(t *testing.T, journal *maat.FileDecisionJournal, _ string) {
+				t.Helper()
+				file, err := os.OpenFile(journal.Path, os.O_APPEND|os.O_WRONLY, 0)
+				if err != nil {
+					t.Fatalf("open fixture journal: %v", err)
+				}
+				if _, err := file.WriteString("{invalid appended row}\n"); err != nil {
+					_ = file.Close()
+					t.Fatalf("append malformed fixture row: %v", err)
+				}
+				if err := file.Close(); err != nil {
+					t.Fatalf("close malformed fixture row: %v", err)
+				}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			journal, evidence := binaryDriftInactiveFixture(t, "fixture-host", false)
+			calls := 0
+			_, err := recordMaatBinaryDriftInactiveDispositionWith(context.Background(), journal, evidence,
+				func() (string, error) { return "fixture-host", nil },
+				func() time.Time { return time.Date(2026, 10, 31, 12, 1, 0, 0, time.UTC) },
+				func(context.Context) (*selfupdate.DriftReport, error) {
+					calls++
+					test.append(t, journal, evidence)
+					return &selfupdate.DriftReport{Healthy: true}, nil
+				},
+			)
+			if calls != 1 || err == nil {
+				t.Fatalf("fresh scan mutation was not refused by current journal validation: calls=%d err=%v", calls, err)
+			}
+			if test.name != "new malformed row" {
+				rows, _, readErr := journal.RecentTolerant(10)
+				if readErr != nil || len(rows) != 2 {
+					t.Fatalf("refusal changed retained rows unexpectedly: rows=%d err=%v", len(rows), readErr)
+				}
+			}
+		})
+	}
 }

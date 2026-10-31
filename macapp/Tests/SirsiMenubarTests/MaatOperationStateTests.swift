@@ -444,6 +444,129 @@ final class MaatOperationStateTests: XCTestCase {
     }
 
     @MainActor
+    func testInactiveDispositionRetryRebindsOnlyReadCursorAndRereadsBeforeDispatch() async throws {
+        let entry = caseEntry(actionID: "binary-drift")
+        let key = MaatOperationKey(case: entry)
+        let store = MaatCaseOperationStore()
+        XCTAssertTrue(store.begin(key, intent: .inactiveDisposition))
+        store.markRunning(key)
+        store.complete(key, receipt: MaatOperationReceipt(summary: "No disposition recorded", succeeded: false))
+        let reviewedGeneration = try XCTUnwrap(store.record(for: key)?.generation)
+
+        let recorder = HistoryReadRecorder()
+        for index in 1...36 {
+            await recorder.enqueue(SirsiEngine.JSONCommandRead(data: historyEnvelope(
+                coverage: "partial", cursor: "page-\(index)", countScope: "scanned-so-far"),
+                exitStatus: 0, timedOut: false, launchError: nil))
+        }
+        await recorder.enqueue(SirsiEngine.JSONCommandRead(data: try selectedHistoryEnvelope(actionID: "binary-drift"),
+            exitStatus: 0, timedOut: false, launchError: nil))
+        await recorder.enqueue(SirsiEngine.JSONCommandRead(data: try selectedHistoryEnvelope(actionID: "binary-drift"),
+            exitStatus: 0, timedOut: false, launchError: nil))
+
+        for expectedReads in [16, 32] {
+            let incomplete = await MaatOperationPreflight.readCompleteExactHistory(evidence: key.evidence,
+                continuing: store.historyContinuation(for: key, generation: reviewedGeneration)) { args, _ in
+                await recorder.next(arguments: args)
+            }
+            let progress = try XCTUnwrap(incomplete.continuation)
+            store.pauseHistory(key, generation: reviewedGeneration, continuation: progress, retryReview: true)
+            let count = await recorder.callCount()
+            XCTAssertEqual(count, expectedReads)
+            XCTAssertEqual(store.record(for: key)?.phase, .needsReview)
+        }
+
+        let completedReview = await MaatOperationPreflight.readCompleteExactHistory(evidence: key.evidence,
+            continuing: store.historyContinuation(for: key, generation: reviewedGeneration)) { args, _ in
+            await recorder.next(arguments: args)
+        }
+        XCTAssertEqual(MaatOperationPreflight.evaluate(original: entry, exitStatus: completedReview.exitStatus,
+            timedOut: completedReview.timedOut, launchError: completedReview.launchError,
+            projection: MaatOperationPreflight.decodeProjection(from: completedReview.data)), .ready)
+        let terminalCursor = try XCTUnwrap(completedReview.retryReadCursor)
+        XCTAssertEqual(terminalCursor.cursor, "page-36")
+        XCTAssertFalse(store.authorizeReviewedRetry(key, reviewedGeneration: UUID(), continuation: terminalCursor),
+            "A delayed review cannot attach read progress to another generation")
+        XCTAssertFalse(store.authorizeReviewedRetry(key, reviewedGeneration: reviewedGeneration,
+            continuation: MaatExactHistoryContinuation(evidence: "other-evidence", queryID: terminalCursor.queryID,
+                snapshot: terminalCursor.snapshot, cursor: terminalCursor.cursor)),
+            "Read progress stays bound to the exact source evidence")
+        XCTAssertTrue(store.authorizeReviewedRetry(key, reviewedGeneration: reviewedGeneration,
+            continuation: terminalCursor))
+
+        let retryReadyGeneration = try XCTUnwrap(store.record(for: key)?.generation)
+        XCTAssertNotEqual(retryReadyGeneration, reviewedGeneration)
+        XCTAssertNil(store.historyContinuation(for: key, generation: reviewedGeneration))
+        XCTAssertFalse(store.hasHistoryContinuation(for: key), "A terminal reread handle is not an incomplete review")
+        XCTAssertTrue(store.begin(key, intent: .inactiveDisposition), "A new explicit confirmation starts a new generation")
+        let confirmationGeneration = try XCTUnwrap(store.record(for: key)?.generation)
+        XCTAssertNotEqual(confirmationGeneration, retryReadyGeneration)
+        XCTAssertNil(store.historyContinuation(for: key, generation: retryReadyGeneration))
+        XCTAssertEqual(store.historyContinuation(for: key, generation: confirmationGeneration)?.cursor, "page-36")
+
+        let fresh = await MaatOperationPreflight.readCompleteExactHistory(evidence: key.evidence,
+            continuing: store.historyContinuation(for: key, generation: confirmationGeneration)) { args, _ in
+            await recorder.next(arguments: args)
+        }
+        XCTAssertNil(fresh.continuation)
+        XCTAssertNotNil(fresh.retryReadCursor)
+        let freshDecision = MaatOperationPreflight.evaluate(original: entry, exitStatus: fresh.exitStatus,
+            timedOut: fresh.timedOut, launchError: fresh.launchError,
+            projection: MaatOperationPreflight.decodeProjection(from: fresh.data))
+        XCTAssertEqual(freshDecision, .ready)
+        let allArguments = await recorder.arguments()
+        XCTAssertEqual(allArguments.count, 38)
+        XCTAssertEqual(Array(allArguments[37].suffix(2)), ["--cursor", "page-36"],
+            "Confirmation must perform a new canonical read from the terminal-page handle")
+
+        var dispatchCount = 0
+        if freshDecision == .ready {
+            store.markRunning(key)
+            dispatchCount += 1
+        }
+        XCTAssertFalse(store.begin(key, intent: .inactiveDisposition), "A second tap cannot dispatch this action twice")
+        XCTAssertEqual(dispatchCount, 1)
+        let inactiveCommand = maatCasebookBinaryDriftInactiveArguments(caseEvidence: key.actionEvidence)
+        XCTAssertEqual(inactiveCommand, ["maat", "repair", "binary-drift", "--record-inactive",
+            "--case-evidence", "action-evidence-1", "--confirm", "--json"])
+    }
+
+    @MainActor
+    func testCompletedHistoryCursorDoesNotCrossIntoGenericActionRetry() throws {
+        let key = MaatOperationKey(case: caseEntry())
+        let store = MaatCaseOperationStore()
+        XCTAssertTrue(store.begin(key, intent: .standard))
+        store.markRunning(key)
+        store.complete(key, receipt: MaatOperationReceipt(summary: "Needs review", succeeded: false))
+        let generation = try XCTUnwrap(store.record(for: key)?.generation)
+        let cursor = MaatExactHistoryContinuation(evidence: key.evidence, queryID: "query:exact",
+            snapshot: "sha256:stable", cursor: "terminal-page")
+
+        XCTAssertFalse(store.authorizeReviewedRetry(key, reviewedGeneration: generation, continuation: cursor),
+            "The specialized inactive-disposition cursor cannot authorize generic actions")
+        XCTAssertEqual(store.record(for: key)?.phase, .completed)
+        XCTAssertTrue(store.authorizeReviewedRetry(key, reviewedGeneration: generation))
+        XCTAssertTrue(store.begin(key, intent: .standard))
+        let newGeneration = try XCTUnwrap(store.record(for: key)?.generation)
+        XCTAssertNil(store.historyContinuation(for: key, generation: newGeneration))
+
+        let inactiveKey = MaatOperationKey(case: caseEntry(actionID: "binary-drift"))
+        let inactiveStore = MaatCaseOperationStore()
+        XCTAssertTrue(inactiveStore.begin(inactiveKey, intent: .inactiveDisposition))
+        inactiveStore.markRunning(inactiveKey)
+        inactiveStore.complete(inactiveKey, receipt: MaatOperationReceipt(summary: "Needs review", succeeded: false))
+        let inactiveGeneration = try XCTUnwrap(inactiveStore.record(for: inactiveKey)?.generation)
+        let inactiveCursor = MaatExactHistoryContinuation(evidence: inactiveKey.evidence, queryID: "query:exact",
+            snapshot: "sha256:stable", cursor: "terminal-page")
+        XCTAssertTrue(inactiveStore.authorizeReviewedRetry(inactiveKey, reviewedGeneration: inactiveGeneration,
+            continuation: inactiveCursor))
+        XCTAssertTrue(inactiveStore.begin(inactiveKey, intent: .standard))
+        let changedIntentGeneration = try XCTUnwrap(inactiveStore.record(for: inactiveKey)?.generation)
+        XCTAssertNil(inactiveStore.historyContinuation(for: inactiveKey, generation: changedIntentGeneration),
+            "Changing the selected action drops the specialized read handle")
+    }
+
+    @MainActor
     func testHistoryRefreshIgnoresDelayedFailureAndSuccessAfterNewerCommit() async throws {
         for scope in ["all", "system-one"] {
             let oldRead = try browseRead(scope: scope, queryID: "query:old", snapshot: "snapshot:old")
@@ -1185,9 +1308,11 @@ final class MaatOperationStateTests: XCTestCase {
 
     func testExactHistoryCancellationNeverConsumesOrRetainsActionProgress() async {
         let recorder = HistoryReadRecorder()
+        let continuation = MaatExactHistoryContinuation(evidence: "diagnostic:old", queryID: "query:exact",
+            snapshot: "sha256:stable", cursor: "terminal-page")
         let task = Task {
             withUnsafeCurrentTask { $0?.cancel() }
-            return await MaatOperationPreflight.readCompleteExactHistory(evidence: "diagnostic:old") { args, _ in
+            return await MaatOperationPreflight.readCompleteExactHistory(evidence: "diagnostic:old", continuing: continuation) { args, _ in
                 await recorder.next(arguments: args)
             }
         }
@@ -1294,14 +1419,14 @@ final class MaatOperationStateTests: XCTestCase {
         XCTAssertEqual(window.total, 1)
     }
 
-    private func selectedHistoryEnvelope() throws -> Data {
+    private func selectedHistoryEnvelope(actionID: String = "repair-1") throws -> Data {
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: historyEnvelope(
             coverage: "complete", cursor: nil, countScope: "query")) as? [String: Any])
         var history = try XCTUnwrap(root["history"] as? [String: Any])
         for key in ["returned", "candidate_matches", "evidence_matches", "total"] { history[key] = 1 }
         root["history"] = history
         root["summary"] = ["total": 1, "open": 1, "urgent": 0, "high": 0, "resolved": 0]
-        let action: [String: Any] = ["kind": "maat_repair", "action_id": "repair-1", "title": "Repair",
+        let action: [String: Any] = ["kind": "maat_repair", "action_id": actionID, "title": "Repair",
             "detail": "Bounded recovery", "evidence": "action-evidence-1", "requires_confirmation": true]
         let selected: [String: Any] = [
             "id": "case-1", "status": "open", "kind": "diagnostic", "resource": "launch-agent",
