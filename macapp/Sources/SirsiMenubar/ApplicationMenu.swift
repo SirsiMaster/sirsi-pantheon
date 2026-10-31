@@ -9,6 +9,11 @@ enum PantheonMenuAction {
     static let help = "help"
 }
 
+@objc private protocol PantheonUndoRedoResponding {
+    func undo(_ sender: Any?)
+    func redo(_ sender: Any?)
+}
+
 @MainActor
 final class PantheonMenuBridge {
     private var projectChooserID: UUID?
@@ -131,13 +136,13 @@ func makePantheonMainMenu(target: NSObject, servicesMenu: NSMenu) -> NSMenu {
         item("Close Window", #selector(NSWindow.performClose(_:)), target: nil, key: "w", modifiers: [.command])
     ]))
     mainMenu.addItem(menu(title: "Edit", items: [
-        item("Undo", Selector("undo:"), key: "z", modifiers: [.command]),
-        item("Redo", Selector("redo:"), key: "z", modifiers: [.command, .shift]),
+        item("Undo", #selector(PantheonUndoRedoResponding.undo(_:)), key: "z", modifiers: [.command]),
+        item("Redo", #selector(PantheonUndoRedoResponding.redo(_:)), key: "z", modifiers: [.command, .shift]),
         NSMenuItem.separator(),
-        item("Cut", Selector("cut:"), key: "x", modifiers: [.command]),
-        item("Copy", Selector("copy:"), key: "c", modifiers: [.command]),
-        item("Paste", Selector("paste:"), key: "v", modifiers: [.command]),
-        item("Select All", Selector("selectAll:"), key: "a", modifiers: [.command])
+        item("Cut", #selector(NSText.cut(_:)), key: "x", modifiers: [.command]),
+        item("Copy", #selector(NSText.copy(_:)), key: "c", modifiers: [.command]),
+        item("Paste", #selector(NSText.paste(_:)), key: "v", modifiers: [.command]),
+        item("Select All", #selector(NSText.selectAll(_:)), key: "a", modifiers: [.command])
     ]))
     mainMenu.addItem(menu(title: "View", items: [
         item("Larger Text", #selector(AppDelegate.increaseTextSize(_:)), target: target, key: "+", modifiers: [.command]),
