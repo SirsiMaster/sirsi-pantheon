@@ -1,0 +1,1 @@
+Keep the full 96-bit staging nonce while shortening the router traffic tag to meet Cloud Run's service-plus-tag length limit. Synthetic deployment tests enforce the limit; promotion remains a separate operator action.

@@ -41,6 +41,8 @@ case "$*" in
       case "$1" in --tag) printf '%s' "$2" >"$TAG_FILE"; shift ;; --revision-suffix) printf 'sirsi-router-%s' "$2" >"$REV_FILE"; shift ;; esac
       shift
     done
+    tag=$(<"$TAG_FILE"); service=sirsi-router
+    [ $((${#tag} + ${#service})) -le 46 ] || { echo 'traffic tag and service name exceed Cloud Run limit' >&2; exit 1; }
     touch "$DEPLOYED" ;;
   'run services update-traffic sirsi-router '*) : ;;
   *) echo 'unexpected gcloud call' >&2; exit 88 ;;
@@ -90,6 +92,7 @@ reset_fixture
 bash "$ROOT/scripts/router-service/stage.sh" --stage-only >"$tmp/out" 2>"$tmp/err"
 stage_only_revision=$(<"$REV_FILE")
 stage_only_tag=$(<"$TAG_FILE")
+[[ "$stage_only_tag" =~ ^s-[0-9a-f]{24}$ ]] || { echo 'stage-only tag lost its 96-bit nonce' >&2; exit 1; }
 grep -q "^PREV=previous$" "$tmp/out"
 grep -q "^NEW=$stage_only_revision$" "$tmp/out"
 grep -q "^TAG=$stage_only_tag$" "$tmp/out"

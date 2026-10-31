@@ -79,9 +79,16 @@ fi
 # Cloud Run revision names are service name + suffix; revisions are immutable.
 nonce=$(openssl rand -hex 12) || { echo "stage: cannot generate revision nonce" >&2; exit 1; }
 [[ "$nonce" =~ ^[0-9a-f]{24}$ ]] || { echo "stage: invalid revision nonce" >&2; exit 1; }
-SUFFIX="stg-$(git -C "$ROOT" rev-parse --short=8 HEAD)-$nonce"
+# Cloud Run limits the combined service name and traffic tag to 46
+# characters. Keep the full 96-bit nonce while leaving room for sirsi-router.
+SUFFIX="s-$nonce"
 TAG="$SUFFIX"
 EXPECTED="sirsi-router-$SUFFIX"
+service_name="sirsi-router"
+if (( ${#TAG} + ${#service_name} > 46 )); then
+  echo "stage: traffic tag and service name exceed Cloud Run limit" >&2
+  exit 1
+fi
 gcloud run deploy sirsi-router --source "$CTX" "${RP[@]}" --no-traffic --quiet "$@" --tag "$TAG" --revision-suffix "$SUFFIX"
 # Bind the URL actually probed to its tagged revision, while confirming the
 # original serving target remains intact. Never use global latestReady here.
