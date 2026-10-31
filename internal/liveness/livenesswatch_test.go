@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
@@ -76,7 +77,9 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
 
 	var buf bytes.Buffer
-	if err := Run(root, &buf); err != nil {
+	started := time.Date(2026, 10, 31, 7, 4, 5, 123456789, time.UTC)
+	finished := time.Date(2026, 10, 31, 7, 4, 6, 987654321, time.UTC)
+	if err := runWithObservationProviders(root, &buf, func() (string, error) { return "horus-fixture", nil }, fixedObservationClock(started, finished)); err != nil {
 		t.Fatalf("first Run: %v", err)
 	}
 	first := openCount(t, root, "codex-pantheon")
@@ -94,7 +97,8 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	for _, want := range []string{
 		"The launchd liveness watch found the warm gemma broker unresponsive",
 		"Measured observation (not current action authority):",
-		"Host: " + mustTestHostname(t),
+		"Host: horus-fixture",
+		"Observation bracket UTC: 2026-10-31T07:04:05.123456789Z through 2026-10-31T07:04:06.987654321Z",
 		"Finding detail: no port file (broker not running)",
 		"Recheck the current state and exact target before acting.",
 	} {
@@ -102,22 +106,8 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 			t.Errorf("routed liveness finding missing %q: %q", want, routedBody)
 		}
 	}
-	bracket := strings.SplitN(routedBody, "Observation bracket UTC: ", 2)
-	if len(bracket) != 2 {
-		t.Fatalf("routed liveness finding has no UTC observation bracket: %q", routedBody)
-	}
-	bracketFields := strings.Fields(bracket[1])
-	if len(bracketFields) < 3 || bracketFields[1] != "through" {
-		t.Fatalf("invalid UTC observation bracket: %q", bracket[1])
-	}
-	observedFrom, fromErr := time.Parse(time.RFC3339Nano, bracketFields[0])
-	observedThrough, throughErr := time.Parse(time.RFC3339Nano, bracketFields[2])
-	if fromErr != nil || throughErr != nil || observedThrough.Before(observedFrom) {
-		t.Fatalf("invalid ordered UTC observation bracket %q (start: %v, end: %v)", bracketFields[:3], fromErr, throughErr)
-	}
-
 	buf.Reset()
-	if err := Run(root, &buf); err != nil {
+	if err := runWithObservationProviders(root, &buf, func() (string, error) { return "horus-fixture", nil }, fixedObservationClock(started, finished)); err != nil {
 		t.Fatalf("second Run: %v", err)
 	}
 	if second := openCount(t, root, "codex-pantheon"); second != 1 {
@@ -128,13 +118,50 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	}
 }
 
-func mustTestHostname(t *testing.T) string {
-	t.Helper()
-	host, err := os.Hostname()
-	if err != nil {
-		t.Fatalf("os.Hostname: %v", err)
+func fixedObservationClock(started, finished time.Time) func() time.Time {
+	calls := 0
+	return func() time.Time {
+		calls++
+		if calls == 1 {
+			return started
+		}
+		return finished
 	}
-	return host
+}
+
+func TestRun_RoutesUnavailableHostWhenHostnameLookupFails(t *testing.T) {
+	root := t.TempDir()
+	writeLivenessTestAgents(t, root)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	installFakeBrokerPlist(t, home)
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
+
+	started := time.Date(2026, 10, 31, 8, 0, 0, 0, time.UTC)
+	finished := started.Add(time.Second)
+	var buf bytes.Buffer
+	err := runWithObservationProviders(root, &buf, func() (string, error) {
+		return "", os.ErrPermission
+	}, fixedObservationClock(started, finished))
+	if err != nil {
+		t.Fatalf("Run with hostname lookup failure: %v", err)
+	}
+	items, err := work.ListInbox(root, "codex-pantheon")
+	if err != nil {
+		t.Fatalf("ListInbox: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("hostname lookup failure routed %d findings, want 1", len(items))
+	}
+	for _, want := range []string{
+		"Host: unavailable",
+		"Observation bracket UTC: 2026-10-31T08:00:00Z through 2026-10-31T08:00:01Z",
+		"Finding detail: no port file (broker not running)",
+	} {
+		if !strings.Contains(items[0].Instructions, want) {
+			t.Errorf("routed finding after hostname error missing %q: %q", want, items[0].Instructions)
+		}
+	}
 }
 
 // TestProbeSessionLeak_Threshold confirms the leaked-session probe stays OK
@@ -246,16 +273,31 @@ func TestRoutedObservationBodyPreservesGuidanceAndAddsMeasuredProvenance(t *test
 func TestRoutedObservationBodyBoundsDetailAndLabelsUnavailableHost(t *testing.T) {
 	started := time.Date(2026, 10, 31, 7, 0, 0, 0, time.UTC)
 	finished := started.Add(time.Second)
-	longDetail := strings.Repeat("x", maxRoutedFindingDetailBytes+100)
+	longDetail := strings.Repeat("x", maxRoutedFindingDetailContentBytes+100)
 	got := routedObservationBody(Finding{Detail: longDetail}, " ", started, finished)
 	if !strings.Contains(got, "Host: unavailable") {
 		t.Fatalf("missing unavailable-host label: %q", got)
 	}
-	if !strings.Contains(got, strings.Repeat("x", maxRoutedFindingDetailBytes)+"… [truncated]") {
+	if !strings.Contains(got, strings.Repeat("x", maxRoutedFindingDetailContentBytes)+"… [truncated]") {
 		t.Fatalf("detail was not bounded with an explicit truncation marker: %q", got)
 	}
-	if strings.Contains(got, strings.Repeat("x", maxRoutedFindingDetailBytes+1)) {
-		t.Fatal("routed detail exceeded its byte bound")
+	if strings.Contains(got, strings.Repeat("x", maxRoutedFindingDetailContentBytes+1)) {
+		t.Fatal("routed detail content exceeded its byte bound")
+	}
+	bounded := boundedRoutedFindingDetail(longDetail)
+	content := strings.TrimSuffix(bounded, "… [truncated]")
+	if len(content) > maxRoutedFindingDetailContentBytes {
+		t.Fatalf("detail content is %d bytes, bound is %d", len(content), maxRoutedFindingDetailContentBytes)
+	}
+
+	multibyte := strings.Repeat("é", maxRoutedFindingDetailContentBytes/2+1)
+	bounded = boundedRoutedFindingDetail(multibyte)
+	if !utf8.ValidString(bounded) {
+		t.Fatal("truncated measured detail is not valid UTF-8")
+	}
+	content = strings.TrimSuffix(bounded, "… [truncated]")
+	if len(content) != maxRoutedFindingDetailContentBytes || content != strings.Repeat("é", maxRoutedFindingDetailContentBytes/2) {
+		t.Fatalf("multibyte detail content was not rune-truncated at %d bytes: %d bytes", maxRoutedFindingDetailContentBytes, len(content))
 	}
 }
 

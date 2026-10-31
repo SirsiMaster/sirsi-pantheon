@@ -245,8 +245,12 @@ type Finding struct {
 // for the worst current owner-fixable blocker. routerRoot is the idea-router
 // root (…/.agents/idea-router). Read-and-route only — never kills a process.
 func Run(routerRoot string, w io.Writer) error {
-	observationStartedAt := time.Now().UTC()
-	host, err := os.Hostname()
+	return runWithObservationProviders(routerRoot, w, os.Hostname, time.Now)
+}
+
+func runWithObservationProviders(routerRoot string, w io.Writer, hostname func() (string, error), now func() time.Time) error {
+	observationStartedAt := now().UTC()
+	host, err := hostname()
 	if err != nil || strings.TrimSpace(host) == "" {
 		host = "unavailable"
 	}
@@ -261,7 +265,7 @@ func Run(routerRoot string, w io.Writer) error {
 		probeSessionLeak(),
 		probeMenubar(),
 	}
-	observationFinishedAt := time.Now().UTC()
+	observationFinishedAt := now().UTC()
 
 	for _, f := range findings {
 		status := "ok"
@@ -312,7 +316,7 @@ func Run(routerRoot string, w io.Writer) error {
 	return nil
 }
 
-const maxRoutedFindingDetailBytes = 2048
+const maxRoutedFindingDetailContentBytes = 2048
 
 // routedObservationBody preserves the finding's generic guidance and adds only
 // the measured detail and its bounded watch-pass provenance. This observation
@@ -330,12 +334,12 @@ func routedObservationBody(f Finding, host string, observedFrom, observedThrough
 }
 
 func boundedRoutedFindingDetail(detail string) string {
-	if len(detail) <= maxRoutedFindingDetailBytes {
+	if len(detail) <= maxRoutedFindingDetailContentBytes {
 		return detail
 	}
 	var b strings.Builder
 	for _, r := range detail {
-		if b.Len()+utf8.RuneLen(r) > maxRoutedFindingDetailBytes {
+		if b.Len()+utf8.RuneLen(r) > maxRoutedFindingDetailContentBytes {
 			break
 		}
 		b.WriteRune(r)
