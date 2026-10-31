@@ -42,28 +42,21 @@ func seedPruneRecord(t *testing.T, s *SQLiteStore, r ThreadRecord) {
 	}
 }
 
-// Accepted b1aebe66 G2 producer SQL, kept ONLY as a disposable compatibility
-// fixture. G1's production DeleteThreadCAS must physically delete ordinary rows.
-const retireThreadSQL = `UPDATE threads SET status='pruned',payload=? WHERE thread_id=? AND status=? AND last_seen_at=? AND (host='' OR ?='' OR host=?) AND status<>'pruned'`
-
 func retirePruneRecord(t *testing.T, s *SQLiteStore, r ThreadRecord, scoped bool) {
 	t.Helper()
-	query := retireThreadSQL
-	args := []any{[]byte("{}"), r.ThreadID, r.Status, r.LastSeenAt, r.Host, r.Host}
+	var applied bool
+	var err error
 	if scoped {
-		query += ` AND agent IN (?)`
-		args = append(args, r.Agent)
+		applied, err = s.DeleteThreadCASScoped(r.ThreadID, r.Status, r.LastSeenAt, r.Host, []string{r.Agent})
+	} else {
+		applied, err = s.DeleteThreadCAS(r.ThreadID, r.Status, r.LastSeenAt, r.Host)
 	}
-	result, err := s.db.Exec(query, args...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n, err := result.RowsAffected(); err != nil || n != 1 {
-		t.Fatalf("seed accepted G2 retirement: rows=%d err=%v", n, err)
+	if err != nil || !applied {
+		t.Fatalf("production retirement: applied=%v err=%v", applied, err)
 	}
 }
 
-func TestThreadPruneG1PhysicalDeleteAndSeededG2Fence(t *testing.T) {
+func TestThreadPruneProductionRetirementPreservesFence(t *testing.T) {
 	for _, scoped := range []bool{false, true} {
 		name := "unscoped"
 		if scoped {
@@ -95,10 +88,7 @@ func TestThreadPruneG1PhysicalDeleteAndSeededG2Fence(t *testing.T) {
 				if applied, err := remove(r); err != nil || !applied {
 					t.Fatalf("ordinary deletion: applied=%v err=%v", applied, err)
 				}
-				var count int
-				if err := s.db.QueryRow(`SELECT count(*) FROM threads WHERE thread_id=?`, r.ThreadID).Scan(&count); err != nil || count != 0 {
-					t.Fatalf("ordinary row not physically deleted: count=%d err=%v", count, err)
-				}
+				assertPrunedRecord(t, s, r)
 				if applied, err := remove(r); err != nil || applied {
 					t.Fatalf("absent deletion: applied=%v err=%v", applied, err)
 				}
@@ -201,6 +191,14 @@ func TestThreadPruneFenceMutationMatrix(t *testing.T) {
 					if applied, err := s.UpsertThreadCASScoped(attempt, []string{r.Agent}); err != nil || applied {
 						t.Fatalf("scoped single %s/%s: %v %v", status, seen, applied, err)
 					}
+					attempt.CreateOnly = true
+					if applied, err := s.UpsertThreadCAS(attempt); err != nil || applied {
+						t.Fatalf("create-only %s/%s revived retained key: %v %v", status, seen, applied, err)
+					}
+					if applied, err := s.UpsertThreadCASScoped(attempt, []string{r.Agent}); err != nil || applied {
+						t.Fatalf("scoped create-only %s/%s revived retained key: %v %v", status, seen, applied, err)
+					}
+					attempt.CreateOnly = false
 					if err := s.UpsertThreadsScoped([]ThreadRecord{attempt}, []string{r.Agent}); err != nil {
 						t.Fatal(err)
 					}
@@ -383,10 +381,14 @@ func TestThreadPrunePhysicalDeleteNegativeControl(t *testing.T) {
 	s, peer := pruneStores(t)
 	r := pruneRecord()
 	seedPruneRecord(t, s, r)
-	// G1 deliberately retains this residual: ordinary physical deletion permits
-	// a stale INSERT. This is not credit for G2's missing-row protection.
-	if applied, err := s.DeleteThreadCAS(r.ThreadID, r.Status, r.LastSeenAt, r.Host); err != nil || !applied {
-		t.Fatalf("G1 physical deletion: applied=%v err=%v", applied, err)
+	// Explicit legacy baseline only: production now retains the key. Physically
+	// deleting it demonstrates why old direct writers cannot join a G2 rollout.
+	result, err := s.db.Exec(`DELETE FROM threads WHERE thread_id=? AND status=? AND last_seen_at=? AND (host='' OR ?='' OR host=?)`, r.ThreadID, r.Status, r.LastSeenAt, r.Host, r.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := result.RowsAffected(); err != nil || n != 1 {
+		t.Fatalf("legacy physical deletion: rows=%d err=%v", n, err)
 	}
 	r.Payload = []byte(`{"dirty":"stale"}`)
 	if applied, err := peer.UpsertThreadCAS(r); err != nil || !applied {
