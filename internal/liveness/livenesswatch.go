@@ -31,6 +31,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
@@ -244,17 +245,31 @@ type Finding struct {
 // for the worst current owner-fixable blocker. routerRoot is the idea-router
 // root (…/.agents/idea-router). Read-and-route only — never kills a process.
 func Run(routerRoot string, w io.Writer) error {
-	home, _ := os.UserHomeDir()
+	return runWithObservationProviders(routerRoot, w, os.Hostname, time.Now, currentLivenessFindings)
+}
+
+func currentLivenessFindings(home string) []Finding {
 	// Preserve severity order: broker, sampled memory spiral, session-candidate
 	// count, then menubar. These are separate signals; candidate counts alone do
 	// not establish the cause of memory pressure.
-	findings := []Finding{
+	return []Finding{
 		probeLaunchdDisabled(),
 		probeGemma(home),
 		probeMemoryDeath(),
 		probeSessionLeak(),
 		probeMenubar(),
 	}
+}
+
+func runWithObservationProviders(routerRoot string, w io.Writer, hostname func() (string, error), now func() time.Time, probeFindings func(home string) []Finding) error {
+	observationStartedAt := now().UTC()
+	host, err := hostname()
+	if err != nil || strings.TrimSpace(host) == "" {
+		host = "unavailable"
+	}
+	home, _ := os.UserHomeDir()
+	findings := probeFindings(home)
+	observationFinishedAt := now().UTC()
 
 	for _, f := range findings {
 		status := "ok"
@@ -296,12 +311,44 @@ func Run(routerRoot string, w io.Writer) error {
 		fmt.Fprintf(w, "route          skip    already open: %q\n", worst.Title)
 		return nil
 	}
-	res, err := f.Send("horus", recipient, worst.Title, "decision", worst.Body)
+	body := routedObservationBody(*worst, host, observationStartedAt, observationFinishedAt)
+	res, err := f.Send("horus", recipient, worst.Title, "decision", body)
 	if err != nil {
 		return fmt.Errorf("route blocker: %w", err)
 	}
 	fmt.Fprintf(w, "route          sent    %s → %s (%s)\n", worst.Title, recipient, res.ID)
 	return nil
+}
+
+const maxRoutedFindingDetailContentBytes = 2048
+
+// routedObservationBody preserves the finding's generic guidance and adds only
+// the measured detail and its bounded watch-pass provenance. This observation
+// does not authorize a repair; the recipient must verify current state.
+func routedObservationBody(f Finding, host string, observedFrom, observedThrough time.Time) string {
+	if strings.TrimSpace(host) == "" {
+		host = "unavailable"
+	}
+	detail := boundedRoutedFindingDetail(f.Detail)
+	if detail == "" {
+		detail = "[probe returned no detail]"
+	}
+	return fmt.Sprintf("%s\n\nMeasured observation (not current action authority):\nHost: %s\nObservation bracket UTC: %s through %s\nFinding detail: %s\nRecheck the current state and exact target before acting.",
+		f.Body, host, observedFrom.UTC().Format(time.RFC3339Nano), observedThrough.UTC().Format(time.RFC3339Nano), detail)
+}
+
+func boundedRoutedFindingDetail(detail string) string {
+	if len(detail) <= maxRoutedFindingDetailContentBytes {
+		return detail
+	}
+	var b strings.Builder
+	for _, r := range detail {
+		if b.Len()+utf8.RuneLen(r) > maxRoutedFindingDetailContentBytes {
+			break
+		}
+		b.WriteRune(r)
+	}
+	return b.String() + "… [truncated]"
 }
 
 // recipientFor maps a finding's Check to the agent that owns its remediation.

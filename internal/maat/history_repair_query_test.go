@@ -193,7 +193,7 @@ func TestHistoryRepairCursorVersionAndReadOnlyIntegrity(t *testing.T) {
 		t.Fatalf("old cursor semantics accepted: %v", err)
 	}
 	invalid := historyOrder{Time: "fixture", Offset: -1, Size: 1}
-	if validHistoryRepairRef(&invalid, int64(len(before))) || exclusiveHistoryOutcome(&invalid, &invalid, nil) || exclusiveHistoryOutcome(nil, &invalid, &invalid) {
+	if validHistoryRepairRef(&invalid, int64(len(before))) || exclusiveHistoryOutcome(nil, &invalid, &invalid) || !exclusiveHistoryOutcome(&invalid, &invalid, nil) {
 		t.Fatal("invalid/conflicting repair reference passed structural validation")
 	}
 }

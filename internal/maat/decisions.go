@@ -43,11 +43,12 @@ type Decision struct {
 	SystemOne *MaatVerdict `json:"system_one,omitempty"`
 	// SystemOneCalibration binds one recorded local auto-pass to a distinct
 	// independent outcome. It is audit evidence only, never a local grant.
-	SystemOneCalibration      *CalibrationRecord         `json:"system_one_calibration,omitempty"`
-	FailureMemoryReceipt      *PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
-	FailureMemoryIncidentKeys *[]string                  `json:"failure_memory_incident_keys,omitempty"`
-	SourceQualification       *QualificationEvent        `json:"source_qualification,omitempty"`
-	LifecycleAdoption         *LifecycleOwnerAdoption    `json:"lifecycle_owner_adoption,omitempty"`
+	SystemOneCalibration           *CalibrationRecord              `json:"system_one_calibration,omitempty"`
+	FailureMemoryReceipt           *PreflightReceiptReference      `json:"failure_memory_receipt,omitempty"`
+	FailureMemoryIncidentKeys      *[]string                       `json:"failure_memory_incident_keys,omitempty"`
+	SourceQualification            *QualificationEvent             `json:"source_qualification,omitempty"`
+	LifecycleAdoption              *LifecycleOwnerAdoption         `json:"lifecycle_owner_adoption,omitempty"`
+	BinaryDriftInactiveDisposition *BinaryDriftInactiveDisposition `json:"binary_drift_inactive_disposition,omitempty"`
 }
 
 // A pointer preserves Decision's existing comparability while the optional
@@ -700,6 +701,14 @@ func normalizeDecision(decision *Decision) error {
 }
 
 func validateDecision(decision Decision) error {
+	if decision.BinaryDriftInactiveDisposition != nil {
+		if decision.Kind != "diagnostic owner acceptance" || decision.SystemOne != nil || decision.SystemOneCalibration != nil || decision.FailureMemoryReceipt != nil || decision.FailureMemoryIncidentKeys != nil || decision.SourceQualification != nil || decision.LifecycleAdoption != nil {
+			return fmt.Errorf("invalid binary-drift inactive disposition payload combination")
+		}
+		if err := decision.BinaryDriftInactiveDisposition.validate(decision); err != nil {
+			return err
+		}
+	}
 	if decision.Kind == "source qualification observation" && decision.SourceQualification == nil {
 		return fmt.Errorf("lifecycle decision requires its typed event")
 	}

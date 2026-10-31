@@ -2487,6 +2487,8 @@ private struct MaatCaseDetailView: View {
     @State private var binaryDriftPreview: MaatBinaryDriftPreview?
     @State private var binaryDriftPreviewLoading = false
     @State private var binaryDriftPreviewError: String?
+    @State private var recordBinaryDriftInactive = false
+    @State private var binaryDriftInactiveReceipt: MaatBinaryDriftInactiveDispositionReceipt?
     @State private var failureMemoryHistory: MaatExactHistoryContinuation?
     @State private var failureMemoryHistoryKey: MaatOperationKey?
     @State private var failureMemoryHistoryAction: MaatFailureMemoryAction?
@@ -2562,10 +2564,15 @@ private struct MaatCaseDetailView: View {
                         }
                     }
                     if !entry.resolution.isEmpty {
-                        detailSection("Owner acceptance", entry.resolution)
-                        Text("This records an owner conclusion. It does not claim that Pantheon repaired the diagnosed system.")
-                            .sirsiFont(.caption)
-                            .foregroundStyle(.secondary)
+                        detailSection(entry.binaryDriftInactiveDisposition == nil ? "Owner acceptance" : "Owner disposition", entry.resolution)
+                        if let inactive = entry.binaryDriftInactiveDisposition {
+                            detailSection("Fresh binary-drift observation", "No longer active · not repaired · \(inactive.host) · \(inactive.observedFromUTC) through \(inactive.observedThroughUTC)")
+                            detailSection("Observation digest", inactive.observationSHA256)
+                        } else {
+                            Text("This records an owner conclusion. It does not claim that Pantheon repaired the diagnosed system.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     if entry.kind == "failure memory preflight" {
                         MaatRetainedPreflightDetail(model: operations.failureMemoryReceipts, entry: entry)
@@ -2608,13 +2615,14 @@ private struct MaatCaseDetailView: View {
                     Task { await performResolution(confirmedNote: confirmedNote) }
                 }
             }
-            Button("Cancel", role: .cancel) { pendingFailureMemoryAction = nil }
+            Button("Cancel", role: .cancel) { pendingFailureMemoryAction = nil; recordBinaryDriftInactive = false }
         } message: {
             Text(confirmationMessage)
         }
     }
 
     private var confirmationTitle: String {
+        if recordBinaryDriftInactive { return "Recheck and record this finding as no longer active?" }
         if let pendingFailureMemoryAction {
             return pendingFailureMemoryAction == .initialize ? "Initialize local failure memory?" : "Re-observe and reconcile the retained outcome?"
         }
@@ -2630,6 +2638,7 @@ private struct MaatCaseDetailView: View {
     }
 
     private var confirmationButton: String {
+        if recordBinaryDriftInactive { return "Recheck and record no longer active" }
         if let pendingFailureMemoryAction {
             return pendingFailureMemoryAction == .initialize ? "Initialize local failure memory" : "Inspect and re-observe"
         }
@@ -2646,6 +2655,9 @@ private struct MaatCaseDetailView: View {
     }
 
     private var confirmationMessage: String {
+        if recordBinaryDriftInactive {
+            return "Ma'at will re-read the exact original single-finding case and confirm this Mac, then make a fresh binary-drift observation. If that finding is still active, unavailable, stale, or belongs to another host, it will refuse. This records an owner disposition only; no repair or updater action is performed."
+        }
         if let pendingFailureMemoryAction {
             return pendingFailureMemoryAction == .initialize
                 ? "Create Ma'at's private per-user failure-memory store for genuine first use. No prior incidents are imported, and no liveness-watch repair runs until you review and confirm it separately."
@@ -2867,10 +2879,10 @@ private struct MaatCaseDetailView: View {
                     .sirsiFont(.caption)
                     .foregroundStyle(receipt.succeeded ? .green : .orange)
             }
-            if action.kind == "maat_repair", action.actionID == "binary-drift", operationInFlight {
-                ProgressView("Applying the reviewed updater…")
+            if let progress = operationRecord?.progress {
+                ProgressView(progress.title)
                     .sirsiFont(.caption)
-                Text("This operation stays locked until the owned updater exits and Ma’at records a fresh verification or an explicit failure. The updater is bounded to two minutes before verification.")
+                Text(progress.detail)
                     .sirsiFont(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2900,6 +2912,17 @@ private struct MaatCaseDetailView: View {
     }
 
     @ViewBuilder private func binaryDriftRecoveryControls(_ action: MaatCaseNextAction) -> some View {
+        Button {
+            recordBinaryDriftInactive = true
+            confirmAction = true
+        } label: {
+            Label("Record as no longer active", systemImage: "checkmark.circle")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .disabled(operationInFlight || !canBeginOperation)
+        .accessibilityHint("Rechecks this exact single binary-drift finding on this Mac, then records an owner disposition. It never runs the updater.")
+
         Button {
             Task { await loadBinaryDriftPreview(action) }
         } label: {
@@ -2947,6 +2970,13 @@ private struct MaatCaseDetailView: View {
                 .sirsiFont(.caption)
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+        if let receipt = binaryDriftInactiveReceipt, receipt.caseEvidence == action.evidence {
+            Text("Recorded: no longer active · no repair performed · \(receipt.host) · \(receipt.observedFromUTC) through \(receipt.observedThroughUTC). Refresh Casebook to see the source finding resolved.")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
         }
     }
 
@@ -3020,15 +3050,21 @@ private struct MaatCaseDetailView: View {
         guard let action = entry.nextAction else { return }
         guard action.kind != "owner_acceptance" || !confirmedNote.isEmpty else { return }
         let key = operationKey
-        guard operations.begin(key) else { return }
-        guard let generation = operations.record(for: key)?.generation else { return }
+        let selection = MaatConfirmedResolutionSelection(
+            inactiveDisposition: recordBinaryDriftInactive,
+            actionKind: action.kind,
+            actionID: action.actionID
+        )
+        guard operations.begin(key, intent: selection.operationIntent) else { recordBinaryDriftInactive = false; return }
+        guard let generation = operations.record(for: key)?.generation else { recordBinaryDriftInactive = false; return }
 
         let read = await MaatOperationPreflight.readCompleteExactHistory(evidence: entry.evidence,
             continuing: operations.historyContinuation(for: key, generation: generation)) { args, timeout in
             await SirsiEngine.runJSONRead(args: args, timeoutSeconds: timeout)
         }
-        guard operations.record(for: key)?.generation == generation else { return }
+        guard operations.record(for: key)?.generation == generation else { recordBinaryDriftInactive = false; return }
         guard !Task.isCancelled else {
+            recordBinaryDriftInactive = false
             operations.rejectPreflight(key, guidance: "The exact history read was cancelled. No Ma'at action ran; review again before retrying.")
             return
         }
@@ -3045,6 +3081,7 @@ private struct MaatCaseDetailView: View {
             projection: projection
         ) {
         case .rejected(let guidance):
+            recordBinaryDriftInactive = false
             operations.rejectPreflight(key, guidance: guidance)
             return
         case .ready:
@@ -3053,6 +3090,23 @@ private struct MaatCaseDetailView: View {
 
         operations.markRunning(key)
         let result: CommandResult?
+        if selection == .inactiveDisposition {
+            recordBinaryDriftInactive = false
+            guard !Task.isCancelled else {
+                operations.rejectPreflight(key, guidance: "The exact history read was cancelled. No Ma'at action ran; review again before retrying.")
+                return
+            }
+            let capture = await SirsiEngine.runCaptured(args: maatCasebookBinaryDriftInactiveArguments(caseEvidence: action.evidence), timeout: 30)
+            guard capture.complete, capture.exitCode == 0,
+                  let receipt = try? JSONDecoder().decode(MaatBinaryDriftInactiveDispositionReceipt.self, from: capture.stdoutData),
+                  receipt.isValid(for: action.evidence) else {
+                operations.complete(key, receipt: MaatOperationReceipt(summary: "Ma'at could not confirm the exact no-longer-active disposition. No repair was performed; refresh and review this case.", succeeded: false))
+                return
+            }
+            binaryDriftInactiveReceipt = receipt
+            operations.complete(key, receipt: MaatOperationReceipt(summary: "Recorded for this exact case: no longer active. No repair was performed. Refresh Casebook to review the resolved source finding.", succeeded: true))
+            return
+        }
         if let args = maatCasebookSystemOneReviewArguments(kind: action.kind, actionID: action.actionID, evidence: action.evidence) {
             result = await SirsiEngine.runResult(args: args)
             let succeeded = result?.ok == true
@@ -3064,6 +3118,10 @@ private struct MaatCaseDetailView: View {
         }
         if action.kind == "maat_repair" {
             if action.actionID == "binary-drift" {
+                guard selection == .binaryDriftUpdater else {
+                    operations.rejectPreflight(key, guidance: "Choose and confirm the current binary-drift action again before continuing.")
+                    return
+                }
                 guard let preview = binaryDriftPreview, preview.caseEvidence == action.evidence else {
                     operations.rejectPreflight(key, guidance: "The updater preview is missing or belongs to another case. Refresh and review a new preview before confirming.")
                     return
@@ -3292,6 +3350,10 @@ func maatCasebookBinaryDriftRepairArguments(caseEvidence: String, previewBinding
      "--preview-binding", previewBinding, "--confirm", "--json"]
 }
 
+func maatCasebookBinaryDriftInactiveArguments(caseEvidence: String) -> [String] {
+    ["maat", "repair", "binary-drift", "--record-inactive", "--case-evidence", caseEvidence, "--confirm", "--json"]
+}
+
 func maatCasebookInspectBinaryDriftAttemptArguments(caseEvidence: String) -> [String] {
     ["maat", "repair", "binary-drift", "--inspect-attempt", "--case-evidence", caseEvidence, "--json"]
 }
@@ -3360,6 +3422,65 @@ struct MaatBinaryDriftPreview: Decodable, Equatable {
     static func decode(_ raw: String) -> MaatBinaryDriftPreview? {
         guard let start = raw.firstIndex(of: "{") else { return nil }
         return try? JSONDecoder().decode(MaatBinaryDriftPreview.self, from: Data(raw[start...].utf8))
+    }
+}
+
+struct MaatBinaryDriftInactiveDisposition: Decodable, Equatable {
+    let schema: String
+    let originEvidence: String
+    let host: String
+    let observedFromUTC: String
+    let observedThroughUTC: String
+    let findingCheck: String
+    let findingSeverity: String
+    let findingResolution: String
+    let observationSHA256: String
+
+    enum CodingKeys: String, CodingKey {
+        case schema, host
+        case originEvidence = "origin_evidence"
+        case observedFromUTC = "observed_from_utc"
+        case observedThroughUTC = "observed_through_utc"
+        case findingCheck = "finding_check"
+        case findingSeverity = "finding_severity"
+        case findingResolution = "finding_resolution"
+        case observationSHA256 = "observation_sha256"
+    }
+}
+
+struct MaatBinaryDriftInactiveDispositionReceipt: Decodable {
+    let schema: String
+    let caseEvidence: String
+    let dispositionEvidence: String
+    let host: String
+    let observedFromUTC: String
+    let observedThroughUTC: String
+    let findingState: String
+    let repairPerformed: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case schema, host
+        case caseEvidence = "case_evidence"
+        case dispositionEvidence = "disposition_evidence"
+        case observedFromUTC = "observed_from_utc"
+        case observedThroughUTC = "observed_through_utc"
+        case findingState = "finding_state"
+        case repairPerformed = "repair_performed"
+    }
+
+    func isValid(for evidence: String) -> Bool {
+        let prefix = "maat-binary-drift-inactive:sha256="
+        guard schema == "sirsi.maat.binary-drift-inactive-disposition-receipt.v1",
+              caseEvidence == evidence, dispositionEvidence.hasPrefix(prefix),
+              String(dispositionEvidence.dropFirst(prefix.count)).count == 64,
+              String(dispositionEvidence.dropFirst(prefix.count)).allSatisfy({ ("0"..."9").contains($0) || ("a"..."f").contains($0) }),
+              !host.isEmpty, findingState == "no longer active", !repairPerformed else { return false }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let from = fractional.date(from: observedFromUTC) ?? ISO8601DateFormatter().date(from: observedFromUTC)
+        let through = fractional.date(from: observedThroughUTC) ?? ISO8601DateFormatter().date(from: observedThroughUTC)
+        guard let from, let through else { return false }
+        return through >= from
     }
 }
 
@@ -3963,11 +4084,12 @@ struct MaatCase: Decodable, Identifiable {
 	let systemOneCalibration: MaatSystemOneCalibration?
     let failureMemoryReceipt: MaatPreflightReceiptReference?
     let failureMemoryIncidentKeys: [String]
+    let binaryDriftInactiveDisposition: MaatBinaryDriftInactiveDisposition?
 
     init(id: String, time: String, kind: String, category: String, status: String,
          priority: MaatCasePriority, requester: String, resource: String,
          affected: String, determination: String, assessed: String, why: String,
-         evidence: String, resolution: String = "", verifiedRepairEvidence: String = "", repairOutcomeEvidence: String = "", pendingRepairAttemptEvidence: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil, failureMemoryReceipt: MaatPreflightReceiptReference? = nil, failureMemoryIncidentKeys: [String] = []) {
+         evidence: String, resolution: String = "", verifiedRepairEvidence: String = "", repairOutcomeEvidence: String = "", pendingRepairAttemptEvidence: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil, failureMemoryReceipt: MaatPreflightReceiptReference? = nil, failureMemoryIncidentKeys: [String] = [], binaryDriftInactiveDisposition: MaatBinaryDriftInactiveDisposition? = nil) {
         self.id = id
         self.time = time
         self.kind = kind
@@ -3990,6 +4112,7 @@ struct MaatCase: Decodable, Identifiable {
 		self.systemOneCalibration = systemOneCalibration
         self.failureMemoryReceipt = failureMemoryReceipt
         self.failureMemoryIncidentKeys = failureMemoryIncidentKeys
+        self.binaryDriftInactiveDisposition = binaryDriftInactiveDisposition
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -4003,6 +4126,7 @@ struct MaatCase: Decodable, Identifiable {
 		case systemOneCalibration = "system_one_calibration"
         case failureMemoryReceipt = "failure_memory_receipt"
         case failureMemoryIncidentKeys = "failure_memory_incident_keys"
+        case binaryDriftInactiveDisposition = "binary_drift_inactive_disposition"
     }
 
     init(from decoder: Decoder) throws {
@@ -4029,6 +4153,7 @@ struct MaatCase: Decodable, Identifiable {
 		systemOneCalibration = try values.decodeIfPresent(MaatSystemOneCalibration.self, forKey: .systemOneCalibration)
         failureMemoryReceipt = try values.decodeIfPresent(MaatPreflightReceiptReference.self, forKey: .failureMemoryReceipt)
         failureMemoryIncidentKeys = try values.decodeIfPresent([String].self, forKey: .failureMemoryIncidentKeys) ?? []
+        binaryDriftInactiveDisposition = try values.decodeIfPresent(MaatBinaryDriftInactiveDisposition.self, forKey: .binaryDriftInactiveDisposition)
     }
 
     var searchText: String {
