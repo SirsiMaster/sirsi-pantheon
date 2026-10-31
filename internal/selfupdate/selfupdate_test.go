@@ -1,12 +1,9 @@
 package selfupdate
 
 import (
-	"crypto/sha256"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/version"
 )
@@ -102,142 +99,6 @@ func TestBuildReport_D3PathCaskSymlinkIsNotDrift(t *testing.T) {
 	r := BuildReport(version.Info{Binary: "sirsi", Version: "v-test", Path: bundleBinary}, nil, pathBinary)
 	if !r.Healthy {
 		t.Fatalf("Cask symlink to the running app binary must be healthy, got %s", r.Summary())
-	}
-}
-
-func TestSameExecutableUsesSameFileThenStableBytesWithoutVersionWaiver(t *testing.T) {
-	root := t.TempDir()
-	left := filepath.Join(root, "local", "sirsi")
-	right := filepath.Join(root, "app", "sirsi")
-	for _, path := range []string{left, right} {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte("identical binary bytes"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if !sameExecutable(left, right) {
-		t.Fatal("distinct installed copies with identical bytes were reported as drift")
-	}
-	if got := BuildReport(version.Info{Binary: "sirsi", Version: "153", Path: right}, nil, left); !got.Healthy {
-		t.Fatalf("byte-identical copies with equal versions were reported as drift: %s", got.Summary())
-	}
-
-	if err := os.WriteFile(left, []byte("different binary bytes"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	unequal := BuildReport(version.Info{Binary: "sirsi", Version: "153", Path: right}, nil, left)
-	if unequal.Healthy || unequal.D3PathBin != filepath.Clean(left) {
-		t.Fatalf("same-version unequal bytes were waived: %+v", unequal)
-	}
-	if err := os.WriteFile(left, []byte("identical binary bytes"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	changedVersion := BuildReport(version.Info{Binary: "sirsi", Version: "154", Path: right},
-		[]Sibling{sib("sirsi-menubar", "153", left)}, left)
-	if len(changedVersion.D2Mismatch) != 1 || changedVersion.D3PathBin != "" {
-		t.Fatalf("byte equality changed the independent version mismatch: %+v", changedVersion)
-	}
-}
-
-func TestSameExecutablePreservesFailClosedPathAndReadCases(t *testing.T) {
-	root := t.TempDir()
-	regular := filepath.Join(root, "regular")
-	missing := filepath.Join(root, "missing")
-	if err := os.WriteFile(regular, []byte("regular"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	other := filepath.Join(root, "other")
-	if err := os.WriteFile(other, []byte("regular"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if !sameExecutable(missing, missing) {
-		t.Fatal("equal unavailable spelling changed its existing conservative behavior")
-	}
-	if sameExecutable(regular, missing) {
-		t.Fatal("missing target was treated as byte-equivalent")
-	}
-	if sameExecutable(regular, root) {
-		t.Fatal("non-regular target was treated as byte-equivalent")
-	}
-	if sameExecutableWith(regular, missing, func(string) (*os.File, error) {
-		return nil, errors.New("injected open failure")
-	}, os.Stat, digestExecutable) {
-		t.Fatal("open failure was treated as byte-equivalent")
-	}
-	if sameExecutableWith(regular, other, os.Open, func(path string) (os.FileInfo, error) {
-		if path == regular {
-			return nil, errors.New("injected path revalidation failure")
-		}
-		return os.Stat(path)
-	}, digestExecutable) {
-		t.Fatal("path revalidation failure was treated as byte-equivalent")
-	}
-	if sameExecutableWith(regular, other, os.Open, os.Stat, func(*os.File) ([sha256.Size]byte, error) {
-		return [sha256.Size]byte{}, errors.New("injected read failure")
-	}) {
-		t.Fatal("read failure was treated as byte-equivalent")
-	}
-}
-
-func TestSameExecutableRejectsContentMutationAndPathSubstitutionDuringHash(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		mutate func(t *testing.T, path string)
-	}{
-		{
-			name: "same inode content mutation",
-			mutate: func(t *testing.T, path string) {
-				t.Helper()
-				if err := os.WriteFile(path, []byte("mutated binary bytes!"), 0o755); err != nil {
-					t.Fatalf("mutate retained inode: %v", err)
-				}
-				future := time.Now().Add(time.Hour)
-				if err := os.Chtimes(path, future, future); err != nil {
-					t.Fatalf("stamp mutated inode: %v", err)
-				}
-			},
-		},
-		{
-			name: "path target substitution",
-			mutate: func(t *testing.T, path string) {
-				t.Helper()
-				replacement := path + ".replacement"
-				if err := os.WriteFile(replacement, []byte("identical binary bytes"), 0o755); err != nil {
-					t.Fatalf("write replacement: %v", err)
-				}
-				if err := os.Rename(replacement, path); err != nil {
-					t.Fatalf("replace path target: %v", err)
-				}
-			},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			left, right := filepath.Join(root, "left"), filepath.Join(root, "right")
-			for _, path := range []string{left, right} {
-				if err := os.WriteFile(path, []byte("identical binary bytes"), 0o755); err != nil {
-					t.Fatal(err)
-				}
-			}
-			realDigest := digestExecutable
-			calls := 0
-			digest := func(file *os.File) ([sha256.Size]byte, error) {
-				value, err := realDigest(file)
-				if err == nil && calls == 0 {
-					calls++
-					test.mutate(t, left)
-				}
-				return value, err
-			}
-			if sameExecutableWith(left, right, os.Open, os.Stat, digest) {
-				t.Fatal("comparison accepted a file or path changed during retained-descriptor hashing")
-			}
-			if calls != 1 {
-				t.Fatalf("mutation hook calls = %d, want exactly one", calls)
-			}
-		})
 	}
 }
 

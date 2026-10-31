@@ -16,11 +16,9 @@ package selfupdate
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -220,7 +218,11 @@ func ScanHostContext(ctx context.Context) (*DriftReport, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return BuildReport(self, siblings, pathBin), nil
+	report := buildReport(ctx, self, siblings, pathBin)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return report, nil
 }
 
 // discoverContext walks candidate install dirs, probing each sirsi-family binary it
@@ -296,6 +298,10 @@ func candidateDirs(selfPath string) []string {
 // BuildReport applies the drift rules to a discovered set. Pure and
 // deterministic — the unit the tests exercise.
 func BuildReport(self version.Info, siblings []Sibling, pathBin string) *DriftReport {
+	return buildReport(context.Background(), self, siblings, pathBin)
+}
+
+func buildReport(ctx context.Context, self version.Info, siblings []Sibling, pathBin string) *DriftReport {
 	r := &DriftReport{Self: self, Siblings: siblings}
 	for _, s := range siblings {
 		// Only compare when the sibling reported a real, stamped version.
@@ -312,113 +318,10 @@ func BuildReport(self version.Info, siblings []Sibling, pathBin string) *DriftRe
 		// Cask installation look drifted and sent the native app to a needless
 		// self-repair screen. Prefer filesystem identity when both paths exist;
 		// retain the conservative textual comparison for unavailable paths.
-		if !sameExecutable(pathBin, self.Path) {
+		if !sameExecutableContext(ctx, pathBin, self.Path) {
 			r.D3PathBin = filepath.Clean(pathBin)
 		}
 	}
 	r.Healthy = len(r.D2Mismatch) == 0 && r.D3PathBin == ""
 	return r
-}
-
-// sameExecutable recognizes two names for the same executable object or exact
-// bytes. It follows intentional PATH symlinks, but fails closed if either
-// target cannot be opened, is not regular, changes while read, or no longer
-// matches its retained descriptor. Byte equality describes this scan only; it
-// does not promise that either name will keep resolving to those bytes later.
-func sameExecutable(left, right string) bool {
-	return sameExecutableWith(left, right, os.Open, os.Stat, digestExecutable)
-}
-
-type executableOpen func(string) (*os.File, error)
-type executableStat func(string) (os.FileInfo, error)
-type executableDigest func(*os.File) ([sha256.Size]byte, error)
-
-func sameExecutableWith(left, right string, open executableOpen, stat executableStat, digest executableDigest) (same bool) {
-	if filepath.Clean(left) == filepath.Clean(right) {
-		return true
-	}
-	if open == nil || stat == nil || digest == nil {
-		return false
-	}
-	leftFile, err := open(left)
-	if err != nil || leftFile == nil {
-		return false
-	}
-	defer func() {
-		if err := leftFile.Close(); err != nil {
-			same = false
-		}
-	}()
-	rightFile, err := open(right)
-	if err != nil || rightFile == nil {
-		return false
-	}
-	defer func() {
-		if err := rightFile.Close(); err != nil {
-			same = false
-		}
-	}()
-
-	leftBefore, err := leftFile.Stat()
-	if err != nil || leftBefore == nil || !leftBefore.Mode().IsRegular() {
-		return false
-	}
-	rightBefore, err := rightFile.Stat()
-	if err != nil || rightBefore == nil || !rightBefore.Mode().IsRegular() {
-		return false
-	}
-	if !executablePathStillNamesFile(left, leftBefore, stat) || !executablePathStillNamesFile(right, rightBefore, stat) {
-		return false
-	}
-	if os.SameFile(leftBefore, rightBefore) {
-		return executablePathStillNamesFile(left, leftBefore, stat) &&
-			executablePathStillNamesFile(right, rightBefore, stat)
-	}
-	if leftBefore.Size() != rightBefore.Size() {
-		return false
-	}
-
-	leftDigest, err := digest(leftFile)
-	if err != nil {
-		return false
-	}
-	rightDigest, err := digest(rightFile)
-	if err != nil {
-		return false
-	}
-	leftAfter, leftErr := leftFile.Stat()
-	rightAfter, rightErr := rightFile.Stat()
-	if leftErr != nil || rightErr != nil || leftAfter == nil || rightAfter == nil ||
-		!stableExecutableFile(leftBefore, leftAfter) ||
-		!stableExecutableFile(rightBefore, rightAfter) {
-		return false
-	}
-	if !executablePathStillNamesFile(left, leftAfter, stat) || !executablePathStillNamesFile(right, rightAfter, stat) {
-		return false
-	}
-	return leftDigest == rightDigest
-}
-
-func executablePathStillNamesFile(path string, opened os.FileInfo, stat executableStat) bool {
-	current, err := stat(path)
-	return err == nil && current != nil && current.Mode().IsRegular() && os.SameFile(opened, current)
-}
-
-func stableExecutableFile(before, after os.FileInfo) bool {
-	return os.SameFile(before, after) && before.Mode() == after.Mode() &&
-		before.Size() == after.Size() && before.ModTime().Equal(after.ModTime())
-}
-
-func digestExecutable(file *os.File) ([sha256.Size]byte, error) {
-	var empty [sha256.Size]byte
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return empty, err
-	}
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return empty, err
-	}
-	var digest [sha256.Size]byte
-	copy(digest[:], hash.Sum(nil))
-	return digest, nil
 }
