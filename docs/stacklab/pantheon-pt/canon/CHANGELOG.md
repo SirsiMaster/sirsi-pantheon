@@ -1,6 +1,24 @@
 # Changelog — Pantheon PT canon
 
-## 2026-10-31 — v0.24.150 release candidate
+## 2026-10-31 — v0.24.151 release candidate
+
+- The wake-consumer reload regression now waits for the same controller thread's
+  capability and answer-role update after the old child exits. Its inert child
+  hold also demonstrates that the prior fixed-delay assertion can observe the
+  old grants before the required join and reload have happened.
+- Refs: `PANTHEON_RULES.md` A27, `docs/ADR-022-CTR-OS-TRUTH-LIVENESS.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/pantheon-pt/canon/TRACEABILITY_MATRIX.md`.
+- Pass absolute app paths from the release workflow and both paired Make targets to PKG inventory, satisfying its existing absolute-path contract without changing no-follow checks. The workflow records the selected pre-sign receipt path in `GITHUB_ENV` and includes that exact original file in its always-uploaded evidence; a selected path without a created receipt remains missing and is not fabricated. Inert workflow-payload and private-space Make fixtures check receipt lineage, argv/order, and relative-path refusal under Bash 3.2; the strict release-preflight workflow provenance pin matches the final workflow bytes.
+- Refs: `.github/workflows/release.yml`, `Makefile`, `scripts/build-pkg.sh`, `scripts/test_artifact_modes.py`, `scripts/PACKAGING.md`, `docs/ADR-066-STACK-LAB-WING-AUTHORITY-ORIGIN-IS-TRUTH.md`, `docs/ADR-015-DEITY-HIERARCHY.md`
+- Preserve complete Ma’at diagnostic names in the native finding detail list by wrapping long names across lines; values and selectable text remain intact.
+- Refs: `macapp/Sources/SirsiMenubar/Views.swift`, `docs/design/PANTHEON_NATIVE_WORKSPACE.md`
+- Carry forward the unshipped source corrections prepared for 0.24.148, 0.24.149 and 0.24.150. Their immutable failed-attempt history remains below; none completed the commercial DMG/PKG pair, cask publication or client rollout.
+- Retain Ma’at exact-case lookup and readable preview errors, lifecycle observation and neutral calibration labels. Adopt the exact-reservation admission runner only after its compatible installed CLI.
+- Retain explicit native-Apollo-disabled package composition, shared pre-sign digest binding, checked Bash 3.2 receipt reading, and inventory fixtures that remain correct under a private umask.
+- Retain per-Codex-thread registration, bounded Fabric cancellation, attended-lane availability and wake/scoring refresh corrections, plus the native Stack Lab GitHub CLI lookup. Full installed workflow and product acceptance remain separately evidenced.
+
+## 2026-10-31 — v0.24.150 failed/unpublished
+
+- Signed/notarized/stapled DMG retained privately; relative PKG caller rejected before PKG creation. No complete release/cask/install claim. Unshipped corrections carry forward into v0.24.151.
 
 - test(core): make Apollo inventory fixture modes umask-independent
 - Set explicit modes on the generated signature directory, CodeResources file,

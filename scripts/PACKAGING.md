@@ -21,8 +21,15 @@ make pkg-dev
 # Or directly, selecting once for both producer and consumer:
 receipt="$(bash scripts/new-apollo-digest-receipt.sh "$PWD/bin")"
 PANTHEON_APOLLO_DIGEST_RECEIPT="$receipt" scripts/build-dmg.sh --development --version 0.24.14 --arch arm64
-PANTHEON_APOLLO_DIGEST_RECEIPT="$receipt" scripts/build-pkg.sh --development --version 0.24.14 --arch arm64 --app Pantheon.app
+PANTHEON_APOLLO_DIGEST_RECEIPT="$receipt" scripts/build-pkg.sh --development --version 0.24.14 --arch arm64
 ```
+
+When overriding `--app`, pass an absolute clean path that satisfies the builder's
+existing no-follow checks. The builder's default is already an absolute path
+rooted beside the script. The release workflow passes
+`$GITHUB_WORKSPACE/Pantheon.app`, and both paired Make targets pass
+`$(CURDIR)/Pantheon.app`; package inventory deliberately rejects relative input
+paths and retains its no-follow checks.
 
 Output: `bin/SirsiPantheon-VERSION-dev-ARCH.pkg`
 
@@ -61,7 +68,10 @@ the independent expected mode and exact profile before signing, after app
 signing, and against the expanded PKG. Release-mode signed-payload checks also
 require the Info.plist/profile digest pair captured by the initial pre-sign
 inventory. Developer signed-app checks may validate signature structure without
-the release-only frozen-digest flag.
+the release-only frozen-digest flag. The always-uploaded workflow evidence also
+retains that exact selected pre-sign receipt beside the publication-verification
+receipt. If the receipt was selected but never created, upload warns and does not
+manufacture a replacement.
 
 ## Supported installation and upgrades
 

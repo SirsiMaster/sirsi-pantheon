@@ -113,8 +113,9 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 		"scripts/build-dmg.sh":                 "2eae7c74a88e62f47a184d510974c1463baf139e63f9e40614f5d15fcdbe9385",
 		"scripts/build-pkg.sh":                 "82fd6b3377bf42d3be3ea68381f01067f75f7a91a8a470be5f71159be1cc66d6",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
-		".github/workflows/release.yml":        "c5ed5de422773ac81f134a7bf5fe1b5062927e0dc17c863b9e164c425131db84",
-		"tools/signing/sirsi-sign":             "95db0601b45c56604e77b4b1d8ef6ecca2bbc165570889e9ec46d63b16288605",
+		// 151 absolute PKG caller and selected pre-sign receipt retention.
+		".github/workflows/release.yml": "f8bb379cfdeecdf5ca2c1ce3cff5ac8473ebcf70acd465c8abbc3604319ec83f",
+		"tools/signing/sirsi-sign":      "95db0601b45c56604e77b4b1d8ef6ecca2bbc165570889e9ec46d63b16288605",
 	}
 	for _, requirement := range releaseContractRequirements {
 		relative := requirement.Path
