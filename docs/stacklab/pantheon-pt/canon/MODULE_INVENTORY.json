@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "70bad304055c1d6bae4bf602ed27a241c20974af",
-  "source_tree": "c9d230ebd53e9fe0ed807f3278f26bbe07d4a59c",
+  "source_commit": "4c17dc3d33b770b8d9e830f092cecbb846c3b6c1",
+  "source_tree": "15c1c7121640ff20ac8271233db88e4ccf1e691d",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -7656,7 +7656,7 @@
       "tests": [
         {
           "path": "internal/selfupdate/executable_compare_unix_test.go",
-          "sha256": "e3fedc51d0d8fd0051d7a744c8073a22e9a49d275a5413fc47fe5f0ade1de721"
+          "sha256": "8a40d59fad2848bef439f3f7abf1ba1debefdf159ae863799d7d2e07a2e7c294"
         },
         {
           "path": "internal/selfupdate/lock_test.go",
