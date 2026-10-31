@@ -8,12 +8,13 @@ normally quit and reopened into the exact136 image. These are separate facts
 from refreshing older loaded relay, Horus, router surface and Gemma roles.
 Installation alone does not implement a drain in the old process.
 
-SSA owns the remaining correction under the original
-`native-service-lifecycle-productization-20261022` task; SHA remains its native
-operator. Main's current product composition does not implement this boundary.
-The canonical baseline is released136 eff2c45d, not an unreleased development
-binary. Existing session/data/queue protection and selected-service pins below
-remain mandatory; this plan does not authorize a live apply.
+The canonical published baseline described here is released136 eff2c45d, not an
+unreleased development binary. This source successor wires the existing active
+relay control into the root refresh caller; it still requires independent review,
+qualification and SSA/SHA release/host evidence under the original
+`native-service-lifecycle-productization-20261022` task. Existing session/data/
+queue protection and selected-service pins remain mandatory; this plan does not
+authorize a live apply.
 
 ### Required state and evidence
 
@@ -39,16 +40,13 @@ remain mandatory; this plan does not authorize a live apply.
 
 ### Implementation order and legacy constraint
 
-Current `Relay.Serve` waits for lane workers and forward goroutines after
-cancellation, but has no bounded shutdown result. The explicit drain path must
-add a finite deadline without changing that existing contract, and must account
-for both fresh requests and serial held-outbox retries. Preserve at-most-once
-handling and independent lane progress.
-
-Then integrate the supported producer/pass control with the existing lifecycle
-controller and each actual role. Use closed owner-authorized control, not a
-second daemon, copied token or arbitrary-command socket. Reuse the existing
-canonical runtime authorization and exact instance/configuration pins.
+The ordinary `Relay.Serve` keeps its unbounded worker join. `ServeDrained` is a
+separate bounded shutdown API and is not used as lifecycle evidence. The source
+successor now uses the existing PID/start/root-bound maintenance endpoint to
+pause and join admitted request and serial held-outbox duties, then binds that
+acknowledgment into the existing root refresh caller. No second daemon, copied
+token or arbitrary-command socket is introduced; the existing lifecycle grant
+and exact instance/configuration pins remain in force.
 
 Finally qualify the **first migration of each legacy loaded implementation**.
 A new API or lock in replacement bytes cannot retroactively govern old memory.
@@ -59,46 +57,55 @@ unit test, an empty queue sample, or a caller-provided `--drained` flag.
 
 ### Acceptance controls
 
-#### Source implementation checkpoint: joined relay duties
+#### Source implementation: active producer endpoint and joined duties
 
-`Relay.ServeDrained(ctx, drainTimeout)` is the explicit in-process completion
-API. It tracks the actual lane workers and fresh forward goroutines; a worker
-also owns its serial held-outbox retry until the existing disposition finishes.
-Discovery stops on cancellation, canceled workers do not start another queued
-item, and cancellation leaves the next held-outbox item untouched. A positive
-bounded shutdown deadline is required. A missed deadline returns
-`ErrRelayDrainIncomplete`, never success or authority to retire the process.
-The already-admitted HTTP request is not canceled or replayed by that deadline.
-Response publication and consumed-record cleanup failures are sticky settlement
-debt (`ErrRelaySettlementIncomplete`), even after the goroutines finish. A failed
-response leaves its original inflight record intact; startup unknown-outcome
-publication obeys the same rule. If an unknown held-request outcome cannot be
-parked, it stays inflight and never returns to the retryable outbox. Existing
-atomic file publication is not a new crash-durability certification. The
-existing maintenance endpoint remains owned until those workers finish. If
-`ServeDrained` times out, the process retains endpoint cleanup ownership and
-closes it only after its admitted workers finish. Endpoint cleanup failure
-remains settlement debt. The original `Serve` retains its unbounded join
-behavior. Callers requiring a bounded result must use `ServeDrained`; neither
-API is CLI or installed-service integration. Each drained Relay instance is
-one-shot; reusing retired lane channels refuses instead of silently losing
-wakes.
+`Relay.ServeDrained(ctx, drainTimeout)` remains the explicit in-process shutdown
+API; its bounded return never changes `Relay.Serve`'s unbounded worker join.
+The root lifecycle caller does not use that shutdown path as its drain proof.
+Each ordinary root-relay lifetime now publishes the existing per-PID/start
+maintenance UDS endpoint against the exact spool-root inode. Through that
+root-peer-checked endpoint, the selected process closes admission to new relay
+duties, waits up to 15 seconds for already-started request/outbox duties, and
+returns a generation-bound `relay_drain_acknowledged` status only after local
+response/outcome settlement is clean. It does not cancel an admitted HTTP
+request. Timeout, local settlement debt or changed identity refuses the
+acknowledgment and reopens duty admission; the serving process and endpoint
+remain alive.
 
-This checkpoint does **not** switch the installed CLI to terminate on a drain
-timeout. The remaining authorized control must keep the process alive on a
-failed drain, fence producer ingress, bind the actual instance, and satisfy
-the legacy migration requirement. Neither this API's unit tests nor fast SIGTERM
-handling is a substitute for those next steps. Existing on-disk outcome-record
-durability is not strengthened or newly certified by a goroutine join.
+The existing root refresh caller requests that acknowledgment while holding its
+service lock and physical spool EX admission. It still requires the selected
+instance and four existing artifact/identity pins, clear child inventory,
+repeated no-follow queue checks, and an exact acknowledgment readback immediately
+before the existing one-service retirement. The caller resumes that same
+selected producer on every pre-retirement failure when its identity still
+matches. An uncertain acknowledgment reply is reconciled only against the same
+PID/start/generation/root; a pending, changed or unreadable state refuses and
+never authorizes bootout. `--drained` remains a caller assertion, not the
+producer acknowledgment.
 
-Use owned fixtures to hold a forward and a held-outbox retry across a drain;
-the acknowledgment must wait, prevent a late new forward and preserve all
-pending bytes. Cover timeout, interrupted caller, owner/instance substitution,
-concurrent lifecycle attempts, outcome-unknown retention, resume after failed
-apply and a successful normal replacement. Show the old implementation fails
-the missing-completion control before the new implementation passes it. Existing
-short-cancel callers must not receive a false drain-success result.
+Outcome-unknown records remain separate from the drain result. Response files
+remain until the lane reads the complete returned body and closes it; timeout,
+partial read, malformed metadata or failed cleanup retains the response file for
+canonical re-query. An unknown outbox result that cannot be parked
+stays inflight, sets sticky settlement debt and refuses drain; it never returns
+to the retryable outbox. The existing `req/outbox/inflight` checks remain
+necessary, while `res/failed` metadata is not treated as queued forwarding work.
+No historical census is inferred for old outcomes that were never retained.
 
+The exact clean 0.24.147 source profile remains a one-time first-transition
+compatibility path: its old process has no endpoint, so its interrupted remote
+outcomes remain unknown and are never replayed. A successfully activated
+successor starts the ordinary current-source endpoint above; future refreshes
+use that endpoint rather than expanding the legacy version allowlist. This is
+source behavior only; no installed lifecycle or crash-durability receipt is
+claimed.
+
+Use owned fixtures to hold a forward and held-outbox retry across the live
+endpoint acknowledgment; cover bounded timeout with late completion, no new
+duty admission while acknowledged, exact resume after queue/settlement failure,
+unknown local settlement, lost acknowledgment readback, selected caller ordering,
+and refusal on root/PID/start/generation drift. Empty queue or child samples
+alone never authorize retirement.
 Source review and protected CI precede the next signed commercial candidate's
 package/catalog/tag/release. Fresh SHA per-host loaded-role/readback and actual
 queue receipts finish the operational requirement. Whole-product, remote GUI

@@ -153,7 +153,7 @@ func TestRootRelayMetadataCannotMaskSecondPassQueueArrival(t *testing.T) {
 			if err := b.Refresh(context.Background(), relayInstanceFixture()); err == nil {
 				t.Fatal("late forwarding marker accepted")
 			}
-			if f.spoolReads != 2 || f.childReads != 2 || f.bootouts+f.bootstraps != 0 {
+			if f.spoolReads != 2 || f.childReads != 3 || f.bootouts+f.bootstraps != 0 {
 				t.Fatal("metadata bypassed the actual second pre-bootout probe")
 			}
 			assertRelayMetadataUntouched(t, root, before, raw)

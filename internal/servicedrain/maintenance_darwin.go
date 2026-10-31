@@ -179,7 +179,7 @@ func StartMaintenance(g *StartupMaintenance) (io.Closer, error) {
 					if err != nil || uid != 0 {
 						return
 					}
-					_ = c.SetDeadline(time.Now().Add(5 * time.Second))
+					_ = c.SetDeadline(time.Now().Add(RelayDrainTimeout + 5*time.Second))
 					snapshot, err := g.Snapshot()
 					if err != nil || json.NewEncoder(c).Encode(snapshot) != nil {
 						return
@@ -189,12 +189,27 @@ func StartMaintenance(g *StartupMaintenance) (io.Closer, error) {
 						return
 					}
 					command, err := DecodeMaintenance[maintenanceCommand](raw)
-					if err != nil || command.Operation != "activate" {
+					if err != nil {
 						return
 					}
-					after, err := g.Activate(command.Expected)
-					if err == nil {
-						_ = json.NewEncoder(c).Encode(after)
+					switch command.Operation {
+					case "activate":
+						after, opErr := g.Activate(command.Expected)
+						if opErr == nil {
+							_ = json.NewEncoder(c).Encode(after)
+						}
+					case "prepare-drain":
+						ctx, cancel := context.WithTimeout(context.Background(), RelayDrainTimeout)
+						after, opErr := g.PrepareDrain(ctx, command.Expected)
+						cancel()
+						if encodeErr := json.NewEncoder(c).Encode(after); encodeErr != nil && opErr == nil {
+							_, _ = g.ResumeDrain(after)
+						}
+					case "resume-drain":
+						after, opErr := g.ResumeDrain(command.Expected)
+						if opErr == nil {
+							_ = json.NewEncoder(c).Encode(after)
+						}
 					}
 				}()
 			default:
@@ -205,39 +220,63 @@ func StartMaintenance(g *StartupMaintenance) (io.Closer, error) {
 	return s, nil
 }
 
-func ReadMaintenance(ctx context.Context, uid, pid int, started string, expected *MaintenanceReady) (MaintenanceReady, error) {
-	var result MaintenanceReady
+func validMaintenanceReady(r MaintenanceReady, pid int, started string) bool {
+	validState := (r.State == "maintenance_ready_not_drained" && r.Version >= 1) ||
+		((r.State == "relay_active" || r.State == "active_with_old_outcomes_unknown") && r.Version >= 2) ||
+		(r.State == "relay_drain_pending" && r.Version >= 3) ||
+		(r.State == "relay_drain_acknowledged" && r.Version >= 4)
+	return r.Schema == 1 && r.PID == pid && r.Started == started && validHex(r.Generation, 16) &&
+		r.Marker.Validate() == nil && r.Preserved >= 0 && validState && r.Version >= 1
+}
+
+func maintenanceConnection(ctx context.Context, uid, pid int, started string) (*net.UnixConn, *bufio.Reader, error) {
 	if os.Getuid() != 0 || os.Geteuid() != 0 {
-		return result, errors.New("service maintenance: native root controller required")
+		return nil, nil, errors.New("service maintenance: native root controller required")
 	}
 	start, err := MaintenanceStart(pid)
 	if err != nil || start != started {
-		return result, errors.New("service maintenance: kernel instance changed")
+		return nil, nil, errors.New("service maintenance: kernel instance changed")
 	}
 	deadline, ok := ctx.Deadline()
 	if !ok {
-		return result, errors.New("service maintenance: bounded controller context required")
+		return nil, nil, errors.New("service maintenance: bounded controller context required")
 	}
 	connection, err := (&net.Dialer{}).DialContext(ctx, "unix", MaintenanceEndpoint(uid, pid))
 	if err != nil {
-		return result, err
+		return nil, nil, err
 	}
 	c := connection.(*net.UnixConn)
-	defer c.Close()
 	_ = c.SetDeadline(deadline)
 	peerPID, peerUID, err := maintenancePeer(c)
 	if err != nil || peerPID != pid || peerUID != uid {
-		return result, errors.New("service maintenance: producer kernel peer mismatch")
+		_ = c.Close()
+		return nil, nil, errors.New("service maintenance: producer kernel peer mismatch")
 	}
-	reader := bufio.NewReaderSize(c, 8192)
+	return c, bufio.NewReaderSize(c, 8192), nil
+}
+
+func readMaintenanceStatus(reader *bufio.Reader, pid int, started string) (MaintenanceReady, error) {
 	raw, err := reader.ReadSlice('\n')
+	if err != nil {
+		return MaintenanceReady{}, err
+	}
+	result, err := DecodeMaintenance[MaintenanceReady](raw)
+	if err != nil || !validMaintenanceReady(result, pid, started) {
+		return result, errors.New("service maintenance: invalid producer readiness")
+	}
+	return result, nil
+}
+
+func ReadMaintenance(ctx context.Context, uid, pid int, started string, expected *MaintenanceReady) (MaintenanceReady, error) {
+	var result MaintenanceReady
+	c, reader, err := maintenanceConnection(ctx, uid, pid, started)
 	if err != nil {
 		return result, err
 	}
-	result, err = DecodeMaintenance[MaintenanceReady](raw)
-	if err != nil || result.Schema != 1 || result.PID != pid || result.Started != started || !validHex(result.Generation, 16) || result.Marker.Validate() != nil || result.Preserved < 0 ||
-		!((result.Version >= 1 && result.State == "maintenance_ready_not_drained") || (result.Version >= 2 && result.State == "active_with_old_outcomes_unknown")) {
-		return result, errors.New("service maintenance: invalid producer readiness")
+	defer c.Close()
+	result, err = readMaintenanceStatus(reader, pid, started)
+	if err != nil {
+		return result, err
 	}
 	if expected == nil {
 		return result, nil
@@ -253,7 +292,7 @@ func ReadMaintenance(ctx context.Context, uid, pid int, started string, expected
 	if err := json.NewEncoder(c).Encode(maintenanceCommand{"activate", *expected}); err != nil {
 		return result, err
 	}
-	raw, err = reader.ReadSlice('\n')
+	raw, err := reader.ReadSlice('\n')
 	if err != nil {
 		return result, err
 	}
@@ -262,4 +301,73 @@ func ReadMaintenance(ctx context.Context, uid, pid int, started string, expected
 		return result, errors.New("service maintenance: activation outcome unverified")
 	}
 	return result, nil
+}
+
+func PrepareRelayDrain(ctx context.Context, uid, pid int, started string, expected MaintenanceReady) (MaintenanceReady, error) {
+	var zero MaintenanceReady
+	if (expected.State != "relay_active" && expected.State != "active_with_old_outcomes_unknown") || !validMaintenanceReady(expected, pid, started) {
+		return zero, errors.New("service maintenance: active exact producer readiness required for drain")
+	}
+	c, reader, err := maintenanceConnection(ctx, uid, pid, started)
+	if err != nil {
+		return zero, err
+	}
+	defer c.Close()
+	current, err := readMaintenanceStatus(reader, pid, started)
+	if err != nil || current != expected {
+		return current, errors.Join(errors.New("service maintenance: active generation changed before drain"), err)
+	}
+	if err := json.NewEncoder(c).Encode(maintenanceCommand{"prepare-drain", expected}); err != nil {
+		return current, err
+	}
+	result, err := readMaintenanceStatus(reader, pid, started)
+	if err != nil {
+		return result, err
+	}
+	if result.State != "relay_drain_acknowledged" || result.Version != expected.Version+2 || !sameMaintenanceBinding(result, expected) {
+		return result, errors.New("service maintenance: relay did not acknowledge bounded duty settlement")
+	}
+	return result, nil
+}
+
+func ResumeRelayAfterDrain(ctx context.Context, uid, pid int, started string, expected MaintenanceReady) (MaintenanceReady, error) {
+	var zero MaintenanceReady
+	if expected.State != "relay_drain_acknowledged" || !validMaintenanceReady(expected, pid, started) {
+		return zero, errors.New("service maintenance: exact drain acknowledgment required to resume")
+	}
+	c, reader, err := maintenanceConnection(ctx, uid, pid, started)
+	if err != nil {
+		return zero, err
+	}
+	defer c.Close()
+	current, err := readMaintenanceStatus(reader, pid, started)
+	if err != nil {
+		return current, err
+	}
+	if current.State == "relay_active" || current.State == "active_with_old_outcomes_unknown" {
+		if current.Version == expected.Version+1 && sameMaintenanceBinding(current, expected) {
+			return current, nil // Resume completed but its reply was lost.
+		}
+		return current, errors.New("service maintenance: producer changed after drain acknowledgment")
+	}
+	if current != expected {
+		return current, errors.New("service maintenance: drain acknowledgment changed before resume")
+	}
+	if err := json.NewEncoder(c).Encode(maintenanceCommand{"resume-drain", expected}); err != nil {
+		return current, err
+	}
+	result, err := readMaintenanceStatus(reader, pid, started)
+	if err != nil {
+		return result, err
+	}
+	if (result.State != "relay_active" && result.State != "active_with_old_outcomes_unknown") || result.Version != expected.Version+1 || !sameMaintenanceBinding(result, expected) {
+		return result, errors.New("service maintenance: relay resume outcome unverified")
+	}
+	return result, nil
+}
+
+func sameMaintenanceBinding(a, b MaintenanceReady) bool {
+	a.State, b.State = "", ""
+	a.Version, b.Version = 0, 0
+	return a == b
 }

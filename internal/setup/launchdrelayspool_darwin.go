@@ -237,10 +237,11 @@ func relaySpoolEntries(dir *os.File, limit int) ([]os.DirEntry, error) {
 
 // Observe marker names and the exact validated summary only: never open work bodies, move/delete markers or
 // replay ambiguous inflight work. beforeVerify is a per-call fixture seam, nil
-// in production. This is a sample, not a writer lock: --drained must additionally
-// mean sources are quiesced. Legacy Serve cancellation does not join forwards;
-// an actual cutover still needs bounded owner quiescence, preserved spool and
-// explicit recovery of outcome-unknown semantics, not automatic replay here.
+// in production. This is a sample, not a writer lock: the root lifecycle caller
+// also requires the selected producer's PID-bound duty acknowledgment and the
+// existing owner --drained assertion. Neither is a kernel-atomic guarantee for
+// legacy or external writers. Preserve the spool and explicit outcome-unknown
+// semantics; never replay an ambiguous mutation here.
 func rootRelaySpoolQuiescentAt(ctx context.Context, physical string, beforeVerify func(string)) error {
 	if !filepath.IsAbs(physical) || filepath.Clean(physical) != physical || physical == "/" {
 		return errors.New("service lifecycle: canonical physical relay spool path required")

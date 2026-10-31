@@ -294,11 +294,17 @@ receipts still OPEN.
 ```mermaid
 flowchart TD
   U[SSA/SHA explicit grant] --> A[Validate exact system label, privilege and four pins]
-  A --> P[Inspect selected loaded PID, start, program and queue]
-  P -->|unreadable, drift, active queue or not drained| STOP[Refuse, no retirement]
-  P -->|exact pinned instance, drained| B[Retain Before and recovery plan]
-  B --> R[Recheck selected request and pins]
-  R -->|changed/cancelled| STOP
+  A --> P[Inspect selected loaded PID/start, program and physical spool]
+  P -->|unreadable or drift| STOP[Refuse, no retirement]
+  P -->|exact selected instance| C[Existing PID-bound relay UDS: pause new duties]
+  C -->|timeout, local settlement debt or identity change| LIVE[Keep process/endpoint alive; refuse]
+  C -->|all admitted duties settled| Q[Repeat no-follow queue, child and four-pin checks]
+  Q -->|busy, changed or unknown| RESUME[Resume same acknowledged producer; refuse]
+  Q -->|clear| ACK[Read back exact PID/start/generation/root acknowledgment]
+  ACK -->|mismatch or unreadable| RESUME
+  ACK -->|exact| B[Retain Before and recovery plan]
+  B --> R[Final selected instance and pin check]
+  R -->|changed/cancelled| RESUME
   R -->|stable| RET[Retire only exact selected job]
   RET --> NEW[Bootstrap approved artifacts]
   NEW --> CHECK[Bounded loaded-client and queue readback]
@@ -333,6 +339,13 @@ stateDiagram-v2
 Recovery is bounded and reports the original failure even if restoration works.
 No actual loaded-client or rollback receipt is claimed here; see
 `ROOT_RELAY_REFRESH.md` and traceability.
+
+The endpoint is the existing relay maintenance UDS, bound to its current
+kernel PID/start and spool-root inode. It is activated by ordinary successor
+startup; it is not present in the old 0.24.147 process used by the one-time
+legacy transition. Unknown historical outcomes remain separate and are never
+replayed or certified by an empty queue sample. `Serve` retains its unbounded
+join; the lifecycle caller uses the endpoint's bounded admitted-duty control.
 
 <a id="pt-p09"></a>
 ## PT-P09 — Legacy root relay maintenance fallback

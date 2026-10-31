@@ -2,6 +2,7 @@ package routerstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -172,6 +173,35 @@ func TestRelayDrainRefusesLostResponseAndRetainsOutcomeCustody(t *testing.T) {
 func TestRelayDrainRecoveryPreservesUnpublishedUnknownOutcome(t *testing.T) {
 	spool := t.TempDir()
 	publishDrainRequest(t, spool, "inflight", "prior", "prior")
+	inflight := filepath.Join(spool, "lane", "inflight", "prior.json")
+	original, err := os.ReadFile(inflight)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inflightInfo, err := os.Stat(inflight)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := json.Marshal(spoolRequest{Method: "ListAll", Headers: map[string]string{"X-Sirsi-Session": "prior"}, Body: []byte(`{"args":[]}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(original) != string(want) {
+		t.Fatal("fixture request bytes differ from the exact expected envelope")
+	}
+	failedDir := filepath.Join(spool, "lane", "failed")
+	if err := os.Mkdir(failedDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	occupied := []byte("pre-existing failed custody for a distinct envelope")
+	failed := filepath.Join(failedDir, "prior.json")
+	if err := os.WriteFile(failed, occupied, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	failedInfo, err := os.Stat(failed)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(spool, "lane", "res"), []byte("fixture obstruction"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -181,8 +211,26 @@ func TestRelayDrainRecoveryPreservesUnpublishedUnknownOutcome(t *testing.T) {
 	if err := rl.ServeDrained(ctx, time.Second); !errors.Is(err, ErrRelaySettlementIncomplete) {
 		t.Fatalf("startup recovery lost its publication refusal: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(spool, "lane", "inflight", "prior.json")); err != nil {
-		t.Fatalf("failed outcome-unknown publication lost original custody: %v", err)
+	if !rl.settlementFailed.Load() {
+		t.Fatal("failed outcome-unknown publication did not leave sticky settlement debt")
+	}
+	got, err := os.ReadFile(failed)
+	gotFailedInfo, statErr := os.Stat(failed)
+	if err != nil || string(got) != string(occupied) || statErr != nil || !os.SameFile(failedInfo, gotFailedInfo) {
+		t.Fatalf("occupied failed custody changed: bytes=%q read=%v stat=%v", got, err, statErr)
+	}
+	got, err = os.ReadFile(inflight)
+	gotInflightInfo, statErr := os.Stat(inflight)
+	if err != nil || string(got) != string(original) || statErr != nil || !os.SameFile(inflightInfo, gotInflightInfo) {
+		t.Fatalf("incoming prior envelope changed on occupied destination: bytes=%q read=%v stat=%v", got, err, statErr)
+	}
+	for _, path := range []string{
+		filepath.Join(spool, "lane", "req", "prior.json"),
+		filepath.Join(spool, "lane", "outbox", "prior.json"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("original envelope was duplicated into an active/retry path %s: %v", path, err)
+		}
 	}
 }
 
@@ -206,6 +254,92 @@ func TestRelayDrainRefusesInflightCleanupFailure(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(retained, "owned")); err != nil {
 		t.Fatalf("failed cleanup changed retained data: %v", err)
+	}
+}
+
+func TestRelayPrepareDrainKeepsLateForwardOwnedAndResumesOnTimeout(t *testing.T) {
+	rl, spool, entered, release := newHeldDrainRelay(t, false)
+	finished := make(chan bool, 1)
+	go func() {
+		finished <- rl.handleOne(context.Background(), "lane", filepath.Join(spool, "lane", "req", "held.json"))
+	}()
+	awaitDrainEntry(t, entered)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	err := rl.prepareDrain(ctx)
+	cancel()
+	if !errors.Is(err, ErrRelayDrainIncomplete) {
+		t.Fatalf("held admitted forward was not a bounded refusal: %v", err)
+	}
+	if !rl.beginDuty() {
+		t.Fatal("timeout left the active relay paused")
+	}
+	rl.endDuty()
+	if _, err := os.Stat(filepath.Join(spool, "lane", "inflight", "held.json")); err != nil {
+		t.Fatalf("timeout lost active forward custody: %v", err)
+	}
+	release()
+	select {
+	case handled := <-finished:
+		if !handled {
+			t.Fatal("late forward did not settle normally")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("late forward was canceled or abandoned")
+	}
+	if err := rl.prepareDrain(context.Background()); err == nil {
+		t.Fatal("unbounded control context authorized drain")
+	}
+	bounded, stop := context.WithTimeout(context.Background(), time.Second)
+	defer stop()
+	if err := rl.prepareDrain(bounded); err != nil {
+		t.Fatalf("settled active relay did not acknowledge: %v", err)
+	}
+	if rl.beginDuty() {
+		rl.endDuty()
+		t.Fatal("acknowledged drain admitted another forward")
+	}
+	rl.resumeAfterDrain()
+	if !rl.beginDuty() {
+		t.Fatal("explicit resume did not reopen the same relay")
+	}
+	rl.endDuty()
+	if _, err := os.Stat(filepath.Join(spool, "lane", "res", "held.json")); err != nil {
+		t.Fatalf("late response was not retained: %v", err)
+	}
+}
+
+func TestRelayPrepareDrainWaitsForHeldOutboxRetry(t *testing.T) {
+	rl, spool, entered, release := newHeldDrainRelay(t, true)
+	finished := make(chan outboxOutcome, 1)
+	go func() {
+		finished <- rl.retryOutboxOne(context.Background(), "lane", filepath.Join(spool, "lane", "outbox", "held.json"))
+	}()
+	awaitDrainEntry(t, entered)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	err := rl.prepareDrain(ctx)
+	cancel()
+	if !errors.Is(err, ErrRelayDrainIncomplete) {
+		t.Fatalf("held outbox retry received a false acknowledgment: %v", err)
+	}
+	release()
+	select {
+	case result := <-finished:
+		if result != outboxDelivered {
+			t.Fatalf("late outbox completion was not retained: %v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("bounded pause canceled the already-started retry")
+	}
+	if _, err := os.Stat(filepath.Join(spool, "lane", "outbox", "held.json")); !os.IsNotExist(err) {
+		t.Fatalf("settled held item remains retryable: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(spool, "lane", "outbox", "tail.json")); err != nil {
+		t.Fatalf("timeout consumed a later outbox item: %v", err)
+	}
+	bounded, stop := context.WithTimeout(context.Background(), time.Second)
+	defer stop()
+	if err := rl.prepareDrain(bounded); err != nil {
+		t.Fatalf("settled outbox retry did not drain: %v", err)
 	}
 }
 
@@ -278,6 +412,14 @@ func TestRelayUnknownOutboxParkingFailureNeverRequeues(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(spool, "lane", "outbox", "unknown.json")); !os.IsNotExist(err) {
 		t.Fatalf("unknown mutation returned to retryable outbox: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := rl.prepareDrain(ctx); !errors.Is(err, ErrRelaySettlementIncomplete) {
+		t.Fatalf("unsettled local unknown-outcome custody authorized a drain: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(spool, "lane", "inflight", "unknown.json")); err != nil {
+		t.Fatalf("drain refusal lost unknown-outcome custody: %v", err)
 	}
 }
 
