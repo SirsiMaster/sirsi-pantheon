@@ -1,0 +1,2 @@
+### Fixed
+- **`sirsi thread heartbeat --ensure` distinguishes an unavailable session marker from a real mismatch.** Empty agent/thread marker reads mean no usable marker is available; absent, unreadable and empty files share that result, so it does not establish that registration could not write a marker. The refusal remains fail-closed and recommends normal registration/retry from an accessible marker context. Real mismatch wording and actual marker-write errors are unchanged. Refs: ADR-079.

@@ -223,3 +223,47 @@ func TestSessionThreadMarkerRoundTrip(t *testing.T) {
 		t.Fatal("agent and thread markers must not collide")
 	}
 }
+
+func TestSessionMarkerReadersTreatAbsentUnreadableAndEmptyAsUnavailable(t *testing.T) {
+	root := t.TempDir()
+	previous := sessionMarkerDirOverride
+	sessionMarkerDirOverride = root
+	t.Cleanup(func() { sessionMarkerDirOverride = previous })
+
+	readers := []struct {
+		name string
+		path func(string) string
+		read func(string) string
+	}{
+		{"agent", func(sid string) string { return filepath.Join(root, sid) }, ReadSessionAgentMarker},
+		{"thread", func(sid string) string { return filepath.Join(root, "thread-by-session", sid) }, ReadSessionThreadMarker},
+	}
+	cases := []struct {
+		name  string
+		setup func(string) error
+	}{
+		{name: "absent"},
+		{name: "empty", setup: func(path string) error { return os.WriteFile(path, nil, 0o600) }},
+		{name: "whitespace", setup: func(path string) error { return os.WriteFile(path, []byte(" \t\r\n"), 0o600) }},
+		{name: "read-error", setup: func(path string) error { return os.Mkdir(path, 0o700) }},
+	}
+	for _, reader := range readers {
+		for _, tc := range cases {
+			t.Run(reader.name+"/"+tc.name, func(t *testing.T) {
+				sid := reader.name + "-" + tc.name
+				path := reader.path(sid)
+				if tc.setup != nil {
+					if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := tc.setup(path); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if got := reader.read(sid); got != "" {
+					t.Fatalf("unavailable marker read = %q, want empty", got)
+				}
+			})
+		}
+	}
+}
