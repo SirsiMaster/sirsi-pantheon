@@ -655,11 +655,74 @@ type Relay struct {
 	discoverFn func(context.Context) int
 	// Instance-local fixture seam; nil always uses the retained native marker.
 	maintenanceStartup func(context.Context) (io.Closer, error)
+	// Instance-local filesystem seam; nil uses os.Remove.
+	removeInflightFn func(string) error
+	// ServeDrained is a one-shot lifecycle boundary for each relay instance.
+	drained atomic.Bool
 }
 
 // Serve polls the spool until ctx is done. Each request file is forwarded once;
 // its response file is written atomically; stale files are swept with a log line.
 func (rl *Relay) Serve(ctx context.Context) (result error) {
+	return rl.serve(ctx, nil, true, nil)
+}
+
+// ErrRelayDrainIncomplete means the serving loop stopped but an admitted duty
+// has not acknowledged completion. It never authorizes retirement or replay.
+var ErrRelayDrainIncomplete = errors.New("relay: admitted duties have not drained")
+
+// ErrRelaySettlementIncomplete refuses retirement when completed duties could
+// not record their response or release already-settled in-flight custody.
+var ErrRelaySettlementIncomplete = errors.New("relay: response or outcome custody remains unsettled")
+
+// ServeDrained uses the existing serving path but replaces Serve's unbounded
+// worker join with a bounded result. It does not cancel an HTTP request whose
+// mutation outcome may be unknown. Timed-out duties remain owned by this
+// process; this is not producer quiescence, remote authorization, or proof that
+// an already-loaded legacy binary cooperates.
+func (rl *Relay) ServeDrained(ctx context.Context, drainTimeout time.Duration) error {
+	if drainTimeout <= 0 || drainTimeout > 2*time.Minute {
+		return errors.New("relay: drain timeout must be positive and at most two minutes")
+	}
+	if !rl.drained.CompareAndSwap(false, true) {
+		return errors.New("relay: use a new instance for each drained serving lifetime")
+	}
+	serving, cancel := context.WithCancel(ctx)
+	var maintenance io.Closer
+	err := rl.serve(serving, nil, false, func(closer io.Closer) { maintenance = closer })
+	cancel()
+	done := make(chan struct{})
+	go func() { rl.workers.Wait(); close(done) }()
+	timer := time.NewTimer(drainTimeout)
+	defer timer.Stop()
+	closeMaintenance := func() error {
+		if maintenance == nil {
+			return nil
+		}
+		return maintenance.Close()
+	}
+	select {
+	case <-done:
+		maintenanceErr := closeMaintenance()
+		if settlementErr := rl.settlementError(); settlementErr != nil || maintenanceErr != nil {
+			return errors.Join(err, ErrRelaySettlementIncomplete, settlementErr, maintenanceErr)
+		}
+		return errors.Join(err, maintenanceErr)
+	case <-timer.C:
+		// A timed-out drain retains the endpoint owner until the existing
+		// workers finish. Timeout does not retire the endpoint or cancel duties.
+		go func() {
+			<-done
+			if closeErr := closeMaintenance(); closeErr != nil {
+				rl.settlementFailed.Store(true)
+				rl.Log.Error("relay: maintenance endpoint cleanup remains unsettled after worker drain", "err", closeErr)
+			}
+		}()
+		return errors.Join(err, ErrRelayDrainIncomplete)
+	}
+}
+
+func (rl *Relay) serve(ctx context.Context, duties *sync.WaitGroup, waitWorkers bool, transferMaintenance func(io.Closer)) (result error) {
 	if rl.Client == nil {
 		c, err := newRelayHTTPClientFor(rl.Base)
 		if err != nil {
@@ -693,7 +756,11 @@ func (rl *Relay) Serve(ctx context.Context) (result error) {
 	if err != nil {
 		return fmt.Errorf("relay: startup maintenance remains closed: %w", err)
 	}
-	defer func() { result = errors.Join(result, maintenance.Close()) }()
+	if transferMaintenance != nil {
+		transferMaintenance(maintenance)
+	} else {
+		defer func() { result = errors.Join(result, maintenance.Close()) }()
+	}
 	// Optional names/counts projection belongs to this existing trusted relay
 	// loop, never a second daemon. Failure cannot stop forwarding or alter any
 	// existing queue permissions. One failed publication disables this instance's
@@ -709,7 +776,7 @@ func (rl *Relay) Serve(ctx context.Context) (result error) {
 	}()
 	nextObservation := rl.now()
 	rl.recoverInflight()
-	discover := rl.discover
+	discover := func(ctx context.Context) int { return rl.discoverTracked(ctx, duties) }
 	if rl.discoverFn != nil {
 		discover = rl.discoverFn
 	}
@@ -717,7 +784,9 @@ func (rl *Relay) Serve(ctx context.Context) (result error) {
 	for {
 		select {
 		case <-ctx.Done():
-			rl.workers.Wait()
+			if waitWorkers {
+				rl.workers.Wait()
+			}
 			return rl.settlementError()
 		default:
 		}
@@ -740,7 +809,9 @@ func (rl *Relay) Serve(ctx context.Context) (result error) {
 		// independent lane workers keep draining without this polling delay.
 		select {
 		case <-ctx.Done():
-			rl.workers.Wait()
+			if waitWorkers {
+				rl.workers.Wait()
+			}
 			return rl.settlementError()
 		case <-time.After(spoolPoll):
 		}
@@ -758,7 +829,7 @@ func (rl *Relay) settlementError() error {
 // on first sight) and returns immediately — it never waits for any lane. The
 // return value counts wakes actually DELIVERED (a worker that already holds a
 // pending signal is not counted), so a backlog never turns the loop into a spin.
-func (rl *Relay) discover(ctx context.Context) int {
+func (rl *Relay) discoverTracked(ctx context.Context, duties *sync.WaitGroup) int {
 	rl.scans.Add(1)
 	files, _ := filepath.Glob(filepath.Join(rl.Spool, "*", "req", "*.json"))
 	seen := map[string]bool{}
@@ -792,9 +863,15 @@ func (rl *Relay) discover(ctx context.Context) int {
 			ch = make(chan struct{}, 1)
 			rl.lanes[agent] = ch
 			rl.workers.Add(1)
+			if duties != nil {
+				duties.Add(1)
+			}
 			go func() {
 				defer rl.workers.Done()
-				rl.laneWorker(ctx, agent, ch)
+				if duties != nil {
+					defer duties.Done()
+				}
+				rl.laneWorkerTracked(ctx, agent, ch, duties)
 			}()
 		}
 		select { // coalesce wakes: one pending signal is enough
@@ -817,6 +894,10 @@ var relayLaneParallel = 8
 // laneWorker drains one lane's queue whenever woken, keeping up to relayLaneParallel forwards in
 // flight continuously; the ADR-069 outbox is still drained serially, in id order, after each pass.
 func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struct{}) {
+	rl.laneWorkerTracked(ctx, agent, wake, nil)
+}
+
+func (rl *Relay) laneWorkerTracked(ctx context.Context, agent string, wake <-chan struct{}, duties *sync.WaitGroup) {
 	// The slots are the lane's, not a pass's: a request arriving while a slow forward is in flight
 	// starts as soon as any slot is free instead of waiting for the earlier batch to finish.
 	// Each client process waits for its own response, so per-client order is kept; consumption
@@ -858,9 +939,15 @@ func (rl *Relay) laneWorker(ctx context.Context, agent string, wake <-chan struc
 			started[f] = true
 			mu.Unlock()
 			rl.workers.Add(1)
+			if duties != nil {
+				duties.Add(1)
+			}
 			go func(f string) {
 				defer func() {
 					rl.workers.Done()
+					if duties != nil {
+						duties.Done()
+					}
 					mu.Lock()
 					delete(started, f)
 					mu.Unlock()
@@ -932,7 +1019,7 @@ func (rl *Relay) handleOne(ctx context.Context, agent, f string) bool {
 			rl.Log.Error("relay: unknown response publication failed; retained inflight", "agent", agent, "id", id, "err", err)
 			return false
 		}
-		_ = os.Remove(inflight)
+		rl.removeSettledInflight(inflight)
 		return false
 	}
 	if err := rl.publish(agent, id, sr); err != nil {
@@ -940,7 +1027,19 @@ func (rl *Relay) handleOne(ctx context.Context, agent, f string) bool {
 		rl.Log.Error("relay: response publication failed; retained inflight", "agent", agent, "id", id, "err", err)
 		return false
 	}
-	_ = os.Remove(inflight)
+	return rl.removeSettledInflight(inflight)
+}
+
+func (rl *Relay) removeSettledInflight(path string) bool {
+	remove := rl.removeInflightFn
+	if remove == nil {
+		remove = os.Remove
+	}
+	if err := remove(path); err != nil {
+		rl.settlementFailed.Store(true)
+		rl.Log.Error("relay: retain unsettled in-flight custody", "path", path, "err", err)
+		return false
+	}
 	return true
 }
 
@@ -992,7 +1091,10 @@ func (rl *Relay) retryOutboxOne(ctx context.Context, agent, f string) outboxOutc
 	sr := rl.forward(agent, id, inflight)
 	switch {
 	case sr.Status == statusHoldForRetry:
-		_ = os.Rename(inflight, f) // provably never reached — keep held in order
+		if err := os.Rename(inflight, f); err != nil { // provably never reached
+			rl.settlementFailed.Store(true)
+			rl.Log.Error("relay: could not restore never-reached request to ordered outbox; retained inflight", "agent", agent, "id", id, "err", err)
+		}
 		return outboxHeld
 	case sr.Status == http.StatusBadGateway:
 		// forward's OUTCOME-UNKNOWN sentinel (post-send failure). The request may
@@ -1000,14 +1102,21 @@ func (rl *Relay) retryOutboxOne(ctx context.Context, agent, f string) outboxOutc
 		// re-forward and do NOT delete. A genuine service 502 is equally uncertain,
 		// so parking it too is the safe (conservative) direction — no data loss.
 		failed := filepath.Join(rl.Spool, agent, "failed", id+".json")
-		if os.MkdirAll(filepath.Dir(failed), 0o700) == nil && os.Rename(inflight, failed) == nil {
+		parkErr := os.MkdirAll(filepath.Dir(failed), 0o700)
+		if parkErr == nil {
+			parkErr = os.Rename(inflight, failed)
+		}
+		if parkErr == nil {
 			rl.Log.Error("relay: held request OUTCOME UNKNOWN on retry — parked for audit, not re-forwarded", "agent", agent, "id", id)
 		} else {
-			_ = os.Rename(inflight, f) // could not park — leave held rather than lose it
+			rl.settlementFailed.Store(true)
+			rl.Log.Error("relay: could not park unknown outbox outcome; retained inflight and refused retry", "agent", agent, "id", id, "err", parkErr)
 		}
 		return outboxUnknown
 	default:
-		_ = os.Remove(inflight) // positively delivered (service answered)
+		if !rl.removeSettledInflight(inflight) {
+			return outboxUnknown
+		}
 		rl.Log.Info("relay: held request delivered on retry", "agent", agent, "id", id, "status", sr.Status)
 		return outboxDelivered
 	}
@@ -1152,7 +1261,9 @@ func (rl *Relay) recoverInflight() int {
 			rl.Log.Error("relay: outcome-unknown response publication failed; retained inflight", "agent", agent, "id", id, "err", err)
 			continue
 		}
-		_ = os.Remove(f)
+		if !rl.removeSettledInflight(f) {
+			continue
+		}
 		rl.Log.Warn("relay: in-flight request from a previous relay reported as outcome-unknown", "agent", agent, "method", method, "id", id)
 	}
 	return len(files)
