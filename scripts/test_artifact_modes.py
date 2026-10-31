@@ -298,6 +298,7 @@ export ARGV_CAPTURE="$7"
             ("valid-disabled", valid_disabled, False, (digest, "absent")),
             ("valid-enabled", valid_enabled, False, (digest, profile)),
             ("invalid-digest", f"info_sha256={'z' * 64}\napollo_profile_sha256=absent\n", False, None),
+            ("invalid-profile-digest", f"info_sha256={digest}\napollo_profile_sha256={'z' * 64}\n", False, None),
             ("missing-key", f"info_sha256={digest}\n", False, None),
             ("empty", "", False, None),
             ("duplicate-key", f"info_sha256={digest}\ninfo_sha256={digest}\napollo_profile_sha256=absent\n", False, None),
@@ -325,7 +326,7 @@ FROZEN_APOLLO_DIGESTS="$1"
                         stub_bin = case_root / "stub-bin"
                         stub_bin.mkdir()
                         parser = stub_bin / "python3"
-                        parser.write_text("#!/bin/sh\nexit 19\n")
+                        parser.write_text(f"#!/bin/sh\nprintf '%s\\n' '{digest} {profile}'\nexit 19\n")
                         parser.chmod(0o755)
                         search_path = os.pathsep.join((str(stub_bin), parser_path, "/usr/bin", "/bin"))
                     else:
@@ -335,7 +336,7 @@ FROZEN_APOLLO_DIGESTS="$1"
                     script = harness + block + "\nprintf '%s\\n%s\\n' \"$FROZEN_INFO_SHA256\" \"$FROZEN_PROFILE_SHA256\" > \"$2\"\n: > \"$3\"\n"
                     result = subprocess.run(
                         ["/bin/bash", "-c", script, "bash32-frozen-receipt-fixture", str(receipt), str(parsed), str(continued)],
-                        env={"PATH": search_path, "HOME": str(self.root)},
+                        env={"PATH": search_path},
                         stdin=subprocess.DEVNULL,
                         capture_output=True, text=True, timeout=5, check=False,
                     )

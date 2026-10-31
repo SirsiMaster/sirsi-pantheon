@@ -7,7 +7,8 @@ profile value remain required; malformed, incomplete, unreadable, or
 unparseable receipts stop before signing or PKG construction.
 The inert Bash 3.2 regression exercises both complete reader blocks with valid
 enabled/disabled receipts and space-containing paths, plus malformed and
-parser-failure refusals.
+invalid-profile-digest refusals. Its forced parser-failure control emits a
+valid-looking pair before exiting nonzero, confirming status propagation.
 
 Refs: scripts/PACKAGING.md; scripts/build-dmg.sh; scripts/build-pkg.sh;
 scripts/test_artifact_modes.py; internal/maat/releasepreflight_test.go;
