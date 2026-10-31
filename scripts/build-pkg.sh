@@ -103,11 +103,14 @@ fi
 
 mkdir -p "$BUILD_DIR"
 [[ -x "${BUILD_DIR}/sirsi" ]] || { echo "ERROR: source-built package inventory CLI is unavailable" >&2; exit 1; }
-APOLLO_PROFILE_ARGS=()
+# BEGIN tested Apollo inventory argument construction
+# Keep this array nonempty under macOS Bash 3.2 with nounset; the profile pair
+# is appended only when supplied.
+APOLLO_INVENTORY_ARGS=(--apollo-capability "$APOLLO_CAPABILITY")
 if [[ -n "${PANTHEON_APOLLO_PROFILE:-}" ]]; then
-    APOLLO_PROFILE_ARGS=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
+    APOLLO_INVENTORY_ARGS+=(--apollo-profile "$PANTHEON_APOLLO_PROFILE")
 fi
-APOLLO_INVENTORY_ARGS=(--apollo-capability "$APOLLO_CAPABILITY" "${APOLLO_PROFILE_ARGS[@]}")
+# END tested Apollo inventory argument construction
 # Consume only the exact pre-sign receipt selected by the paired producer.
 # Never recapture an already-built (and potentially signed) candidate here.
 FROZEN_APOLLO_DIGESTS="${PANTHEON_APOLLO_DIGEST_RECEIPT:-}"
@@ -143,6 +146,7 @@ fi
 # Reject capability/profile drift before pkgbuild or the package signer sees
 # this candidate. The expected capability is a separate CLI argument, not
 # inferred from the copied Info.plist.
+# BEGIN tested pre-sign package-inventory command
 "${BUILD_DIR}/sirsi" package-inventory \
     --app "$APP_PATH" \
     --version "$VERSION" \
@@ -154,6 +158,7 @@ fi
     --require-code-signature \
     "${APOLLO_INVENTORY_ARGS[@]}" \
     "${FROZEN_APOLLO_ARGS[@]}"
+# END tested pre-sign package-inventory command
 PAYLOAD_ROOT="$(mktemp -d /private/tmp/pantheon-pkg-payload.XXXXXX)"
 PAYLOAD_ROOT_ID="$(/usr/bin/stat -f '%d:%i' "$PAYLOAD_ROOT")"
 
