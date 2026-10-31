@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.155] — 2026-10-31
 
+- Route release-step remote signing only to the existing enrolled M1 signer; if unavailable, fail instead of falling back to the M5 measurement host. Signing identity and verification policy are unchanged.
+
 - Bound probe fixtures with finite child lifetimes and read-only natural-exit checks. Remove stale PID-file signaling and duplicate cleanup while retaining timeout, parent-deadline and inherited-output assertions.
 
 - Native relay health readers recognize the existing independently validated protected service-root group policy without an environment override. Explicit mismatched groups still refuse; publisher permissions and authentication are unchanged.

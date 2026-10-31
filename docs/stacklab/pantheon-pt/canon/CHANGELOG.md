@@ -2,6 +2,8 @@
 
 ## 2026-10-31 — v0.24.155 release candidate
 
+- Restrict release-step remote signing to the existing enrolled M1 signer; fail closed without falling back to M5. Signing verification remains unchanged.
+
 - Bound probe fixtures with finite child lifetimes and read-only natural-exit checks. Remove stale PID-file signaling and duplicate cleanup while retaining timeout, parent-deadline and inherited-output assertions.
 - Native relay health readers recognize the existing independently validated protected service-root group policy without an environment override. Explicit mismatched groups still refuse; publisher permissions and authentication are unchanged.
 - Native workspace state and selection callbacks explicitly use the main actor. Scroll bindings retain the same navigation/owner-generation fence using a sendable identity value, and test cleanup captures only its private suite name.
