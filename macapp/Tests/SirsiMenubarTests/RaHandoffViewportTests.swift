@@ -73,7 +73,7 @@ final class RaHandoffViewportTests: XCTestCase {
                     },
                     "Expected an actual nested NSScrollView whose recipient document overflows horizontally"
                 )
-                let buttons = try accessibilityButtons(in: window)
+                let buttons = try accessibilityButtons(in: window, expected: ["Cancel", "Send to Ra fabric"])
                 let cancelMatches = buttons.filter { $0.label == "Cancel" }
                 let sendMatches = buttons.filter { $0.label == "Send to Ra fabric" }
                 XCTAssertEqual(cancelMatches.count, 1, "Cancel must have one unambiguous native accessibility button")
@@ -123,7 +123,17 @@ final class RaHandoffViewportTests: XCTestCase {
     }
 
     @MainActor
-    private func accessibilityButtons(in window: NSWindow) throws -> [MountedAXButton] {
+    private func accessibilityButtons(in window: NSWindow, expected: Set<String>) throws -> [MountedAXButton] {
+        var buttons = try readAccessibilityButtons(in: window)
+        for _ in 0..<40 where !expected.isSubset(of: Set(buttons.map(\.label))) {
+            settle(window)
+            buttons = try readAccessibilityButtons(in: window)
+        }
+        return buttons
+    }
+
+    @MainActor
+    private func readAccessibilityButtons(in window: NSWindow) throws -> [MountedAXButton] {
         var pending: [Any] = [window]
         var visited: Set<ObjectIdentifier> = []
         var buttons: [MountedAXButton] = []
@@ -132,24 +142,32 @@ final class RaHandoffViewportTests: XCTestCase {
             guard visited.insert(ObjectIdentifier(element)).inserted else { continue }
             guard visited.count <= 10_000 else { throw MountedAXFailure.treeTooLarge }
 
-            let role = element.accessibilityAttributeValue(.role) as? String
-            let title = element.accessibilityAttributeValue(.title) as? String
-            let description = element.accessibilityAttributeValue(.description) as? String
+            let role = objectValue(element, selector: "accessibilityRole") as? String
+            let title = objectValue(element, selector: "accessibilityTitle") as? String
+            let label = objectValue(element, selector: "accessibilityLabel") as? String
             if role == NSAccessibility.Role.button.rawValue,
-               let label = [title, description].compactMap({ $0 }).first(where: { !$0.isEmpty }) {
-                let position = element.accessibilityAttributeValue(.position) as? NSValue
-                let size = element.accessibilityAttributeValue(.size) as? NSValue
-                let frame: NSRect?
-                if let position, let size {
-                    frame = NSRect(origin: position.pointValue, size: size.sizeValue)
-                } else {
-                    frame = nil
-                }
-                buttons.append(MountedAXButton(label: label, frame: frame))
+               let name = [title, label].compactMap({ $0 }).first(where: { !$0.isEmpty }) {
+                buttons.append(MountedAXButton(label: name, frame: accessibilityFrame(of: element)))
             }
-            pending.append(contentsOf: element.accessibilityAttributeValue(.children) as? [Any] ?? [])
+            pending.append(contentsOf: objectValue(element, selector: "accessibilityChildren") as? [Any] ?? [])
         }
         return buttons
+    }
+
+    private func objectValue(_ element: NSObject, selector name: String) -> AnyObject? {
+        let selector = NSSelectorFromString(name)
+        guard element.responds(to: selector) else { return nil }
+        return element.perform(selector)?.takeUnretainedValue()
+    }
+
+    private func accessibilityFrame(of element: NSObject) -> NSRect? {
+        let selector = NSSelectorFromString("accessibilityFrame")
+        guard element.responds(to: selector),
+              let boxedFrame = element.value(forKey: "accessibilityFrame") as? NSValue else {
+            return nil
+        }
+        // NSAccessibilityElement frames are already expressed in screen coordinates.
+        return boxedFrame.rectValue
     }
 
     private struct MountedAXButton {
