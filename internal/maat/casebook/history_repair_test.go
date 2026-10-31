@@ -7,9 +7,81 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 )
+
+func TestSearchHistoryValidatesInactiveDispositionAcrossPagedLinks(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		mixed          bool
+		resolutionHost string
+		duplicate      bool
+		wantResolved   bool
+	}{
+		{name: "exact source with linked acceptance beyond candidate window", resolutionHost: "fixture-host", wantResolved: true},
+		{name: "wrong host", resolutionHost: "other-host"},
+		{name: "mixed source", mixed: true, resolutionHost: "fixture-host"},
+		{name: "duplicate origin outside one-row window", resolutionHost: "fixture-host", duplicate: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			journal := &maat.FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
+			head := strings.Repeat("a", 40)
+			findings := []maat.ScreenFinding{{
+				ID: maat.CanonicalHostFindingID("binary-drift"), Severity: "major", Category: "host-health",
+				Claim: "binary drift", Evidence: maat.CanonicalHostFindingEvidence(head, "binary-drift"), Confidence: 1,
+			}}
+			if test.mixed {
+				findings = append(findings, maat.ScreenFinding{ID: "independent", Severity: "major", Category: "host-health", Claim: "other issue", Evidence: "fixture:other", Confidence: 1})
+			}
+			verdict, err := maat.Screen(maat.SystemOneScreen{
+				Subject:       maat.VerdictSubject{Kind: "host", Repo: "fixture-host", Ref: "diagnostic", HeadSHA: head},
+				FeatherWeight: 90, Confidence: 1, Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "fixture", Passed: true}}},
+				Findings: findings, Model: maat.ModelStamp{Provider: "local:deterministic", Version: "fixture", Local: true},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			source, err := maat.RecordSystemOne(journal, "fixture", verdict)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.duplicate {
+				if err := journal.Append(source); err != nil {
+					t.Fatal(err)
+				}
+			}
+			disposition, err := maat.BuildBinaryDriftInactiveDisposition("fixture owner", maat.BinaryDriftInactiveDisposition{
+				OriginEvidence: source.Evidence, Host: test.resolutionHost,
+				ObservedFromUTC: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC), ObservedThroughUTC: time.Date(2026, 10, 31, 12, 0, 1, 0, time.UTC),
+				ObservationSHA256: strings.Repeat("b", 64),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := journal.Append(disposition); err != nil {
+				t.Fatal(err)
+			}
+
+			query := HistoryQuery{Query: Query{Kind: "system one screen", Status: StatusResolved, Limit: 1}, Evidence: source.Evidence}
+			resolved := completeRepairHistorySearch(t, journal, query)
+			if test.wantResolved {
+				if len(resolved.View.Cases) != 1 || resolved.View.Cases[0].Evidence != source.Evidence || resolved.View.Cases[0].Status != StatusResolved || resolved.View.Cases[0].BinaryDriftInactiveDisposition == nil {
+					t.Fatalf("linked exact source did not resolve through paged history: %+v", resolved.View.Cases)
+				}
+				return
+			}
+			if len(resolved.View.Cases) != 0 {
+				t.Fatalf("invalid typed acceptance passed the resolved filter: %+v", resolved.View.Cases)
+			}
+			open := completeRepairHistorySearch(t, journal, HistoryQuery{Query: Query{Kind: "system one screen", Limit: 1}, Evidence: source.Evidence})
+			if len(open.View.Cases) != 1 || open.View.Cases[0].Status != StatusOpen {
+				t.Fatalf("invalid typed acceptance closed the source in paged output: %+v", open.View.Cases)
+			}
+		})
+	}
+}
 
 func completeRepairHistorySearch(t *testing.T, journal *maat.FileDecisionJournal, query HistoryQuery) HistorySearchResult {
 	t.Helper()

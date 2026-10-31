@@ -110,6 +110,10 @@ no longer active, not repaired. Active, unavailable, stale, foreign, mixed, or
 already owner/updater-decided cases refuse; an identical replay reads back the
 existing disposition. This path never invokes the updater. Generic owner
 review/acceptance still does not close an arbitrary System One screen.
+Paged history validates the exact unique source and host before applying linked
+status filters or projecting the page. A changed query identity refuses old
+continuations so the operator can refresh. The fresh inventory keeps the
+existing three-second observation ceiling.
 
 The confirmed command now retains the attempt before appending the existing
 operation-wide claim, then records and reads back a typed invocation barrier

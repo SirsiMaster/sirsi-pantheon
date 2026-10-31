@@ -465,7 +465,7 @@
     {
       "id": "maat-casebook",
       "source": ["internal/maat/casebook/casebook.go", "internal/maat/history_query.go", "internal/maat/decisions.go", "internal/maat/binary_drift_disposition.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift"],
-      "tests": ["internal/maat/casebook/casebook_test.go", "internal/maat/casebook/history_test.go", "internal/maat/history_query_test.go", "macapp/Tests/SirsiMenubarTests/CoreContractsTests.swift"],
+      "tests": ["internal/maat/casebook/casebook_test.go", "internal/maat/casebook/history_test.go", "internal/maat/casebook/history_repair_test.go", "internal/maat/history_query_test.go", "macapp/Tests/SirsiMenubarTests/CoreContractsTests.swift"],
       "inputs": ["DecisionJournal records", "typed history scope, page filters and snapshot cursor"],
       "outputs": ["classified bounded pages", "page-local priority summary with explicit total completeness", "actor/resource/evidence graph", "truthful next step for every open case", "complete System One model and deterministic-floor provenance", "three-level recovery route for every failed deterministic floor", "prescribed recovery guidance for every System One finding", "same-snapshot owner-outcome linkage without hidden extra rows"],
       "writes": [],

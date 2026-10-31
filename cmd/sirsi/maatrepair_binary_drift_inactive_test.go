@@ -70,6 +70,43 @@ func TestRecordBinaryDriftInactiveDispositionRequiresExactFreshClearAndReplaysDu
 	}
 }
 
+func TestRecordBinaryDriftInactiveDispositionCanceledBeforeObservationDoesNotAppend(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		context func() (context.Context, context.CancelFunc)
+		want    error
+	}{
+		{name: "canceled", context: func() (context.Context, context.CancelFunc) {
+			return context.WithCancel(context.Background())
+		}, want: context.Canceled},
+		{name: "expired deadline", context: func() (context.Context, context.CancelFunc) {
+			return context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+		}, want: context.DeadlineExceeded},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			journal, evidence := binaryDriftInactiveFixture(t, "fixture-host", false)
+			ctx, cancel := test.context()
+			cancel()
+			scanCalled := false
+			_, err := recordMaatBinaryDriftInactiveDispositionWith(ctx, journal, evidence,
+				func() (string, error) { return "fixture-host", nil },
+				func() time.Time { return time.Date(2026, 10, 31, 12, 1, 0, 0, time.UTC) },
+				func(context.Context) (*selfupdate.DriftReport, error) {
+					scanCalled = true
+					return &selfupdate.DriftReport{Healthy: true}, nil
+				},
+			)
+			if !errors.Is(err, test.want) || scanCalled {
+				t.Fatalf("expired confirmation context reached observation: scan=%t err=%v", scanCalled, err)
+			}
+			rows, _, readErr := journal.RecentTolerant(10)
+			if readErr != nil || len(rows) != 1 {
+				t.Fatalf("canceled recheck appended a disposition: rows=%d err=%v", len(rows), readErr)
+			}
+		})
+	}
+}
+
 func TestRecordBinaryDriftInactiveDispositionRefusesActiveUnknownWrongHostAndMixedCase(t *testing.T) {
 	tests := []struct {
 		name  string
