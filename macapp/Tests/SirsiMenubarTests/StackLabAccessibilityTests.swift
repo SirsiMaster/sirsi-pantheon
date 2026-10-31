@@ -86,7 +86,6 @@ final class StackLabAccessibilityTests: XCTestCase {
                   let button = observed.buttons.first(where: { $0.label == "Native SwiftUI AX button control" }) else {
                 throw AXFailure.controlUnreadable
             }
-            diagnostics += "\ncontrol actions=\(button.element.accessibilityActionNames())"
             try press(button, in: window)
             for _ in 0..<40 where presses == 0 { settle(window) }
             guard presses == 1 else {
@@ -211,10 +210,10 @@ final class StackLabAccessibilityTests: XCTestCase {
     }
 
     @MainActor private func press(_ button: AXButton, in window: NSWindow) throws {
-        guard button.element.accessibilityActionNames().contains(.press) else {
+        guard let accessibility = button.element as? NSAccessibilityProtocol,
+              accessibility.accessibilityPerformPress() else {
             throw AXFailure.pressUnavailable
         }
-        button.element.accessibilityPerformAction(.press)
         settle(window)
     }
 
@@ -227,16 +226,14 @@ final class StackLabAccessibilityTests: XCTestCase {
             guard let element = next as? NSObject else { throw AXFailure.nonObjectChild }
             guard visited.insert(ObjectIdentifier(element)).inserted else { continue }
             guard visited.count <= 10_000 else { throw AXFailure.treeTooLarge }
-            // AppKit's public informal client bridge supports virtual AX
-            // objects without requiring formal conformance to the *complete*
-            // NSAccessibility protocol. The old cast could silently discard
-            // such objects. These are AX requests only, never NSView subtree reads
-            // or reflection into the SwiftUI view model.
-            let role = element.accessibilityAttributeValue(.role) as? String
-            let label = element.accessibilityAttributeValue(.description) as? String
-            let value = element.accessibilityAttributeValue(.value) as? String
-            let title = element.accessibilityAttributeValue(.title) as? String
-            let children = element.accessibilityAttributeValue(.children) as? [Any] ?? []
+            guard let accessibility = element as? NSAccessibilityProtocol else {
+                throw AXFailure.nonAccessibilityElement
+            }
+            let role = accessibility.accessibilityRole?.rawValue
+            let label = accessibility.accessibilityLabel
+            let value = accessibility.accessibilityValue as? String
+            let title = accessibility.accessibilityTitle
+            let children = accessibility.accessibilityChildren ?? []
             for text in [label, value, title].compactMap({ $0 }) { snapshot.strings.insert(text) }
             if role == NSAccessibility.Role.button.rawValue, let name = title ?? label {
                 snapshot.buttons.append(AXButton(element: element, label: name))
@@ -251,7 +248,7 @@ final class StackLabAccessibilityTests: XCTestCase {
     }
 
     private enum AXFailure: Error {
-        case treeTooLarge, nonObjectChild, pressUnavailable
+        case treeTooLarge, nonObjectChild, nonAccessibilityElement, pressUnavailable
         case noGUISession, hostStateUnavailable, controlUnreadable, controlPressNotObserved
     }
 }
