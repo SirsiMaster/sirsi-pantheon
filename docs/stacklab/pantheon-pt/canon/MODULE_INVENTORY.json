@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "be53e94a22b8c9e7e75106858d03236936894e50",
-  "source_tree": "e3598188a18b8f2e3010fb9b87236e9749bc4c90",
+  "source_commit": "d037da1fb8ab38d989e6e00bddbb16772ee76b51",
+  "source_tree": "6e96e72ade37d0ebe3e2f9a972bb64f3a55db87f",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -6384,7 +6384,7 @@
         },
         {
           "path": "internal/router/threadprune_regression_test.go",
-          "sha256": "520bb1683e4157fad874bc7e3e40dbd8cca28800dbbbb9e33503773cb53541df"
+          "sha256": "4ad8029bb3dc318a743dabd15bad4fb49d04ea169ac08afa1a716a80efdd87af"
         },
         {
           "path": "internal/router/threads_shared_runtime_test.go",

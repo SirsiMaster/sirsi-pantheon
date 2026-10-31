@@ -3,3 +3,4 @@
 - Preserve source-only qualification and upgrade boundaries, explicit documentation exclusions, and external final-head comparison without an inventory self-hash or integrated-certification claim.
 
 Refs: ADR-066, docs/stacklab/pantheon-pt/canon/CERTIFICATION.md
+- Re-pin the inventory after the consumer regression correction, preserving all 2,151 listed blobs and distinguishing the last verified prior publication from a future release result.
