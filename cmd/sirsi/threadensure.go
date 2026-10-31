@@ -132,18 +132,18 @@ func strictCodexAnchor() (int, string, error) {
 	return pid, start, nil
 }
 
-// A declared identity must match the session's markers. A MISSING marker is
-// named as missing: registration could not write it (2026-10-30: a sandboxed
-// Codex session was denied ~/.claude/run and was told its agent "differs").
+// A declared identity must match usable session markers. Readers return empty
+// for absent, unreadable or empty files, so this guard cannot infer a write
+// failure from an empty marker value.
 func attendedEnsureBindingErr(declaredAgent, markerAgent, declaredThread, markerThread string) error {
 	if declaredAgent != "" && markerAgent == "" {
-		return fmt.Errorf("attended ensure found no session agent marker; registration could not write ~/.claude/run/agent-by-session (register where that path is writable)")
+		return fmt.Errorf("attended ensure found no usable session agent marker; retry normal registration from an accessible session marker context (~/.claude/run/agent-by-session)")
 	}
 	if declaredAgent != "" && declaredAgent != markerAgent {
 		return fmt.Errorf("attended ensure caller agent differs from session binding")
 	}
 	if declaredThread != "" && markerThread == "" {
-		return fmt.Errorf("attended ensure found no session thread marker; registration could not write ~/.claude/run/thread-by-session (register where that path is writable)")
+		return fmt.Errorf("attended ensure found no usable session thread marker; retry normal registration from an accessible session marker context (~/.claude/run/thread-by-session)")
 	}
 	if declaredThread != "" && declaredThread != markerThread {
 		return fmt.Errorf("attended ensure explicit runtime thread differs from session binding")

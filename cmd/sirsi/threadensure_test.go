@@ -191,9 +191,9 @@ func TestAttendedEnsureBindingErrNamesMissingMarker(t *testing.T) {
 	for _, c := range []struct{ name, da, ma, dt, mt, want string }{
 		{"match", "codex-x", "codex-x", "thr-1", "thr-1", ""},
 		{"undeclared", "", "", "", "", ""},
-		{"agent-marker-missing", "codex-x", "", "", "", "no session agent marker"},
+		{"agent-marker-missing", "codex-x", "", "", "", "no usable session agent marker"},
 		{"agent-differs", "codex-x", "codex-y", "", "", "caller agent differs"},
-		{"thread-marker-missing", "codex-x", "codex-x", "thr-1", "", "no session thread marker"},
+		{"thread-marker-missing", "codex-x", "codex-x", "thr-1", "", "no usable session thread marker"},
 		{"thread-differs", "codex-x", "codex-x", "thr-1", "thr-2", "runtime thread differs"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -206,6 +206,9 @@ func TestAttendedEnsureBindingErrNamesMissingMarker(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("want refusal containing %q, got %v", c.want, err)
+			}
+			if strings.Contains(c.name, "marker-missing") && strings.Contains(err.Error(), "could not write") {
+				t.Fatalf("empty marker read does not prove a write failure: %v", err)
 			}
 		})
 	}
