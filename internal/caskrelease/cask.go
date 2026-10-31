@@ -47,6 +47,9 @@ func Render(in Input) ([]byte, error) {
   version "%s"
   sha256 "%s"
 
+  depends_on arch: :arm64
+  depends_on macos: :ventura
+
   url "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v#{version}/SirsiPantheon-#{version}-arm64.dmg"
   name "Sirsi Pantheon"
   desc "DevOps intelligence platform — menu bar monitor + CLI"

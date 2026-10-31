@@ -16,6 +16,11 @@ func TestRenderAndVerifyCanonicalCask(t *testing.T) {
 	if !strings.Contains(string(bytes), `version "0.24.14-beta.1"`) || !strings.Contains(string(bytes), `sha256 "`+testSHA+`"`) {
 		t.Fatalf("rendered cask did not bind release tuple:\n%s", bytes)
 	}
+	for _, required := range []string{`depends_on arch: :arm64`, `depends_on macos: :ventura`} {
+		if !strings.Contains(string(bytes), required) {
+			t.Errorf("rendered cask missing platform eligibility %q:\n%s", required, bytes)
+		}
+	}
 	if !strings.Contains(string(bytes), `binary "#{appdir}/Pantheon.app/Contents/MacOS/sirsi", target: "sirsi"`) {
 		t.Fatalf("rendered cask does not expose the CLI from the packaged Pantheon.app:\n%s", bytes)
 	}
@@ -34,6 +39,9 @@ func TestVerifyRejectsAnyCaskDrift(t *testing.T) {
 		append(append([]byte(nil), bytes...), []byte("# trailing code\n")...),
 		[]byte(strings.Replace(string(bytes), `version "0.24.14"`, `version "9.9.9"`, 1)),
 		[]byte(strings.Replace(string(bytes), `SirsiPantheon-#{version}-arm64.dmg`, `other.dmg`, 1)),
+		[]byte(strings.Replace(string(bytes), "  depends_on arch: :arm64\n", "", 1)),
+		[]byte(strings.Replace(string(bytes), "  depends_on macos: :ventura\n", "", 1)),
+		[]byte(strings.Replace(string(bytes), "  depends_on macos: :ventura\n", "  depends_on macos: :monterey\n", 1)),
 	} {
 		if err := Verify(drift, in); err == nil {
 			t.Fatal("Verify() accepted drifted cask bytes")

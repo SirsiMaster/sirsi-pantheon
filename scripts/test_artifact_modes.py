@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import os
 import plistlib
+import re
 from pathlib import Path
 import shutil
 import stat
@@ -22,6 +23,31 @@ class ArtifactModesTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
+
+    def test_public_app_minimum_matches_swift_deployment_target_and_builders(self):
+        repo = Path(__file__).resolve().parent.parent
+        package = (repo / "macapp/Package.swift").read_text()
+        match = re.search(r"platforms:\s*\[\.macOS\(\.v(\d+)\)\]", package)
+        self.assertIsNotNone(match, "Swift package must declare one explicit macOS deployment target")
+        expected_minimum = f"{match.group(1)}.0"
+        plist_path = repo / "cmd/sirsi-menubar/bundle/Info.plist"
+        plist_bytes = plist_path.read_bytes()
+        plist = plistlib.loads(plist_bytes)
+
+        def matches_deployment_floor(raw):
+            return plistlib.loads(raw).get("LSMinimumSystemVersion") == expected_minimum
+
+        self.assertTrue(matches_deployment_floor(plist_bytes))
+
+        # The DMG, local app and Makefile bundle all copy this one full-app plist.
+        for relative in ("Makefile", "macapp/build-app.sh", "scripts/build-dmg.sh"):
+            with self.subTest(builder=relative):
+                self.assertIn("cmd/sirsi-menubar/bundle/Info.plist", (repo / relative).read_text())
+
+        # A stale metadata fixture must fail the same deployment-floor oracle.
+        stale = dict(plist)
+        stale["LSMinimumSystemVersion"] = "12.0"
+        self.assertFalse(matches_deployment_floor(plistlib.dumps(stale)))
 
     def bundle(self, path, umask):
         old = os.umask(umask)
