@@ -173,11 +173,31 @@ func TestCedeCommandsProjectOptionalResponseReasons(t *testing.T) {
 			if err != nil || len(rows) != 2 {
 				t.Fatalf("strict decision history = %+v, err=%v", rows, err)
 			}
-			response := rows[0]
+			var request, response maat.Decision
+			for _, row := range rows {
+				if row.Evidence != id {
+					continue
+				}
+				switch row.Kind {
+				case "cede-request":
+					if request.Kind != "" {
+						t.Fatalf("duplicate request projection for %s", id)
+					}
+					request = row
+				case "cede-" + operation:
+					if response.Kind != "" {
+						t.Fatalf("duplicate %s projection for %s", operation, id)
+					}
+					response = row
+				}
+			}
+			if request.Kind != "cede-request" || response.Kind != "cede-"+operation {
+				t.Fatalf("request/response projections not uniquely found: request=%+v response=%+v", request, response)
+			}
 			if strings.TrimSpace(response.Why) == "" || !strings.Contains(response.Why, "No ") {
 				t.Fatalf("empty response reason was not projected as a factual event: %+v", response)
 			}
-			if request := rows[1]; request.Why != "original request context" {
+			if request.Why != "original request context" {
 				t.Fatalf("supplied request context changed: %q", request.Why)
 			}
 			if operation == "withdraw" && (!strings.Contains(response.Why, "No withdrawal reason was supplied") || !strings.Contains(response.Why, "Original request reason: original request context")) {
@@ -245,16 +265,33 @@ func TestCedeDecisionLedger_RequestThenGrant(t *testing.T) {
 		t.Fatalf("want 2 decision lines, got %d: %+v", len(lines), lines)
 	}
 
-	req, grant := lines[0], lines[1]
+	var req, grant cedeDecisionRecord
+	for _, row := range lines {
+		if row.Evidence != id {
+			continue
+		}
+		switch row.Kind {
+		case "cede-request":
+			if req.Kind != "" {
+				t.Fatalf("duplicate request projection for %s", id)
+			}
+			req = row
+		case "cede-grant":
+			if grant.Kind != "" {
+				t.Fatalf("duplicate grant projection for %s", id)
+			}
+			grant = row
+		}
+	}
 	if req.Kind != "cede-request" || req.Determination != "pending" {
-		t.Fatalf("first line must be the pending request, got %+v", req)
+		t.Fatalf("request projection must be pending, got %+v", req)
 	}
 	if req.Requester != "claude-io" || req.Affected != "sne" || req.Resource != "m1" || req.Evidence != id {
 		t.Fatalf("request line fields wrong: %+v", req)
 	}
 
 	if grant.Kind != "cede-grant" || grant.Determination != "grant" {
-		t.Fatalf("second line must be the grant, got %+v", grant)
+		t.Fatalf("grant projection must record a grant, got %+v", grant)
 	}
 	if grant.Requester != "sne" || grant.Affected != "claude-io" || grant.Resource != "m1" || grant.Evidence != id {
 		t.Fatalf("grant line fields wrong: %+v", grant)
