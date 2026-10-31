@@ -25,6 +25,8 @@ func TestRelayDrainWaitsForSettledForward(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			rl, spool, entered, release := newHeldDrainRelay(t, heldOutbox)
+			maintenance := newDrainTestCloser()
+			rl.maintenanceStartup = func(context.Context) (io.Closer, error) { return maintenance, nil }
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan error, 1)
 			var controlDuties sync.WaitGroup
@@ -33,7 +35,7 @@ func TestRelayDrainWaitsForSettledForward(t *testing.T) {
 				if os.Getenv("SIRSI_TEST_RELAY_FAST_CANCEL_CONTROL") == "1" {
 					// Use the exact fast-return serving path, retaining a fixture-only
 					// join for teardown. That join is NOT used by the assertion.
-					done <- rl.serve(ctx, &controlDuties, false)
+					done <- rl.serve(ctx, &controlDuties, false, nil)
 					return
 				}
 				done <- rl.ServeDrained(ctx, time.Second)
@@ -63,6 +65,9 @@ func TestRelayDrainWaitsForSettledForward(t *testing.T) {
 				t.Fatalf("acknowledged drain while the forward was held: %v", err)
 			case <-time.After(40 * time.Millisecond):
 			}
+			if maintenance.isClosed() {
+				t.Fatal("maintenance endpoint closed before its admitted forward settled")
+			}
 			release()
 			select {
 			case err := <-done:
@@ -71,6 +76,9 @@ func TestRelayDrainWaitsForSettledForward(t *testing.T) {
 				}
 			case <-time.After(2 * time.Second):
 				t.Fatal("settled forward did not finish drain")
+			}
+			if !maintenance.isClosed() {
+				t.Fatal("maintenance endpoint remained open after normal worker settlement")
 			}
 			assertDrainRetainedPending(t, spool)
 			if heldOutbox {
@@ -92,6 +100,8 @@ func TestRelayDrainWaitsForSettledForward(t *testing.T) {
 
 func TestRelayDrainTimeoutIsNotSuccessOrCancellationOfForward(t *testing.T) {
 	rl, spool, entered, release := newHeldDrainRelay(t, false)
+	maintenance := newDrainTestCloser()
+	rl.maintenanceStartup = func(context.Context) (io.Closer, error) { return maintenance, nil }
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	done := make(chan error, 1)
@@ -105,6 +115,9 @@ func TestRelayDrainTimeoutIsNotSuccessOrCancellationOfForward(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("drain deadline was not bounded")
+	}
+	if maintenance.isClosed() {
+		t.Fatal("maintenance endpoint closed while timed-out worker remained owned")
 	}
 	if _, err := os.Stat(filepath.Join(spool, "lane", "inflight", "held.json")); err != nil {
 		t.Fatalf("timeout lost the original in-flight request: %v", err)
@@ -121,6 +134,11 @@ func TestRelayDrainTimeoutIsNotSuccessOrCancellationOfForward(t *testing.T) {
 			t.Fatal("owned forward did not settle after the timeout")
 		}
 		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-maintenance.closed:
+	case <-time.After(time.Second):
+		t.Fatal("timed-out maintenance owner did not close after worker settlement")
 	}
 }
 
@@ -191,6 +209,47 @@ func TestRelayDrainRefusesInflightCleanupFailure(t *testing.T) {
 	}
 }
 
+func TestRelayDrainProductionCleanupFailureStaysSticky(t *testing.T) {
+	rl, spool, entered, release := newHeldDrainRelay(t, false)
+	removeCalled := make(chan string, 1)
+	rl.removeInflightFn = func(path string) error {
+		removeCalled <- path
+		return errors.New("fixture cleanup refusal")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	done := make(chan error, 1)
+	go func() { done <- rl.ServeDrained(ctx, time.Second) }()
+	awaitDrainEntry(t, entered)
+	cancel()
+	release()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrRelaySettlementIncomplete) {
+			t.Fatalf("production cleanup failure was not part of drain result: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("production cleanup failure did not settle the worker")
+	}
+	if !rl.settlementFailed.Load() {
+		t.Fatal("production cleanup refusal did not set sticky settlement debt")
+	}
+	select {
+	case path := <-removeCalled:
+		if path != filepath.Join(spool, "lane", "inflight", "held.json") {
+			t.Fatalf("cleanup injection reached unexpected path: %s", path)
+		}
+	default:
+		t.Fatal("production response path did not attempt inflight cleanup")
+	}
+	if _, err := os.Stat(filepath.Join(spool, "lane", "res", "held.json")); err != nil {
+		t.Fatalf("fixture did not publish the positive response before cleanup failure: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(spool, "lane", "inflight", "held.json")); err != nil {
+		t.Fatalf("production cleanup failure lost inflight custody: %v", err)
+	}
+}
+
 func TestRelayUnknownOutboxParkingFailureNeverRequeues(t *testing.T) {
 	spool := t.TempDir()
 	publishDrainRequest(t, spool, "outbox", "unknown", "unknown")
@@ -202,7 +261,7 @@ func TestRelayUnknownOutboxParkingFailureNeverRequeues(t *testing.T) {
 	}))
 	t.Cleanup(svc.Close)
 	rl := &Relay{Spool: spool, Base: svc.URL, Token: "fixture", Client: svc.Client(), Log: slog.New(slog.NewTextHandler(io.Discard, nil)), now: time.Now}
-	if got := rl.retryOutboxOne("lane", filepath.Join(spool, "lane", "outbox", "unknown.json")); got != outboxUnknown {
+	if got := rl.retryOutboxOne(context.Background(), "lane", filepath.Join(spool, "lane", "outbox", "unknown.json")); got != outboxUnknown {
 		t.Fatalf("expected unknown outcome, got %v", got)
 	}
 	if !rl.settlementFailed.Load() {
@@ -285,6 +344,29 @@ func newHeldDrainRelay(t *testing.T, outbox bool) (*Relay, string, <-chan struct
 	publishDrainRequest(t, spool, queue, "held", "held")
 	rl := &Relay{Spool: spool, Base: svc.URL, Token: "fixture", Client: svc.Client(), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	return rl, spool, entered, free
+}
+
+type drainTestCloser struct {
+	closed chan struct{}
+	once   sync.Once
+}
+
+func newDrainTestCloser() *drainTestCloser {
+	return &drainTestCloser{closed: make(chan struct{})}
+}
+
+func (c *drainTestCloser) Close() error {
+	c.once.Do(func() { close(c.closed) })
+	return nil
+}
+
+func (c *drainTestCloser) isClosed() bool {
+	select {
+	case <-c.closed:
+		return true
+	default:
+		return false
+	}
 }
 
 func publishDrainRequest(t *testing.T, spool, queue, id, session string) {

@@ -655,6 +655,8 @@ type Relay struct {
 	discoverFn func(context.Context) int
 	// Instance-local fixture seam; nil always uses the retained native marker.
 	maintenanceStartup func(context.Context) (io.Closer, error)
+	// Instance-local filesystem seam; nil uses os.Remove.
+	removeInflightFn func(string) error
 	// ServeDrained is a one-shot lifecycle boundary for each relay instance.
 	drained atomic.Bool
 }
@@ -662,7 +664,7 @@ type Relay struct {
 // Serve polls the spool until ctx is done. Each request file is forwarded once;
 // its response file is written atomically; stale files are swept with a log line.
 func (rl *Relay) Serve(ctx context.Context) (result error) {
-	return rl.serve(ctx, nil, true)
+	return rl.serve(ctx, nil, true, nil)
 }
 
 // ErrRelayDrainIncomplete means the serving loop stopped but an admitted duty
@@ -686,24 +688,41 @@ func (rl *Relay) ServeDrained(ctx context.Context, drainTimeout time.Duration) e
 		return errors.New("relay: use a new instance for each drained serving lifetime")
 	}
 	serving, cancel := context.WithCancel(ctx)
-	err := rl.serve(serving, nil, false)
+	var maintenance io.Closer
+	err := rl.serve(serving, nil, false, func(closer io.Closer) { maintenance = closer })
 	cancel()
 	done := make(chan struct{})
 	go func() { rl.workers.Wait(); close(done) }()
 	timer := time.NewTimer(drainTimeout)
 	defer timer.Stop()
+	closeMaintenance := func() error {
+		if maintenance == nil {
+			return nil
+		}
+		return maintenance.Close()
+	}
 	select {
 	case <-done:
-		if rl.settlementError() != nil {
-			return errors.Join(err, ErrRelaySettlementIncomplete, rl.settlementError())
+		maintenanceErr := closeMaintenance()
+		if settlementErr := rl.settlementError(); settlementErr != nil || maintenanceErr != nil {
+			return errors.Join(err, ErrRelaySettlementIncomplete, settlementErr, maintenanceErr)
 		}
-		return err
+		return errors.Join(err, maintenanceErr)
 	case <-timer.C:
+		// A timed-out drain retains the endpoint owner until the existing
+		// workers finish. Timeout does not retire the endpoint or cancel duties.
+		go func() {
+			<-done
+			if closeErr := closeMaintenance(); closeErr != nil {
+				rl.settlementFailed.Store(true)
+				rl.Log.Error("relay: maintenance endpoint cleanup remains unsettled after worker drain", "err", closeErr)
+			}
+		}()
 		return errors.Join(err, ErrRelayDrainIncomplete)
 	}
 }
 
-func (rl *Relay) serve(ctx context.Context, duties *sync.WaitGroup, waitWorkers bool) (result error) {
+func (rl *Relay) serve(ctx context.Context, duties *sync.WaitGroup, waitWorkers bool, transferMaintenance func(io.Closer)) (result error) {
 	if rl.Client == nil {
 		c, err := newRelayHTTPClientFor(rl.Base)
 		if err != nil {
@@ -737,7 +756,11 @@ func (rl *Relay) serve(ctx context.Context, duties *sync.WaitGroup, waitWorkers 
 	if err != nil {
 		return fmt.Errorf("relay: startup maintenance remains closed: %w", err)
 	}
-	defer func() { result = errors.Join(result, maintenance.Close()) }()
+	if transferMaintenance != nil {
+		transferMaintenance(maintenance)
+	} else {
+		defer func() { result = errors.Join(result, maintenance.Close()) }()
+	}
 	// Optional names/counts projection belongs to this existing trusted relay
 	// loop, never a second daemon. Failure cannot stop forwarding or alter any
 	// existing queue permissions. One failed publication disables this instance's
@@ -1000,7 +1023,7 @@ func (rl *Relay) handleOne(ctx context.Context, agent, f string) bool {
 			rl.Log.Error("relay: unknown response publication failed; retained inflight", "agent", agent, "id", id, "err", err)
 			return false
 		}
-		_ = os.Remove(inflight)
+		rl.removeSettledInflight(inflight)
 		return false
 	}
 	if err := rl.publish(agent, id, sr); err != nil {
@@ -1008,7 +1031,19 @@ func (rl *Relay) handleOne(ctx context.Context, agent, f string) bool {
 		rl.Log.Error("relay: response publication failed; retained inflight", "agent", agent, "id", id, "err", err)
 		return false
 	}
-	_ = os.Remove(inflight)
+	return rl.removeSettledInflight(inflight)
+}
+
+func (rl *Relay) removeSettledInflight(path string) bool {
+	remove := rl.removeInflightFn
+	if remove == nil {
+		remove = os.Remove
+	}
+	if err := remove(path); err != nil {
+		rl.settlementFailed.Store(true)
+		rl.Log.Error("relay: retain unsettled in-flight custody", "path", path, "err", err)
+		return false
+	}
 	return true
 }
 
@@ -1060,7 +1095,10 @@ func (rl *Relay) retryOutboxOne(ctx context.Context, agent, f string) outboxOutc
 	sr := rl.forward(agent, id, inflight)
 	switch {
 	case sr.Status == statusHoldForRetry:
-		_ = os.Rename(inflight, f) // provably never reached — keep held in order
+		if err := os.Rename(inflight, f); err != nil { // provably never reached
+			rl.settlementFailed.Store(true)
+			rl.Log.Error("relay: could not restore never-reached request to ordered outbox; retained inflight", "agent", agent, "id", id, "err", err)
+		}
 		return outboxHeld
 	case sr.Status == http.StatusBadGateway:
 		// forward's OUTCOME-UNKNOWN sentinel (post-send failure). The request may
@@ -1068,14 +1106,21 @@ func (rl *Relay) retryOutboxOne(ctx context.Context, agent, f string) outboxOutc
 		// re-forward and do NOT delete. A genuine service 502 is equally uncertain,
 		// so parking it too is the safe (conservative) direction — no data loss.
 		failed := filepath.Join(rl.Spool, agent, "failed", id+".json")
-		if os.MkdirAll(filepath.Dir(failed), 0o700) == nil && os.Rename(inflight, failed) == nil {
+		parkErr := os.MkdirAll(filepath.Dir(failed), 0o700)
+		if parkErr == nil {
+			parkErr = os.Rename(inflight, failed)
+		}
+		if parkErr == nil {
 			rl.Log.Error("relay: held request OUTCOME UNKNOWN on retry — parked for audit, not re-forwarded", "agent", agent, "id", id)
 		} else {
-			_ = os.Rename(inflight, f) // could not park — leave held rather than lose it
+			rl.settlementFailed.Store(true)
+			rl.Log.Error("relay: could not park unknown outbox outcome; retained inflight and refused retry", "agent", agent, "id", id, "err", parkErr)
 		}
 		return outboxUnknown
 	default:
-		_ = os.Remove(inflight) // positively delivered (service answered)
+		if !rl.removeSettledInflight(inflight) {
+			return outboxUnknown
+		}
 		rl.Log.Info("relay: held request delivered on retry", "agent", agent, "id", id, "status", sr.Status)
 		return outboxDelivered
 	}
@@ -1220,7 +1265,9 @@ func (rl *Relay) recoverInflight() int {
 			rl.Log.Error("relay: outcome-unknown response publication failed; retained inflight", "agent", agent, "id", id, "err", err)
 			continue
 		}
-		_ = os.Remove(f)
+		if !rl.removeSettledInflight(f) {
+			continue
+		}
 		rl.Log.Warn("relay: in-flight request from a previous relay reported as outcome-unknown", "agent", agent, "method", method, "id", id)
 	}
 	return len(files)

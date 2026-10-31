@@ -74,11 +74,15 @@ debt (`ErrRelaySettlementIncomplete`), even after the goroutines finish. A faile
 response leaves its original inflight record intact; startup unknown-outcome
 publication obeys the same rule. If an unknown held-request outcome cannot be
 parked, it stays inflight and never returns to the retryable outbox. Existing
-atomic file publication is not a new crash-durability certification.
-The original `Serve` retains its unbounded join behavior. Callers requiring a
-bounded result must use `ServeDrained`; neither API is CLI or installed-service
-integration. Each drained Relay instance is one-shot; reusing retired lane
-channels refuses instead of silently losing wakes.
+atomic file publication is not a new crash-durability certification. The
+existing maintenance endpoint remains owned until those workers finish. If
+`ServeDrained` times out, the process retains endpoint cleanup ownership and
+closes it only after its admitted workers finish. Endpoint cleanup failure
+remains settlement debt. The original `Serve` retains its unbounded join
+behavior. Callers requiring a bounded result must use `ServeDrained`; neither
+API is CLI or installed-service integration. Each drained Relay instance is
+one-shot; reusing retired lane channels refuses instead of silently losing
+wakes.
 
 This checkpoint does **not** switch the installed CLI to terminate on a drain
 timeout. The remaining authorized control must keep the process alive on a
