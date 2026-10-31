@@ -53,13 +53,18 @@ final class WorkspaceTests: XCTestCase {
         let firstClip = firstScrollView.contentView
         let document = try XCTUnwrap(firstScrollView.documentView)
         let maximumOffset = document.frame.height - firstClip.bounds.height
+        XCTAssertTrue(firstProbe.viewportObservationReady,
+                      "the coordinator must attach to this clip and finish initial restoration before interaction")
+        XCTAssertTrue(firstClip.postsBoundsChangedNotifications)
         XCTAssertGreaterThan(maximumOffset, 40, "the mounted System One pane must have real vertical overflow")
 
         let targetOffset = min(80, maximumOffset)
         firstClip.scroll(to: CGPoint(x: firstClip.bounds.origin.x, y: targetOffset))
         firstScrollView.reflectScrolledClipView(firstClip)
-        NotificationCenter.default.post(name: NSView.boundsDidChangeNotification, object: firstClip)
-        XCTAssertTrue(waitUntil { abs((session.maatPrimaryRootScrollPosition(for: session.navigation(for: .maat))?.wrappedValue ?? 0) - targetOffset) < 1 })
+        XCTAssertTrue(waitUntil {
+            let retained = session.maatPrimaryRootScrollPosition(for: session.navigation(for: .maat))?.wrappedValue ?? 0
+            return abs(retained - targetOffset) < 1
+        })
         let staleRootPosition = try XCTUnwrap(
             session.maatPrimaryRootScrollPosition(for: session.navigation(for: .maat))
         )
@@ -181,18 +186,20 @@ final class WorkspaceTests: XCTestCase {
                    chipEstates: estates, unavailableEstates: nil)
     }
 
-    @MainActor private func waitForMaatScrollProbe(in root: NSView) -> NSView? {
+    @MainActor private func waitForMaatScrollProbe(in root: NSView) -> MaatPrimaryScrollProbeView? {
         let deadline = Date().addingTimeInterval(2)
         repeat {
             root.layoutSubtreeIfNeeded()
-            if let probe = findMaatScrollProbe(in: root) { return probe }
+            if let probe = findMaatScrollProbe(in: root), probe.viewportObservationReady { return probe }
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         } while Date() < deadline
-        return findMaatScrollProbe(in: root)
+        return findMaatScrollProbe(in: root).flatMap { $0.viewportObservationReady ? $0 : nil }
     }
 
-    @MainActor private func findMaatScrollProbe(in view: NSView) -> NSView? {
-        if view.identifier?.rawValue == "maat.system-one.primary-root-scroll-probe" { return view }
+    @MainActor private func findMaatScrollProbe(in view: NSView) -> MaatPrimaryScrollProbeView? {
+        if view.identifier?.rawValue == "maat.system-one.primary-root-scroll-probe" {
+            return view as? MaatPrimaryScrollProbeView
+        }
         for child in view.subviews {
             if let probe = findMaatScrollProbe(in: child) { return probe }
         }

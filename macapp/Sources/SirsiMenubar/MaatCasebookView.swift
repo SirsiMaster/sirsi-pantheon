@@ -215,6 +215,10 @@ private struct MaatPrimaryScrollView<Content: View>: View {
     }
 }
 
+final class MaatPrimaryScrollProbeView: NSView {
+    var viewportObservationReady = false
+}
+
 private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
     @Binding var position: CGFloat
     let layoutReady: Bool
@@ -224,7 +228,7 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
+        let view = MaatPrimaryScrollProbeView(frame: .zero)
         view.identifier = NSUserInterfaceItemIdentifier("maat.system-one.primary-root-scroll-probe")
         return view
     }
@@ -243,6 +247,7 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
         private var layoutReady: Bool
         private var restoration: MaatRootScrollRestoration
         private weak var scrollView: NSScrollView?
+        private weak var probeView: MaatPrimaryScrollProbeView?
         private weak var observedClip: NSClipView?
         private weak var observedDocument: NSView?
         private var clipWasPostingBoundsChanges = false
@@ -270,7 +275,9 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
                 guard let self else { return }
                 self.connectionScheduled = false
                 guard self.active, let scrollView = probe?.enclosingScrollView else { return }
+                self.probeView = probe as? MaatPrimaryScrollProbeView
                 if self.scrollView !== scrollView {
+                    self.probeView?.viewportObservationReady = false
                     self.removeObservers()
                     self.scrollView = scrollView
                     self.observe(scrollView)
@@ -282,8 +289,10 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
 
         func disconnect() {
             active = false
+            probeView?.viewportObservationReady = false
             removeObservers()
             scrollView = nil
+            probeView = nil
         }
 
         private func removeObservers() {
@@ -316,22 +325,36 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
         private func boundsChanged() {
             guard let scrollView else { return }
             let offset = max(0, scrollView.contentView.bounds.origin.y)
-            guard let captured = restoration.boundsChanged(to: offset) else { return }
-            position.wrappedValue = captured
+            if let captured = restoration.boundsChanged(to: offset) {
+                position.wrappedValue = captured
+            }
+            markViewportReadyIfRestored()
         }
 
         private func restoreFromReadyLayout() {
             guard let scrollView, let document = scrollView.documentView else { return }
             let clip = scrollView.contentView
-            guard document.frame.height > 0, clip.bounds.height > 0,
-                  let target = restoration.layoutChanged(
-                    maximumOffset: document.frame.height - clip.bounds.height,
-                    ready: layoutReady
-                  ) else { return }
-            restoration.recordOffset(target)
-            clip.scroll(to: CGPoint(x: clip.bounds.origin.x, y: target))
-            scrollView.reflectScrolledClipView(clip)
-            position.wrappedValue = target
+            guard document.frame.height > 0, clip.bounds.height > 0 else { return }
+            if let target = restoration.layoutChanged(
+                maximumOffset: document.frame.height - clip.bounds.height,
+                ready: layoutReady
+            ) {
+                restoration.recordOffset(target)
+                clip.scroll(to: CGPoint(x: clip.bounds.origin.x, y: target))
+                scrollView.reflectScrolledClipView(clip)
+                position.wrappedValue = target
+            }
+            markViewportReadyIfRestored()
+        }
+
+        private func markViewportReadyIfRestored() {
+            guard layoutReady, restoration.resolved,
+                  let scrollView, let probeView,
+                  probeView.enclosingScrollView === scrollView,
+                  observedClip === scrollView.contentView,
+                  (scrollView.documentView?.frame.height ?? 0) > 0,
+                  scrollView.contentView.bounds.height > 0 else { return }
+            probeView.viewportObservationReady = true
         }
     }
 }
