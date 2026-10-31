@@ -55,6 +55,7 @@ final class WorkspaceSessionTests: XCTestCase {
         XCTAssertEqual(Set(nav.stack.map(\.id)).count, nav.stack.count)
     }
 
+    @MainActor
     func testForwardHistoryAndHomeResetStayWithinEachWorkspace() {
         let session = PantheonWorkspaceSession(defaults: defaults())
         let ra = session.navigation(for: .ra)
