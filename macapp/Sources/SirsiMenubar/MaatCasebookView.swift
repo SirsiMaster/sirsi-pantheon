@@ -223,7 +223,11 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
         Coordinator(position: $position, layoutReady: layoutReady)
     }
 
-    func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        view.identifier = NSUserInterfaceItemIdentifier("maat.system-one.primary-root-scroll-probe")
+        return view
+    }
 
     func updateNSView(_ view: NSView, context: Context) {
         context.coordinator.update(position: $position, layoutReady: layoutReady)

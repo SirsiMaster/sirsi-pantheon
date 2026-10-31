@@ -3,7 +3,7 @@ import SwiftUI
 struct PantheonDesktopView: View {
     @ObservedObject var engine: SirsiEngine
     @Environment(\.snapshotMode) private var snapshotMode
-    @StateObject private var session = PantheonWorkspaceSession()
+    @StateObject private var session: PantheonWorkspaceSession
     @AppStorage(PantheonTextSizePreference.key) private var textSizePercent = 100
     @State private var search = ""
     @State private var projectChooserPresented = false
@@ -11,14 +11,21 @@ struct PantheonDesktopView: View {
     @FocusState private var searchFocused: Bool
     private let previewWorkspace: PantheonWorkspace?
     private let previewContent: AnyView?
+    private let maatCasebookPreview: MaatCasebookProjection?
+    private let loadsInitialWorkspaceData: Bool
     private let menuBridge: PantheonMenuBridge?
 
     init(engine: SirsiEngine, menuBridge: PantheonMenuBridge? = nil,
-         previewWorkspace: PantheonWorkspace? = nil, previewContent: AnyView? = nil) {
+         previewWorkspace: PantheonWorkspace? = nil, previewContent: AnyView? = nil,
+         session: PantheonWorkspaceSession? = nil, maatCasebookPreview: MaatCasebookProjection? = nil,
+         loadsInitialWorkspaceData: Bool = true) {
+        _session = StateObject(wrappedValue: session ?? PantheonWorkspaceSession())
         self.engine = engine
         self.menuBridge = menuBridge
         self.previewWorkspace = previewWorkspace
         self.previewContent = previewContent
+        self.maatCasebookPreview = maatCasebookPreview
+        self.loadsInitialWorkspaceData = loadsInitialWorkspaceData
     }
 
     private var section: PantheonWorkspace {
@@ -93,7 +100,7 @@ struct PantheonDesktopView: View {
         }
         .task {
             textSizePercent = PantheonTextSizePreference.normalized(textSizePercent)
-            guard !snapshotMode else { return }
+            guard !snapshotMode, loadsInitialWorkspaceData else { return }
             engine.loadProjectRoot()
             engine.loadActivity()
             engine.loadRunReport()
@@ -241,7 +248,7 @@ struct PantheonDesktopView: View {
         case .apollo: session.apolloPlanner(engine: engine)
         case .mercury: MercuryWorkspaceView(engine: engine)
         case .maat:
-            MaatWorkspaceView(engine: engine,
+            MaatWorkspaceView(engine: engine, preloadedCasebook: maatCasebookPreview,
                               primaryRootScrollPosition: session.maatPrimaryRootScrollPosition(for: nav))
         case .ra: RaFabricView(engine: engine)
         case .activity: ActivityView(engine: engine)
