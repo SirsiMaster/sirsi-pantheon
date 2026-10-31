@@ -51,7 +51,16 @@ These verbs are the application integration API, not a manual recovery recipe.
 Preview needs an explicitly selected retained, root-owned signed legacy payload.
 The first closed source profile is released134 commit
 `ba2a07bb464bbfd68808254a7d489769f122149b`, inspected for consume-before-forward.
-Other old releases are not inferred from their names. Preview independently binds
+The existing interruption path also recognizes only the exact clean 0.24.147
+source commit `63fbba661b6c7c2b487979ef4ce58d28ea2d611c`; its published version
+or a nearby/modified build is not sufficient. For that legacy profile, an absent
+PID-specific maintenance endpoint permits only the existing fresh, instance-pinned
+interruption workflow. An occupied endpoint refuses this legacy profile and must
+use its existing strict path when supported; a historical completed transaction
+is never borrowed for a new PID. Per-envelope custody remains classified
+`outcome_unknown_never_replay`, and the operation does not certify an old remote
+outcome or a drain. Other old releases are not inferred from their names. Preview
+independently binds
 the old kernel PID/start and signed CDHash to that payload, plus the currently
 installed replacement, plist and physical spool. The protected program is
 `/usr/local/libexec/sirsi-pantheon/sirsi`; target is exactly

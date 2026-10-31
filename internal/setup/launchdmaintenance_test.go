@@ -175,6 +175,45 @@ func TestLegacyMaintenanceControllerTransaction(t *testing.T) {
 	}
 }
 
+func TestLegacyMaintenanceFresh147PlanDoesNotBorrowCompletedOldTransaction(t *testing.T) {
+	f, c := newMaintenanceFixture(t)
+	oldPlan := f.plan
+	oldPlan.LegacySource = "22944b2458f377a9f3e5e10c63c3442cb3ea83c3"
+	oldPlan.Original.PID = 555
+	oldPlan.Original.Started = "historical-source-121-instance"
+	oldPlan.SHA256 = maintenanceDigest(oldPlan)
+	f.state = MaintenanceStatus{
+		Schema: 1, ID: strings.Repeat("3", 32), Revision: 8, Plan: oldPlan,
+		Phase: "completed", Successor: ServiceInstance{PID: 67245},
+		OldOutcomes: "unknown_not_certified_drained",
+	}
+	oldID := f.state.ID
+
+	f.plan.LegacySource = "63fbba661b6c7c2b487979ef4ce58d28ea2d611c"
+	f.plan.Original.PID = 53175
+	f.plan.Original.Started = "current-source-147-instance"
+	f.plan.SHA256 = maintenanceDigest(f.plan)
+
+	result, err := c.ConfirmLegacyMaintenance(context.Background(), f.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ID == oldID || result.Revision != 9 || result.Plan.LegacySource != f.plan.LegacySource ||
+		result.Plan.Original.PID != 53175 || result.Plan.Original.Started != f.plan.Original.Started ||
+		result.OldOutcomes != "unknown_not_certified_drained" {
+		t.Fatalf("fresh 147 transition borrowed or misbound historical transaction: %+v", result)
+	}
+	if countMaintenanceEvent(f, "retire") != 1 || countMaintenanceEvent(f, "preserve") != 1 {
+		t.Fatalf("fresh transaction did not use its own lifecycle and unknown-outcome custody: %v", f.events)
+	}
+	if _, err := c.RecoverLegacyMaintenance(context.Background(), oldID, oldPlan.SHA256); err == nil {
+		t.Fatal("completed source-121 transaction was reused after the fresh 147 transaction")
+	}
+	if countMaintenanceEvent(f, "retire") != 1 || f.state.Plan.LegacySource != f.plan.LegacySource {
+		t.Fatalf("historical recovery changed the current transaction: %+v %v", f.state, f.events)
+	}
+}
+
 func TestLegacyMaintenanceRetirementAmbiguity(t *testing.T) {
 	for _, state := range []string{"original_alive", "pid_reused_or_changed", "outcome_unknown", "selected_job_still_loaded_or_changed"} {
 		t.Run(state, func(t *testing.T) {
