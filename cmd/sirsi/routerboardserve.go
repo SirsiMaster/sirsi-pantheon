@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -39,6 +44,9 @@ hosting platform's job (Cloud Run IAP), not this process's.`,
 		}
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
+		if err := registerBoardThread(ctx); err != nil {
+			return err
+		}
 		build := buildversion.Current("sirsi").Version
 		fabric := ledger.NewFabricGenerationProducerContext(ctx, collectDashboardFabricReadContext, build)
 		defer fabric.Close()
@@ -66,6 +74,53 @@ hosting platform's job (Cloud Run IAP), not this process's.`,
 		<-ctx.Done()
 		return srv.Stop()
 	},
+}
+
+// registerBoardThread gives the board its own registered thread (Rule of Ra:
+// the whole-ledger reads are not exempt) and keeps it alive every minute,
+// re-registering if it was reaped while the service was scaled to zero. The
+// thread id travels in SIRSI_THREAD_ID, which every routerstore.Resolve reads.
+func registerBoardThread(ctx context.Context) error {
+	repo, err := router.FindRepoRoot()
+	if err != nil {
+		return fmt.Errorf("board: locate registry: %w", err)
+	}
+	root := filepath.Join(repo, ".agents", "idea-router")
+	agent := strings.TrimSpace(os.Getenv("SIRSI_AGENT_ID"))
+	if agent == "" {
+		agent = "router-board"
+		_ = os.Setenv("SIRSI_AGENT_ID", agent)
+	}
+	register := func() error {
+		t, err := router.RegisterThread(root, &router.Thread{AgentID: agent, Surface: "service"})
+		if err != nil {
+			return fmt.Errorf("board: register %s thread: %w", agent, err)
+		}
+		return os.Setenv("SIRSI_THREAD_ID", t.ThreadID)
+	}
+	if err := register(); err != nil {
+		return err
+	}
+	go func() {
+		tick := time.NewTicker(time.Minute)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				_, _ = router.CloseThread(root, os.Getenv("SIRSI_THREAD_ID"))
+				return
+			case <-tick.C:
+			}
+			_, err := router.Heartbeat(root, os.Getenv("SIRSI_THREAD_ID"), router.HeartbeatUpdate{})
+			if errors.Is(err, router.ErrHeartbeatThreadUnavailable) {
+				err = register()
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "board: heartbeat: %v\n", err)
+			}
+		}
+	}()
+	return nil
 }
 
 func init() {

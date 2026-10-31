@@ -811,6 +811,19 @@
       },
       "consumer": {}
     },
+    "router-board": {
+      "id": "router-board",
+      "type": "service",
+      "repo": "SirsiMaster/sirsi-pantheon",
+      "workstream": "router",
+      "mail_to": "ra",
+      "wake": {
+        "mechanism": "none"
+      },
+      "command": null,
+      "consumer": {},
+      "description": "Hosted read-only router board (Cloud Run service sirsi-router-board, `sirsi router board-serve`). Holds an @observer-scoped token: reads the whole ledger, registers and heartbeats only its own thread, never sends, closes or claims. Not a lane: never route inbox work here and do not add a wake mechanism."
+    },
     "sirsi-hardware-admin": {
       "attended": true,
       "lifecycle_services": ["ai.sirsi.router.relay", "ai.sirsi.horus.agent-router", "ai.sirsi.router.surface"],
