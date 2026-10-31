@@ -421,6 +421,21 @@ func TestMaatBinaryDriftValidationRefusesDuplicateAcrossRecentBoundary(t *testin
 	}
 }
 
+func TestMaatBinaryDriftValidationRefusesDifferentKindEvidenceDuplicateAcrossRecentBoundary(t *testing.T) {
+	journal, _, evidence := binaryDriftFileCaseFixture(t)
+	appendBinaryDriftFillerDecisions(t, journal, 100)
+	if err := journal.Append(maat.Decision{
+		Time: "2026-10-24T12:02:00Z", Host: "fixture", Kind: "knowledge owner review",
+		Requester: "maat", Resource: "fixture", Assessed: "unrelated typed row", Determination: "accepted", Why: "duplicate evidence fixture",
+		Evidence: evidence,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "multiple journal rows") {
+		t.Fatalf("different-kind same-evidence row across recent boundary = %v, want ambiguity refusal", err)
+	}
+}
+
 func TestMaatBinaryDriftValidationRejectsMalformedTailAfterExactMatch(t *testing.T) {
 	journal, _, evidence := binaryDriftFileCaseFixture(t)
 	f, err := os.OpenFile(journal.Path, os.O_APPEND|os.O_WRONLY, 0)

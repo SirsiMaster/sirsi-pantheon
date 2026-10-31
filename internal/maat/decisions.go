@@ -490,13 +490,14 @@ func (j *FileDecisionJournal) FindByEvidence(kind, evidence string) (Decision, b
 }
 
 // FindUniqueByEvidence strictly scans the complete retained journal and keeps
-// at most one matching row in memory. The match count lets authorization paths
-// preserve duplicate refusal without relying on a recent-window projection.
-func (j *FileDecisionJournal) FindUniqueByEvidence(kind, evidence string) (Decision, int, error) {
+// at most one row matching the evidence reference, regardless of kind. The
+// match count lets authorization paths check evidence uniqueness before
+// validating the row's kind and payload without relying on recent history.
+func (j *FileDecisionJournal) FindUniqueByEvidence(evidence string) (Decision, int, error) {
 	var found Decision
 	matches := 0
 	_, err := j.scanStrict(func(d Decision) bool {
-		if d.Kind == kind && d.Evidence == evidence {
+		if d.Evidence == evidence {
 			matches++
 			if matches == 1 {
 				found = d

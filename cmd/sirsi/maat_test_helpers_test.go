@@ -28,11 +28,11 @@ func (j *maatTestJournal) Recent(limit int) ([]maat.Decision, error) {
 	return append([]maat.Decision(nil), j.decisions[len(j.decisions)-limit:]...), nil
 }
 
-func (j *maatTestJournal) FindUniqueByEvidence(kind, evidence string) (maat.Decision, int, error) {
+func (j *maatTestJournal) FindUniqueByEvidence(evidence string) (maat.Decision, int, error) {
 	var found maat.Decision
 	matches := 0
 	for _, decision := range j.decisions {
-		if decision.Kind == kind && decision.Evidence == evidence {
+		if decision.Evidence == evidence {
 			matches++
 			if matches == 1 {
 				found = decision

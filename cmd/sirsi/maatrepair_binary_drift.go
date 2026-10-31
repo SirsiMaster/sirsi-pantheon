@@ -915,12 +915,12 @@ func validateMaatBinaryDriftCase(journal maat.DecisionJournal, evidence string) 
 		return errors.New("Ma'at binary-drift recovery: invalid System One evidence reference")
 	}
 	reader, ok := journal.(interface {
-		FindUniqueByEvidence(string, string) (maat.Decision, int, error)
+		FindUniqueByEvidence(string) (maat.Decision, int, error)
 	})
 	if !ok {
 		return errors.New("Ma'at binary-drift recovery: strict retained case lookup is unavailable; no updater was run")
 	}
-	row, matches, err := reader.FindUniqueByEvidence("system one screen", evidence)
+	row, matches, err := reader.FindUniqueByEvidence(evidence)
 	if err != nil {
 		return fmt.Errorf("Ma'at binary-drift recovery: read retained System One case: %w", err)
 	}
