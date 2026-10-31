@@ -1,5 +1,100 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-31 — v0.24.152 release candidate
+
+- Retain worker retirement keys while clearing retired payloads, so compatible stale writers cannot resurrect pruned identities. Exact lane, host and observation predicates remain enforced; normal readers hide fences and unrelated fresh registrations remain available.
+- Exercise both independently seeded fences and the real pruning producer, including stale-write and retired-ID refusals, opportunistic pruning during registration, and preserved ownership, timestamps and empty payloads for all three retained keys.
+- Keep canonical service adoption separate: Ra/SSA must verify the compatible SQL-writer and rollback floor before activation. Source qualification does not claim live pruning or deployment.
+- Refs: ADR-057, ADR-062, internal/routerstore/README.md
+- Refresh the Stack Lab source module inventory against the reviewed corrective code tree: 104 packages/targets and 2,151 exact source/data/test/support blobs, including direct embedded schemas, SQL, UI and provenance assets.
+- Preserve source-only qualification and upgrade boundaries, explicit documentation exclusions, and external final-head comparison without an inventory self-hash or integrated-certification claim.
+- Refs: ADR-066, docs/stacklab/pantheon-pt/canon/CERTIFICATION.md
+- Re-pin the inventory after the consumer regression correction, preserving all 2,151 listed blobs and distinguishing the last verified prior publication from a future release result.
+- The active certification record now identifies published source `b1ddd106`
+  and tree `a7c9b8cf`, with the SSA publication/install receipt and Main's
+  bounded actual Ma'at CORE receipt. The 140/141 criterion outcomes and
+  `958db55b` inventory remain historical; its 1,944-file count is not a
+  completeness claim for the following corrective source. That source remains
+  unreleased pending its final inventory, review, and supported installation
+  readback. No integrated certification is claimed.
+- Refs: `docs/stacklab/pantheon-pt/canon/CERTIFICATION.md`, `docs/stacklab/pantheon-pt/canon/TRACEABILITY_MATRIX.md`, `docs/stacklab/pantheon-pt/canon/PLAN.md`, Pantheon ADR-066.
+- Keep Ma'at's root System One primary-pane vertical position when switching
+  away and back during the same window session. Recovery and detail panes do
+  not share that retained viewport. Restore waits for a ready layout, clamps to
+  the available range once, and yields to user movement while waiting. The
+  bounds callback tracks every changed offset, including fractional points, so
+  small movements cancel a deferred restore. The offset remains in memory only;
+  workspace selection remains the only persisted navigation value, and
+  inactive views remain unmounted.
+- Refs: `docs/stacklab/pantheon-pt/canon/DIAGRAMS_RUNTIME_NATIVE.md` PT-P16,
+  `docs/ADR-018-NATIVE-MAC-APP.md`, and
+  `contracts/stacklab/pantheon-native-workspace-v1.json`.
+- New liveness-watch alerts retain the existing remediation guidance and include
+  the measured finding detail, host, and UTC observation bracket. Detail content
+  is capped at 2048 UTF-8 bytes, with a truncation marker appended outside that
+  content cap. The added context explicitly requires a fresh state check and
+  grants no repair authority. Existing open alerts are not rewritten, and missing
+  historical observations cannot be reconstructed.
+- Refs: `PANTHEON_RULES.md` A27/A32, `docs/ADR-022-CTR-OS-TRUTH-LIVENESS.md`, `docs/ADR-040-DO-NO-HARM-TO-THE-RUNNING-HOST.md`, `internal/liveness/livenesswatch.go`.
+- Casebook now offers a separately confirmed, exact-host recheck for a single
+  canonical binary-drift finding. Ma'at records the bounded observation and
+  owner disposition in its existing journal, and resolves only that source case
+  as “no longer active”; it does not run or claim an updater. Mixed screens,
+  stale or foreign evidence, active or unavailable observations, and journal
+  errors remain open/refused. Repeated identical observations return the durable
+  existing disposition.
+- Diagnostic relief copy now distinguishes the historical `Jetsam Events (7d)`
+  count from current RAM, swap, and top-memory readings. Current readings make no
+  promise of immediate memory reclamation and direct the operator to recheck.
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/TRACEABILITY_MATRIX.md`, `internal/maat/binary_drift_disposition.go`, `internal/maat/casebook/casebook.go`, `macapp/Sources/SirsiMenubar/MaatCasebookView.swift`, `macapp/Sources/SirsiMenubar/Views.swift`.
+- Paged Casebook history validates the disposition against the unique source
+  screen and host before status filtering or page projection. The query identity
+  changes so older continuations are refused and can be refreshed. Confirmation
+  checks cancellation before and after its fresh scan. The existing three-second
+  ceiling applies to that observation scan; it does not bound subsequent strict
+  journal validation or append.
+- Paged history carries the frozen System One source count and exact all-kind
+  evidence count into projection. A rejected typed disposition leaves verified
+  repair outcomes and pending attempts visible. Inactive rechecks retain their
+  own progress description across detail-view replacement and do not show
+  updater timing. History qualification now also resolves its final short match
+  batch at end-of-file, preserving exact-source results in real paged journal
+  queries. Its inert repair-link fixtures also satisfy the journal’s required
+  `Assessed` field, preserving strict decision validation. Confirmed Casebook
+  selection now controls both retained operation intent and binary-drift dispatch,
+  including after a refused inactive disposition is freshly reviewed for update.
+- Diagnostic relief copy also distinguishes historical `Jetsam Events (7d)`
+  counts from current RAM, swap, and top-memory readings. Current readings make no
+  promise of immediate memory reclamation and direct the operator to recheck.
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/TRACEABILITY_MATRIX.md`, `internal/maat/binary_drift_disposition.go`, `internal/maat/history_query.go`, `internal/maat/history_prefix_unix.go`, `internal/maat/history_prefix_windows.go`, `internal/maat/history_prefix_test.go`, `internal/maat/history_query_test.go`, `internal/maat/history_repair_query_test.go`, `internal/maat/casebook/casebook.go`, `internal/maat/casebook/casebook_test.go`, `internal/maat/casebook/history_repair_test.go`, `cmd/sirsi/maatrepair_binary_drift_inactive.go`, `cmd/sirsi/maatrepair_binary_drift_inactive_test.go`, `macapp/Sources/SirsiMenubar/MaatCasebookView.swift`, `macapp/Sources/SirsiMenubar/MaatOperationState.swift`, `macapp/Tests/SirsiMenubarTests/MaatOperationStateTests.swift`, `macapp/Sources/SirsiMenubar/Views.swift`.
+- `sirsi thread heartbeat --ensure` distinguishes an unavailable session marker from a real mismatch.
+- Add an explicit relay duty-drain API that joins owned lane workers, active
+  forwards and serial outbox retries after discovery stops. Its bounded timeout
+  reports incomplete custody rather than success and never cancels or replays
+  an admitted mutation. Preserve `Serve`'s existing worker-join behavior and
+  add a separate bounded `ServeDrained` result; reject reuse of a drained relay
+  instance.
+- Retain consumed requests when their response cannot be published, report
+  settlement/cleanup debt through the explicit drain, and keep unparkable
+  unknown outcomes outside the automatic retry queue.
+- Preserve those settlement fences on current context-aware paths: failed
+  unknown-outcome parking or re-hold retains inflight custody and sticky debt;
+  checked cleanup failures do the same. The maintenance endpoint remains owned
+  through held workers, including after a drain timeout, and closes only after
+  those workers finish. The production cleanup fixture binds expected custody
+  paths to the canonical spool root used by the relay. Remove the unused
+  untracked discovery wrapper; serving continues through tracked discovery.
+- This is the first source checkpoint in the existing native lifecycle plan, not
+  an installed service refresh, producer-ingress fence or legacy migration proof.
+- Record the remaining released136 loaded-service migration requirement under
+  the existing Stack Lab root-relay recipe: actual producer/pass completion,
+  fresh and held forwarding, bounded failure/resume and honest legacy migration.
+  All three installed-client checks and M5 normal GUI adoption remain distinct
+  from older loaded background roles. This is a plan, not an implemented drain
+  or permission to restart active work.
+- Refs: docs/stacklab/pantheon-pt/canon/ROOT_RELAY_REFRESH.md;
+  docs/ADR-061-DURABLE-CONTINUOUS-EXECUTION-ENFORCEMENT.md.
+
 ## 2026-10-31 — v0.24.151 release candidate
 
 - The wake-consumer reload regression now waits for the same controller thread's
