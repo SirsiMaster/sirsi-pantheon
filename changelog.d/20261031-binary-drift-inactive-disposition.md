@@ -14,8 +14,12 @@ changes so older continuations are refused and can be refreshed. The
 confirmation scan keeps the existing three-second observation ceiling;
 cancellation or deadline expiry does not append a disposition.
 
+Paged history candidate materialization now carries the frozen System One
+source count from its selected link reference, matching the bounded history
+projection contract.
+
 Diagnostic relief copy also distinguishes historical `Jetsam Events (7d)`
 counts from current RAM, swap, and top-memory readings. Current readings make no
 promise of immediate memory reclamation and direct the operator to recheck.
 
-Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/TRACEABILITY_MATRIX.md`, `internal/maat/binary_drift_disposition.go`, `internal/maat/casebook/casebook.go`, `macapp/Sources/SirsiMenubar/MaatCasebookView.swift`, `macapp/Sources/SirsiMenubar/Views.swift`.
+Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/TRACEABILITY_MATRIX.md`, `internal/maat/binary_drift_disposition.go`, `internal/maat/history_prefix_unix.go`, `internal/maat/history_prefix_test.go`, `internal/maat/casebook/casebook.go`, `macapp/Sources/SirsiMenubar/MaatCasebookView.swift`, `macapp/Sources/SirsiMenubar/Views.swift`.

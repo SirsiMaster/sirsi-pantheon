@@ -585,7 +585,7 @@ func materializeCapturedHistory(state *historyCursor, query HistoryQuery, page *
 		if query.MatchState != nil && !query.MatchState(decision, matchState) {
 			return ErrHistorySnapshotChanged
 		}
-		page.Candidates = append(page.Candidates, HistoryCandidate{Decision: decision, Offset: ref.Order.Offset, SystemOneSourceCount: sourceCount})
+		page.Candidates = append(page.Candidates, HistoryCandidate{Decision: decision, Offset: ref.Order.Offset, SystemOneSourceCount: link.SystemOneSourceCount})
 	}
 	offsets := make([]int64, 0, len(acceptances))
 	for offset := range acceptances {
