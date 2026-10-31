@@ -141,86 +141,28 @@ func TestOpenJournalMutationLockAtPropagatesCreateFailure(t *testing.T) {
 	}
 }
 
-func TestOpenJournalMutationLockAtPropagatesExistingOpenFailure(t *testing.T) {
-	parentFD, _ := journalMutationLockTestParent(t)
-	calls := 0
-	fd, err := openJournalMutationLockAt(parentFD, ".decisions.jsonl.lock", func(_ int, _ string, flags int, _ uint32) (int, error) {
-		calls++
-		if calls == 1 {
-			if flags&unix.O_EXCL == 0 || flags&unix.O_CREAT == 0 {
-				t.Fatalf("first open flags %#x lack exclusive create", flags)
+func TestOpenJournalMutationLockAtPropagatesExistingOpenErrors(t *testing.T) {
+	for _, openErr := range []error{unix.EACCES, unix.ENOENT} {
+		t.Run(openErr.Error(), func(t *testing.T) {
+			parentFD, _ := journalMutationLockTestParent(t)
+			calls := 0
+			fd, err := openJournalMutationLockAt(parentFD, ".decisions.jsonl.lock", func(_ int, _ string, flags int, _ uint32) (int, error) {
+				calls++
+				if calls == 1 {
+					if flags&unix.O_EXCL == 0 || flags&unix.O_CREAT == 0 {
+						t.Fatalf("first open flags %#x lack exclusive create", flags)
+					}
+					return -1, unix.EEXIST
+				}
+				if flags&(unix.O_EXCL|unix.O_CREAT) != 0 {
+					t.Fatalf("fallback flags %#x still create", flags)
+				}
+				return -1, openErr
+			})
+			if fd != -1 || !errors.Is(err, openErr) || calls != 2 {
+				t.Fatalf("existing-open refusal = fd %d err %v calls %d, want preserved %v after two calls", fd, err, calls, openErr)
 			}
-			return -1, unix.EEXIST
-		}
-		if flags&(unix.O_EXCL|unix.O_CREAT) != 0 {
-			t.Fatalf("fallback flags %#x still create", flags)
-		}
-		return -1, unix.EACCES
-	})
-	if fd != -1 || !errors.Is(err, unix.EACCES) || calls != 2 {
-		t.Fatalf("existing-open refusal = fd %d err %v calls %d, want preserved EACCES after two calls", fd, err, calls)
-	}
-}
-
-func TestOpenJournalMutationLockAtRetriesOnlyVanishedNamedLeaf(t *testing.T) {
-	parentFD, _ := journalMutationLockTestParent(t)
-	name := ".decisions.jsonl.lock"
-	createFlags := unix.O_RDWR | unix.O_NOFOLLOW | unix.O_CLOEXEC | unix.O_CREAT | unix.O_EXCL
-	openFlags := unix.O_RDWR | unix.O_NOFOLLOW | unix.O_CLOEXEC
-	calls := 0
-	fd, err := openJournalMutationLockAt(parentFD, name, func(dirfd int, gotName string, flags int, mode uint32) (int, error) {
-		calls++
-		if dirfd != parentFD || gotName != name {
-			t.Fatalf("open args = dirfd %d name %q", dirfd, gotName)
-		}
-		switch calls {
-		case 1:
-			if flags != createFlags || mode != 0o600 {
-				t.Fatalf("first create args = flags %#x mode %#o", flags, mode)
-			}
-			return -1, unix.EEXIST
-		case 2:
-			if flags != openFlags || mode != 0 {
-				t.Fatalf("existing open args = flags %#x mode %#o", flags, mode)
-			}
-			return -1, unix.ENOENT // The named leaf vanished after EEXIST.
-		case 3:
-			if flags != createFlags || mode != 0o600 {
-				t.Fatalf("bounded create args = flags %#x mode %#o", flags, mode)
-			}
-			return unix.Openat(dirfd, gotName, flags, mode)
-		default:
-			t.Fatalf("unexpected openat call %d", calls)
-			return -1, unix.EIO
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unix.Close(fd)
-	if calls != 3 {
-		t.Fatalf("create/open calls = %d, want 3", calls)
-	}
-}
-
-func TestOpenJournalMutationLockAtBoundsRepeatedNamedLeafDisappearance(t *testing.T) {
-	parentFD, _ := journalMutationLockTestParent(t)
-	calls := 0
-	fd, err := openJournalMutationLockAt(parentFD, ".decisions.jsonl.lock", func(_ int, _ string, flags int, _ uint32) (int, error) {
-		calls++
-		if calls%2 == 1 {
-			if flags&unix.O_EXCL == 0 || flags&unix.O_CREAT == 0 {
-				t.Fatalf("create flags %#x lack exclusivity", flags)
-			}
-			return -1, unix.EEXIST
-		}
-		if flags&(unix.O_EXCL|unix.O_CREAT) != 0 {
-			t.Fatalf("fallback flags %#x still create", flags)
-		}
-		return -1, unix.ENOENT
-	})
-	if fd != -1 || !errors.Is(err, unix.ENOENT) || calls != 6 {
-		t.Fatalf("repeated leaf disappearance = fd %d err %v calls %d, want bounded ENOENT after 6 calls", fd, err, calls)
+		})
 	}
 }
 
@@ -237,6 +179,52 @@ func TestOpenJournalMutationLockAtRefusesSymlink(t *testing.T) {
 	}
 	if !errors.Is(err, unix.ELOOP) {
 		t.Fatalf("symlink refusal = %v, want ELOOP", err)
+	}
+}
+
+func TestJournalMutationLockRefusesHardlinkedLeafBeforeCallback(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "decisions.jsonl")
+	lockPath := filepath.Join(root, ".decisions.jsonl.lock")
+	if err := os.WriteFile(lockPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(lockPath, lockPath+".alias"); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	err := withJournalMutationLock(path, func() error {
+		called = true
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "owned private singly-linked regular file") {
+		t.Fatalf("hardlinked mutation lock error = %v, want identity refusal", err)
+	}
+	if called {
+		t.Fatal("callback ran with hardlinked mutation lock")
+	}
+}
+
+func TestJournalMutationLockRefusesPublicModeLeafBeforeCallback(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "decisions.jsonl")
+	lockPath := filepath.Join(root, ".decisions.jsonl.lock")
+	if err := os.WriteFile(lockPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(lockPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	err := withJournalMutationLock(path, func() error {
+		called = true
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "owned private singly-linked regular file") {
+		t.Fatalf("public-mode mutation lock error = %v, want identity refusal", err)
+	}
+	if called {
+		t.Fatal("callback ran with public-mode mutation lock")
 	}
 }
 

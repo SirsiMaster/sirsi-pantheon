@@ -68,6 +68,13 @@ func withJournalMutationLock(path string, fn func() error) error {
 		return fmt.Errorf("maat decision journal: open mutation lock: %w", err)
 	}
 	defer unix.Close(lockFD)
+	lockIdentity, err := fstatJournal(lockFD)
+	if err != nil {
+		return fmt.Errorf("maat decision journal: inspect mutation lock: %w", err)
+	}
+	if !isPrivateRegular(lockIdentity) || lockIdentity.uid != uint32(os.Geteuid()) {
+		return fmt.Errorf("maat decision journal: mutation lock is not an owned private singly-linked regular file")
+	}
 	if err := unix.Flock(lockFD, unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return fmt.Errorf("maat decision journal: another local write or repair is in progress; retry after it finishes")
 	}
@@ -76,30 +83,18 @@ func withJournalMutationLock(path string, fn func() error) error {
 }
 
 // openJournalMutationLockAt avoids Darwin's concurrent openat(O_CREAT) without
-// O_EXCL first-create failure. Only EEXIST transitions to opening the existing
-// named leaf without creation; only ENOENT from that open permits another
-// bounded exclusive-create attempt, for a leaf removed between the two calls.
+// O_EXCL first-create failure. Only EEXIST transitions to one open of the
+// existing named leaf without creation. Every other error is returned as-is.
 func openJournalMutationLockAt(parentFD int, name string, openat func(int, string, int, uint32) (int, error)) (int, error) {
 	flags := unix.O_RDWR | unix.O_NOFOLLOW | unix.O_CLOEXEC
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		fd, err := openat(parentFD, name, flags|unix.O_CREAT|unix.O_EXCL, 0o600)
-		if err == nil {
-			return fd, nil
-		}
-		if !errors.Is(err, unix.EEXIST) {
-			return -1, err
-		}
-		fd, err = openat(parentFD, name, flags, 0)
-		if err == nil {
-			return fd, nil
-		}
-		if !errors.Is(err, unix.ENOENT) {
-			return -1, err
-		}
-		lastErr = err
+	fd, err := openat(parentFD, name, flags|unix.O_CREAT|unix.O_EXCL, 0o600)
+	if err == nil {
+		return fd, err
 	}
-	return -1, fmt.Errorf("journal lock leaf repeatedly disappeared during create/open: %w", lastErr)
+	if !errors.Is(err, unix.EEXIST) {
+		return -1, err
+	}
+	return openat(parentFD, name, flags, 0)
 }
 
 func repairInvalidRecords(j *FileDecisionJournal) (JournalRepairReceipt, error) {
