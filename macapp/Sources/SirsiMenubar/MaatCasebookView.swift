@@ -3050,10 +3050,12 @@ private struct MaatCaseDetailView: View {
         guard let action = entry.nextAction else { return }
         guard action.kind != "owner_acceptance" || !confirmedNote.isEmpty else { return }
         let key = operationKey
-        let priorIntent = operations.record(for: key)?.intent
-        let intent: MaatOperationIntent = recordBinaryDriftInactive ? .inactiveDisposition
-            : (priorIntent ?? (action.kind == "maat_repair" && action.actionID == "binary-drift" ? .binaryDriftUpdater : .standard))
-        guard operations.begin(key, intent: intent) else { recordBinaryDriftInactive = false; return }
+        let selection = MaatConfirmedResolutionSelection(
+            inactiveDisposition: recordBinaryDriftInactive,
+            actionKind: action.kind,
+            actionID: action.actionID
+        )
+        guard operations.begin(key, intent: selection.operationIntent) else { recordBinaryDriftInactive = false; return }
         guard let generation = operations.record(for: key)?.generation else { recordBinaryDriftInactive = false; return }
 
         let read = await MaatOperationPreflight.readCompleteExactHistory(evidence: entry.evidence,
@@ -3088,7 +3090,7 @@ private struct MaatCaseDetailView: View {
 
         operations.markRunning(key)
         let result: CommandResult?
-        if recordBinaryDriftInactive {
+        if selection == .inactiveDisposition {
             recordBinaryDriftInactive = false
             guard !Task.isCancelled else {
                 operations.rejectPreflight(key, guidance: "The exact history read was cancelled. No Ma'at action ran; review again before retrying.")
@@ -3116,6 +3118,10 @@ private struct MaatCaseDetailView: View {
         }
         if action.kind == "maat_repair" {
             if action.actionID == "binary-drift" {
+                guard selection == .binaryDriftUpdater else {
+                    operations.rejectPreflight(key, guidance: "Choose and confirm the current binary-drift action again before continuing.")
+                    return
+                }
                 guard let preview = binaryDriftPreview, preview.caseEvidence == action.evidence else {
                     operations.rejectPreflight(key, guidance: "The updater preview is missing or belongs to another case. Refresh and review a new preview before confirming.")
                     return

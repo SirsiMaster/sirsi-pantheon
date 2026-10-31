@@ -281,6 +281,28 @@ enum MaatOperationIntent: Equatable {
     case inactiveDisposition
 }
 
+enum MaatConfirmedResolutionSelection: Equatable {
+    case standard
+    case binaryDriftUpdater
+    case inactiveDisposition
+
+    init(inactiveDisposition: Bool, actionKind: String, actionID: String) {
+        guard actionKind == "maat_repair", actionID == "binary-drift" else {
+            self = .standard
+            return
+        }
+        self = inactiveDisposition ? .inactiveDisposition : .binaryDriftUpdater
+    }
+
+    var operationIntent: MaatOperationIntent {
+        switch self {
+        case .standard: return .standard
+        case .binaryDriftUpdater: return .binaryDriftUpdater
+        case .inactiveDisposition: return .inactiveDisposition
+        }
+    }
+}
+
 struct MaatOperationProgress: Equatable {
     let title: String
     let detail: String

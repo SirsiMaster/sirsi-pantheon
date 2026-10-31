@@ -22,7 +22,9 @@ own progress description across detail-view replacement and do not show
 updater timing. History qualification now also resolves its final short match
 batch at end-of-file, preserving exact-source results in real paged journal
 queries. Its inert repair-link fixtures also satisfy the journal’s required
-`Assessed` field, preserving strict decision validation.
+`Assessed` field, preserving strict decision validation. Confirmed Casebook
+selection now controls both retained operation intent and binary-drift dispatch,
+including after a refused inactive disposition is freshly reviewed for update.
 
 Diagnostic relief copy also distinguishes historical `Jetsam Events (7d)`
 counts from current RAM, swap, and top-memory readings. Current readings make no
