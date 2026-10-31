@@ -110,8 +110,8 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	pinned := map[string]string{
 		"cmd/sirsi/update.go":                  "6afdb9391a36adf4d1ca46d630bdeaa863f04002c4923ece204e41dafef09567",
 		"cmd/sirsi/update_app_darwin.go":       "bf03bf0ebba9c49b65382ecbaa2f0e35dd38f773a56722e2ea54edba77fcfa0b",
-		"scripts/build-dmg.sh":                 "a5227604c15b5372150e0496858028f54f8d599c025d61fbf5a07abfc5c0f6b6",
-		"scripts/build-pkg.sh":                 "115216a47d5790a5a3492ec6c714e0ea3452e7ab7fb8cbe88eb2ca3a133102f3",
+		"scripts/build-dmg.sh":                 "6c1abe233814cd7b840c1e8eba51d3ff5a10b571dcaeec1201f41365fbdb8065",
+		"scripts/build-pkg.sh":                 "5d327d91596a9efb4b93436cc37ac02e90b850f0192a64f63a8a40572a0e55c3",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
 		".github/workflows/release.yml":        "c5ed5de422773ac81f134a7bf5fe1b5062927e0dc17c863b9e164c425131db84",
 		"tools/signing/sirsi-sign":             "95db0601b45c56604e77b4b1d8ef6ecca2bbc165570889e9ec46d63b16288605",

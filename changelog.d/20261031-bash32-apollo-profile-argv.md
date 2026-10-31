@@ -4,6 +4,9 @@
   pair in both DMG and PKG builders, then append the profile pair only when a
   profile is present. Remove the empty optional array that caused Bash 3.2
   nounset to abort disabled-profile DMG builds.
+- Deliberately refresh Ma’at release-preflight provenance hashes for both
+  builder files; this keeps their exact reviewed Bash 3.2 argv correction
+  pinned without changing any signing, keychain, or contract checks.
 - Add a regression to the existing macOS artifact-contract suite. It extracts
   the production argument blocks and first inventory commands from each
   builder, runs them under `/bin/bash` 3.2 against an owned recording CLI, and
