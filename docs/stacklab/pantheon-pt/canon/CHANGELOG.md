@@ -2,6 +2,14 @@
 
 ## 2026-10-31 — v0.24.150 release candidate
 
+- test(core): make Apollo inventory fixture modes umask-independent
+- Set explicit modes on the generated signature directory, CodeResources file,
+  and Apollo profile in the two positive inventory fixtures. A private caller
+  umask can no longer turn these fixtures into unintended negative cases; product
+  mode validation and all existing assertions remain unchanged.
+- Refs: cmd/sirsi-package-inventory/main_test.go;
+  internal/packageinventory/inventory_test.go; scripts/artifact_modes.py;
+  scripts/PACKAGING.md; ADR-032.
 - Carry forward the changes prepared for 0.24.148 and 0.24.149. Both publication
   attempts failed before commercial packages were published; their historical
   entries remain marked failed/unpublished. Source preparation and development
