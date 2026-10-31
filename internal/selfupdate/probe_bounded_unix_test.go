@@ -44,7 +44,9 @@ func TestProbeBinaryContextRejectsIncompleteOrTrailingJSON(t *testing.T) {
 
 func TestProbeBinaryContextRejectsOversizedVersionEnvelope(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "oversized")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n/usr/bin/head -c 65537 /dev/zero\n"), 0o700); err != nil {
+	// printf is a shell builtin, so the 64 KiB + 1-byte fixture does not
+	// spend the production 200 ms probe budget starting an external producer.
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf '%65537s' ''\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := probeBinaryContext(context.Background(), path); err == nil || !strings.Contains(err.Error(), "exceeds its bounded JSON envelope") {
