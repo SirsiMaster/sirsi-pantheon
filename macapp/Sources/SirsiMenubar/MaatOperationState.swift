@@ -311,8 +311,12 @@ struct MaatOperationRecord: Equatable {
             return MaatOperationProgress(title: "Applying the reviewed updater…",
                 detail: "This operation stays locked until the owned updater exits and Ma’at records a fresh verification or an explicit failure. The updater is bounded to two minutes before verification.")
         case .inactiveDisposition:
+            if phase == .preflighting {
+                return MaatOperationProgress(title: "Confirming the exact case…",
+                    detail: "Ma’at is reading retained case history before the fresh binary scan. No updater is run.")
+            }
             return MaatOperationProgress(title: "Rechecking the binary finding…",
-                detail: "No updater is run. Ma’at is checking the current sibling binaries and recording the exact observation.")
+                detail: "Ma’at is checking current sibling binaries and recording the exact observation. No updater is run.")
         }
     }
 }

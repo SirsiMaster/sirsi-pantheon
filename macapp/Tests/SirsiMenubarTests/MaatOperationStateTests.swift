@@ -10,6 +10,8 @@ final class MaatOperationStateTests: XCTestCase {
         let key = MaatOperationKey(case: entry)
         let store = MaatCaseOperationStore()
         XCTAssertTrue(store.begin(key, intent: .inactiveDisposition))
+        XCTAssertEqual(store.record(for: key)?.progress?.title, "Confirming the exact case…")
+        XCTAssertFalse(store.record(for: key)?.progress?.detail.contains("two minutes") == true)
         store.markRunning(key)
 
         // The operation record belongs to the shared store, so a replacement
