@@ -187,7 +187,7 @@ jobs:
               PANTHEON_APOLLO_DIGEST_RECEIPT="$(bash scripts/new-apollo-digest-receipt.sh "$RUNNER_TEMP")"
               export PANTHEON_APOLLO_DIGEST_RECEIPT
               bash scripts/ci-private-sdk.sh scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
-              bash scripts/ci-private-sdk.sh scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app Pantheon.app
+              bash scripts/ci-private-sdk.sh scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app "$GITHUB_WORKSPACE/Pantheon.app"
             '
 
       - name: Stage draft and verify exact signed pair before publication

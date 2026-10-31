@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 
 SPEC = importlib.util.spec_from_file_location("artifact_modes", Path(__file__).with_name("artifact_modes.py"))
@@ -389,6 +390,162 @@ FROZEN_APOLLO_DIGESTS="$1"
         self.assertNotIn("--write-frozen-digests", pkg)
         self.assertNotIn('apollo-input-digests-${VERSION}-${ARCH}.txt', dmg + pkg)
         self.assertIn("PKG requires an existing regular pre-sign digest receipt", pkg)
+
+    def test_release_workflow_passes_absolute_app_path_under_macos_bash_32(self):
+        if sys.platform != "darwin":
+            self.skipTest("the production workflow regression target is macOS /bin/bash 3.2")
+        version = subprocess.run(
+            ["/bin/bash", "-c", 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"'],
+            capture_output=True, text=True, timeout=5, check=True,
+        ).stdout
+        self.assertEqual(version, "3.2", "release workflow must exercise system Bash 3.2")
+
+        workflow = (Path(__file__).resolve().parent.parent / ".github/workflows/release.yml").read_text()
+        step_start = workflow.index("      - name: Build + sign + notarize DMG and PKG (arm64")
+        run_marker = "        run: |\n"
+        start = workflow.index(run_marker, step_start) + len(run_marker)
+        end = workflow.index("\n      - name:", start)
+        run_body = textwrap.dedent(workflow[start:end])
+        app_arg = '--app "$GITHUB_WORKSPACE/Pantheon.app"'
+        self.assertEqual(run_body.count(app_arg), 1)
+
+        def run_fixture(case_name, body):
+            root = self.root / case_name
+            workspace = root / "workspace"
+            scripts = workspace / "scripts"
+            home = root / "home"
+            runner_temp = root / "runner temp"
+            app = workspace / "Pantheon.app"
+            for path in (scripts, home / ".local/bin", runner_temp, app):
+                path.mkdir(parents=True, exist_ok=True)
+            order = root / "order.log"
+
+            (scripts / "new-apollo-digest-receipt.sh").write_text("""#!/bin/bash
+set -euo pipefail
+mkdir -p "$1"
+receipt="$1/workflow fixture receipt.txt"
+printf 'fixture receipt\\n' > "$receipt"
+printf 'receipt-maker\\n' >> "$ORDER_LOG"
+printf '%s\\n' "$receipt"
+""")
+            (scripts / "ci-private-sdk.sh").write_text("""#!/bin/bash
+set -euo pipefail
+builder="$1"
+shift
+printf 'sdk:%s\\n' "$builder" >> "$ORDER_LOG"
+"$builder" "$@"
+""")
+            (scripts / "build-dmg.sh").write_text("""#!/bin/bash
+set -euo pipefail
+printf 'dmg\\n' >> "$ORDER_LOG"
+printf '%s\\n' "$PANTHEON_APOLLO_DIGEST_RECEIPT" > "$FIXTURE_ROOT/dmg.receipt"
+printf '%s\\0' "$@" > "$FIXTURE_ROOT/dmg.argv"
+""")
+            (scripts / "build-pkg.sh").write_text("""#!/bin/bash
+set -euo pipefail
+printf 'pkg\\n' >> "$ORDER_LOG"
+printf '%s\\n' "$PANTHEON_APOLLO_DIGEST_RECEIPT" > "$FIXTURE_ROOT/pkg.receipt"
+printf '%s\\0' "$@" > "$FIXTURE_ROOT/pkg.argv"
+app=''
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --app) app="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+if [[ "$app" != /* ]]; then
+    echo 'canonical input path must be absolute' >&2
+    exit 41
+fi
+[[ -d "$app" ]] || { echo 'fixture app path is missing' >&2; exit 42; }
+""")
+            admission = home / ".local/bin/sirsi-maat-run"
+            admission.write_text("""#!/bin/bash
+set -euo pipefail
+printf 'admission\\n' >> "$ORDER_LOG"
+while [[ $# -gt 0 && "$1" != -- ]]; do shift; done
+[[ $# -gt 0 ]] || exit 43
+shift
+exec "$@"
+""")
+            for path in (
+                scripts / "new-apollo-digest-receipt.sh",
+                scripts / "ci-private-sdk.sh",
+                scripts / "build-dmg.sh",
+                scripts / "build-pkg.sh",
+                admission,
+            ):
+                path.chmod(0o755)
+
+            env = {
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "HOME": str(home),
+                "GITHUB_WORKSPACE": str(workspace),
+                "GITHUB_RUN_ID": "fixture-run",
+                "GITHUB_RUN_ATTEMPT": "1",
+                "RUNNER_TEMP": str(runner_temp),
+                "BUILD_VERSION": "0.24.151-fixture",
+                "DEVELOPER_ID_INSTALLER": "inert-fixture-identity",
+                "PANTHEON_APOLLO_CAPABILITY": "disabled",
+                "ORDER_LOG": str(order),
+                "FIXTURE_ROOT": str(root),
+            }
+            result = subprocess.run(
+                ["/bin/bash", "-euo", "pipefail", "-c", body],
+                cwd=workspace, env=env, stdin=subprocess.DEVNULL,
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+            return root, order, result
+
+        root, order, result = run_fixture("workflow-absolute", run_body)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        receipt = str(root / "runner temp/workflow fixture receipt.txt")
+        self.assertEqual(Path(receipt).read_text(), "fixture receipt\n")
+        self.assertEqual((root / "dmg.receipt").read_text().strip(), receipt)
+        self.assertEqual((root / "pkg.receipt").read_text().strip(), receipt)
+        self.assertEqual(
+            order.read_text().splitlines(),
+            [
+                "admission",
+                "receipt-maker",
+                "sdk:scripts/build-dmg.sh",
+                "dmg",
+                "sdk:scripts/build-pkg.sh",
+                "pkg",
+            ],
+        )
+        dmg_argv = (root / "dmg.argv").read_bytes().split(b"\0")[:-1]
+        self.assertEqual(
+            dmg_argv,
+            [b"--release", b"--version", b"0.24.151-fixture", b"--arch", b"arm64"],
+        )
+        pkg_argv = (root / "pkg.argv").read_bytes().split(b"\0")[:-1]
+        self.assertEqual(
+            pkg_argv,
+            [
+                b"--release", b"--version", b"0.24.151-fixture", b"--arch", b"arm64",
+                b"--app", str(root / "workspace/Pantheon.app").encode(),
+            ],
+        )
+
+        legacy_body = run_body.replace(app_arg, '--app "Pantheon.app"')
+        self.assertNotEqual(legacy_body, run_body)
+        legacy_root, legacy_order, legacy = run_fixture("workflow-relative-control", legacy_body)
+        self.assertEqual(legacy.returncode, 41, legacy.stderr)
+        self.assertIn("canonical input path must be absolute", legacy.stderr)
+        self.assertEqual(
+            legacy_order.read_text().splitlines(),
+            [
+                "admission",
+                "receipt-maker",
+                "sdk:scripts/build-dmg.sh",
+                "dmg",
+                "sdk:scripts/build-pkg.sh",
+                "pkg",
+            ],
+        )
+        legacy_pkg_argv = (legacy_root / "pkg.argv").read_bytes().split(b"\0")[:-1]
+        self.assertEqual(legacy_pkg_argv[-2:], [b"--app", b"Pantheon.app"])
 
     def test_release_apollo_capability_requires_explicit_profile_pairing(self):
         scripts = Path(__file__).resolve().parent

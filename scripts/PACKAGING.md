@@ -21,8 +21,13 @@ make pkg-dev
 # Or directly, selecting once for both producer and consumer:
 receipt="$(bash scripts/new-apollo-digest-receipt.sh "$PWD/bin")"
 PANTHEON_APOLLO_DIGEST_RECEIPT="$receipt" scripts/build-dmg.sh --development --version 0.24.14 --arch arm64
-PANTHEON_APOLLO_DIGEST_RECEIPT="$receipt" scripts/build-pkg.sh --development --version 0.24.14 --arch arm64 --app Pantheon.app
+PANTHEON_APOLLO_DIGEST_RECEIPT="$receipt" scripts/build-pkg.sh --development --version 0.24.14 --arch arm64
 ```
+
+When overriding `--app`, pass its canonical absolute path. The builder's default
+is already an absolute path rooted beside the script. The release workflow passes
+`$GITHUB_WORKSPACE/Pantheon.app`; package inventory deliberately rejects relative
+input paths and retains its no-follow checks.
 
 Output: `bin/SirsiPantheon-VERSION-dev-ARCH.pkg`
 
