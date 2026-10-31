@@ -2,6 +2,9 @@
 
 ## 2026-10-30 — v0.24.148 release candidate
 
+- Add source-lifecycle receipt preview, bounded replay and journal/Casebook observations; preserve unqualified model profiles, the deterministic floor and unauthenticated router attribution.
+- Place lifecycle controls in System One and identify historical calibration as legacy comparison, not verified qualification.
+- Share packaged-engine authority checks across setup and Ma’at, preserving identity checks and the existing token boundary; update lifecycle fixtures, cross-platform tests and Stack Lab recipe inventory.
 - Keep the router staging tag within Cloud Run limits without reducing nonce entropy.
 - Correct model-router source traceability without claiming production or installed qualification.
 - Correct Codex thread-marker identity while preserving registered-agent, host, PID and compare-and-swap checks.
