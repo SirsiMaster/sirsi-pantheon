@@ -1469,7 +1469,7 @@ struct FindingView: View {
                                 ForEach(entries) { e in
                                     HStack(alignment: .firstTextBaseline) {
                                         Text(e.name).sirsiFont(.callout)
-                                            .lineLimit(1).truncationMode(.middle)
+                                            .fixedSize(horizontal: false, vertical: true)
                                         Spacer(minLength: 12)
                                         if let v = e.value {
                                             Text(v).sirsiFont(.callout, design: .monospaced)
