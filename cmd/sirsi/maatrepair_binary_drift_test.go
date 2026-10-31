@@ -456,7 +456,7 @@ func TestMaatBinaryDriftValidationRejectsMalformedTailAfterExactMatch(t *testing
 
 func TestMaatBinaryDriftValidationPreservesMissingHostAndDigestRefusals(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
-		journal, _, evidence := installMaatBinaryDriftFixture(t)
+		journal, evidence, _, _ := installMaatBinaryDriftFixture(t)
 		missing := "maat-system-one:sha256=" + strings.Repeat("c", 64)
 		if missing == evidence {
 			t.Fatal("fixture evidence unexpectedly equals missing reference")
