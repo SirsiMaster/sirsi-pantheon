@@ -355,6 +355,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// retry, not conclude its credentials died (rs-13 outage finding — every
 	// call during a 30 s Postgres outage came back "invalid bearer token").
 	tokenHost, tokenScope, ok, lookupErr := s.hostForBearer(r)
+	tokenScope, observer := splitObserver(tokenScope)
 	if lookupErr != nil {
 		writeErr(w, http.StatusServiceUnavailable, "", "ledger unavailable: "+lookupErr.Error())
 		return
@@ -545,7 +546,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// 6a. lane scope (schema v25): a token confined to listed agents may only call the lane API, as those
 	// agents. Checked on EVERY call including mint, before any ownership or thread rule, and deny-by-default.
 	if tokenScope != nil {
-		if lerr := s.laneScope(tokenScope, sess, name, in); lerr != nil {
+		if lerr := s.laneScope(tokenScope, observer, sess, name, in); lerr != nil {
 			// A refusal is evidence of an attempt to step outside a lane (a cloud sandbox probing, or a compromised
 			// session): record who tried what, best-effort, so the owner can see it in `router audience`.
 			s.logf("lane-scope: REFUSED %s from %s@%s (token host %s): %v", name, sess.Agent, sess.Host, tokenHost, lerr)
@@ -746,7 +747,8 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// readable (liveness is needed to see where a send will land), but the unfiltered row carries each
 	// thread's full continuation payload (ResumePrompt, OwnedOpenItems, …), not just liveness (SSA PR
 	// #1079 review, P1).
-	if tokenScope != nil && name == "ListThreads" && len(results) == 1 {
+	// A read-only observer (the hosted board) is the exception: lane verdicts need every lane's thread.
+	if tokenScope != nil && !observer && name == "ListThreads" && len(results) == 1 {
 		if recs, ok := results[0].Interface().([]ThreadRecord); ok {
 			kept := make([]ThreadRecord, 0, len(recs))
 			for _, r := range recs {
