@@ -76,6 +76,21 @@ func (j *concurrentBinaryDriftJournal) FindByEvidence(kind, evidence string) (ma
 	}
 	return maat.Decision{}, false, nil
 }
+func (j *concurrentBinaryDriftJournal) FindUniqueByEvidence(evidence string) (maat.Decision, int, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	var found maat.Decision
+	matches := 0
+	for _, row := range j.rows {
+		if row.Evidence == evidence {
+			matches++
+			if matches == 1 {
+				found = row
+			}
+		}
+	}
+	return found, matches, nil
+}
 
 func installMaatBinaryDriftFixture(t *testing.T) (*maatTestJournal, string, string, string) {
 	t.Helper()
