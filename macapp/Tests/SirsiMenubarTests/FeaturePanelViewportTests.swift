@@ -225,12 +225,11 @@ final class FeaturePanelViewportTests: XCTestCase {
                   let button = observed.buttons.first(where: { $0.labels.contains("Native SwiftUI AX button control") }) else {
                 return AXOracleResult(available: false, diagnostics: diagnostics + "\nSynthetic Text/Button missing")
             }
-            let actions = button.element.accessibilityActionNames()
-            diagnostics += "\nsynthetic button actions=\(actions)"
-            guard actions.contains(.press) else {
+            guard let accessibility = button.element as? NSAccessibilityProtocol,
+                  accessibility.accessibilityPerformPress() else {
                 return AXOracleResult(available: false, diagnostics: diagnostics + "\nSynthetic button has no press action")
             }
-            button.element.accessibilityPerformAction(.press)
+            diagnostics += "\nsynthetic button press accepted"
             for _ in 0..<40 where callbackCount == 0 { settle(window) }
             guard callbackCount == 1 else {
                 return AXOracleResult(available: false,
@@ -268,11 +267,14 @@ final class FeaturePanelViewportTests: XCTestCase {
             guard visited.insert(ObjectIdentifier(element)).inserted else { continue }
             guard visited.count <= 10_000 else { throw AXFailure.treeTooLarge }
 
-            let role = element.accessibilityAttributeValue(.role) as? String
-            let title = element.accessibilityAttributeValue(.title) as? String
-            let description = element.accessibilityAttributeValue(.description) as? String
-            let value = element.accessibilityAttributeValue(.value) as? String
-            let children = element.accessibilityAttributeValue(.children) as? [Any] ?? []
+            guard let accessibility = element as? NSAccessibilityProtocol else {
+                throw AXFailure.nonAccessibilityElement
+            }
+            let role = accessibility.accessibilityRole()?.rawValue
+            let title = accessibility.accessibilityTitle()
+            let description = accessibility.accessibilityLabel()
+            let value = accessibility.accessibilityValue() as? String
+            let children = accessibility.accessibilityChildren() ?? []
             for text in [title, description, value].compactMap({ $0 }) {
                 snapshot.strings.insert(text)
             }
@@ -295,15 +297,12 @@ final class FeaturePanelViewportTests: XCTestCase {
 
     @MainActor
     private func accessibilityFrame(of element: NSObject) -> NSRect? {
-        guard let position = element.accessibilityAttributeValue(.position) as? NSValue,
-              let size = element.accessibilityAttributeValue(.size) as? NSValue else {
-            return nil
-        }
-        return NSRect(origin: position.pointValue, size: size.sizeValue)
+        (element as? NSAccessibilityProtocol)?.accessibilityFrame()
     }
 
     private enum AXFailure: Error {
         case nonObjectChild
+        case nonAccessibilityElement
         case treeTooLarge
         case hostStateUnavailable
     }

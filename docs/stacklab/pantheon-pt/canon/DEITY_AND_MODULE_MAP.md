@@ -26,7 +26,7 @@ every associated user workflow is complete.
 ## Exact module inventory
 
 [`MODULE_INVENTORY.json`](MODULE_INVENTORY.json) enumerates **103** tracked Go packages and **one** Swift target,
-**1,025** source/data files and **903** test files at the named
+**1,026** source/data files and **904** test files at the named
 snapshot, with file SHA256 values and direct local Go import literals. Nine
 supporting sets enumerate **232** scripts, contracts, configurations, hooks,
 extensions, web assets, workflows and brand files. Tests are named, not claimed

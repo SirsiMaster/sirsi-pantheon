@@ -76,14 +76,14 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
         let prepared = MaatDiagnosticCorrelationFixture.reply(try XCTUnwrap(object["prepared"]))
         let recorded = MaatDiagnosticCorrelationFixture.reply(try XCTUnwrap(object["recorded"]))
         let lookup = MaatDiagnosticCorrelationFixture.reply(try XCTUnwrap(object["lookup"]))
-        let correlation = MaatDiagnosticRecordModel(localHost:{ "fixture-mac" },newRequestID:{ uuid }) { args in
+        let correlation = MaatDiagnosticRecordModel(localHost:{ "fixture-mac" },newRequestID:{ uuid },reader:{ args in
             if args == MaatDiagnosticRecordModel.inspectArguments { return MaatDiagnosticCorrelationFixture.reply(["state":"ready","store_uuid":store]) }
             if args == MaatDiagnosticRecordModel.pendingArguments { return empty }
             if args == MaatDiagnosticRecordModel.requestArguments("prepare",id:key) { return prepared }
             if args == MaatDiagnosticRecordModel.requestArguments("record",id:key,confirm:true) { submissions += 1; return recorded }
             XCTAssertEqual(args,MaatDiagnosticRecordModel.requestArguments("read",id:key))
             return lookup
-        }
+        })
         let model = MaatDiagnosticResolutionModel()
         await model.recordFreshScreen(localHost:"fixture-mac",using:correlation)
         XCTAssertEqual(submissions,1); XCTAssertNotNil(model.screenResult)
@@ -101,14 +101,14 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
         let localHost = "fixture-mac"
         XCTAssertEqual(result.verdict.subject.hostBinding,"sirsi.maat.local-host-sha256.v1")
         XCTAssertNotEqual(result.verdict.subject.repo,localHost)
-        let foreignCorrelation = MaatDiagnosticRecordModel(localHost:{ "foreign-mac" },newRequestID:{ uuid }) { args in
+        let foreignCorrelation = MaatDiagnosticRecordModel(localHost:{ "foreign-mac" },newRequestID:{ uuid },reader:{ args in
             if args == MaatDiagnosticRecordModel.inspectArguments { return MaatDiagnosticCorrelationFixture.reply(["state":"ready","store_uuid":store]) }
             if args == MaatDiagnosticRecordModel.pendingArguments { return empty }
             if args == MaatDiagnosticRecordModel.requestArguments("prepare",id:key) { return prepared }
             if args == MaatDiagnosticRecordModel.requestArguments("record",id:key,confirm:true) { return recorded }
             XCTAssertEqual(args,MaatDiagnosticRecordModel.requestArguments("read",id:key))
             return lookup
-        }
+        })
         let foreign = MaatDiagnosticResolutionModel()
         await foreign.recordFreshScreen(localHost:"foreign-mac",using:foreignCorrelation)
         XCTAssertNil(foreign.screenResult)
@@ -329,7 +329,8 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
         let correlation = fixture.model(), v = try verdict(), nav = Nav()
         let engine = SirsiEngine(maatCaseOperations:MaatCaseOperationStore(diagnosticRecord:correlation))
         var bridge: MaatDiagnosticResolutionView? = MaatDiagnosticResolutionView(engine:engine,origin:originCase(v),finding:v.findings[0])
-        weak var owned = bridge?.model
+        weak var owned: MaatDiagnosticResolutionModel?
+        owned = bridge?.model
         let identity = ObjectIdentifier(try XCTUnwrap(owned))
         nav.push(try XCTUnwrap(bridge)); bridge = nil
         let bridgeID = nav.stack.last?.id

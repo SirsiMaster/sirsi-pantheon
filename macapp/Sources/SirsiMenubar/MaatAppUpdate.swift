@@ -27,7 +27,7 @@ import Foundation
         let generation: UUID
         let maintenanceEpoch: UUID
     }
-    typealias Capture = @MainActor ([String], @escaping @MainActor () -> Bool) async -> CommandExecution
+    typealias Capture = @MainActor ([String], @escaping ProcessLaunchAuthorization) async -> CommandExecution
     let memory: MaatDiagnosticRecordModel
     let recovery: MaatPreparedPreflightRecovery
     let maintenance: LegacyRelayMaintenanceModel

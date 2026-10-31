@@ -25,6 +25,19 @@ MainActor.assumeIsolated {
     case .help:
         print(MenubarCommandParser.usage)
         exit(0)
+    case .versionJSON:
+        do {
+            var response = try NativeVersionProtocol.response(
+                bundleInfo: Bundle.main.infoDictionary ?? [:],
+                executablePath: Bundle.main.executableURL?.resolvingSymlinksInPath().path ?? ""
+            )
+            response.append(0x0A)
+            FileHandle.standardOutput.write(response)
+            exit(0)
+        } catch {
+            FileHandle.standardError.write(Data("SirsiMenubar: stamped version identity unavailable\n".utf8))
+            exit(2)
+        }
     case let .snapshot(directory, width, appearance):
         let colorScheme: ColorScheme = appearance == .light ? .light : .dark
         runSnapshotMode(outDir: directory, width: CGFloat(width), appearance: colorScheme)

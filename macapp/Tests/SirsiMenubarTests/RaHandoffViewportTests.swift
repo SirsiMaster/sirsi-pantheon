@@ -183,16 +183,17 @@ final class RaHandoffViewportTests: XCTestCase {
                   let button = snapshot.buttons.first(where: { $0.label == "Native SwiftUI AX button control" }) else {
                 throw MountedAXFailure.oracleControlsUnavailable
             }
-            let actions = button.element.accessibilityActionNames()
-            guard actions.contains(.press) else {
+            guard let pressable = button.element as? NSAccessibilityProtocol else {
                 throw MountedAXFailure.oraclePressUnavailable
             }
-            button.element.accessibilityPerformAction(.press)
+            guard pressable.accessibilityPerformPress() else {
+                throw MountedAXFailure.oraclePressUnavailable
+            }
             settle(window)
             guard presses == 1 else {
                 throw MountedAXFailure.oraclePressNotObserved(presses)
             }
-            print("RA_HANDOFF_SWIFTUI_AX_ORACLE_PASS \(diagnostics) actions=\(actions) presses=\(presses)")
+            print("RA_HANDOFF_SWIFTUI_AX_ORACLE_PASS \(diagnostics) presses=\(presses)")
         } catch {
             let reason = "UNVERIFIED: independent SwiftUI Text/Button AX oracle unavailable: \(error). \(diagnostics)"
             print("RA_HANDOFF_SWIFTUI_AX_ORACLE_UNAVAILABLE \(reason)")
@@ -224,12 +225,15 @@ final class RaHandoffViewportTests: XCTestCase {
             guard let element = next as? NSObject else { throw MountedAXFailure.nonObjectChild }
             guard visited.insert(ObjectIdentifier(element)).inserted else { continue }
             guard visited.count <= 10_000 else { throw MountedAXFailure.treeTooLarge }
+            guard let accessibility = element as? NSAccessibilityProtocol else {
+                throw MountedAXFailure.nonAccessibilityElement
+            }
 
-            let role = element.accessibilityAttributeValue(.role) as? String
-            let title = element.accessibilityAttributeValue(.title) as? String
-            let label = element.accessibilityAttributeValue(.description) as? String
-            let value = element.accessibilityAttributeValue(.value) as? String
-            let children = element.accessibilityAttributeValue(.children) as? [Any] ?? []
+            let role = accessibility.accessibilityRole()?.rawValue
+            let title = accessibility.accessibilityTitle()
+            let label = accessibility.accessibilityLabel()
+            let value = accessibility.accessibilityValue() as? String
+            let children = accessibility.accessibilityChildren() ?? []
             strings.formUnion([title, label, value].compactMap { $0 })
             if role == NSAccessibility.Role.button.rawValue,
                let name = [title, label].compactMap({ $0 }).first(where: { !$0.isEmpty }) {
@@ -247,13 +251,10 @@ final class RaHandoffViewportTests: XCTestCase {
         )
     }
 
+    @MainActor
     private func accessibilityFrame(of element: NSObject) -> NSRect? {
-        guard let position = element.accessibilityAttributeValue(.position) as? NSValue,
-              let size = element.accessibilityAttributeValue(.size) as? NSValue else {
-            return nil
-        }
-        // AppKit reports AX positions in screen coordinates.
-        return NSRect(origin: position.pointValue, size: size.sizeValue)
+        // AppKit accessibility frames use screen coordinates.
+        (element as? NSAccessibilityProtocol)?.accessibilityFrame()
     }
 
     private struct MountedAXButton {
@@ -270,6 +271,7 @@ final class RaHandoffViewportTests: XCTestCase {
 
     private enum MountedAXFailure: Error {
         case nonObjectChild
+        case nonAccessibilityElement
         case treeTooLarge
         case oracleWindowUnavailable
         case oracleControlsUnavailable

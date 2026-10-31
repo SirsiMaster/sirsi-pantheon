@@ -242,7 +242,7 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
         coordinator.disconnect()
     }
 
-    final class Coordinator {
+    @MainActor final class Coordinator {
         private var position: Binding<CGFloat>
         private var layoutReady: Bool
         private var restoration: MaatRootScrollRestoration
@@ -272,18 +272,20 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
             guard !connectionScheduled else { return }
             connectionScheduled = true
             DispatchQueue.main.async { [weak self, weak probe] in
-                guard let self else { return }
-                self.connectionScheduled = false
-                guard self.active, let scrollView = probe?.enclosingScrollView else { return }
-                self.probeView = probe as? MaatPrimaryScrollProbeView
-                if self.scrollView !== scrollView {
-                    self.probeView?.viewportObservationReady = false
-                    self.removeObservers()
-                    self.scrollView = scrollView
-                    self.observe(scrollView)
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.connectionScheduled = false
+                    guard self.active, let scrollView = probe?.enclosingScrollView else { return }
+                    self.probeView = probe as? MaatPrimaryScrollProbeView
+                    if self.scrollView !== scrollView {
+                        self.probeView?.viewportObservationReady = false
+                        self.removeObservers()
+                        self.scrollView = scrollView
+                        self.observe(scrollView)
+                    }
+                    self.restoration.recordOffset(scrollView.contentView.bounds.origin.y)
+                    self.restoreFromReadyLayout()
                 }
-                self.restoration.recordOffset(scrollView.contentView.bounds.origin.y)
-                self.restoreFromReadyLayout()
             }
         }
 
@@ -311,14 +313,18 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
             clip.postsBoundsChangedNotifications = true
             observers.append(NotificationCenter.default.addObserver(
                 forName: NSView.boundsDidChangeNotification, object: clip, queue: .main
-            ) { [weak self] _ in self?.boundsChanged() })
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.boundsChanged() }
+            })
             if let document = scrollView.documentView {
                 observedDocument = document
                 documentWasPostingFrameChanges = document.postsFrameChangedNotifications
                 document.postsFrameChangedNotifications = true
                 observers.append(NotificationCenter.default.addObserver(
                     forName: NSView.frameDidChangeNotification, object: document, queue: .main
-                ) { [weak self] _ in self?.restoreFromReadyLayout() })
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.restoreFromReadyLayout() }
+                })
             }
         }
 
@@ -2693,6 +2699,25 @@ func maatCasebookHistoryArguments(scope: String, query: String = "", cursor: Str
     return arguments
 }
 
+enum MaatInactiveDispositionFailurePresentation {
+    static func summary(_ capture: CommandExecution) -> String {
+        let reason: String
+        if !capture.complete {
+            reason = "The command did not return a complete receipt; the disposition outcome is unverified."
+        } else if capture.exitCode != 0 {
+            reason = "The command exited with status \(capture.exitCode.map(String.init) ?? "unavailable"); the disposition outcome is unverified."
+        } else {
+            reason = "The returned disposition receipt was invalid or did not match this case; the outcome is unverified."
+        }
+
+        let diagnostic = capture.issue ?? capture.stderr
+        let detail = diagnostic.isEmpty
+            ? "No diagnostic details were returned."
+            : String(SirsiEngine.stripANSI(diagnostic).prefix(1200))
+        return "Ma'at could not confirm the exact no-longer-active disposition. \(reason) \(detail) No repair was performed. Inspect this exact case's retained record and refresh Casebook before any retry."
+    }
+}
+
 private struct MaatCaseDetailView: View {
     @ObservedObject var engine: SirsiEngine
     @ObservedObject var operations: MaatCaseOperationStore
@@ -3350,7 +3375,9 @@ private struct MaatCaseDetailView: View {
             guard capture.complete, capture.exitCode == 0,
                   let receipt = try? JSONDecoder().decode(MaatBinaryDriftInactiveDispositionReceipt.self, from: capture.stdoutData),
                   receipt.isValid(for: action.evidence) else {
-                operations.complete(key, receipt: MaatOperationReceipt(summary: "Ma'at could not confirm the exact no-longer-active disposition. No repair was performed; refresh and review this case.", succeeded: false))
+                operations.complete(key, receipt: MaatOperationReceipt(
+                    summary: MaatInactiveDispositionFailurePresentation.summary(capture), succeeded: false
+                ))
                 return
             }
             binaryDriftInactiveReceipt = receipt

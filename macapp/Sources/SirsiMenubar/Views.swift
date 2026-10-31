@@ -272,9 +272,32 @@ extension View {
 final class Nav: ObservableObject {
     struct Frame: Identifiable { let id = UUID(); let view: AnyView }
     @Published var stack: [Frame] = []
-    func push<V: View>(_ v: V) { stack.append(Frame(view: AnyView(v))) }
-    func pop() { if !stack.isEmpty { stack.removeLast() } }
-    func popToRoot() { stack.removeAll() }
+    private var forwardFrames: [Frame] = []
+    var canGoBack: Bool { !stack.isEmpty }
+    var canGoForward: Bool { !forwardFrames.isEmpty }
+
+    func push<V: View>(_ v: V) {
+        forwardFrames.removeAll()
+        stack.append(Frame(view: AnyView(v)))
+    }
+
+    func pop() {
+        guard let frame = stack.last else { return }
+        forwardFrames.append(frame)
+        stack.removeLast()
+    }
+
+    func forward() {
+        guard let frame = forwardFrames.popLast() else { return }
+        stack.append(frame)
+    }
+
+    func popToRoot() {
+        guard !stack.isEmpty || !forwardFrames.isEmpty else { return }
+        forwardFrames.removeAll()
+        stack = []
+    }
+
     var atRoot: Bool { stack.isEmpty }
 }
 

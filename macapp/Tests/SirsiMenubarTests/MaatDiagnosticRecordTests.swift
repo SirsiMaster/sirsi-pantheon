@@ -54,7 +54,7 @@ import XCTest
             ["state":"uninitialized","journal_readiness":"ready","receipt_recovery_error":"prepared-inspection-unavailable"]
         ] {
             let read=try reply(fields)
-            let model=MaatDiagnosticRecordModel(uid:501){_ in read}
+            let model=MaatDiagnosticRecordModel(uid:501, reader:{_ in read})
             await model.inspect()
             XCTAssertNil(model.approval(.initialize),"\(fields) must not authorize first-use initialization")
         }
@@ -65,11 +65,11 @@ import XCTest
             "journal_integrity":["invalid_count":1,"count_is_lower_bound":true,"issues":[["line":5001,"digest":"sha256:"+String(repeating:"a",count:64),"reason":"required field is missing"]]]],exit:1)
         var calls:[[String]]=[]
         var integrityRefreshes=0
-        let model=MaatDiagnosticRecordModel(uid:501){args in
+        let model=MaatDiagnosticRecordModel(uid:501, reader:{args in
             calls.append(args)
             if args==MaatDiagnosticRecordModel.inspectArguments { return absent }
             return refusal
-        }
+        })
         let view=MaatDiagnosticRecordView(model:model,refresh:{},initializationRefresh:{integrityRefreshes+=1})
         await view.inspect()
         let approval=try XCTUnwrap(model.approval(.initialize))
@@ -249,12 +249,12 @@ import XCTest
             let result = try reply(["schema":"sirsi.maat.diagnostic-record.v1", "id":id, "state":state,
                                     "intent_sha256":id, "decision_evidence":decision, "verdict_sha256":verdictSHA])
             var done = false, effects = 0, refreshes = 0
-            let model = MaatDiagnosticRecordModel(uid:501) { args in
+            let model = MaatDiagnosticRecordModel(uid:501, reader:{ args in
                 if args == MaatDiagnosticRecordModel.inspectArguments { return status }
                 if args == MaatDiagnosticRecordModel.pendingArguments { return done ? noDebt : debt }
                 XCTAssertEqual(args, ["maat","triage","--reconcile-record",self.id,"--confirm","--json"])
                 effects += 1; done = true; return result
-            }
+            })
             let view = MaatDiagnosticRecordView(model:model, refresh:{ refreshes += 1 })
             await view.inspect()
             let approval = try XCTUnwrap(model.approval(.reconcile(id)))
@@ -277,12 +277,12 @@ import XCTest
         let absent = try reply(["state":"uninitialized","journal_readiness":"ready"]), status = try reply(readyStatus), noDebt = try reply(empty)
         let initialized = try reply(["status":"initialized","store_uuid":store,"imported_incidents":false])
         var exists = false, effects = 0
-        let model = MaatDiagnosticRecordModel(uid:501) { args in
+        let model = MaatDiagnosticRecordModel(uid:501, reader:{ args in
             if args == MaatDiagnosticRecordModel.inspectArguments { return exists ? status : absent }
             if args == MaatDiagnosticRecordModel.pendingArguments { return noDebt }
             XCTAssertEqual(args, maatCasebookFailureMemoryArguments(.initialize))
             effects += 1; exists = true; return initialized
-        }
+        })
         var initializedRefreshes=0
         let view = MaatDiagnosticRecordView(model:model, refresh:{},initializationRefresh:{initializedRefreshes+=1})
         await view.inspect(); let approval = try XCTUnwrap(model.approval(.initialize))

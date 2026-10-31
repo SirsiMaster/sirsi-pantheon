@@ -2,6 +2,8 @@ import Foundation
 import Combine
 import Darwin
 
+typealias ProcessLaunchAuthorization = @MainActor @Sendable () -> Bool
+
 // Semantic evidence only; a renewed identical observation may remain valid,
 // but unknown/stale/error observations never authorize execution.
 struct FindingObservationSnapshot: Equatable {
@@ -197,7 +199,7 @@ extension SirsiEngine {
 
     nonisolated static func runCaptured(args: [String], stdin: String? = nil, directory: URL? = nil,
                                        timeout: TimeInterval = 30,
-                                       authorize: @escaping @MainActor () -> Bool = { true }) async -> CommandExecution {
+                                       authorize: @escaping ProcessLaunchAuthorization = { true }) async -> CommandExecution {
         guard let binary = sirsiBinary() else {
             return CommandExecution(launchError: "Pantheon's bundled CLI is missing, linked, or not executable.")
         }
@@ -210,7 +212,7 @@ extension SirsiEngine {
     nonisolated static func captureProcess(executable: String, args: [String], directory: URL? = nil,
         stdin: String? = nil, timeout: TimeInterval = 30, outputLimit: Int = 4 * 1024 * 1024,
         environment: [String: String]? = nil,
-        authorize: @escaping @MainActor () -> Bool = { true }) async -> CommandExecution {
+        authorize: @escaping ProcessLaunchAuthorization = { true }) async -> CommandExecution {
         guard timeout.isFinite, timeout > 0, outputLimit > 0, outputLimit <= 4 * 1024 * 1024,
               (stdin?.utf8.count ?? 0) <= 64 * 1024 else {
             return CommandExecution(launchError: "Invalid bounded capture request.")

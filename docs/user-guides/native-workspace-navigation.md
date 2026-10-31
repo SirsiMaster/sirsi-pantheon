@@ -2,8 +2,11 @@
 
 Each sidebar workspace retains its own drill-down history while Pantheon is
 open. Switching back, or selecting the same workspace again, preserves its
-detail. Back returns one step; the workspace home action clears only the
-active workspace's drill-downs.
+detail. View → Back (Command-[) returns one step; View → Forward (Command-])
+returns to the detail you left. Opening a new detail after Back clears that
+workspace's forward branch. A workspace home action clears both history
+directions for that workspace. The application Home command opens Overview
+and clears Overview's history; other workspaces keep their independent paths.
 
 Restarting restores the last selected workspace, not operations or confirmation
 dialogs. Unknown stored selections recover to Overview. Inactive workspace
@@ -23,3 +26,7 @@ reconciled from the preserved worker patch
 Git object. The current implementation retains the new desktop design and its
 current persistence key, reads the legacy key as a fallback, forwards stack
 changes to both header and detail, and keeps per-frame identity on drill-downs.
+
+## Native version inspection
+
+Pantheon’s native executable supports `version --json` for the local sibling-health inventory. It reports its own stamped app version and executable path without opening another window or menu-bar instance. A missing or malformed native bundle stamp returns an error; it never borrows the adjacent CLI’s version.

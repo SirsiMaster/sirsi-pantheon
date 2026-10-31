@@ -35,6 +35,7 @@ struct PantheonDesktopView: View {
     private var nav: Nav { session.navigation(for: section) }
 
     var body: some View {
+        let openWorkspace: OpenPantheonWorkspaceAction = { workspace in session.select(workspace) }
         HStack(spacing: 0) {
             sidebar.frame(width: 218)
             Rectangle().fill(PantheonTheme.separator).frame(width: 1)
@@ -49,7 +50,7 @@ struct PantheonDesktopView: View {
                 .id(section)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .environmentObject(nav)
-                .environment(\.openPantheonWorkspace, select)
+                .environment(\.openPantheonWorkspace, openWorkspace)
                 .environment(\.openPantheonOwnerActions, {
                     session.open(.maat, detail: OwnerActionsListView(engine: engine))
                 })
@@ -109,7 +110,6 @@ struct PantheonDesktopView: View {
             menuBridge?.presentProjectChooser = { projectChooserPresented = true }
             menuBridge?.actionHandlers = [
                 PantheonMenuAction.search: { searchFocused = true },
-                PantheonMenuAction.back: { nav.pop() },
                 PantheonMenuAction.home: {
                     session.select(.command)
                     session.navigation(for: .command).popToRoot()
@@ -119,17 +119,26 @@ struct PantheonDesktopView: View {
                     session.navigation(for: .library).popToRoot()
                 }
             ]
-            menuBridge?.canGoBack = !nav.atRoot
+            menuBridge?.bindWorkspaceNavigation(session: session)
+            syncMenuNavigationAvailability()
         }
         .onDisappear {
             menuBridge?.tearDown()
         }
-        .onChange(of: nav.stack.count) { _ in
-            menuBridge?.canGoBack = !nav.atRoot
+        .onChange(of: nav.canGoBack) { _ in
+            syncMenuNavigationAvailability()
+        }
+        .onChange(of: nav.canGoForward) { _ in
+            syncMenuNavigationAvailability()
         }
         .onChange(of: section) { _ in
-            menuBridge?.canGoBack = !nav.atRoot
+            syncMenuNavigationAvailability()
         }
+    }
+
+    private func syncMenuNavigationAvailability() {
+        menuBridge?.canGoBack = nav.canGoBack
+        menuBridge?.canGoForward = nav.canGoForward
     }
 
     private var sidebar: some View {
@@ -328,19 +337,22 @@ enum PantheonWorkspace: String, CaseIterable, Identifiable {
     static func matching(_ search: String) -> [PantheonWorkspace] { allCases.filter { $0.matches(search) } }
 }
 
+typealias OpenPantheonWorkspaceAction = @MainActor @Sendable (PantheonWorkspace) -> Void
+typealias OpenPantheonOwnerActionsAction = @MainActor @Sendable () -> Void
+
 private struct OpenPantheonWorkspaceKey: EnvironmentKey {
-    static let defaultValue: ((PantheonWorkspace) -> Void)? = nil
+    static let defaultValue: OpenPantheonWorkspaceAction? = nil
 }
 
 private struct OpenPantheonOwnerActionsKey: EnvironmentKey {
-    static let defaultValue: (() -> Void)? = nil
+    static let defaultValue: OpenPantheonOwnerActionsAction? = nil
 }
 extension EnvironmentValues {
-    var openPantheonOwnerActions: (() -> Void)? {
+    var openPantheonOwnerActions: OpenPantheonOwnerActionsAction? {
         get { self[OpenPantheonOwnerActionsKey.self] }
         set { self[OpenPantheonOwnerActionsKey.self] = newValue }
     }
-    var openPantheonWorkspace: ((PantheonWorkspace) -> Void)? {
+    var openPantheonWorkspace: OpenPantheonWorkspaceAction? {
         get { self[OpenPantheonWorkspaceKey.self] }
         set { self[OpenPantheonWorkspaceKey.self] = newValue }
     }

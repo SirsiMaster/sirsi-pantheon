@@ -3,7 +3,7 @@ import Combine
 
 // UI identity only: no hidden workspace views, polling tasks or persisted
 // operations. Adapted from the separately preserved worker navigation patch.
-final class PantheonWorkspaceSession: ObservableObject {
+@MainActor final class PantheonWorkspaceSession: ObservableObject {
     static let selectionKey = "pantheon.workspace"
     private let defaults: UserDefaults
     private let stacks: [PantheonWorkspace: Nav]
@@ -43,7 +43,8 @@ final class PantheonWorkspaceSession: ObservableObject {
     func navigation(for workspace: PantheonWorkspace) -> Nav { stacks[workspace]! }
 
     func maatPrimaryRootScrollPosition(for navigation: Nav) -> Binding<CGFloat>? {
-        guard section == .maat, navigation === stacks[.maat], navigation.atRoot else { return nil }
+        let navigationID = ObjectIdentifier(navigation)
+        guard section == .maat, navigationID == ObjectIdentifier(stacks[.maat]!), navigation.atRoot else { return nil }
         let ownerID = maatPrimaryScrollOwnerID
         return Binding(
             get: { self.maatPrimaryRootScrollOffset },
@@ -53,8 +54,8 @@ final class PantheonWorkspaceSession: ObservableObject {
                 // write time so that late unmount offsets cannot replace the
                 // retained root position or write from a pushed detail.
                 guard self.section == .maat,
-                      navigation === self.stacks[.maat],
-                      navigation.atRoot,
+                      ObjectIdentifier(self.stacks[.maat]!) == navigationID,
+                      self.stacks[.maat]!.atRoot,
                       self.maatPrimaryScrollOwnerID == ownerID,
                       value.isFinite else { return }
                 self.maatPrimaryRootScrollOffset = max(0, value)

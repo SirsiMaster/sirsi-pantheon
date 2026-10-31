@@ -100,6 +100,22 @@ final class MaatSourceImportTests: XCTestCase {
         XCTAssertNotNil(model.approval, "Provider names must not stand in for source contract/qualification")
     }
 
+    @MainActor func testFailedPreviewStripsANSIBeforeDisplayTruncationAndPreservesCapture() async throws {
+        let model = model()
+        let diagnostic = "expected head mismatch; correct --expect-head"
+        let padding = String(repeating: "x", count: 1197 - diagnostic.count)
+        let rawStderr = Data((diagnostic + padding + "\u{001B}[31m" + "later detail" + "\u{001B}[0m").utf8)
+        let captured = CommandExecution(stderr: rawStderr, exitCode: 1, childState: .exitConfirmed)
+
+        await model.review { _ in captured }
+
+        XCTAssertTrue(model.error?.contains(diagnostic) == true)
+        XCTAssertFalse(model.error?.contains("\u{001B}") == true)
+        XCTAssertEqual(captured.stderrData, rawStderr, "Display cleanup must not rewrite captured command bytes")
+        XCTAssertNil(model.receipt, "A failed preview is not a recording receipt")
+        XCTAssertNil(model.approval)
+    }
+
     @MainActor func testValidationErrorAllowsCorrectedHeadOrDifferentFile() async throws {
         let model = model(), good = try response()
         let failure = CommandExecution(stderr: Data("expected head mismatch; correct --expect-head".utf8), exitCode: 1, childState: .exitConfirmed)

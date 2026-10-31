@@ -247,6 +247,65 @@ func TestRelayObservationProducerIdentityNotGroupOrSelfClaim(t *testing.T) {
 	}
 }
 
+func TestRelayObservationReadPolicyRootDeclaredServiceProfile(t *testing.T) {
+	const servicePath = "/private/var/sirsipantheon/relay"
+	lookupUser := func(name string) (*user.User, error) {
+		if name != "_sirsipantheon" {
+			return nil, os.ErrNotExist
+		}
+		return &user.User{Uid: "502"}, nil
+	}
+	lookupGroup := func(name string) (*user.Group, error) {
+		switch name {
+		case "service-trust":
+			return &user.Group{Gid: "501"}, nil
+		case "wrong-trust":
+			return &user.Group{Gid: "503"}, nil
+		case "missing-trust":
+			return nil, os.ErrNotExist
+		default:
+			return nil, os.ErrNotExist
+		}
+	}
+	serviceRoot := unix.Stat_t{Mode: unix.S_IFDIR | 0o770, Uid: 502, Gid: 501}
+	protectedParent := unix.Stat_t{Mode: unix.S_IFDIR | 0o750, Uid: 502, Gid: 501}
+	wantService := RelayObservationFilePolicy{UID: 502, GID: 501, Mode: 0o640}
+	privateRoot := unix.Stat_t{Mode: unix.S_IFDIR | 0o700, Uid: 501, Gid: 20}
+	privateParent := unix.Stat_t{Mode: unix.S_IFDIR | 0o755, Uid: 0, Gid: 0}
+	wantPrivate := RelayObservationFilePolicy{UID: 501, GID: 20, Mode: 0o600}
+
+	for _, tc := range []struct {
+		name, path, group string
+		root, parent      unix.Stat_t
+		self              int
+		want              RelayObservationFilePolicy
+		bad               bool
+	}{
+		{"service-root-declares-reader-gid", servicePath, "", serviceRoot, protectedParent, 501, wantService, false},
+		{"explicit-matching-group", servicePath, "service-trust", serviceRoot, protectedParent, 501, wantService, false},
+		{"explicit-wrong-group-does-not-fallback", servicePath, "wrong-trust", serviceRoot, protectedParent, 501, RelayObservationFilePolicy{}, true},
+		{"explicit-missing-group-does-not-fallback", servicePath, "missing-trust", serviceRoot, protectedParent, 501, RelayObservationFilePolicy{}, true},
+		{"service-root-owner-must-match", servicePath, "", unix.Stat_t{Mode: unix.S_IFDIR | 0o770, Uid: 503, Gid: 501}, protectedParent, 501, RelayObservationFilePolicy{}, true},
+		{"service-parent-owner-must-match", servicePath, "", serviceRoot, unix.Stat_t{Mode: unix.S_IFDIR | 0o750, Uid: 501, Gid: 501}, 501, RelayObservationFilePolicy{}, true},
+		{"protected-parent-must-not-be-writable", servicePath, "", serviceRoot, unix.Stat_t{Mode: unix.S_IFDIR | 0o777, Uid: 502, Gid: 501}, 501, RelayObservationFilePolicy{}, true},
+		{"service-root-mode-is-exact", servicePath, "", unix.Stat_t{Mode: unix.S_IFDIR | 0o775, Uid: 502, Gid: 501}, protectedParent, 501, RelayObservationFilePolicy{}, true},
+		{"service-root-special-bits-refuse", servicePath, "", unix.Stat_t{Mode: unix.S_IFDIR | 0o1770, Uid: 502, Gid: 501}, protectedParent, 501, RelayObservationFilePolicy{}, true},
+		{"foreign-path-does-not-inherit-policy", "/other/relay", "", serviceRoot, protectedParent, 501, RelayObservationFilePolicy{}, true},
+		{"same-user-private-root-unchanged", "/owned/relay", "", privateRoot, privateParent, 501, wantPrivate, false},
+		{"same-user-group-root-outside-profile-refuses", "/owned/relay", "", unix.Stat_t{Mode: unix.S_IFDIR | 0o770, Uid: 501, Gid: 20}, privateParent, 501, RelayObservationFilePolicy{}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			policy, err := relayObservationReadPolicy(tc.path, tc.group, tc.root, tc.parent, tc.self, lookupUser, lookupGroup)
+			if (err != nil) != tc.bad {
+				t.Fatalf("policy=%+v err=%v; refusal=%v", policy, err, tc.bad)
+			}
+			if !tc.bad && policy != tc.want {
+				t.Fatalf("policy=%+v want=%+v", policy, tc.want)
+			}
+		})
+	}
+}
+
 func TestRelayObservationExactDeclaredGroupAndNoExistingPermissionChange(t *testing.T) {
 	r := relayObservationTestRoot(t)
 	if err := os.Chmod(r.path, 0770); err != nil {

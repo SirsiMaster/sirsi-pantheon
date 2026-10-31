@@ -1418,7 +1418,7 @@ final class SirsiEngine: ObservableObject {
     }
 
     func emptyTrash(_ approval: TrashApproval,
-                    authorize: @escaping @MainActor () -> Bool) async -> CommandExecution {
+                    authorize: @escaping ProcessLaunchAuthorization) async -> CommandExecution {
         busy = true
         defer { busy = false }
         return await Self.runCaptured(args: approval.args, stdin: approval.stdin, authorize: authorize)
