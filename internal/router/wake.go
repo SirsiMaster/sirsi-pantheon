@@ -1303,6 +1303,9 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			// zero value would make madeProgress(0, depth) false and march a
 			// healthy lane toward quarantine after ten restarts.
 			run.depthAtDispatch = -1
+			// Its exit must be scored and refreshed like any dispatched run's,
+			// never replaced in the same tick under the loaded configuration.
+			scored = false
 			log.Printf("wake-loop %s: adopted already-running consumer pid %d from durable marker (loop restarted)",
 				agentID, adopted.pid)
 		}

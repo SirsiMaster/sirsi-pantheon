@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -358,6 +359,59 @@ func TestRestartDoesNotDuplicateAStillRunningConsumer(t *testing.T) {
 	if n != 1 {
 		t.Errorf("restart dispatched %d consumers total — want exactly 1 "+
 			"(the restarted loop must adopt the still-running consumer, not duplicate it)", n)
+	}
+}
+
+// #1278 review: an ADOPTED consumer's exit is scored like a dispatched one's.
+// Adoption used to leave `scored` true, so the exit skipped the progress
+// scoring and could be replaced in the same tick under the loaded config.
+func TestAdoptedConsumerExitIsScoredBeforeReplacement(t *testing.T) {
+	SetLoadAvgFn(func() (float64, bool) { return 0.1, true })
+	defer SetLoadAvgFn(nil)
+	hermeticDispatchDir(t)
+
+	log := filepath.Join(t.TempDir(), "fired.txt")
+	// The replacement outlives the test, so the only scored exit is the adopted one.
+	script := recordingConsumer(t, log, 5*time.Second)
+	root := wakeTestRoot(t, AgentConfig{
+		ID:       "adopt-agent",
+		Type:     "worker",
+		Consumer: ConsumerConfig{Command: []string{script, consumerAgentPlaceholder}},
+	})
+	sendItem(t, root, "adopt-agent", "work")
+
+	// A previous loop's still-running consumer, recorded in the durable marker.
+	prev := exec.Command("sleep", "1")
+	if err := prev.Start(); err != nil {
+		t.Fatalf("start adopted consumer: %v", err)
+	}
+	go func() { _ = prev.Wait() }()
+	writeConsumerPIDFile(root, "adopt-agent", prev.Process.Pid, getPIDStartFn()(prev.Process.Pid))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- RunWakeLoop(ctx, root, "adopt-agent", 40*time.Millisecond) }()
+
+	mustAwaitConsumerLines(t, log, 1) // replaced only after the adopted run exited
+	var outcome string
+	deadline := time.Now().Add(3 * time.Second)
+	for outcome == "" && time.Now().Before(deadline) {
+		if reg, err := LoadThreadRegistry(root); err == nil {
+			for _, row := range reg.Threads {
+				if row.AgentID == "adopt-agent" && row.Lane != nil && row.Lane.LastOutcome != "" {
+					outcome = string(row.Lane.LastOutcome)
+				}
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunWakeLoop: %v", err)
+	}
+	if outcome != string(OutcomeOK) {
+		t.Fatalf("adopted consumer exit was not scored before replacement: lane outcome %q, want %q", outcome, OutcomeOK)
 	}
 }
 
