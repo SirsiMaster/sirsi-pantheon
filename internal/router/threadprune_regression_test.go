@@ -67,7 +67,7 @@ func TestStoreOnlySeededAndN2ProducedPruneFencesSurviveRegistration(t *testing.T
 	if err := SaveThreadRegistry(root, stale); !errors.Is(err, ErrLostLifecycleFence) {
 		t.Fatalf("stale dirty baseline did not lose seeded fence: %v", err)
 	}
-	visible, err = LoadThreadRegistry(root)
+	visible, err := LoadThreadRegistry(root)
 	if err != nil || len(visible.Threads) != 1 || visible.Threads[produced.ThreadID] == nil {
 		t.Fatalf("seeded stale writer became visible or hid unrelated row: %+v err=%v", visible, err)
 	}
@@ -116,7 +116,7 @@ func TestStoreOnlySeededAndN2ProducedPruneFencesSurviveRegistration(t *testing.T
 
 	// Leave a third aged terminal record for RegisterThread's own
 	// PruneClosed/SaveThreadRegistry pass; do not pre-prune this consumer case.
-	visible, err := LoadThreadRegistry(root)
+	visible, err = LoadThreadRegistry(root)
 	if err != nil || len(visible.Threads) != 0 {
 		t.Fatalf("unexpected visible records before registration prune: %+v err=%v", visible, err)
 	}
