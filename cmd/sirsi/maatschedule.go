@@ -230,6 +230,15 @@ func logFloorGrant(l *schedule.Ledger, holder, resource string, r *schedule.Rese
 	return nil
 }
 
+func maatPendingCedes(l *schedule.Ledger, resource string, exact bool) ([]schedule.Cede, error) {
+	if exact {
+		return nil, nil
+	}
+	return l.ListCedes(schedule.CedeFilter{Resource: resource, PendingOnly: true})
+}
+
+var maatStatusID string
+
 var maatStatusCmd = &cobra.Command{
 	Use:   "status [resource]",
 	Short: "List reservations (all, or for one resource)",
@@ -243,7 +252,15 @@ var maatStatusCmd = &cobra.Command{
 		if len(args) == 1 {
 			resource = args[0]
 		}
-		rows, err := l.Status(resource)
+		if maatStatusID != "" && resource != "" {
+			return fmt.Errorf("maat: --id cannot be combined with a resource filter")
+		}
+		var rows []schedule.Reservation
+		if cmd.Flags().Changed("id") {
+			rows, err = l.ExactReservation(maatStatusID)
+		} else {
+			rows, err = l.Status(resource)
+		}
 		if err != nil {
 			return err
 		}
@@ -259,7 +276,7 @@ var maatStatusCmd = &cobra.Command{
 			fmt.Printf("  %-14s %-9s %-7s %-12s %s → %s  %s\n",
 				r.Resource, r.Status, r.Regime, r.Holder, short(r.Start), short(r.EstEnd), r.Work)
 		}
-		if cedes, err := l.ListCedes(schedule.CedeFilter{Resource: resource, PendingOnly: true}); err == nil && len(cedes) > 0 {
+		if cedes, err := maatPendingCedes(l, resource, cmd.Flags().Changed("id")); err == nil && len(cedes) > 0 {
 			fmt.Printf("𓆄 pending cede requests (%d) — never auto-granted\n", len(cedes))
 			for _, c := range cedes {
 				fmt.Printf("  %-8s %-14s %s→%s  %s (%d min)  %q\n", c.Status, c.Resource, c.Requester, c.Holder, c.Ask, c.Minutes, c.Reason)
@@ -544,6 +561,8 @@ func init() {
 	for _, c := range []*cobra.Command{maatStatusCmd, maatDecisionsCmd, maatWhoCmd, maatHeartbeatCmd, maatReleaseCmd, maatCoverageCmd, maatShouldDeferCmd, maatConflictCheckCmd, maatExtendCmd} {
 		c.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 	}
+
+	maatStatusCmd.Flags().StringVar(&maatStatusID, "id", "", "Exact reservation ID; bounded read-only response, no history-dump fallback (requires compatible server)")
 
 	maatCmd.AddCommand(maatReserveCmd, maatStatusCmd, maatDecisionsCmd, maatWhoCmd, maatHeartbeatCmd, maatExtendCmd,
 		maatReleaseCmd, maatCoverageCmd, maatShouldDeferCmd, maatConflictCheckCmd)

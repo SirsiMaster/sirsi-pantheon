@@ -455,12 +455,12 @@
     },
     {
       "id": "maat-known-failure-proposals",
-      "source": ["internal/maat/knownfail/proposal.go", "cmd/sirsi/maatknownfail.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift"],
+      "source": ["internal/maat/knownfail/proposal.go", "internal/maat/knownfail/catalog-history/68b1ee17ac49d4c087c54bd4860eee597181fd45.json", "cmd/sirsi/maatknownfail.go", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift"],
       "tests": ["internal/maat/knownfail/proposal_test.go", "macapp/Tests/SirsiMenubarTests/CoreContractsTests.swift"],
-      "inputs": ["explicit operator-entered recurring failure id, regular-expression signature, and cause", "exact built-in known-failure catalog digest"],
-      "outputs": ["typed local proposal queue shared by CLI JSON and native Ma'at", "visible Stack Lab review route", "truthful empty, retry, and creation outcomes"],
+      "inputs": ["explicit operator-entered recurring failure id, regular-expression signature, and cause", "exact current catalog digest or a commit-pinned trusted historical catalog snapshot"],
+      "outputs": ["typed local proposal queue shared by CLI JSON and native Ma'at", "read-time current or historical catalog relation derived from the stored digest", "visible Stack Lab review route", "truthful empty, retry, and creation outcomes"],
       "writes": ["create-only, readback-verified 0600 local proposal evidence under ~/.sirsi/maat/known-failures/proposals only after explicit native or CLI confirmation"],
-      "upgrade_recipe": ["never let an unreviewed proposal affect matching or fabric-wide recognition", "bind every proposal to the built-in catalog digest", "keep local evidence distinct from a source catalog edit", "show the Stack Lab review route in every operator surface", "add JSON, native decoder, duplicate, malformed, and concurrent-creation fixtures before widening the proposal schema"]
+      "upgrade_recipe": ["never let an unreviewed proposal affect matching or fabric-wide recognition", "accept only the exact current catalog bytes or an explicitly trusted commit-pinned historical snapshot; reject unknown or altered digests", "derive current-versus-historical classification from read-time projection only; ignore supplied classification and preserve stored proposal bytes", "require a parseable UTC timestamp and retain schema, status, regex, filename, and malformed-record refusals", "keep historical proposals marked for review against the current catalog and never auto-promote them", "keep local evidence distinct from a source catalog edit", "show the Stack Lab review route in every operator surface", "add mixed current/historical queue, exact-byte nonmutation, forged classification, and invalid-provenance fixtures before widening the proposal schema"]
     },
     {
       "id": "maat-casebook",
@@ -587,6 +587,15 @@
       "outputs": ["explicit typed-capacity machine and resident-engine selector", "machine-bound CPU, unified-memory, swap, and chip-estate plan", "non-mutating typed Apollo plan", "closed, bounded session telemetry contract for tokens, bandwidth, memory, network, CPU/GPU, and selected chip estates"],
       "writes": ["none while composing a plan; SNE admission owns later inference execution"],
       "upgrade_recipe": ["preserve Seba and SNE as the only capacity and engine authorities", "bind each selectable machine, engine route, and chip-estate list to the same typed capacity receipt", "keep every enumerated resource limit typed and bounded", "never turn a plan into an inference start without SNE admission", "render missing session telemetry as unavailable, not zero", "add source and injected-conduit fixtures before widening engine, machine, or telemetry schemas"]
+    },
+    {
+      "id": "maat-adr070-source-lifecycle-observation",
+      "source": ["cmd/sirsi/maatlifecycle.go", "internal/maat/qualification.go", "internal/maat/qualificationjournal.go", "internal/maat/qualificationjournal_unix.go", "internal/maat/qualificationjournal_windows.go", "internal/maat/qualificationauthority_darwin.go", "internal/maat/qualificationauthority_other.go", "internal/packagedengine/authority_unix.go", "internal/setup/podauthority.go", "internal/maat/lifecycleevidence/router.go", "internal/maat/lifecycleevidence/installed_darwin.go", "internal/maat/lifecycleevidence/installed_other.go", "internal/maat/decisions.go", "internal/maat/casebook/casebook.go", "macapp/Sources/SirsiMenubar/MaatLifecycle.swift", "macapp/Sources/SirsiMenubar/MaatCasebookView.swift", "contracts/maat/source-lifecycle-v1.json", "docs/ADR-070-MAAT-STRUCTURED-VERDICT.md", "docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md"],
+      "tests": ["internal/maat/qualification_test.go", "internal/maat/qualification_authority_darwin_test.go", "internal/maat/qualification_authority_other_test.go", "internal/setup/podauthority_test.go", "internal/packagedengine/authority_unix_test.go", "internal/maat/lifecycleevidence/router_test.go", "internal/maat/lifecycleevidence/installed_other_test.go", "internal/maat/casebook/qualification_test.go", "cmd/sirsi/maatlifecycle_test.go", "cmd/sirsi/maatlifecycle_acceptance_test.go", "macapp/Tests/SirsiMenubarTests/MaatLifecycleTests.swift"],
+      "inputs": ["exact structured canonical Instructions bytes", "independently selected repository and full source head", "explicit previewed receipt digests for confirmation"],
+      "outputs": ["bounded informational replay and retained source-lifecycle observation", "explicit owner adoption bound to exact review and originating-evaluation bytes", "Casebook projection that remains unqualified absent exact installed evidence pins"],
+      "writes": ["one confirmed local decision-journal observation or owner-adoption record under the existing journal mutation lock"],
+      "upgrade_recipe": ["keep installed policy, evaluation, and independent-outcome inventories empty until separately reviewed real evidence is admitted", "treat router Get/From as custody and attribution, never authenticated reviewer identity", "preserve the current decision journal lock, idempotent append, Casebook history and cursor behavior", "keep deterministic host/preflight behavior independent and do not activate a probabilistic gate", "qualify each integrated Go normal/race selector and native lifecycle/source-import selector on the exact source tree", "retain installed adoption and full ADR-070 empirical calibration as separate open evidence"]
     }
   ]
 }

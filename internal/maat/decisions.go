@@ -46,6 +46,8 @@ type Decision struct {
 	SystemOneCalibration      *CalibrationRecord         `json:"system_one_calibration,omitempty"`
 	FailureMemoryReceipt      *PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
 	FailureMemoryIncidentKeys *[]string                  `json:"failure_memory_incident_keys,omitempty"`
+	SourceQualification       *QualificationEvent        `json:"source_qualification,omitempty"`
+	LifecycleAdoption         *LifecycleOwnerAdoption    `json:"lifecycle_owner_adoption,omitempty"`
 }
 
 // A pointer preserves Decision's existing comparability while the optional
@@ -487,6 +489,25 @@ func (j *FileDecisionJournal) FindByEvidence(kind, evidence string) (Decision, b
 	return found, ok, err
 }
 
+// FindUniqueByEvidence strictly scans the complete retained journal and keeps
+// at most one row matching the evidence reference, regardless of kind. The
+// match count lets authorization paths check evidence uniqueness before
+// validating the row's kind and payload without relying on recent history.
+func (j *FileDecisionJournal) FindUniqueByEvidence(evidence string) (Decision, int, error) {
+	var found Decision
+	matches := 0
+	_, err := j.scanStrict(func(d Decision) bool {
+		if d.Evidence == evidence {
+			matches++
+			if matches == 1 {
+				found = d
+			}
+		}
+		return false // scanStrict must validate the entire retained tail.
+	})
+	return found, matches, err
+}
+
 // HasOriginDecision reports whether a strict retained row matches the exact
 // origin tuple. It is used alongside FindByEvidence to distinguish an
 // unresolved attempt from one with a later terminal repair receipt.
@@ -679,6 +700,25 @@ func normalizeDecision(decision *Decision) error {
 }
 
 func validateDecision(decision Decision) error {
+	if decision.Kind == "source qualification observation" && decision.SourceQualification == nil {
+		return fmt.Errorf("lifecycle decision requires its typed event")
+	}
+	if decision.SourceQualification != nil {
+		if decision.Kind != "source qualification observation" || decision.SystemOne != nil || decision.SystemOneCalibration != nil || decision.FailureMemoryReceipt != nil || decision.FailureMemoryIncidentKeys != nil || decision.LifecycleAdoption != nil {
+			return fmt.Errorf("invalid lifecycle decision kind/payload combination")
+		}
+		if err := decision.SourceQualification.validate(); err != nil {
+			return err
+		}
+	}
+	if decision.LifecycleAdoption != nil {
+		if decision.Kind != "source qualification owner adoption" || decision.SystemOne != nil || decision.SystemOneCalibration != nil || decision.FailureMemoryReceipt != nil || decision.FailureMemoryIncidentKeys != nil || decision.SourceQualification != nil {
+			return fmt.Errorf("invalid lifecycle owner-adoption kind/payload combination")
+		}
+		if err := decision.LifecycleAdoption.validate(); err != nil {
+			return err
+		}
+	}
 	for field, value := range map[string]string{
 		"time": decision.Time, "host": decision.Host, "kind": decision.Kind,
 		"requester": decision.Requester, "assessed": decision.Assessed,

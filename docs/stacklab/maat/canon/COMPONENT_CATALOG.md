@@ -35,6 +35,26 @@ override that scoped result; other memory/repair rows remain separately scoped.
 | Scoped service lifecycle | `internal/setup/launchdservice*`, `cmd/sirsi/launchdservice*` | one explicitly selected allowlisted service; default read-only, native identity/grant/four pins/drain assertion and per-service serialization required | `maat-scoped-service-lifecycle` in the System One recipe; [runbook](../../../runbooks/SCOPED-SERVICE-LIFECYCLE.md); source tests do not establish signed installed deployment or application health |
 | Stack Lab integration recipe | `contracts/stacklab/maat-*` | source contract only; Stack Lab governance is SSA-owned | keep schema and implementation aligned without claiming platform authority |
 
+Known-failure proposal catalog history is read-only provenance. The trusted
+historical snapshot is the exact
+`internal/maat/knownfail/catalog.json` at commit
+`68b1ee17ac49d4c087c54bd4860eee597181fd45` (Git blob
+`325edb6a7017905209515529006fc908c126ce51`, SHA-256
+`e8a1b1a1e295f3ff02eef4342d4bd315555960d561458687c8ee1be034b2b178`). The
+reader classifies only current or this exact historical pin in its output
+projection; it never stores the classification or rewrites a proposal.
+Historical items remain local proposals requiring review against the current
+catalog. Unknown or altered pins and malformed provenance remain refused, and
+this read path does not change catalog matching or promotion authority. A native
+client without the projection field reports the catalog generation as
+unavailable rather than guessing that it is current. Reproduce the source
+binding with:
+
+```sh
+git rev-parse 68b1ee17ac49d4c087c54bd4860eee597181fd45:internal/maat/knownfail/catalog.json
+git show 68b1ee17ac49d4c087c54bd4860eee597181fd45:internal/maat/knownfail/catalog.json | shasum -a 256
+```
+
 Integration and software Stack Lab governance owner: SSA / Ma'at. Pantheon
 implements the integrated product surfaces; Ra owns router transport, not a
 second Ma'at governance authority. SHA retains hardware observation and controls.

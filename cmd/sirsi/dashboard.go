@@ -59,6 +59,7 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	fabricContext, cancelFabric := context.WithCancel(cmd.Context())
 	defer cancelFabric()
 	fabricSource := ledger.NewFabricGenerationProducerContext(fabricContext, collectDashboardFabricReadContext, buildversion.Current("sirsi").Version)
+	defer fabricSource.Close()
 
 	srv := dashboard.New(dashboard.Config{
 		MercuryFn: mercury.NewConfigured().Read,
@@ -217,16 +218,21 @@ func collectDashboardFabricReadAtRootContext(ctx context.Context, repoRoot strin
 	if err != nil {
 		return ledger.FabricRead{}, err
 	}
-	health := collectFabricHostHealthContext(ctx, repoRoot, now)
-	if err := ctx.Err(); err != nil {
+	var health ledger.FabricHealth
+	err = ledger.FabricReadStage(ctx, ledger.FabricStageHostHealth, func() error {
+		health = collectFabricHostHealthContext(ctx, repoRoot, now)
+		return ctx.Err()
+	})
+	if err != nil {
 		return ledger.FabricRead{}, err
 	}
 	read.Evidence.Health = &health
 	return read, nil
 }
-func collectDashboardFabric() (ledger.FabricBoard, error) {
-	producer := ledger.NewFabricGenerationProducer(collectDashboardFabricRead, buildversion.Current("sirsi").Version)
-	generation, err := producer.Read(context.Background())
+func collectDashboardFabric(ctx context.Context) (ledger.FabricBoard, error) {
+	producer := ledger.NewFabricGenerationProducerContext(ctx, collectDashboardFabricReadContext, buildversion.Current("sirsi").Version)
+	defer producer.Close()
+	generation, err := producer.Read(ctx)
 	if err != nil {
 		return ledger.FabricBoard{}, err
 	}

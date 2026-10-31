@@ -1,5 +1,145 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-31 — v0.24.151 release candidate
+
+- The wake-consumer reload regression now waits for the same controller thread's
+  capability and answer-role update after the old child exits. Its inert child
+  hold also demonstrates that the prior fixed-delay assertion can observe the
+  old grants before the required join and reload have happened.
+- Refs: `PANTHEON_RULES.md` A27, `docs/ADR-022-CTR-OS-TRUTH-LIVENESS.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/pantheon-pt/canon/TRACEABILITY_MATRIX.md`.
+- Pass absolute app paths from the release workflow and both paired Make targets to PKG inventory, satisfying its existing absolute-path contract without changing no-follow checks. The workflow records the selected pre-sign receipt path in `GITHUB_ENV` and includes that exact original file in its always-uploaded evidence; a selected path without a created receipt remains missing and is not fabricated. Inert workflow-payload and private-space Make fixtures check receipt lineage, argv/order, and relative-path refusal under Bash 3.2; the strict release-preflight workflow provenance pin matches the final workflow bytes.
+- Refs: `.github/workflows/release.yml`, `Makefile`, `scripts/build-pkg.sh`, `scripts/test_artifact_modes.py`, `scripts/PACKAGING.md`, `docs/ADR-066-STACK-LAB-WING-AUTHORITY-ORIGIN-IS-TRUTH.md`, `docs/ADR-015-DEITY-HIERARCHY.md`
+- Preserve complete Ma’at diagnostic names in the native finding detail list by wrapping long names across lines; values and selectable text remain intact.
+- Refs: `macapp/Sources/SirsiMenubar/Views.swift`, `docs/design/PANTHEON_NATIVE_WORKSPACE.md`
+- Carry forward the unshipped source corrections prepared for 0.24.148, 0.24.149 and 0.24.150. Their immutable failed-attempt history remains below; none completed the commercial DMG/PKG pair, cask publication or client rollout.
+- Retain Ma’at exact-case lookup and readable preview errors, lifecycle observation and neutral calibration labels. Adopt the exact-reservation admission runner only after its compatible installed CLI.
+- Retain explicit native-Apollo-disabled package composition, shared pre-sign digest binding, checked Bash 3.2 receipt reading, and inventory fixtures that remain correct under a private umask.
+- Retain per-Codex-thread registration, bounded Fabric cancellation, attended-lane availability and wake/scoring refresh corrections, plus the native Stack Lab GitHub CLI lookup. Full installed workflow and product acceptance remain separately evidenced.
+
+## 2026-10-31 — v0.24.150 failed/unpublished
+
+- Signed/notarized/stapled DMG retained privately; relative PKG caller rejected before PKG creation. No complete release/cask/install claim. Unshipped corrections carry forward into v0.24.151.
+
+- test(core): make Apollo inventory fixture modes umask-independent
+- Set explicit modes on the generated signature directory, CodeResources file,
+  and Apollo profile in the two positive inventory fixtures. A private caller
+  umask can no longer turn these fixtures into unintended negative cases; product
+  mode validation and all existing assertions remain unchanged.
+- Refs: cmd/sirsi-package-inventory/main_test.go;
+  internal/packageinventory/inventory_test.go; scripts/artifact_modes.py;
+  scripts/PACKAGING.md; ADR-032.
+- Carry forward the changes prepared for 0.24.148 and 0.24.149. Both publication
+  attempts failed before commercial packages were published; their historical
+  entries remain marked failed/unpublished. Source preparation and development
+  fixtures do not establish commercial signing, installation, or runtime certification.
+- Ma’at retains the exact-case preview, readable error presentation, source
+  lifecycle observation controls, and neutral labels for historical calibration.
+  The standalone launcher reads only its exact reservation ID after compatible
+  installed-client adoption.
+- Packaging retains explicit Apollo capability/profile binding and one frozen
+  receipt shared by the DMG and PKG. Official packages remain native-Apollo-disabled.
+- Router corrections retain per-Codex-thread session markers, bounded Fabric
+  cancellation, truthful attended-lane availability, and scoring/configuration
+  refresh before wake replacement. The compatible pruned-row guards do not
+  activate pruning or claim the remaining retained-key cure.
+- Native Stack Lab retains the corrected GitHub CLI lookup. Existing installed
+  app, model-profile, service-lifecycle, and full-product acceptance remain separate.
+- Refs: `scripts/PACKAGING.md`, `docs/stacklab/pantheon-pt/canon/CERTIFICATION.md`,
+  `docs/ADR-066-STACK-LAB-WING-AUTHORITY-ORIGIN-IS-TRUTH.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`.
+- fix(core): read frozen Apollo digest receipts safely in Bash 3.2
+- Both release builders now capture and check the receipt parser's exit status
+  before extracting the exact Info.plist and Apollo profile digest pair. The
+  existing two-key schema, lowercase SHA-256 validation, and disabled `absent`
+  profile value remain required; malformed, incomplete, unreadable, or
+  unparseable receipts stop before signing or PKG construction.
+  The inert Bash 3.2 regression exercises both complete reader blocks with valid
+  enabled/disabled receipts and space-containing paths, plus malformed and
+  invalid-profile-digest refusals. Its forced parser-failure control emits a
+  valid-looking pair before exiting nonzero, confirming status propagation.
+- Refs: scripts/PACKAGING.md; scripts/build-dmg.sh; scripts/build-pkg.sh;
+  scripts/test_artifact_modes.py; internal/maat/releasepreflight_test.go;
+  docs/evidence/APOLLO_NATIVE_PACKAGE_COMPOSITION_20261015.md; ADR-032.
+
+## 2026-10-30 — v0.24.149 release candidate — publication failed/unpublished
+
+- Corrected the existing Ma'at binary-drift preview to resolve one exact System One case across the complete bounded journal, refusing duplicates and malformed retained tails, and stripped ANSI styling from the preview error label. Added inert retained-history regressions; native error presentation reuses the existing ANSI stripper and still requires installed-app verification. No updater or host action was run.
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`, `cmd/sirsi/maatrepair_binary_drift.go`, `internal/maat/decisions.go`
+- Corrected the retained binary-drift case regression fixture to capture all four values returned by its existing setup helper. Production behavior and the missing-case, host, digest, and duplicate-evidence assertions are unchanged.
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `cmd/sirsi/maatrepair_binary_drift_test.go`
+- Pinned retained binary-drift case fixtures before their filler records and pinned recent duplicate rows after the fillers. The regressions now assert exact evidence counts in `Recent(100)` before checking full-history uniqueness and refusal.
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `cmd/sirsi/maatrepair_binary_drift_test.go`, `internal/maat/decisions.go`
+- Added the strict all-kind evidence lookup to the concurrent binary-drift journal fixture under its existing mutex, preserving the concurrent one-launch test's exact oracle. Production behavior is unchanged.
+- Tightened the retained binary-drift case lookup to count every exact evidence-reference match across kinds before checking the sole row's System One type. Added an old/new-window regression for a different-kind duplicate; the existing kind-specific lookup remains unchanged.
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`, `internal/maat/decisions.go`, `cmd/sirsi/maatrepair_binary_drift.go`
+- Require exact-ID CLI support for owned Ma’at reservation readback
+- The admitted-run supervisor now requests `maat status --id <full-id> --json`
+  for its own reservation and refuses malformed, missing, duplicated, or extra
+  rows. It does not fall back to a resource history query. Install the normal
+  signed CLI rollout with `status --id` support before using this recovery path.
+- Refs: `scripts/maat/README.md`, `docs/ADR-006-SELF-AWARE-RESOURCE-GOVERNANCE.md`
+- Initialize the nonempty Apollo inventory argument array with the capability
+  pair in both DMG and PKG builders, then append the profile pair only when a
+  profile is present. Remove the empty optional array that caused Bash 3.2
+  nounset to abort disabled-profile DMG builds.
+- Deliberately refresh Ma’at release-preflight provenance hashes for both
+  builder files; this keeps their exact reviewed Bash 3.2 argv correction
+  pinned without changing any signing, keychain, or contract checks.
+- Add a regression to the existing macOS artifact-contract suite. It extracts
+  the production argument blocks and first inventory commands from each
+  builder, runs them under `/bin/bash` 3.2 against an owned recording CLI, and
+  checks exact disabled/enabled argv. The enabled DMG fixture also checks only
+  its temporary copied profile bytes and mode. No build, package, signature,
+  mount, notarization, or model operation is performed by the fixture.
+- Refs: `contracts/stacklab/pantheon-release-artifact-recipe-v1.json`,
+  `scripts/PACKAGING.md`, `.github/workflows/ci.yml`.
+- Preserve existing internal `pruned` rows across compatible upserts and
+  physical deletes, reject callers that try to manufacture the reserved status,
+  and hide retained rows from ordinary reads while keeping authority and raw
+  migration visibility intact. G1 creates no fences and does not close the
+  absent-row stale-insert residual; no prune activation or G2 behavior is added.
+- Refs: `docs/ADR-057-OPERATIONAL-ENFORCEMENT-SUPERVISION.md`, `internal/routerstore/threads.go`
+- Router wake loop:
+- Create the decision-journal mutation lock relative to its retained parent
+  descriptor with `O_CREAT|O_EXCL`; only `EEXIST` falls back to opening the
+  exact existing leaf without creation. Errors from either operation,
+  including `ENOENT`, propagate; there is no retry or pathname fallback.
+- Before locking, require the opened leaf to be an owned, private, singly-linked
+  regular file. Do not chmod or otherwise repair an invalid existing lock.
+- Add per-call injected-open tests for exact flags, create refusal, existing
+  lock fallback, open refusal, concurrent first creation, and symlink refusal;
+  add invalid hardlink and public-mode fixtures. Existing nonblocking flock
+  and descriptor ownership remain in place. Keep refusal messages compatible
+  with the repository's spelling check.
+- The Darwin concurrent first-create issue is documented by the
+  [primary Entire CLI source fix](https://github.com/entireio/cli/commit/9c18f31b23a62749b804718125b17c236420a28a).
+- Refs: `docs/stacklab/maat/canon/DESIGN.md`, `docs/stacklab/maat/canon/SECURITY_THREAT_MODEL.md`, ADR-009, PANTHEON_RULES.md A16.
+
+## 2026-10-30 — v0.24.148 release candidate — publication failed/unpublished
+
+- Add source-lifecycle receipt preview, bounded replay and journal/Casebook observations; preserve unqualified model profiles, the deterministic floor and unauthenticated router attribution.
+- Place lifecycle controls in System One and identify historical calibration as legacy comparison, not verified qualification.
+- Share packaged-engine authority checks across setup and Ma’at, preserving identity checks and the existing token boundary; update lifecycle fixtures, cross-platform tests and Stack Lab recipe inventory.
+- Keep the router staging tag within Cloud Run limits without reducing nonce entropy.
+- Correct model-router source traceability without claiming production or installed qualification.
+- Correct Codex thread-marker identity while preserving registered-agent, host, PID and compare-and-swap checks.
+- Add zero-traffic-only router staging with separate compatibility verification and promotion.
+- Bind the expected Apollo capability and protected profile across signing and package verification; the official release remains native-Apollo-disabled.
+- Bound Fabric runtime classification and propagate cancellation with fixed-stage deadline attribution; remote work already dispatched is not retracted.
+- An attended lane without a live session reports needs-owner instead of a wakeable consumer (ADR-079 D4).
+- Router send and ping report no live consumer for attended or no-grant holds without a fresh attended session.
+- Add `maat status --id ID --json` using server-side exact MaatRead selection with a 64KiB response ceiling. Preserve whole-history status compatibility; unknown is not released, duplicate/oversized rows fail closed, old servers refuse without broad fallback. No admission or reservation mutation; delegated pod IDs refuse unsupported canonical fallback.
+- Keep terminal wake failures unresolved when a legacy completion contains only a whitespace-padded no-result marker. Filter in SQLite/PostgreSQL without returning result bodies. Refs: ADR-061; docs/stacklab/LANE_CURRENT_WAKE_FAILURES.md.
+- Resolve the existing GitHub CLI from the inherited PATH and standard macOS Homebrew locations for the Stack Lab fabric reader. A missing CLI now yields a typed unknown diagnostic and static native install guidance without exposing command stderr. Refs: ADR-009, ADR-066, `docs/stacklab/LOCAL_TIER1_AND_STACKLAB.md`.
+- Canonicalize temporary roots in Stack Lab executable-path fixtures so exact path assertions match macOS symlink resolution. Refs: ADR-009, ADR-066.
+- Fix staged router deploy rollback receipts to identify the sole 100% serving revision and refuse ambiguous or unreadable traffic state. Bind health checks and traffic shifts to a freshly named staged revision and refuse tag retargets. Refs: scripts/router-service/stage.sh.
+
+## 2026-10-30 — v0.24.147 release candidate
+
+- Keep Ma'at proposals pinned to their exact catalog bytes while reading proposals from the current catalog or the trusted historical catalog at `68b1ee17ac49d4c087c54bd4860eee597181fd45`. Classify current versus historical only in the read projection, preserve original local bytes, and continue refusing unknown or malformed provenance. Historical proposals remain local evidence for current Stack Lab review and do not affect fabric matching or promotion authority.
+- Refs: `internal/maat/knownfail/proposal.go`; `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`; `contracts/stacklab/maat-system-one-recipe-v1.json`.
+- ADR-062 G3 two-host contention on Postgres: PASS.
+- G3 harness: serve logs no longer record the host's scratch path.
+
 ## 2026-10-29 — v0.24.146 release candidate
 
 - Keep long Ma’at recovery, access guidance, Apollo and Stack Lab failures, and Osiris fallback content scrollable; size recovery actions to their wrapped labels and open the actual Stack Lab Doctor from its catalog route.

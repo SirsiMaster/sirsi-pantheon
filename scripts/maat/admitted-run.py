@@ -963,15 +963,16 @@ class Native:
     def lookup(self, resource):
         if self.owned_admission:
             # Read-only exact-ID recovery: never replay an uncertain heartbeat
-            # just to discover whether it succeeded. Status includes terminal rows.
-            rows = self.call('maat', 'status', resource, '--json')
-            if not isinstance(rows, list):
+            # just to discover whether it succeeded. The exact-ID query includes
+            # terminal rows and must return only the requested reservation.
+            try:
+                rows = self.call('maat', 'status', '--id', self.owned_admission, '--json')
+            except json.JSONDecodeError as error:
+                raise Refused('Reservation readback is malformed') from error
+            if (not isinstance(rows, list) or len(rows) != 1 or
+                    not isinstance(rows[0], dict) or rows[0].get('id') != self.owned_admission):
                 raise Refused('Reservation readback is malformed')
-            matches = [row for row in rows if isinstance(row, dict) and
-                       row.get('id') == self.owned_admission]
-            if len(matches) != 1:
-                raise Refused('Exact admission missing or duplicated')
-            return matches[0]
+            return rows[0]
         return self.call('maat', 'who-is-on', resource, '--json')
 
     def reserve(self, resource, agent, work):

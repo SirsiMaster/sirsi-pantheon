@@ -914,24 +914,23 @@ func validateMaatBinaryDriftCase(journal maat.DecisionJournal, evidence string) 
 	if !strings.HasPrefix(evidence, "maat-system-one:sha256=") || !isSHA256Hex(strings.TrimPrefix(evidence, "maat-system-one:sha256=")) {
 		return errors.New("Ma'at binary-drift recovery: invalid System One evidence reference")
 	}
-	decisions, err := journal.Recent(100)
+	reader, ok := journal.(interface {
+		FindUniqueByEvidence(string) (maat.Decision, int, error)
+	})
+	if !ok {
+		return errors.New("Ma'at binary-drift recovery: strict retained case lookup is unavailable; no updater was run")
+	}
+	row, matches, err := reader.FindUniqueByEvidence(evidence)
 	if err != nil {
 		return fmt.Errorf("Ma'at binary-drift recovery: read retained System One case: %w", err)
 	}
-	var selected *maat.Decision
-	for i := range decisions {
-		if decisions[i].Evidence != evidence {
-			continue
-		}
-		if selected != nil {
-			return errors.New("Ma'at binary-drift recovery: evidence resolves to multiple journal rows; no updater was run")
-		}
-		selected = &decisions[i]
+	if matches > 1 {
+		return errors.New("Ma'at binary-drift recovery: evidence resolves to multiple journal rows; no updater was run")
 	}
-	if selected == nil || selected.Kind != "system one screen" || selected.SystemOne == nil {
+	if matches == 0 || row.Kind != "system one screen" || row.SystemOne == nil {
 		return errors.New("Ma'at binary-drift recovery: exact retained System One case is unavailable; refresh Casebook")
 	}
-	verdict := selected.SystemOne
+	verdict := row.SystemOne
 	if err := maat.ValidateMaatVerdict(*verdict); err != nil {
 		return fmt.Errorf("Ma'at binary-drift recovery: retained System One case is invalid: %w", err)
 	}
@@ -982,6 +981,13 @@ func validateMaatBinaryDriftCase(journal maat.DecisionJournal, evidence string) 
 			}
 		}
 	} else {
+		// Non-file journal adapters retain their established test/transport
+		// behavior. Production FileDecisionJournal uses strict full-history
+		// lookups above for both the selected case and its linked history.
+		decisions, err := journal.Recent(100)
+		if err != nil {
+			return fmt.Errorf("Ma'at binary-drift recovery: read retained repair history: %w", err)
+		}
 		for _, decision := range decisions {
 			if (decision.Kind == "diagnostic verified repair" || decision.Kind == "diagnostic repair attempt") && decision.OriginEvidence == evidence {
 				return errors.New("Ma'at binary-drift recovery: this exact screen already has a durable repair attempt or receipt; inspect the retained attempt and create a fresh System One observation before another action")

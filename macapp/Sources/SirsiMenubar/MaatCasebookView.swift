@@ -198,6 +198,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                     VStack(spacing: 12) {
                         unavailableState(loadError)
                         screenImportControl
+                        MaatLifecycleControl(engine: engine)
                         LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),appUpdate:engine.maatCaseOperations.appUpdate)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -317,6 +318,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                         releasePreflightControl
                             .id("maat-release-preflight")
                         screenImportControl
+                        MaatLifecycleControl(engine: engine)
                         LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),appUpdate:engine.maatCaseOperations.appUpdate)
                         if screens.isEmpty && calibrations.isEmpty {
                             historyEmptyState(casebook)
@@ -418,7 +420,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         VStack(alignment: .leading, spacing: 8) {
             Text("Ma'at System One")
                 .sirsiFont(.title3, weight: .bold)
-            Text("Local deterministic screens are retained, evidence-bound, and calibrated only against distinct independent review outcomes.")
+            Text("Local deterministic screens remain model-free. Legacy comparison rows are declared history, not verified source-profile qualification.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -455,7 +457,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         let changesMetric = systemMetric("Changes", screens.filter { $0.systemOne?.gate == "changes" }.count, .orange)
         let blockedMetric = systemMetric("Blocked", screens.filter { $0.systemOne?.gate == "block" }.count, .red)
         let escalatedMetric = systemMetric("Escalated", screens.filter { $0.systemOne?.gate == "escalate" }.count, gold)
-        let calibratedMetric = systemMetric("Calibrated", calibrations.count, .green)
+        let legacyComparisonsMetric = systemMetric("Legacy comparisons", calibrations.count, .secondary)
 
         // A single metric row becomes unreadable at accessibility text sizes.
         // Keep the same facts, but let SwiftUI select a two-line layout when
@@ -466,7 +468,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 changesMetric
                 blockedMetric
                 escalatedMetric
-                calibratedMetric
+                legacyComparisonsMetric
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
@@ -476,7 +478,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 }
                 HStack(spacing: 8) {
                     escalatedMetric
-                    calibratedMetric
+                    legacyComparisonsMetric
                 }
             }
         }
@@ -1220,6 +1222,9 @@ struct MaatKnownFailureProposalsView: View {
             Text("Recorded \(proposal.createdAtUTC)")
                 .sirsiFont(.caption2)
                 .foregroundStyle(.tertiary)
+            Text(proposal.catalogRelationLabel)
+                .sirsiFont(.caption2)
+                .foregroundStyle(.secondary)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1417,6 +1422,7 @@ struct MaatKnownFailureProposalsView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            MaatLifecycleControl(engine: engine)
             Button("Try again") { Task { await load() } }
                 .buttonStyle(.borderedProminent)
                 .tint(gold)
@@ -1444,6 +1450,7 @@ struct MaatKnownFailureProposalsView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            MaatLifecycleControl(engine: engine)
             NavLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
                 Label("Run Ma'at audit", systemImage: "checkmark.seal")
                     .padding(.horizontal, 12)
@@ -1461,6 +1468,7 @@ struct MaatKnownFailureProposalsView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(casebook.summary, history: casebook.history)
+                    MaatLifecycleControl(engine: engine)
                     if loading {
                         HStack {
                             Label("Searching retained history…", systemImage: "arrow.clockwise")
@@ -2960,11 +2968,13 @@ private struct MaatCaseDetailView: View {
               preview.binding.count == 64 else {
             binaryDriftPreview = nil
             if capture.complete {
-                binaryDriftPreviewError = capture.result?.summary ?? (capture.stderr.isEmpty
+                let message = capture.result?.summary ?? (capture.stderr.isEmpty
                     ? "Ma'at could not produce a valid Homebrew-only preview. No updater was run."
                     : capture.stderr)
+                binaryDriftPreviewError = SirsiEngine.stripANSI(message)
             } else {
-                binaryDriftPreviewError = capture.issue ?? "Ma'at's updater preview was incomplete. No updater was run."
+                let message = capture.issue ?? "Ma'at's updater preview was incomplete. No updater was run."
+                binaryDriftPreviewError = SirsiEngine.stripANSI(message)
             }
             return
         }
@@ -3862,16 +3872,26 @@ struct MaatKnownFailureProposal: Decodable, Identifiable {
     let status: String
     let createdAtUTC: String
     let catalogSHA256: String
+    let catalogRelation: String?
 
     enum CodingKeys: String, CodingKey {
         case schema, id, title, signature, cause, status
         case createdAtUTC = "created_at_utc"
         case catalogSHA256 = "catalog_sha256"
+        case catalogRelation = "catalog_relation"
     }
 
     var titleOrID: String {
         let normalized = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return normalized.isEmpty ? id : normalized
+    }
+
+    var catalogRelationLabel: String {
+        switch catalogRelation {
+        case .some("current"): "Recorded against the current known-failure catalog"
+        case .some("historical"): "Recorded against a prior catalog · review against current catalog"
+        default: "Catalog generation unavailable"
+        }
     }
 }
 

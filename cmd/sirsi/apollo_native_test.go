@@ -176,28 +176,14 @@ func TestApolloNativeAdmissionRankCountRefusedBeforeBinding(t *testing.T) {
 }
 
 func TestInstalledApolloNativeProfileRejectsTrailingAndUnknownFields(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "native-profile.json")
-	old := installedApolloNativeProfilePath
-	installedApolloNativeProfilePath = func() (string, error) { return path, nil }
-	t.Cleanup(func() { installedApolloNativeProfilePath = old })
 	valid := nativeProfileFixture()
-	if err := os.WriteFile(path, []byte(valid), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := loadInstalledApolloNativeProfile(); err != nil {
+	if _, err := decodeInstalledApolloNativeProfile([]byte(valid)); err != nil {
 		t.Fatalf("valid installed profile rejected: %v", err)
 	}
-	if err := os.WriteFile(path, []byte(valid+" trailing"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := loadInstalledApolloNativeProfile(); err == nil {
+	if _, err := decodeInstalledApolloNativeProfile([]byte(valid + " trailing")); err == nil {
 		t.Fatal("trailing profile data accepted")
 	}
-	if err := os.WriteFile(path, []byte(`{"schema":"`+apolloNativeProfileSchema+`","unknown":true}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := loadInstalledApolloNativeProfile(); err == nil {
+	if _, err := decodeInstalledApolloNativeProfile([]byte(`{"schema":"` + apolloNativeProfileSchema + `","unknown":true}`)); err == nil {
 		t.Fatal("unknown profile field accepted")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -62,16 +63,38 @@ func withJournalMutationLock(path string, fn func() error) error {
 		return err
 	}
 	defer unix.Close(parentFD)
-	lockFD, err := unix.Openat(parentFD, "."+base+".lock", unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	lockFD, err := openJournalMutationLockAt(parentFD, "."+base+".lock", unix.Openat)
 	if err != nil {
 		return fmt.Errorf("maat decision journal: open mutation lock: %w", err)
 	}
 	defer unix.Close(lockFD)
+	lockIdentity, err := fstatJournal(lockFD)
+	if err != nil {
+		return fmt.Errorf("maat decision journal: inspect mutation lock: %w", err)
+	}
+	if !isPrivateRegular(lockIdentity) || lockIdentity.uid != uint32(os.Geteuid()) {
+		return fmt.Errorf("maat decision journal: mutation lock is not an owned private singly-linked regular file")
+	}
 	if err := unix.Flock(lockFD, unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return fmt.Errorf("maat decision journal: another local write or repair is in progress; retry after it finishes")
 	}
 	defer func() { _ = unix.Flock(lockFD, unix.LOCK_UN) }()
 	return fn()
+}
+
+// openJournalMutationLockAt avoids Darwin's concurrent openat(O_CREAT) without
+// O_EXCL first-create failure. Only EEXIST transitions to one open of the
+// existing named leaf without creation. Every other error is returned as-is.
+func openJournalMutationLockAt(parentFD int, name string, openat func(int, string, int, uint32) (int, error)) (int, error) {
+	flags := unix.O_RDWR | unix.O_NOFOLLOW | unix.O_CLOEXEC
+	fd, err := openat(parentFD, name, flags|unix.O_CREAT|unix.O_EXCL, 0o600)
+	if err == nil {
+		return fd, err
+	}
+	if !errors.Is(err, unix.EEXIST) {
+		return -1, err
+	}
+	return openat(parentFD, name, flags, 0)
 }
 
 func repairInvalidRecords(j *FileDecisionJournal) (JournalRepairReceipt, error) {

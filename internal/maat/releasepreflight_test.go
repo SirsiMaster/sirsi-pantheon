@@ -102,16 +102,20 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	// The unified command and typed retained-app owner below bind the actual
 	// reviewed post137 O2/O4 source composed at7ad2bd6e; they are copied as
 	// inert source bytes, never executed by this release source preflight.
+	// The builder pins bind v149's explicit Apollo capability and shared
+	// pre-sign receipt route, including its checked Bash 3.2 receipt reader.
+	// Unchanged signing, notary and retained-app owner pins remain independent.
 	// No copied script is executed. Future route changes must deliberately
 	// update this provenance and the observer together.
 	pinned := map[string]string{
 		"cmd/sirsi/update.go":                  "6afdb9391a36adf4d1ca46d630bdeaa863f04002c4923ece204e41dafef09567",
 		"cmd/sirsi/update_app_darwin.go":       "bf03bf0ebba9c49b65382ecbaa2f0e35dd38f773a56722e2ea54edba77fcfa0b",
-		"scripts/build-dmg.sh":                 "aad1c9c9d0404e96e6e80a54e83c1992f7094b359dac282eb896cbaa0b05e3c4",
-		"scripts/build-pkg.sh":                 "5a95ed756f6b632b044c12bbdfd18eb81e327bb649f03293eceb01135b4f627a",
+		"scripts/build-dmg.sh":                 "2eae7c74a88e62f47a184d510974c1463baf139e63f9e40614f5d15fcdbe9385",
+		"scripts/build-pkg.sh":                 "82fd6b3377bf42d3be3ea68381f01067f75f7a91a8a470be5f71159be1cc66d6",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
-		".github/workflows/release.yml":        "358eb25b8064ca362254809d53ff2d8aaaf4bb09563483f629b5edf3c57715ee",
-		"tools/signing/sirsi-sign":             "95db0601b45c56604e77b4b1d8ef6ecca2bbc165570889e9ec46d63b16288605",
+		// 151 absolute PKG caller and selected pre-sign receipt retention.
+		".github/workflows/release.yml": "f8bb379cfdeecdf5ca2c1ce3cff5ac8473ebcf70acd465c8abbc3604319ec83f",
+		"tools/signing/sirsi-sign":      "95db0601b45c56604e77b4b1d8ef6ecca2bbc165570889e9ec46d63b16288605",
 	}
 	for _, requirement := range releaseContractRequirements {
 		relative := requirement.Path
