@@ -508,12 +508,14 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(code,0)
         self.assertEqual(record['share'],'floor')
 
-    def test_owned_lookup_reads_exact_grant_not_foreign_first_holder(self):
-        native=runner.Native()
-        native.owned_admission='own-grant'
-        native.call=mock.Mock(return_value=[admission(id='foreign'), admission(id='own-grant')])
-        self.assertEqual(native.lookup('m5')['id'], 'own-grant')
-        native.call.assert_called_once_with('maat','status','m5','--json')
+    def test_owned_lookup_uses_exact_id_query_without_resource(self):
+        native = runner.Native()
+        native.owned_admission = 'own-grant'
+        response = mock.Mock(stdout=json.dumps([admission(id='own-grant')]))
+        with mock.patch.object(runner.subprocess, 'run', return_value=response) as run:
+            self.assertEqual(native.lookup('m5')['id'], 'own-grant')
+        self.assertEqual(run.call_args.args[0],
+                         [native.cli, 'maat', 'status', '--id', 'own-grant', '--json'])
 
     def run_case(self, backend, command=None, timeout=2, agent='lane', thread='thread'):
         record = {}
@@ -1050,8 +1052,19 @@ class TransportTests(unittest.TestCase):
     def test_readback_requires_single_exact_id(self):
         native = runner.Native()
         native.owned_admission = 'fixture-id'
-        for rows in [None, {}, [], [admission(id='foreign')], [admission(), admission()]]:
-            native.call = mock.Mock(return_value=rows)
+        for payload in ('', '{}', '[]', json.dumps([admission(id='foreign')]),
+                        json.dumps([admission(), admission()]),
+                        json.dumps([admission(), admission(id='foreign')]),
+                        json.dumps([None]), '{malformed'):
+            with self.subTest(payload=payload):
+                response = mock.Mock(stdout=payload)
+                with mock.patch.object(runner.subprocess, 'run', return_value=response) as run:
+                    with self.assertRaises(runner.Refused):
+                        native.lookup('m5')
+                self.assertEqual(run.call_args.args[0],
+                                 [native.cli, 'maat', 'status', '--id', 'fixture-id', '--json'])
+        failure = subprocess.CalledProcessError(1, 'sirsi', stderr='unknown reservation')
+        with mock.patch.object(runner.subprocess, 'run', side_effect=failure):
             with self.assertRaises(runner.Refused):
                 native.lookup('m5')
 
