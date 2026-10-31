@@ -47,11 +47,11 @@
     {
       "id": "canonical-cask-publication",
       "source": ["internal/caskrelease/cask.go", "cmd/sirsi/cask_release.go", ".github/workflows/release.yml", "scripts/install.sh"],
-      "tests": ["internal/caskrelease/cask_test.go", "scripts/install.test.sh", "scripts/verify-commercial-release-contract.sh"],
+      "tests": ["internal/caskrelease/cask_test.go", "internal/caskrelease/testdata/legacy-v0.24.153.rb", "scripts/install.test.sh", "scripts/verify-commercial-release-contract.sh"],
       "inputs": ["exact release version", "SHA-256 of the uploaded signed DMG", "current Homebrew tap blob identity"],
-      "outputs": ["one canonical Casks/sirsi-pantheon.rb byte stream", "Cask-linked bundled sirsi CLI", "arm64-only and macOS Ventura-or-newer install eligibility", "post-publication exact-byte verification"],
+      "outputs": ["one canonical Casks/sirsi-pantheon.rb byte stream per release train", "Cask-linked bundled sirsi CLI", "exact historical Cask bytes through v0.24.153 including prereleases; arm64-only and macOS Ventura-or-newer install eligibility from v0.24.154 including prereleases", "post-publication exact-byte verification"],
       "writes": ["Homebrew tap cask record only in the credentialed tagged-release workflow"],
-      "upgrade_recipe": ["retain arm64 and macOS Ventura minimum guards consistent with the packaged app", "render and verify the cask as exact bytes", "publish through one workflow route", "read back the remote cask and re-verify its release tuple", "link the CLI from the installed Pantheon.app rather than publishing a separate archive", "never derive a cask from a development artifact"]
+      "upgrade_recipe": ["preserve the exact legacy Cask template for versions through v0.24.153 and use the guarded template only for v0.24.154 and later, including prereleases; keep existing numeric version validation", "retain arm64 and macOS Ventura minimum guards consistent with the packaged app on the new release train", "render and verify the cask as exact bytes", "publish through one workflow route", "read back the remote cask and re-verify its release tuple", "link the CLI from the installed Pantheon.app rather than publishing a separate archive", "never derive a cask from a development artifact"]
     },
     {
       "id": "commercial-update-payload-eligibility",
