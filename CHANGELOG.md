@@ -6,6 +6,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.154] — 2026-10-31
+
+- On macOS and Linux, binary-drift detection treats distinct regular executable files as equivalent only when bounded reads from retained descriptors yield the same SHA-256 and both names still resolve to unchanged device/inode/mode/owner/link-count/size/mtime/ctime metadata. Nonblocking opens reject special-file substitutions before reading. Missing, non-regular, unreadable, changed, oversized, or unequal targets remain drift; equal path spelling keeps its existing behavior. This observes byte equivalence during the scan and makes no claim about later path or execution continuity. Version-based sibling checks remain independent.
+
+- Refs: `docs/ADR-023-BINARY-VERSION-CONTRACT.md`, PANTHEON_RULES.md A23.
+
+- Align the cancellation fixture diagnostic with the repository spelling rule; its assertion and runtime behavior are unchanged.
+
+- Corrected the release workflow label to identify the arm64 target as Apple silicon. Build behavior, payloads, and platform support are unchanged.
+
+- Refs: `contracts/stacklab/pantheon-release-artifact-recipe-v1.json`, `docs/stacklab/pantheon-pt/canon/TRACEABILITY_MATRIX.md`
+
+- Bounded the Ra handoff sheet so long fabric recipient lists stay in a horizontal scroll viewport instead of widening the sheet across the display. The form scrolls independently while Cancel and Send remain fixed and visible at narrow widths and enlarged text sizes. Mounted geometry checks cover narrow widths and enlarged text independently. Strict Cancel/Send AX visibility checks first require an independent SwiftUI Text/Button control; unavailable AX is reported as unverified, while missing production controls still fail whenever the oracle is healthy.
+
+- Refs: `contracts/stacklab/pantheon-native-workspace-v1.json`, `macapp/Sources/SirsiMenubar/Views.swift`, `macapp/Tests/SirsiMenubarTests/RaHandoffViewportTests.swift`, `docs/stacklab/pantheon-pt/canon/DESIGN.md`, ADR-030
+
+- Preserve the bounded terminal-page read cursor across explicit review and confirmation only for the typed binary-drift inactive disposition. Confirmation performs a new casebook read; the cursor is not current-state proof. The existing command validates the exact host and strict journal, then rechecks conflicting or duplicate rows under its mutation lock before recording. Other actions do not inherit this cursor path.
+
+- Refs: `docs/stacklab/maat/canon/TRACEABILITY_MATRIX.md` (retained Ma’at history), ADR-070.
+
+- Refresh the existing component inventory to corrective source `4c17dc3d`: 103 Go packages, one Swift target and 2,160 source/data/test/support blobs, including the canonical Cask golden test dependency. Keep historical publication and qualification evidence scoped to their exact objects.
+
+- Record bounded corrective qualification and the unavailable test-host SwiftUI accessibility oracle truthfully. Actual updated-app handoff control/frame/cancel verification remains required; source inventory is not release or runtime certification.
+
+- Refs: docs/stacklab/pantheon-pt/canon/CERTIFICATION.md, docs/stacklab/pantheon-pt/canon/TRACEABILITY_MATRIX.md, docs/ADR-018-NATIVE-MAC-APP.md, docs/ADR-023-BINARY-VERSION-CONTRACT.md
+
+- Aligned the full-app Info.plist minimum to macOS 13.0, matching the existing native deployment target. The canonical Cask preserves its exact historical template through v0.24.153, including those release trains' prereleases; arm64 and macOS Ventura guards begin with the v0.24.154 release train and its prereleases. Existing version validation remains in force, and historical rollback continues to consume the exact retained signed PKG rather than regenerate its app metadata. No binary architecture or build behavior changed.
+
+- Refs: `contracts/stacklab/pantheon-release-artifact-recipe-v1.json`, `macapp/Package.swift`, `cmd/sirsi-menubar/bundle/Info.plist`, `internal/caskrelease/cask.go`, `cmd/sirsi/update_app_darwin.go`, `docs/ADR-032-MAC-FIRST-PLATFORM-ROADMAP.md`
+
 ## [0.24.153] — 2026-10-31
 
 - Synchronize the wake-loop terminal observer fixture at the existing post-heartbeat boundary, then verify an authoritative terminal readback and no revival. Production heartbeat and lifecycle retry behavior remain unchanged. Refs: ADR-061 and the Ra traceability matrix.
