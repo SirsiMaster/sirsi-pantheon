@@ -538,29 +538,55 @@ legacy file-only sends. Returns after --timeout seconds even with no work
 	return cmd
 }
 
-var routerShowCmd = &cobra.Command{
-	Use:   "show <id>",
-	Short: "Print the full text of a work item",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Read through the facade so `show` renders a store-only item (no file)
-		// after the cutover, falling back to the file when one exists.
-		repoRoot, err := router.FindRepoRoot()
-		if err != nil {
-			return fmt.Errorf("no .agents/idea-router/ found: %w", err)
-		}
-		f, err := dispatch.Open(repoRoot)
-		if err != nil {
+func newRouterShowCmd(show func(string) (string, error), get func(string) (work.Item, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <id>",
+		Short: "Print the full text of a work item",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if JsonOutput {
+				item, err := get(args[0])
+				if err != nil {
+					return err
+				}
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(item)
+			}
+			md, err := show(args[0])
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprint(cmd.OutOrStdout(), md)
 			return err
-		}
-		defer func() { _ = f.Close() }()
-		md, err := f.Show(args[0])
-		if err != nil {
-			return err
-		}
-		fmt.Print(md)
-		return nil
-	},
+		},
+	}
+}
+
+var routerShowCmd = newRouterShowCmd(readRouterItemMarkdown, readRouterItem)
+
+func readRouterItemMarkdown(id string) (string, error) {
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return "", fmt.Errorf("no .agents/idea-router/ found: %w", err)
+	}
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	return f.Show(id)
+}
+
+func readRouterItem(id string) (work.Item, error) {
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return work.Item{}, fmt.Errorf("no .agents/idea-router/ found: %w", err)
+	}
+	f, err := dispatch.Open(repoRoot)
+	if err != nil {
+		return work.Item{}, err
+	}
+	defer func() { _ = f.Close() }()
+	return f.Get(id)
 }
 
 var routerAcknowledgeCmd = &cobra.Command{
