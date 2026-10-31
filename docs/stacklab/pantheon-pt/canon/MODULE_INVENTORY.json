@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "baffa748f1e9d8f9a6e2ca39bba976db64036689",
-  "source_tree": "89b541bf003b1d5c2d074aad98727bc06bbbbf2c",
+  "source_commit": "3501cf138e6ba8f575bf3d2d889ffc276354f80e",
+  "source_tree": "f9192a4de77bc59a413dbd2ab647e3f10b1aa6f8",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -6452,7 +6452,7 @@
         },
         {
           "path": "internal/router/wakeidentity_test.go",
-          "sha256": "fc8b39f5785495daac2d8901071efbfb639762f150a57ba617259f2b5bd20e8b"
+          "sha256": "fdbbbc88c667945478ae71cdfbd0c351b81a60e71a9554167a6a69997f6bb156"
         },
         {
           "path": "internal/router/wakeimage_test.go",
@@ -9921,7 +9921,7 @@
         },
         {
           "path": "contracts/stacklab/ra-horus-fabric-recipe-v1.json",
-          "sha256": "df9dd37c16778efe4273bde7b639b3e936e3b1504e8364a77b17850122633993"
+          "sha256": "3807e1cf1b3f59609734d92a5be66cb2ea70ce552e261c8e0f242fd4b86d85d8"
         },
         {
           "path": "contracts/stacklab/ra-horus-fabric-wing-v1.json",
