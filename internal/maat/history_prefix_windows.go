@@ -190,6 +190,12 @@ func (j *FileDecisionJournal) queryHistoryWindowsLegacy(query HistoryQuery) (His
 				}
 				break
 			}
+			if len(state.Batch) > 0 {
+				// MatchState candidates wait for complete linked history. Resolve
+				// the final short batch at EOF just like a full qualification batch.
+				beginHistoryQualificationBatch(state)
+				continue
+			}
 			state.Phase = "links"
 			state.Offset = 0
 			state.Links = makeHistoryLinkRefs(state.Candidates)

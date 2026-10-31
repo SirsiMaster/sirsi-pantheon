@@ -58,8 +58,18 @@ func TestRecordBinaryDriftInactiveDispositionRequiresExactFreshClearAndReplaysDu
 		t.Fatalf("unexpected inactive disposition receipt: %+v", first)
 	}
 	rows, _, err := journal.RecentTolerant(10)
-	if err != nil || len(rows) != 2 || rows[1].BinaryDriftInactiveDisposition == nil || rows[1].Determination != "accepted_not_repaired" {
+	if err != nil || len(rows) != 2 {
 		t.Fatalf("typed disposition was not retained: rows=%d err=%v", len(rows), err)
+	}
+	var retained *maat.Decision
+	for index := range rows {
+		if rows[index].Evidence == first.DispositionEvidence {
+			retained = &rows[index]
+			break
+		}
+	}
+	if retained == nil || retained.BinaryDriftInactiveDisposition == nil || retained.Determination != "accepted_not_repaired" {
+		t.Fatalf("typed disposition was not retained in newest-first rows: %+v", rows)
 	}
 	replay, err := runInactiveDispositionFixture(journal, evidence, "fixture-host", clear, nil)
 	if err != nil || replay.DispositionEvidence != first.DispositionEvidence || replay.ObservedFromUTC != first.ObservedFromUTC {

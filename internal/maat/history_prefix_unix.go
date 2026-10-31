@@ -192,6 +192,13 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 			if passDone {
 				switch phase {
 				case "scan":
+					if len(tentative.Batch) > 0 {
+						// MatchState candidates are held until their complete links
+						// are known. Flush the final short batch at EOF as well as
+						// batches that reached their capacity during scanning.
+						beginHistoryQualificationBatch(tentative)
+						break
+					}
 					if len(tentative.Candidates) == 0 {
 						page.VerificationBytes += tentative.PrefixBytes
 						page.ScannedBytes += passBytes

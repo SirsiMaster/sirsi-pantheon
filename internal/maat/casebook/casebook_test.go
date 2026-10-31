@@ -1,6 +1,9 @@
 package casebook
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +20,40 @@ func casebookCaseByEvidence(cases []Case, evidence string) (Case, bool) {
 		}
 	}
 	return Case{}, false
+}
+
+func casebookFixtureBinaryDriftSource(t *testing.T, journal *maat.FileDecisionJournal, mixed bool) maat.Decision {
+	t.Helper()
+	host := "fixture-host"
+	hostDigest := sha256.Sum256([]byte(host))
+	statuses := []maat.DiagnosticStatus{{Check: "binary-drift", Severity: 3}}
+	if mixed {
+		statuses = append(statuses, maat.DiagnosticStatus{Check: "RAM Pressure", Severity: 2})
+	}
+	observation := maat.DiagnosticObservation{
+		Schema: maat.DiagnosticObservationSchema, SourceSHA256: strings.Repeat("a", 64),
+		HostSHA256: hex.EncodeToString(hostDigest[:]), ObservedAtUTC: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC),
+		Score: 90, Statuses: statuses,
+	}
+	verdict, err := observation.Verdict()
+	if err != nil {
+		t.Fatal(err)
+	}
+	written, err := maat.RecordSystemOne(journal, "fixture", verdict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err := journal.RecentTolerant(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.Evidence == written.Evidence {
+			return row
+		}
+	}
+	t.Fatal("normalized canonical System One source was not readable from the journal")
+	return maat.Decision{}
 }
 
 func (j *casebookTestJournal) Append(d maat.Decision) error {
@@ -71,25 +108,8 @@ func TestSourceScreenV2ProjectsReviewWithoutHostRepairAuthority(t *testing.T) {
 
 func TestBinaryDriftInactiveDispositionResolvesOnlyItsExactSingleFindingSource(t *testing.T) {
 	makeSource := func(extra bool) maat.Decision {
-		head := strings.Repeat("a", 40)
-		findings := []maat.ScreenFinding{{ID: maat.CanonicalHostFindingID("binary-drift"), Severity: "major", Category: "reliability", Claim: "binary drift", Evidence: maat.CanonicalHostFindingEvidence(head, "binary-drift"), Confidence: 0.9}}
-		if extra {
-			findings = append(findings, maat.ScreenFinding{ID: "other", Severity: "major", Category: "reliability", Claim: "another open finding", Evidence: "fixture:other", Confidence: 0.9})
-		}
-		verdict, err := maat.Screen(maat.SystemOneScreen{
-			Subject:       maat.VerdictSubject{Kind: "host", Repo: "fixture-host", Ref: "diagnostic", HeadSHA: head},
-			FeatherWeight: 90, Confidence: 0.9, Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "fixture", Passed: true}}},
-			Findings: findings, Model: maat.ModelStamp{Provider: "local:deterministic", Version: "fixture", Local: true},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		journal := &casebookTestJournal{}
-		source, err := maat.RecordSystemOne(journal, "fixture", verdict)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return source
+		journal := &maat.FileDecisionJournal{Path: filepath.Join(t.TempDir(), "casebook.jsonl")}
+		return casebookFixtureBinaryDriftSource(t, journal, extra)
 	}
 	decisionFor := func(source maat.Decision) maat.Decision {
 		decision, err := maat.BuildBinaryDriftInactiveDisposition("fixture owner", maat.BinaryDriftInactiveDisposition{
@@ -137,21 +157,8 @@ func TestBinaryDriftInactiveDispositionResolvesOnlyItsExactSingleFindingSource(t
 
 func TestRejectedInactiveDispositionRetainsPriorRepairEvidence(t *testing.T) {
 	makeSource := func() maat.Decision {
-		head := strings.Repeat("a", 40)
-		verdict, err := maat.Screen(maat.SystemOneScreen{
-			Subject:       maat.VerdictSubject{Kind: "host", Repo: "fixture-host", Ref: "diagnostic", HeadSHA: head},
-			FeatherWeight: 90, Confidence: 0.9, Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "fixture", Passed: true}}},
-			Findings: []maat.ScreenFinding{{ID: maat.CanonicalHostFindingID("binary-drift"), Severity: "major", Category: "reliability", Claim: "binary drift", Evidence: maat.CanonicalHostFindingEvidence(head, "binary-drift"), Confidence: 0.9}},
-			Model:    maat.ModelStamp{Provider: "local:fixture", Version: "fixture", Local: true},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		decision, err := maat.RecordSystemOne(&casebookTestJournal{}, "fixture", verdict)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return decision
+		journal := &maat.FileDecisionJournal{Path: filepath.Join(t.TempDir(), "casebook.jsonl")}
+		return casebookFixtureBinaryDriftSource(t, journal, false)
 	}
 	for _, pending := range []bool{false, true} {
 		name, kind, determination := "verified-outcome", "diagnostic verified repair", "resolved"

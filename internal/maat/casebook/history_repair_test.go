@@ -2,6 +2,7 @@ package casebook
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"reflect"
@@ -27,26 +28,30 @@ func TestSearchHistoryValidatesInactiveDispositionAcrossPagedLinks(t *testing.T)
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			journal := &maat.FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
-			head := strings.Repeat("a", 40)
-			findings := []maat.ScreenFinding{{
-				ID: maat.CanonicalHostFindingID("binary-drift"), Severity: "major", Category: "host-health",
-				Claim: "binary drift", Evidence: maat.CanonicalHostFindingEvidence(head, "binary-drift"), Confidence: 1,
-			}}
+			host := "fixture-host"
+			hostDigest := sha256.Sum256([]byte(host))
+			statuses := []maat.DiagnosticStatus{{Check: "binary-drift", Severity: 3}}
 			if test.mixed {
-				findings = append(findings, maat.ScreenFinding{ID: "independent", Severity: "major", Category: "host-health", Claim: "other issue", Evidence: "fixture:other", Confidence: 1})
+				statuses = append(statuses, maat.DiagnosticStatus{Check: "RAM Pressure", Severity: 2})
 			}
-			verdict, err := maat.Screen(maat.SystemOneScreen{
-				Subject:       maat.VerdictSubject{Kind: "host", Repo: "fixture-host", Ref: "diagnostic", HeadSHA: head},
-				FeatherWeight: 90, Confidence: 1, Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "fixture", Passed: true}}},
-				Findings: findings, Model: maat.ModelStamp{Provider: "local:deterministic", Version: "fixture", Local: true},
-			})
+			observation := maat.DiagnosticObservation{
+				Schema: maat.DiagnosticObservationSchema, SourceSHA256: strings.Repeat("a", 64),
+				HostSHA256: hex.EncodeToString(hostDigest[:]), ObservedAtUTC: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC),
+				Score: 90, Statuses: statuses,
+			}
+			verdict, err := observation.Verdict()
 			if err != nil {
 				t.Fatal(err)
 			}
-			source, err := maat.RecordSystemOne(journal, "fixture", verdict)
+			written, err := maat.RecordSystemOne(journal, "fixture", verdict)
 			if err != nil {
 				t.Fatal(err)
 			}
+			rows, _, err := journal.RecentTolerant(10)
+			if err != nil || len(rows) != 1 || rows[0].Evidence != written.Evidence {
+				t.Fatalf("normalized source readback failed: rows=%d err=%v", len(rows), err)
+			}
+			source := rows[0]
 			if test.duplicate {
 				if err := journal.Append(source); err != nil {
 					t.Fatal(err)

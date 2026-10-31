@@ -19,10 +19,12 @@ Paged history carries the frozen System One source count and exact all-kind
 evidence count into projection. A rejected typed disposition leaves verified
 repair outcomes and pending attempts visible. Inactive rechecks retain their
 own progress description across detail-view replacement and do not show
-updater timing.
+updater timing. History qualification now also resolves its final short match
+batch at end-of-file, preserving exact-source results in real paged journal
+queries.
 
 Diagnostic relief copy also distinguishes historical `Jetsam Events (7d)`
 counts from current RAM, swap, and top-memory readings. Current readings make no
 promise of immediate memory reclamation and direct the operator to recheck.
 
-Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/TRACEABILITY_MATRIX.md`, `internal/maat/binary_drift_disposition.go`, `internal/maat/history_query.go`, `internal/maat/history_prefix_unix.go`, `internal/maat/history_prefix_windows.go`, `internal/maat/history_prefix_test.go`, `internal/maat/history_query_test.go`, `internal/maat/history_repair_query_test.go`, `internal/maat/casebook/casebook.go`, `internal/maat/casebook/casebook_test.go`, `cmd/sirsi/maatrepair_binary_drift_inactive.go`, `cmd/sirsi/maatrepair_binary_drift_inactive_test.go`, `macapp/Sources/SirsiMenubar/MaatCasebookView.swift`, `macapp/Sources/SirsiMenubar/MaatOperationState.swift`, `macapp/Tests/SirsiMenubarTests/MaatOperationStateTests.swift`, `macapp/Sources/SirsiMenubar/Views.swift`.
+Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/TRACEABILITY_MATRIX.md`, `internal/maat/binary_drift_disposition.go`, `internal/maat/history_query.go`, `internal/maat/history_prefix_unix.go`, `internal/maat/history_prefix_windows.go`, `internal/maat/history_prefix_test.go`, `internal/maat/history_query_test.go`, `internal/maat/history_repair_query_test.go`, `internal/maat/casebook/casebook.go`, `internal/maat/casebook/casebook_test.go`, `internal/maat/casebook/history_repair_test.go`, `cmd/sirsi/maatrepair_binary_drift_inactive.go`, `cmd/sirsi/maatrepair_binary_drift_inactive_test.go`, `macapp/Sources/SirsiMenubar/MaatCasebookView.swift`, `macapp/Sources/SirsiMenubar/MaatOperationState.swift`, `macapp/Tests/SirsiMenubarTests/MaatOperationStateTests.swift`, `macapp/Sources/SirsiMenubar/Views.swift`.
