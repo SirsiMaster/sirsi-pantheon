@@ -99,6 +99,18 @@ inventory marks that observation resolved. Failure or unavailable postcheck
 leaves the original observation open. This source addition has not itself been
 qualified or used to update an installed binary.
 
+When the exact original screen contains only the canonical binary-drift
+finding, Casebook also offers a separate **Record as no longer active** action.
+After explicit confirmation, Ma'at re-reads that exact retained screen, checks
+the same local host and deterministic floor, then makes a fresh local binary
+inventory observation. Only the canonical current `OK`/`information` result
+can append the typed owner disposition through the existing owner-acceptance
+history link. The original source case alone becomes resolved and is labeled
+no longer active, not repaired. Active, unavailable, stale, foreign, mixed, or
+already owner/updater-decided cases refuse; an identical replay reads back the
+existing disposition. This path never invokes the updater. Generic owner
+review/acceptance still does not close an arbitrary System One screen.
+
 The confirmed command now retains the attempt before appending the existing
 operation-wide claim, then records and reads back a typed invocation barrier
 after final manifest/schema/target revalidation and immediately before the one

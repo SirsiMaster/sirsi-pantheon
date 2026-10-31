@@ -549,7 +549,7 @@ final class CoreContractsTests: XCTestCase {
             maatCasebookBinaryDriftInactiveArguments(caseEvidence: evidence),
             ["maat", "repair", "binary-drift", "--record-inactive", "--case-evidence", evidence, "--confirm", "--json"]
         )
-        let raw = #"{"schema":"sirsi.maat.binary-drift-inactive-disposition-receipt.v1","case_evidence":"maat-system-one:sha256:fixture","disposition_evidence":"maat-binary-drift-inactive:sha256:fixture","host":"fixture","observed_from_utc":"2026-10-31T12:00:00Z","observed_through_utc":"2026-10-31T12:00:01Z","finding_state":"no longer active","repair_performed":false}"#.data(using: .utf8)!
+        let raw = #"{"schema":"sirsi.maat.binary-drift-inactive-disposition-receipt.v1","case_evidence":"maat-system-one:sha256:fixture","disposition_evidence":"maat-binary-drift-inactive:sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","host":"fixture","observed_from_utc":"2026-10-31T12:00:00Z","observed_through_utc":"2026-10-31T12:00:01Z","finding_state":"no longer active","repair_performed":false}"#.data(using: .utf8)!
         let receipt = try JSONDecoder().decode(MaatBinaryDriftInactiveDispositionReceipt.self, from: raw)
         XCTAssertTrue(receipt.isValid(for: evidence))
         XCTAssertFalse(receipt.isValid(for: evidence + "stale"))
@@ -557,7 +557,7 @@ final class CoreContractsTests: XCTestCase {
         let live = diagnosticFixExpectation(kind: "relief", check: "Top Memory Consumers") ?? ""
         let historical = diagnosticFixExpectation(kind: "relief", check: "Jetsam Events (7d)") ?? ""
         XCTAssertTrue(live.contains("current reading"))
-        XCTAssertTrue(live.contains("not guaranteed"))
+        XCTAssertTrue(live.contains("does not guarantee"))
         XCTAssertFalse(live.contains("7-day"))
         XCTAssertTrue(historical.contains("7-day record"))
     }

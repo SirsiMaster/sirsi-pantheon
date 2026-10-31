@@ -117,4 +117,29 @@ func TestRecordBinaryDriftInactiveDispositionRefusesChangedEvidenceAndJournalFai
 			t.Fatal("corrupt retained journal was ignored")
 		}
 	})
+	t.Run("prior owner review", func(t *testing.T) {
+		journal, evidence := binaryDriftInactiveFixture(t, "fixture-host", false)
+		if _, err := maat.RecordDiagnosticOwnerReview(journal, "fixture", maat.DiagnosticOwnerReview{Check: "binary-drift", Message: "already reviewed", OriginEvidence: evidence}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := runInactiveDispositionFixture(journal, evidence, "fixture-host", &selfupdate.DriftReport{Healthy: true}, nil)
+		if err == nil {
+			t.Fatal("prior owner review was overwritten")
+		}
+	})
+	t.Run("prior updater attempt", func(t *testing.T) {
+		journal, evidence := binaryDriftInactiveFixture(t, "fixture-host", false)
+		if err := journal.Append(maat.Decision{
+			Time: time.Date(2026, 10, 31, 12, 0, 1, 0, time.UTC).Format(time.RFC3339Nano),
+			Host: "fixture-host", Kind: "diagnostic repair attempt", Requester: "fixture",
+			Resource: "binary-drift", Assessed: "fixture attempt", Determination: "started",
+			Why: "inert prior attempt", Evidence: "fixture:attempt", OriginEvidence: evidence,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := runInactiveDispositionFixture(journal, evidence, "fixture-host", &selfupdate.DriftReport{Healthy: true}, nil)
+		if err == nil {
+			t.Fatal("prior updater attempt was overwritten")
+		}
+	})
 }
