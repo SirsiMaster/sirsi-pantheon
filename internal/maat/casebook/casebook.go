@@ -168,7 +168,7 @@ type HistorySearchResult struct {
 // Build faithfully projects decisions; classification is descriptive and is
 // never used to change the source decision's determination.
 func Build(decisions []maat.Decision) View {
-	states := linkedCaseStates(decisions)
+	states := linkedCaseStates(decisions, nil)
 	cases := make([]Case, 0, len(decisions))
 	for _, decision := range decisions {
 		if isBinaryDriftDispositionArtifact(decision, states) {
@@ -190,10 +190,17 @@ func Build(decisions []maat.Decision) View {
 // projection. An updater receipt is narrower than an owner acceptance.
 func projectLinkedCase(decision maat.Decision, linked maat.HistoryMatchState) Case {
 	c := project(decision)
-	if linked.Resolution != nil {
+	resolution := linked.Resolution
+	if resolution != nil && resolution.BinaryDriftInactiveDisposition != nil &&
+		(decision.Kind != "system one screen" || linked.SystemOneSourceCount != 1 ||
+			resolution.OriginEvidence != decision.Evidence || resolution.ResolutionFor != decision.Evidence ||
+			maat.ValidateBinaryDriftInactiveSource(decision, decision.Evidence, resolution.Host) != nil) {
+		resolution = nil
+	}
+	if resolution != nil {
 		c.Status = StatusResolved
-		c.Resolution = linked.Resolution.Why
-		c.BinaryDriftInactiveDisposition = linked.Resolution.BinaryDriftInactiveDisposition
+		c.Resolution = resolution.Why
+		c.BinaryDriftInactiveDisposition = resolution.BinaryDriftInactiveDisposition
 	} else if repair := linked.RepairOutcome; repair != nil {
 		c.RepairOutcomeEvidence = repair.Evidence
 		if repair.Determination == "resolved" {
@@ -209,7 +216,7 @@ func projectLinkedCase(decision maat.Decision, linked maat.HistoryMatchState) Ca
 	return c
 }
 
-func linkedCaseStates(decisions []maat.Decision) map[string]maat.HistoryMatchState {
+func linkedCaseStates(decisions []maat.Decision, exactSourceCounts map[string]int) map[string]maat.HistoryMatchState {
 	states := make(map[string]maat.HistoryMatchState)
 	screens := make(map[string]maat.Decision)
 	screenCounts := make(map[string]int)
@@ -217,6 +224,11 @@ func linkedCaseStates(decisions []maat.Decision) map[string]maat.HistoryMatchSta
 		if row.Kind == "system one screen" && row.SystemOne != nil {
 			screens[row.Evidence] = row
 			screenCounts[row.Evidence]++
+		}
+	}
+	for evidence, count := range exactSourceCounts {
+		if count > screenCounts[evidence] {
+			screenCounts[evidence] = count
 		}
 	}
 	for _, decision := range decisions {
@@ -254,6 +266,11 @@ func linkedCaseStates(decisions []maat.Decision) map[string]maat.HistoryMatchSta
 			}
 		}
 		states[row.OriginEvidence] = state
+	}
+	for evidence, count := range screenCounts {
+		state := states[evidence]
+		state.SystemOneSourceCount = count
+		states[evidence] = state
 	}
 	return states
 }
@@ -318,7 +335,7 @@ func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (Histo
 	keyBytes, err := json.Marshal(struct {
 		ProjectionVersion, Scope, Evidence, Kind, Text, Status string
 		Limit                                                  int
-	}{"casebook-local-prevention-v1", query.Scope, query.Evidence, kind, text, string(status), query.Limit})
+	}{"casebook-local-prevention-v2", query.Scope, query.Evidence, kind, text, string(status), query.Limit})
 	if err != nil {
 		return HistorySearchResult{}, err
 	}
@@ -383,7 +400,13 @@ func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (Histo
 	window.CandidateMatches = int(page.MatchCount)
 	window.CandidateMatchesComplete = page.Coverage == maat.HistoryCoverageComplete && page.Integrity.InvalidCount == 0 && !page.AfterCursor
 	related := append(append(append([]maat.Decision{}, page.Links.Acceptances...), page.Links.RepairOutcomes...), page.Links.RepairAttempts...)
-	view := BuildPage(historyDecisions(page.Candidates), related, page.Links.ReviewedResolutionFor)
+	exactSourceCounts := make(map[string]int)
+	for _, candidate := range page.Candidates {
+		if candidate.Decision.Kind == "system one screen" {
+			exactSourceCounts[candidate.Decision.Evidence] = candidate.SystemOneSourceCount
+		}
+	}
+	view := buildPage(historyDecisions(page.Candidates), related, page.Links.ReviewedResolutionFor, exactSourceCounts)
 	view = viewFor(append([]Case{}, view.Cases...))
 	window.Returned = len(view.Cases)
 	window.TotalComplete = page.Coverage == maat.HistoryCoverageComplete && page.Integrity.InvalidCount == 0 && !page.AfterCursor
@@ -405,8 +428,12 @@ func historyDecisions(candidates []maat.HistoryCandidate) []maat.Decision {
 // BuildPage projects only the selected cases while using related outcomes to
 // compute their status. Related records never become extra rows in the page.
 func BuildPage(decisions, related []maat.Decision, reviewedResolutionFor []string) View {
+	return buildPage(decisions, related, reviewedResolutionFor, nil)
+}
+
+func buildPage(decisions, related []maat.Decision, reviewedResolutionFor []string, exactSourceCounts map[string]int) View {
 	allDecisions := append(append([]maat.Decision(nil), decisions...), related...)
-	states := linkedCaseStates(allDecisions)
+	states := linkedCaseStates(allDecisions, exactSourceCounts)
 	reviewed := make(map[string]bool, len(reviewedResolutionFor))
 	for _, evidence := range reviewedResolutionFor {
 		reviewed[evidence] = true

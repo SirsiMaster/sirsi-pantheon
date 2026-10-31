@@ -256,8 +256,10 @@ var maatRepairBinaryDriftCmd = &cobra.Command{
 			if !ok || journal == nil {
 				return errors.New("Ma'at inactive-finding disposition requires the canonical file journal")
 			}
+			observationCtx, observationCancel := context.WithTimeout(cmd.Context(), maatBinaryDriftObservationTimeout)
+			defer observationCancel()
 			receipt, err := recordMaatBinaryDriftInactiveDispositionWith(
-				cmd.Context(), journal, maatRepairBinaryDriftCaseEvidence, maatTriageHostname, time.Now, maatRepairScanDriftContext,
+				observationCtx, journal, maatRepairBinaryDriftCaseEvidence, maatTriageHostname, time.Now, maatRepairScanDriftContext,
 			)
 			if err != nil {
 				return err

@@ -220,7 +220,7 @@ func (j *FileDecisionJournal) queryHistoryPrefixBound(query HistoryQuery) (Histo
 					if tentative.Pending == nil {
 						return HistoryPage{}, fmt.Errorf("maat decision history: invalid pending candidate")
 					}
-					first, link = *tentative.Pending, historyLinkRef{Acceptance: tentative.PendingAcceptance, RepairOutcome: tentative.PendingRepairOutcome, RepairAttempt: tentative.PendingRepairAttempt}
+					first, link = *tentative.Pending, historyLinkRef{Acceptance: tentative.PendingAcceptance, RepairOutcome: tentative.PendingRepairOutcome, RepairAttempt: tentative.PendingRepairAttempt, SystemOneSourceCount: tentative.PendingSystemOneSourceCount}
 				case "batch-finalize":
 					if tentative.BatchIndex >= len(tentative.Batch) {
 						return HistoryPage{}, fmt.Errorf("maat decision history: invalid batch cursor")
@@ -429,7 +429,7 @@ func queryHistoryCapturedPhase(file *historyPrefixFile, state *historyCursor, qu
 		}
 		switch state.Phase {
 		case "candidate-finalize":
-			matched, err := finishCapturedHistoryCandidate(state.Pending, state.PendingAcceptance, state.PendingRepairOutcome, state.PendingRepairAttempt, state.PendingReviewed, capture, query)
+			matched, err := finishCapturedHistoryCandidate(state.Pending, state.PendingAcceptance, state.PendingRepairOutcome, state.PendingRepairAttempt, state.PendingReviewed, state.PendingSystemOneSourceCount, capture, query)
 			if err != nil {
 				return err
 			}
@@ -448,7 +448,7 @@ func queryHistoryCapturedPhase(file *historyPrefixFile, state *historyCursor, qu
 			for state.BatchIndex < batchEnd {
 				index := state.BatchIndex
 				ref, link := state.Batch[index], state.BatchLinks[index]
-				matched, err := finishCapturedHistoryCandidate(&ref, link.Acceptance, link.RepairOutcome, link.RepairAttempt, link.Review != nil, capture, query)
+				matched, err := finishCapturedHistoryCandidate(&ref, link.Acceptance, link.RepairOutcome, link.RepairAttempt, link.Review != nil, link.SystemOneSourceCount, capture, query)
 				if err != nil {
 					return err
 				}
@@ -504,14 +504,15 @@ func clearPendingHistoryCursor(state *historyCursor) {
 	state.PendingAcceptance = nil
 	state.PendingRepairOutcome = nil
 	state.PendingRepairAttempt = nil
+	state.PendingSystemOneSourceCount = 0
 }
 
-func finishCapturedHistoryCandidate(ref *historyCandidateRef, acceptance, repairOutcome, repairAttempt *historyOrder, hidden bool, captured map[int64]Decision, query HistoryQuery) (bool, error) {
+func finishCapturedHistoryCandidate(ref *historyCandidateRef, acceptance, repairOutcome, repairAttempt *historyOrder, hidden bool, sourceCount int, captured map[int64]Decision, query HistoryQuery) (bool, error) {
 	decision, ok := captured[ref.Order.Offset]
 	if !ok || decision.Time != ref.Order.Time || historyKeyHash(decision.Evidence) != ref.EvidenceHash || historyKeyHash(decision.ResolutionFor) != ref.ResolutionHash || (decision.Kind == "diagnostic owner acceptance") != ref.OwnerAcceptance {
 		return false, ErrHistorySnapshotChanged
 	}
-	state := HistoryMatchState{Resolved: acceptance != nil, Hidden: hidden}
+	state := HistoryMatchState{Resolved: acceptance != nil, Hidden: hidden, SystemOneSourceCount: sourceCount}
 	if acceptance != nil {
 		resolution, ok := captured[acceptance.Offset]
 		if !ok || resolution.Kind != "diagnostic owner acceptance" || historyKeyHash(resolution.ResolutionFor) != ref.EvidenceHash || resolution.Time != acceptance.Time {
@@ -584,7 +585,7 @@ func materializeCapturedHistory(state *historyCursor, query HistoryQuery, page *
 		if query.MatchState != nil && !query.MatchState(decision, matchState) {
 			return ErrHistorySnapshotChanged
 		}
-		page.Candidates = append(page.Candidates, HistoryCandidate{Decision: decision, Offset: ref.Order.Offset})
+		page.Candidates = append(page.Candidates, HistoryCandidate{Decision: decision, Offset: ref.Order.Offset, SystemOneSourceCount: sourceCount})
 	}
 	offsets := make([]int64, 0, len(acceptances))
 	for offset := range acceptances {

@@ -8,6 +8,12 @@ stale or foreign evidence, active or unavailable observations, and journal
 errors remain open/refused. Repeated identical observations return the durable
 existing disposition.
 
+Paged Casebook history validates the disposition against the unique source
+screen and host before status filtering or page projection. The query identity
+changes so older continuations are refused and can be refreshed. The
+confirmation scan keeps the existing three-second observation ceiling;
+cancellation or deadline expiry does not append a disposition.
+
 Diagnostic relief copy also distinguishes historical `Jetsam Events (7d)`
 counts from current RAM, swap, and top-memory readings. Current readings make no
 promise of immediate memory reclamation and direct the operator to recheck.
