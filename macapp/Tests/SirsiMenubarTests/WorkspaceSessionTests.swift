@@ -28,6 +28,64 @@ final class WorkspaceSessionTests: XCTestCase {
         XCTAssertFalse(session.navigation(for: .maat).atRoot)
     }
 
+    func testBackForwardPreservesFrameIdentityAndNewPushDropsForwardBranch() throws {
+        let nav = Nav()
+        nav.push(Text("First"))
+        nav.push(Text("Second"))
+        nav.push(Text("Third"))
+        let firstID = nav.stack[0].id
+        let secondID = nav.stack[1].id
+        let thirdID = nav.stack[2].id
+
+        nav.pop()
+        nav.pop()
+        XCTAssertEqual(nav.stack.map(\.id), [firstID])
+        XCTAssertTrue(nav.canGoForward)
+        nav.forward()
+        XCTAssertEqual(nav.stack.map(\.id), [firstID, secondID])
+        XCTAssertNotEqual(nav.stack.last?.id, thirdID)
+
+        nav.push(Text("Branch"))
+        let branchID = try XCTUnwrap(nav.stack.last?.id)
+        XCTAssertEqual(nav.stack.map(\.id), [firstID, secondID, branchID])
+        XCTAssertFalse(nav.canGoForward)
+        nav.forward()
+        XCTAssertEqual(nav.stack.map(\.id), [firstID, secondID, branchID])
+        XCTAssertEqual(Set(nav.stack.map(\.id)).count, nav.stack.count)
+    }
+
+    func testForwardHistoryAndHomeResetStayWithinEachWorkspace() {
+        let session = PantheonWorkspaceSession(defaults: defaults())
+        let ra = session.navigation(for: .ra)
+        let maat = session.navigation(for: .maat)
+        ra.push(Text("Ra root detail"))
+        ra.push(Text("Ra evidence"))
+        let raEvidenceID = ra.stack.last!.id
+        ra.pop()
+        maat.push(Text("Ma'at root detail"))
+        maat.push(Text("Ma'at case"))
+        let maatCaseID = maat.stack.last!.id
+        maat.pop()
+
+        session.select(.ra)
+        XCTAssertTrue(ra.canGoForward)
+        XCTAssertTrue(maat.canGoForward)
+        ra.forward()
+        XCTAssertEqual(ra.stack.last?.id, raEvidenceID)
+        XCTAssertEqual(maat.stack.count, 1)
+        XCTAssertTrue(maat.canGoForward)
+
+        session.select(.maat)
+        maat.forward()
+        XCTAssertEqual(session.navigation.stack.last?.id, maatCaseID)
+        maat.popToRoot() // the workspace Home operation clears both directions
+        XCTAssertTrue(maat.atRoot)
+        XCTAssertFalse(maat.canGoBack)
+        XCTAssertFalse(maat.canGoForward)
+        XCTAssertEqual(ra.stack.last?.id, raEvidenceID)
+        XCTAssertFalse(ra.atRoot)
+    }
+
     func testMaatPrimaryViewportIsRootOnlyAndRetainsItsIdentityAcrossDetails() throws {
         let store = defaults()
         let session = PantheonWorkspaceSession(defaults: store)

@@ -4,6 +4,7 @@ import SwiftUI
 enum PantheonMenuAction {
     static let search = "search"
     static let back = "back"
+    static let forward = "forward"
     static let home = "home"
     static let help = "help"
 }
@@ -17,6 +18,7 @@ final class PantheonMenuBridge {
     var presentProjectChooser: (() -> Void)?
     var actionHandlers: [String: () -> Void] = [:]
     var canGoBack = false
+    var canGoForward = false
 
     var canChooseProject: Bool { projectChooser != nil || presentProjectChooser != nil }
 
@@ -58,6 +60,11 @@ final class PantheonMenuBridge {
         pendingRequestID = nil
     }
 
+    func bindWorkspaceNavigation(session: PantheonWorkspaceSession) {
+        actionHandlers[PantheonMenuAction.back] = { session.navigation.pop() }
+        actionHandlers[PantheonMenuAction.forward] = { session.navigation.forward() }
+    }
+
     func tearDown() {
         projectChooserID = nil
         projectChooser = nil
@@ -65,6 +72,7 @@ final class PantheonMenuBridge {
         presentProjectChooser = nil
         actionHandlers.removeAll()
         canGoBack = false
+        canGoForward = false
     }
     func perform(_ action: String) { actionHandlers[action]?() }
 }
@@ -83,7 +91,8 @@ extension EnvironmentValues {
 @MainActor
 enum PantheonMenuAvailability {
     static func isEnabled(action: Selector, textSizePercent: Int,
-                          canGoBack: Bool, canChooseProject: Bool) -> Bool? {
+                          canGoBack: Bool, canGoForward: Bool,
+                          canChooseProject: Bool) -> Bool? {
         switch action {
         case #selector(AppDelegate.increaseTextSize(_:)):
             return PantheonTextSizePreference.normalized(textSizePercent) < 150
@@ -93,6 +102,8 @@ enum PantheonMenuAvailability {
             return PantheonTextSizePreference.normalized(textSizePercent) != 100
         case #selector(AppDelegate.goBack(_:)):
             return canGoBack
+        case #selector(AppDelegate.goForward(_:)):
+            return canGoForward
         case #selector(AppDelegate.chooseProject(_:)):
             return canChooseProject
         default:
@@ -135,6 +146,7 @@ func makePantheonMainMenu(target: NSObject, servicesMenu: NSMenu) -> NSMenu {
         NSMenuItem.separator(),
         item("Search Workspaces…", #selector(AppDelegate.searchWorkspaces(_:)), target: target, key: "k", modifiers: [.command]),
         item("Back", #selector(AppDelegate.goBack(_:)), target: target, key: "[", modifiers: [.command]),
+        item("Forward", #selector(AppDelegate.goForward(_:)), target: target, key: "]", modifiers: [.command]),
         item("Home", #selector(AppDelegate.goHome(_:)), target: target, key: "h", modifiers: [.command, .shift])
     ]))
     mainMenu.addItem(menu(title: "Window", items: [

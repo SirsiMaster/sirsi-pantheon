@@ -2,8 +2,11 @@
 
 Each sidebar workspace retains its own drill-down history while Pantheon is
 open. Switching back, or selecting the same workspace again, preserves its
-detail. Back returns one step; the workspace home action clears only the
-active workspace's drill-downs.
+detail. View → Back (Command-[) returns one step; View → Forward (Command-])
+returns to the detail you left. Opening a new detail after Back clears that
+workspace's forward branch. A workspace home action clears both history
+directions for that workspace. The application Home command opens Overview
+and clears Overview's history; other workspaces keep their independent paths.
 
 Restarting restores the last selected workspace, not operations or confirmation
 dialogs. Unknown stored selections recover to Overview. Inactive workspace

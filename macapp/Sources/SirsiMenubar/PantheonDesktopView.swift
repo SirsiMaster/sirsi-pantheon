@@ -109,7 +109,6 @@ struct PantheonDesktopView: View {
             menuBridge?.presentProjectChooser = { projectChooserPresented = true }
             menuBridge?.actionHandlers = [
                 PantheonMenuAction.search: { searchFocused = true },
-                PantheonMenuAction.back: { nav.pop() },
                 PantheonMenuAction.home: {
                     session.select(.command)
                     session.navigation(for: .command).popToRoot()
@@ -119,17 +118,26 @@ struct PantheonDesktopView: View {
                     session.navigation(for: .library).popToRoot()
                 }
             ]
-            menuBridge?.canGoBack = !nav.atRoot
+            menuBridge?.bindWorkspaceNavigation(session: session)
+            syncMenuNavigationAvailability()
         }
         .onDisappear {
             menuBridge?.tearDown()
         }
-        .onChange(of: nav.stack.count) { _ in
-            menuBridge?.canGoBack = !nav.atRoot
+        .onChange(of: nav.canGoBack) { _ in
+            syncMenuNavigationAvailability()
+        }
+        .onChange(of: nav.canGoForward) { _ in
+            syncMenuNavigationAvailability()
         }
         .onChange(of: section) { _ in
-            menuBridge?.canGoBack = !nav.atRoot
+            syncMenuNavigationAvailability()
         }
+    }
+
+    private func syncMenuNavigationAvailability() {
+        menuBridge?.canGoBack = nav.canGoBack
+        menuBridge?.canGoForward = nav.canGoForward
     }
 
     private var sidebar: some View {
