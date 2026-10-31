@@ -59,30 +59,31 @@ type ResolutionStep struct {
 // Case is a stable, operator-readable projection of exactly one recorded
 // Ma'at decision. It has no independent lifecycle or write authority.
 type Case struct {
-	ID                           string                          `json:"id"`
-	Time                         string                          `json:"time"`
-	Host                         string                          `json:"host"`
-	Kind                         string                          `json:"kind"`
-	Category                     string                          `json:"category"`
-	Status                       Status                          `json:"status"`
-	Priority                     Priority                        `json:"priority"`
-	Requester                    string                          `json:"requester"`
-	Resource                     string                          `json:"resource,omitempty"`
-	Affected                     string                          `json:"affected,omitempty"`
-	Determination                string                          `json:"determination"`
-	Assessed                     string                          `json:"assessed"`
-	Why                          string                          `json:"why"`
-	Evidence                     string                          `json:"evidence,omitempty"`
-	Resolution                   string                          `json:"resolution,omitempty"`
-	VerifiedRepairEvidence       string                          `json:"verified_repair_evidence,omitempty"`
-	RepairOutcomeEvidence        string                          `json:"repair_outcome_evidence,omitempty"`
-	PendingRepairAttemptEvidence string                          `json:"pending_repair_attempt_evidence,omitempty"`
-	NextAction                   *ResolutionPath                 `json:"next_action,omitempty"`
-	SystemOne                    *maat.MaatVerdict               `json:"system_one,omitempty"`
-	SystemOneCalibration         *maat.CalibrationRecord         `json:"system_one_calibration,omitempty"`
-	FailureMemoryReceipt         *maat.PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
-	FailureMemoryIncidentKeys    *[]string                       `json:"failure_memory_incident_keys,omitempty"`
-	SourceQualification          *maat.QualificationEvent        `json:"source_qualification,omitempty"`
+	ID                             string                               `json:"id"`
+	Time                           string                               `json:"time"`
+	Host                           string                               `json:"host"`
+	Kind                           string                               `json:"kind"`
+	Category                       string                               `json:"category"`
+	Status                         Status                               `json:"status"`
+	Priority                       Priority                             `json:"priority"`
+	Requester                      string                               `json:"requester"`
+	Resource                       string                               `json:"resource,omitempty"`
+	Affected                       string                               `json:"affected,omitempty"`
+	Determination                  string                               `json:"determination"`
+	Assessed                       string                               `json:"assessed"`
+	Why                            string                               `json:"why"`
+	Evidence                       string                               `json:"evidence,omitempty"`
+	Resolution                     string                               `json:"resolution,omitempty"`
+	VerifiedRepairEvidence         string                               `json:"verified_repair_evidence,omitempty"`
+	RepairOutcomeEvidence          string                               `json:"repair_outcome_evidence,omitempty"`
+	PendingRepairAttemptEvidence   string                               `json:"pending_repair_attempt_evidence,omitempty"`
+	NextAction                     *ResolutionPath                      `json:"next_action,omitempty"`
+	SystemOne                      *maat.MaatVerdict                    `json:"system_one,omitempty"`
+	SystemOneCalibration           *maat.CalibrationRecord              `json:"system_one_calibration,omitempty"`
+	FailureMemoryReceipt           *maat.PreflightReceiptReference      `json:"failure_memory_receipt,omitempty"`
+	FailureMemoryIncidentKeys      *[]string                            `json:"failure_memory_incident_keys,omitempty"`
+	SourceQualification            *maat.QualificationEvent             `json:"source_qualification,omitempty"`
+	BinaryDriftInactiveDisposition *maat.BinaryDriftInactiveDisposition `json:"binary_drift_inactive_disposition,omitempty"`
 }
 
 // Node and Edge form a deliberately small evidence graph. The dashboard can
@@ -170,6 +171,9 @@ func Build(decisions []maat.Decision) View {
 	states := linkedCaseStates(decisions)
 	cases := make([]Case, 0, len(decisions))
 	for _, decision := range decisions {
+		if isBinaryDriftDispositionArtifact(decision, decisions) {
+			continue
+		}
 		if decision.Kind == "diagnostic owner acceptance" && decision.ResolutionFor != "" {
 			if hasOwnerReview(decisions, decision.ResolutionFor) {
 				continue
@@ -189,6 +193,7 @@ func projectLinkedCase(decision maat.Decision, linked maat.HistoryMatchState) Ca
 	if linked.Resolution != nil {
 		c.Status = StatusResolved
 		c.Resolution = linked.Resolution.Why
+		c.BinaryDriftInactiveDisposition = linked.Resolution.BinaryDriftInactiveDisposition
 	} else if repair := linked.RepairOutcome; repair != nil {
 		c.RepairOutcomeEvidence = repair.Evidence
 		if repair.Determination == "resolved" {
@@ -206,14 +211,31 @@ func projectLinkedCase(decision maat.Decision, linked maat.HistoryMatchState) Ca
 
 func linkedCaseStates(decisions []maat.Decision) map[string]maat.HistoryMatchState {
 	states := make(map[string]maat.HistoryMatchState)
+	screens := make(map[string]maat.Decision)
+	for _, row := range decisions {
+		if row.Kind == "system one screen" && row.SystemOne != nil {
+			screens[row.Evidence] = row
+		}
+	}
 	for _, decision := range decisions {
 		row := decision
 		if row.Kind == "diagnostic owner acceptance" && row.ResolutionFor != "" {
-			state := states[row.ResolutionFor]
-			if state.Resolution == nil || row.Time > state.Resolution.Time {
-				state.Resolved, state.Resolution = true, &row
+			if row.BinaryDriftInactiveDisposition != nil {
+				source, ok := screens[row.ResolutionFor]
+				if ok && row.OriginEvidence == row.ResolutionFor && maat.ValidateBinaryDriftInactiveSource(source, row.ResolutionFor, row.Host) == nil {
+					state := states[row.ResolutionFor]
+					if state.Resolution == nil || row.Time > state.Resolution.Time {
+						state.Resolved, state.Resolution = true, &row
+					}
+					states[row.ResolutionFor] = state
+				}
+			} else {
+				state := states[row.ResolutionFor]
+				if state.Resolution == nil || row.Time > state.Resolution.Time {
+					state.Resolved, state.Resolution = true, &row
+				}
+				states[row.ResolutionFor] = state
 			}
-			states[row.ResolutionFor] = state
 		}
 		if row.Resource != "binary-drift" || row.OriginEvidence == "" {
 			continue
@@ -232,6 +254,18 @@ func linkedCaseStates(decisions []maat.Decision) map[string]maat.HistoryMatchSta
 		states[row.OriginEvidence] = state
 	}
 	return states
+}
+
+func isBinaryDriftDispositionArtifact(decision maat.Decision, decisions []maat.Decision) bool {
+	if decision.BinaryDriftInactiveDisposition == nil || decision.ResolutionFor == "" || decision.OriginEvidence != decision.ResolutionFor {
+		return false
+	}
+	for _, source := range decisions {
+		if source.Evidence == decision.ResolutionFor && source.Kind == "system one screen" {
+			return maat.ValidateBinaryDriftInactiveSource(source, decision.ResolutionFor, decision.Host) == nil
+		}
+	}
+	return false
 }
 
 func hasOwnerReview(decisions []maat.Decision, evidence string) bool {
@@ -380,6 +414,9 @@ func BuildPage(decisions, related []maat.Decision, reviewedResolutionFor []strin
 	}
 	cases := make([]Case, 0, len(decisions))
 	for _, decision := range decisions {
+		if isBinaryDriftDispositionArtifact(decision, append(append([]maat.Decision(nil), decisions...), related...)) {
+			continue
+		}
 		if decision.Kind == "diagnostic owner acceptance" && reviewed[decision.ResolutionFor] {
 			continue
 		}

@@ -3,6 +3,7 @@ package casebook
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 )
@@ -65,6 +66,56 @@ func TestSourceScreenV2ProjectsReviewWithoutHostRepairAuthority(t *testing.T) {
 				t.Fatal("projection lost provenance")
 			}
 		})
+	}
+}
+
+func TestBinaryDriftInactiveDispositionResolvesOnlyItsExactSingleFindingSource(t *testing.T) {
+	makeSource := func(extra bool) maat.Decision {
+		head := strings.Repeat("a", 40)
+		findings := []maat.ScreenFinding{{ID: maat.CanonicalHostFindingID("binary-drift"), Severity: "major", Category: "reliability", Claim: "binary drift", Evidence: maat.CanonicalHostFindingEvidence(head, "binary-drift"), Confidence: 0.9}}
+		if extra {
+			findings = append(findings, maat.ScreenFinding{ID: "other", Severity: "major", Category: "reliability", Claim: "another open finding", Evidence: "fixture:other", Confidence: 0.9})
+		}
+		verdict, err := maat.Screen(maat.SystemOneScreen{
+			Subject:       maat.VerdictSubject{Kind: "host", Repo: "fixture-host", Ref: "diagnostic", HeadSHA: head},
+			FeatherWeight: 90, Confidence: 0.9, Floor: maat.FloorResult{Passed: true, Checks: []maat.FloorCheck{{Name: "fixture", Passed: true}}},
+			Findings: findings, Model: maat.ModelStamp{Provider: "local:deterministic", Version: "fixture", Local: true},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		journal := &casebookTestJournal{}
+		source, err := maat.RecordSystemOne(journal, "fixture", verdict)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return source
+	}
+	decisionFor := func(source maat.Decision) maat.Decision {
+		decision, err := maat.BuildBinaryDriftInactiveDisposition("fixture owner", maat.BinaryDriftInactiveDisposition{
+			OriginEvidence: source.Evidence, Host: "fixture-host",
+			ObservedFromUTC:    time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC),
+			ObservedThroughUTC: time.Date(2026, 10, 31, 12, 0, 1, 0, time.UTC),
+			ObservationSHA256:  strings.Repeat("b", 64),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return decision
+	}
+
+	source := makeSource(false)
+	view := Build([]maat.Decision{source, decisionFor(source)})
+	resolved, ok := casebookCaseByEvidence(view.Cases, source.Evidence)
+	if !ok || len(view.Cases) != 1 || resolved.Status != StatusResolved || resolved.NextAction != nil || resolved.VerifiedRepairEvidence != "" || resolved.BinaryDriftInactiveDisposition == nil {
+		t.Fatalf("exact inactive disposition projection = %+v", view.Cases)
+	}
+
+	mixed := makeSource(true)
+	mixedView := Build([]maat.Decision{mixed, decisionFor(mixed)})
+	open, ok := casebookCaseByEvidence(mixedView.Cases, mixed.Evidence)
+	if !ok || open.Status != StatusOpen || open.VerifiedRepairEvidence != "" {
+		t.Fatalf("mixed screen was incorrectly discharged: %+v", open)
 	}
 }
 

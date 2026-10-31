@@ -1233,6 +1233,21 @@ struct HealthRow: View {
 // → fix" made real. It explains the finding and, when a safe remediation exists,
 // offers a direct repair or a confirmation-gated repair. No finding dead-ends
 // at "here's a problem" with no way to act.
+func diagnosticFixExpectation(kind: String, check: String) -> String? {
+    switch kind {
+    case "relief" where check == "Jetsam Events (7d)":
+        return "This is a 7-day record of past memory-pressure events. Relieving a live cause may help prevent more events; the historical count changes only as the window advances."
+    case "relief":
+        return "This is a current reading. Relieving an active cause may ease pressure, but memory is not guaranteed to be reclaimed immediately. Recheck after the workload or system state changes."
+    case "guidance":
+        return "This acts only while the issue is happening live. If it isn't happening right now, you'll get steps to prevent it — the status won't change immediately."
+    case "instant" where check == "App Crashes (7d)":
+        return "These are the last 7 days of crash reports. Clearing the backlog drops the count now — it won't stop future crashes, but the signal clears."
+    default:
+        return nil
+    }
+}
+
 // FindingDetailEntry is one parsed row of a pipe-separated finding detail —
 // "Name (SIZE) | Name (SIZE) | …" (the Top Memory Consumers shape) or
 // "name 45% | name 12%" (the Spotlight shape, no parenthesised value).
@@ -1423,19 +1438,7 @@ struct FindingView: View {
     }
     // The expectation set BEFORE the click — the heart of the honesty fix.
     private var fixExpectation: String? {
-        switch kind {
-        case "relief":
-            return "This is a 7-day pattern — a record of what already happened. Relieving the live cause eases it now; the historical count decays as clean days pass, so it won't drop the instant you click."
-        case "guidance":
-            return "This acts only while the issue is happening live. If it isn't happening right now, you'll get steps to prevent it — the status won't change immediately."
-        case "instant":
-            if observedFinding.check == "App Crashes (7d)" {
-                return "These are the last 7 days of crash reports. Clearing the backlog drops the count now — it won't stop future crashes, but the signal clears."
-            }
-            return nil   // disk / binary-drift: a plain instant fix, no caveat needed
-        default:
-            return nil
-        }
+        diagnosticFixExpectation(kind: kind, check: observedFinding.check)
     }
 
     var body: some View {
