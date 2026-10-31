@@ -229,6 +229,7 @@
       ],
       "tests": [
         "internal/router tests",
+        "internal/router/wakeidentity_test.go::TestWakeLoopTerminalObserverStopsWithoutRevival",
         "router rollback fixtures"
       ],
       "inputs": [
@@ -246,6 +247,7 @@
       ],
       "upgrade_recipe": [
         "preserve TTL and revocation fencing",
+        "synchronize terminal-observer fixtures at the existing post-heartbeat log boundary; keep bounded lifecycle retries unchanged",
         "rehearse outage and rollback",
         "never reopen local fallback"
       ]
