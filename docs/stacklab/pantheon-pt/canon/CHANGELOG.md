@@ -1,5 +1,59 @@
 # Changelog — Pantheon PT canon
 
+## 2026-10-30 — v0.24.149 release candidate
+
+- Corrected the existing Ma'at binary-drift preview to resolve one exact System One case across the complete bounded journal, refusing duplicates and malformed retained tails, and stripped ANSI styling from the preview error label. Added inert retained-history regressions; native error presentation reuses the existing ANSI stripper and still requires installed-app verification. No updater or host action was run.
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`, `cmd/sirsi/maatrepair_binary_drift.go`, `internal/maat/decisions.go`
+- Corrected the retained binary-drift case regression fixture to capture all four values returned by its existing setup helper. Production behavior and the missing-case, host, digest, and duplicate-evidence assertions are unchanged.
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `cmd/sirsi/maatrepair_binary_drift_test.go`
+- Pinned retained binary-drift case fixtures before their filler records and pinned recent duplicate rows after the fillers. The regressions now assert exact evidence counts in `Recent(100)` before checking full-history uniqueness and refusal.
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `cmd/sirsi/maatrepair_binary_drift_test.go`, `internal/maat/decisions.go`
+- Added the strict all-kind evidence lookup to the concurrent binary-drift journal fixture under its existing mutex, preserving the concurrent one-launch test's exact oracle. Production behavior is unchanged.
+- Tightened the retained binary-drift case lookup to count every exact evidence-reference match across kinds before checking the sole row's System One type. Added an old/new-window regression for a different-kind duplicate; the existing kind-specific lookup remains unchanged.
+- Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/maat/canon/COMPONENT_CATALOG.md`, `internal/maat/decisions.go`, `cmd/sirsi/maatrepair_binary_drift.go`
+- Require exact-ID CLI support for owned Ma’at reservation readback
+- The admitted-run supervisor now requests `maat status --id <full-id> --json`
+  for its own reservation and refuses malformed, missing, duplicated, or extra
+  rows. It does not fall back to a resource history query. Install the normal
+  signed CLI rollout with `status --id` support before using this recovery path.
+- Refs: `scripts/maat/README.md`, `docs/ADR-006-SELF-AWARE-RESOURCE-GOVERNANCE.md`
+- Initialize the nonempty Apollo inventory argument array with the capability
+  pair in both DMG and PKG builders, then append the profile pair only when a
+  profile is present. Remove the empty optional array that caused Bash 3.2
+  nounset to abort disabled-profile DMG builds.
+- Deliberately refresh Ma’at release-preflight provenance hashes for both
+  builder files; this keeps their exact reviewed Bash 3.2 argv correction
+  pinned without changing any signing, keychain, or contract checks.
+- Add a regression to the existing macOS artifact-contract suite. It extracts
+  the production argument blocks and first inventory commands from each
+  builder, runs them under `/bin/bash` 3.2 against an owned recording CLI, and
+  checks exact disabled/enabled argv. The enabled DMG fixture also checks only
+  its temporary copied profile bytes and mode. No build, package, signature,
+  mount, notarization, or model operation is performed by the fixture.
+- Refs: `contracts/stacklab/pantheon-release-artifact-recipe-v1.json`,
+  `scripts/PACKAGING.md`, `.github/workflows/ci.yml`.
+- Preserve existing internal `pruned` rows across compatible upserts and
+  physical deletes, reject callers that try to manufacture the reserved status,
+  and hide retained rows from ordinary reads while keeping authority and raw
+  migration visibility intact. G1 creates no fences and does not close the
+  absent-row stale-insert residual; no prune activation or G2 behavior is added.
+- Refs: `docs/ADR-057-OPERATIONAL-ENFORCEMENT-SUPERVISION.md`, `internal/routerstore/threads.go`
+- Router wake loop:
+- Create the decision-journal mutation lock relative to its retained parent
+  descriptor with `O_CREAT|O_EXCL`; only `EEXIST` falls back to opening the
+  exact existing leaf without creation. Errors from either operation,
+  including `ENOENT`, propagate; there is no retry or pathname fallback.
+- Before locking, require the opened leaf to be an owned, private, singly-linked
+  regular file. Do not chmod or otherwise repair an invalid existing lock.
+- Add per-call injected-open tests for exact flags, create refusal, existing
+  lock fallback, open refusal, concurrent first creation, and symlink refusal;
+  add invalid hardlink and public-mode fixtures. Existing nonblocking flock
+  and descriptor ownership remain in place. Keep refusal messages compatible
+  with the repository's spelling check.
+- The Darwin concurrent first-create issue is documented by the
+  [primary Entire CLI source fix](https://github.com/entireio/cli/commit/9c18f31b23a62749b804718125b17c236420a28a).
+- Refs: `docs/stacklab/maat/canon/DESIGN.md`, `docs/stacklab/maat/canon/SECURITY_THREAT_MODEL.md`, ADR-009, PANTHEON_RULES.md A16.
+
 ## 2026-10-30 — v0.24.148 release candidate
 
 - Add source-lifecycle receipt preview, bounded replay and journal/Casebook observations; preserve unqualified model profiles, the deterministic floor and unauthenticated router attribution.
