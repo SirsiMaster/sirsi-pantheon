@@ -185,6 +185,7 @@ jobs:
             --register-executor --work "pantheon-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --cpu-cores 1 --timeout 1500 -- /bin/bash -euo pipefail -c '
               PANTHEON_APOLLO_DIGEST_RECEIPT="$(bash scripts/new-apollo-digest-receipt.sh "$RUNNER_TEMP")"
+              printf "PANTHEON_APOLLO_DIGEST_RECEIPT=%s\n" "$PANTHEON_APOLLO_DIGEST_RECEIPT" >> "$GITHUB_ENV"
               export PANTHEON_APOLLO_DIGEST_RECEIPT
               bash scripts/ci-private-sdk.sh scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
               bash scripts/ci-private-sdk.sh scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app "$GITHUB_WORKSPACE/Pantheon.app"
@@ -208,7 +209,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pantheon-publication-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/pantheon-publication-${{ github.run_id }}-${{ github.run_attempt }}.json
+          path: |
+            ${{ runner.temp }}/pantheon-publication-${{ github.run_id }}-${{ github.run_attempt }}.json
+            ${{ env.PANTHEON_APOLLO_DIGEST_RECEIPT }}
           if-no-files-found: warn
 
       - name: Restore login keychain as default (always)

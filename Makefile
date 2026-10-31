@@ -143,13 +143,13 @@ pkg-dev:
 	@echo "📦 Creating development PKG..."
 	@set -e; receipt="$$(bash scripts/new-apollo-digest-receipt.sh "$(BUILD_DIR)")"; \
 		PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt" scripts/build-dmg.sh --development --version $(VERSION) --arch $(shell uname -m); \
-		PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt" scripts/build-pkg.sh --development --version $(VERSION) --arch $(shell uname -m) --app Pantheon.app
+		PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt" scripts/build-pkg.sh --development --version $(VERSION) --arch $(shell uname -m) --app "$(CURDIR)/Pantheon.app"
 
 release-pkg:
 	@echo "📦 Creating commercial release PKG..."
 	@set -e; receipt="$$(bash scripts/new-apollo-digest-receipt.sh "$(BUILD_DIR)")"; \
 		PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt" PANTHEON_APOLLO_CAPABILITY="$(PANTHEON_APOLLO_CAPABILITY)" scripts/build-dmg.sh --release --version $(VERSION) --arch $(shell uname -m); \
-		PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt" PANTHEON_APOLLO_CAPABILITY="$(PANTHEON_APOLLO_CAPABILITY)" scripts/build-pkg.sh --release --version $(VERSION) --arch $(shell uname -m) --app Pantheon.app
+		PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt" PANTHEON_APOLLO_CAPABILITY="$(PANTHEON_APOLLO_CAPABILITY)" scripts/build-pkg.sh --release --version $(VERSION) --arch $(shell uname -m) --app "$(CURDIR)/Pantheon.app"
 
 # --- Horus Auto-Publish ---
 # Generates docs/build-log.html and docs/case-studies.html
