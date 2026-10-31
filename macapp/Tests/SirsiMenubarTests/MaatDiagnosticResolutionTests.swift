@@ -329,7 +329,8 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
         let correlation = fixture.model(), v = try verdict(), nav = Nav()
         let engine = SirsiEngine(maatCaseOperations:MaatCaseOperationStore(diagnosticRecord:correlation))
         var bridge: MaatDiagnosticResolutionView? = MaatDiagnosticResolutionView(engine:engine,origin:originCase(v),finding:v.findings[0])
-        weak var owned = bridge?.model
+        weak var owned: MaatDiagnosticResolutionModel?
+        owned = bridge?.model
         let identity = ObjectIdentifier(try XCTUnwrap(owned))
         nav.push(try XCTUnwrap(bridge)); bridge = nil
         let bridgeID = nav.stack.last?.id
