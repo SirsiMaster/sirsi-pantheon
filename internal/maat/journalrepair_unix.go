@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -62,7 +63,7 @@ func withJournalMutationLock(path string, fn func() error) error {
 		return err
 	}
 	defer unix.Close(parentFD)
-	lockFD, err := unix.Openat(parentFD, "."+base+".lock", unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	lockFD, err := openJournalMutationLockAt(parentFD, "."+base+".lock", unix.Openat)
 	if err != nil {
 		return fmt.Errorf("maat decision journal: open mutation lock: %w", err)
 	}
@@ -72,6 +73,33 @@ func withJournalMutationLock(path string, fn func() error) error {
 	}
 	defer func() { _ = unix.Flock(lockFD, unix.LOCK_UN) }()
 	return fn()
+}
+
+// openJournalMutationLockAt avoids Darwin's concurrent openat(O_CREAT) without
+// O_EXCL first-create failure. Only EEXIST transitions to opening the existing
+// named leaf without creation; only ENOENT from that open permits another
+// bounded exclusive-create attempt, for a leaf removed between the two calls.
+func openJournalMutationLockAt(parentFD int, name string, openat func(int, string, int, uint32) (int, error)) (int, error) {
+	flags := unix.O_RDWR | unix.O_NOFOLLOW | unix.O_CLOEXEC
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		fd, err := openat(parentFD, name, flags|unix.O_CREAT|unix.O_EXCL, 0o600)
+		if err == nil {
+			return fd, nil
+		}
+		if !errors.Is(err, unix.EEXIST) {
+			return -1, err
+		}
+		fd, err = openat(parentFD, name, flags, 0)
+		if err == nil {
+			return fd, nil
+		}
+		if !errors.Is(err, unix.ENOENT) {
+			return -1, err
+		}
+		lastErr = err
+	}
+	return -1, fmt.Errorf("journal lock leaf repeatedly disappeared during create/open: %w", lastErr)
 }
 
 func repairInvalidRecords(j *FileDecisionJournal) (JournalRepairReceipt, error) {

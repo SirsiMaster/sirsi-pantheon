@@ -2,6 +2,18 @@
 
 The canonical flow is `observe -> normalize/hash -> prepare retained evidence -> create/commit immutable evidence -> exact-scope preflight -> assess -> append decision -> Casebook -> CLI/Horus API`. `internal/maat` owns assessment semantics and local failure-memory integrity; Casebook derives a read-only view. Every governed leaf has a hash-bound prepared/committed write record; unresolved preparation is recovery debt and fails closed. Recovery instructions remain evidence-linked presentation data, never executable input. Unknown status, unavailable evidence or journal input, and unsupported writes return errors rather than synthetic success.
 
+The cross-process decision-journal mutation lock is created relative to its
+retained parent descriptor with `O_CREAT|O_EXCL`; only `EEXIST` permits a
+no-create open of that exact leaf. A bounded retry is limited to `ENOENT` when
+that no-create open follows `EEXIST`, meaning the leaf disappeared between the
+two operations. `ENOENT` from creation and every other unexpected error remain
+visible; there is no pathname fallback. This avoids the Darwin concurrent
+`openat(O_CREAT)` without `O_EXCL` first-create failure documented in the
+[primary Entire CLI fix](https://github.com/entireio/cli/commit/9c18f31b23a62749b804718125b17c236420a28a).
+The targeted qualification reproduction receipt records 98 failures and 2
+passes across 100 isolated race runs before this correction:
+`~/.sirsi/evidence/pantheon-freeze-zero-ledger-20261030/qualification-lock-94a87488-isolated-reproduction.jsonl`.
+
 Failure-memory preflight dispatches the closed pure `maat.active-incident/v1`
 guard only for active exact matches. It rejects recurrence from verified retained
 evidence, not from a new host-health probe. Unsupported matching guards are
