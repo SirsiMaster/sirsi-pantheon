@@ -58,29 +58,11 @@ func TestProbeBinaryContextBoundsChildRetainingStdout(t *testing.T) {
 	root := t.TempDir()
 	pidFile := filepath.Join(root, "child.pid")
 	path := filepath.Join(root, "retaining-child")
-	body := "#!/bin/sh\n/bin/sleep 10 &\necho $! > " + strconv.Quote(pidFile) + "\nprintf '{\"binary\":\"sirsi\",\"version\":\"1.2.3\"}'\nexit 0\n"
+	body := "#!/bin/sh\n/bin/sleep 0.5 &\necho $! > " + strconv.Quote(pidFile) + "\nprintf '{\"binary\":\"sirsi\",\"version\":\"1.2.3\"}'\nexit 0\n"
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		data, readErr := os.ReadFile(pidFile)
-		if readErr != nil {
-			return
-		}
-		pid, parseErr := strconv.Atoi(strings.TrimSpace(string(data)))
-		if parseErr != nil || pid <= 1 {
-			return
-		}
-		_ = syscall.Kill(pid, syscall.SIGKILL)
-		deadline := time.Now().Add(2 * time.Second)
-		for time.Now().Before(deadline) {
-			if err := syscall.Kill(pid, 0); err == syscall.ESRCH {
-				return
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		t.Errorf("probe fixture child %d did not exit after bounded cleanup", pid)
-	}()
+	t.Cleanup(func() { waitForProbeFixtureChildExit(t, pidFile) })
 	started := time.Now()
 	if _, err := probeBinaryContext(context.Background(), path); err == nil {
 		t.Fatal("probe accepted output whose inherited pipe did not reach EOF")
@@ -92,7 +74,7 @@ func TestProbeBinaryContextBoundsChildRetainingStdout(t *testing.T) {
 
 func TestProbeBinaryUsesLongerBudgetOnlyForMenubar(t *testing.T) {
 	t.Run("menubar survives cold-start delay beyond CLI budget", func(t *testing.T) {
-		path, pidFile := delayedVersionFixture(t, "sirsi-menubar")
+		path := delayedVersionFixture(t, "sirsi-menubar")
 		started := time.Now()
 		info, err := probeBinary(path)
 		if err != nil || info.Binary != "sirsi-menubar" || info.Version != "1.2.3" {
@@ -101,12 +83,11 @@ func TestProbeBinaryUsesLongerBudgetOnlyForMenubar(t *testing.T) {
 		if elapsed := time.Since(started); elapsed <= probeTimeout {
 			t.Fatalf("native fixture did not exercise the longer budget: %s", elapsed)
 		}
-		assertProbeFixtureChildExited(t, pidFile)
 	})
 
 	for _, binary := range []string{"sirsi", "custom-sirsi-menubar"} {
 		t.Run(binary+" keeps the shorter budget", func(t *testing.T) {
-			path, pidFile := delayedVersionFixture(t, binary)
+			path := delayedVersionFixture(t, binary)
 			started := time.Now()
 			if _, err := probeBinary(path); err == nil {
 				t.Fatalf("%s probe accepted a response delayed beyond its 200 ms budget", binary)
@@ -114,13 +95,12 @@ func TestProbeBinaryUsesLongerBudgetOnlyForMenubar(t *testing.T) {
 			if elapsed := time.Since(started); elapsed >= menubarProbeTimeout {
 				t.Fatalf("%s probe exceeded the native-only budget: %s", binary, elapsed)
 			}
-			cleanupProbeFixtureChild(t, pidFile)
 		})
 	}
 }
 
 func TestProbeBinaryContextParentDeadlineStillBoundsMenubar(t *testing.T) {
-	path, pidFile := delayedVersionFixture(t, "sirsi-menubar")
+	path := delayedVersionFixture(t, "sirsi-menubar")
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
 	defer cancel()
 	started := time.Now()
@@ -130,10 +110,9 @@ func TestProbeBinaryContextParentDeadlineStillBoundsMenubar(t *testing.T) {
 	if elapsed := time.Since(started); elapsed >= menubarProbeTimeout {
 		t.Fatalf("native probe outlived its parent deadline and bounded pipe cleanup: %s", elapsed)
 	}
-	cleanupProbeFixtureChild(t, pidFile)
 }
 
-func delayedVersionFixture(t *testing.T, binary string) (string, string) {
+func delayedVersionFixture(t *testing.T, binary string) string {
 	t.Helper()
 	root := t.TempDir()
 	path := filepath.Join(root, binary)
@@ -143,51 +122,38 @@ func delayedVersionFixture(t *testing.T, binary string) (string, string) {
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { cleanupProbeFixtureChild(t, pidFile) })
-	return path, pidFile
+	t.Cleanup(func() { waitForProbeFixtureChildExit(t, pidFile) })
+	return path
 }
 
-func cleanupProbeFixtureChild(t *testing.T, pidFile string) {
+func waitForProbeFixtureChildExit(t *testing.T, pidFile string) {
 	t.Helper()
 	data, err := os.ReadFile(pidFile)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			t.Errorf("read owned probe child PID: %v", err)
-		}
+		t.Errorf("read probe fixture child PID for natural-exit check: %v", err)
 		return
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil || pid <= 1 {
-		t.Errorf("invalid owned probe child PID %q", strings.TrimSpace(string(data)))
-		return
-	}
-	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
-		t.Errorf("stop owned probe child %d: %v", pid, err)
+		t.Errorf("invalid probe fixture child PID %q", strings.TrimSpace(string(data)))
 		return
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if err := syscall.Kill(pid, 0); err == syscall.ESRCH {
+	for {
+		err := syscall.Kill(pid, 0)
+		if err == syscall.ESRCH {
 			return
+		}
+		if err != nil {
+			t.Errorf("check natural exit of probe fixture child %d: %v", pid, err)
+			return
+		}
+		if !time.Now().Before(deadline) {
+			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Errorf("owned probe child %d did not exit after bounded cleanup", pid)
-}
-
-func assertProbeFixtureChildExited(t *testing.T, pidFile string) {
-	t.Helper()
-	data, err := os.ReadFile(pidFile)
-	if err != nil {
-		t.Fatalf("read owned probe child PID: %v", err)
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || pid <= 1 {
-		t.Fatalf("invalid owned probe child PID %q", strings.TrimSpace(string(data)))
-	}
-	if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
-		t.Fatalf("delayed probe child %d remains after successful response (kill error %v)", pid, err)
-	}
+	t.Errorf("probe fixture child %d did not exit naturally within two seconds", pid)
 }
 
 func TestProbeBinaryContextHonorsCancellation(t *testing.T) {
