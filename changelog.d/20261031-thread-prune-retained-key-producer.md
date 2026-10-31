@@ -1,0 +1,3 @@
+### Fixed
+- **Thread pruning retains its retirement key.** The existing exact scoped/unscoped CAS clears retired user payload while preserving the key, lane, host and observation time. Compatible stale writers cannot reinsert a pruned thread. Normal readers keep fences hidden and unrelated new registrations remain available. This completes the missing N2 production producer; canonical service rollout still requires Ra/SSA compatible-writer and rollback-floor verification. No live prune or rollout is claimed. Refs: ADR-057, ADR-062, internal/routerstore/README.md.
+- The unchanged Store interface signature now documents retained retirement consistently; this follow-up changes comments only.
