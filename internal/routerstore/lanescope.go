@@ -99,8 +99,55 @@ var laneAPI = map[string]laneRule{
 	"RunnableFor":          {agents: []int{0}, item: noItem},
 }
 
+// ObserverScope is a reserved scope entry (no agent id starts with "@"). A token whose scope includes it is a
+// read-only observer — the hosted router board: it may read the whole ledger through observerReads, and may
+// register and heartbeat only its own listed agent's thread (the Rule of Ra applies to it like any thread).
+// Every other method is refused, including the lane API's messaging and work verbs for its own agent.
+const ObserverScope = "@observer"
+
+// observerReads are the whole-ledger reads an observer may make, regardless of agent. Each is a read: adding a
+// method here grants every observer token a view of it, so a new entry needs the same review as laneAPI.
+var observerReads = map[string]bool{
+	"ClassifyLane": true, "ListThreads": true, "ListActive": true, "CountClosed": true,
+	"OperationalAgents": true, "ListTasks": true, "Inbox": true,
+}
+
+// observerOwnThread are the lane-API methods an observer keeps, for its own agent only: identity and thread
+// registration, so it can satisfy the Rule of Ra. Their laneAPI rules still apply.
+var observerOwnThread = map[string]bool{
+	"MintSession": true, "MintSessionForThread": true, "RegisterAgent": true, "Heartbeat": true,
+	"ThreadBinding": true, "GetThreadRecord": true, "UpsertThreadCAS": true, "UpsertThreads": true,
+	"ResumeThreadCAS": true,
+}
+
+// splitObserver separates the observer marker from a token's agent scope. The marker is a capability, never
+// an identity: the returned scope never contains it, so nothing may mint, register or act as "@observer".
+func splitObserver(scope map[string]bool) (map[string]bool, bool) {
+	if !scope[ObserverScope] {
+		return scope, false
+	}
+	agents := make(map[string]bool, len(scope))
+	for a := range scope {
+		if a != ObserverScope {
+			agents[a] = true
+		}
+	}
+	return agents, true
+}
+
 // laneScope returns nil when the call is inside the token's scope, ErrLaneScope otherwise.
-func (s *server) laneScope(scope map[string]bool, sess Session, name string, in []reflect.Value) error {
+func (s *server) laneScope(scope map[string]bool, observer bool, sess Session, name string, in []reflect.Value) error {
+	if observer {
+		if sess.Agent != "" && !scope[sess.Agent] {
+			return fmt.Errorf("%w: session agent %q is outside the token's scope", ErrLaneScope, sess.Agent)
+		}
+		if observerReads[name] {
+			return nil
+		}
+		if !observerOwnThread[name] {
+			return fmt.Errorf("%w: %s is not permitted for a read-only observer", ErrLaneScope, name)
+		}
+	}
 	rule, ok := laneAPI[name]
 	if !ok {
 		return fmt.Errorf("%w: %s is not part of the lane API", ErrLaneScope, name)
