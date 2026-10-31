@@ -211,6 +211,12 @@ func TestRelayDrainRefusesInflightCleanupFailure(t *testing.T) {
 
 func TestRelayDrainProductionCleanupFailureStaysSticky(t *testing.T) {
 	rl, spool, entered, release := newHeldDrainRelay(t, false)
+	// Match the root identity Serve binds: macOS may expose the temp directory
+	// through /var while CheckSpoolDir returns its /private canonical path.
+	spool, err := filepath.EvalSymlinks(spool)
+	if err != nil {
+		t.Fatalf("canonicalize fixture spool root: %v", err)
+	}
 	removeCalled := make(chan string, 1)
 	rl.removeInflightFn = func(path string) error {
 		removeCalled <- path
