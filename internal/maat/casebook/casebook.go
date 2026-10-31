@@ -82,6 +82,7 @@ type Case struct {
 	SystemOneCalibration         *maat.CalibrationRecord         `json:"system_one_calibration,omitempty"`
 	FailureMemoryReceipt         *maat.PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
 	FailureMemoryIncidentKeys    *[]string                       `json:"failure_memory_incident_keys,omitempty"`
+	SourceQualification          *maat.QualificationEvent        `json:"source_qualification,omitempty"`
 }
 
 // Node and Edge form a deliberately small evidence graph. The dashboard can
@@ -396,7 +397,8 @@ func project(d maat.Decision) Case {
 		Requester: d.Requester, Resource: d.Resource, Affected: d.Affected,
 		Determination: d.Determination, Assessed: d.Assessed, Why: d.Why, Evidence: d.Evidence,
 		SystemOne: d.SystemOne, SystemOneCalibration: d.SystemOneCalibration, FailureMemoryReceipt: d.FailureMemoryReceipt, FailureMemoryIncidentKeys: d.FailureMemoryIncidentKeys,
-		Status: statusFor(determination), Priority: priorityFor(determination),
+		SourceQualification: d.SourceQualification,
+		Status:              statusFor(determination), Priority: priorityFor(determination),
 	}
 	// A calibration is a completed historical comparison between an existing
 	// auto-pass and an independent outcome. A block can be urgent in the
@@ -411,12 +413,21 @@ func project(d maat.Decision) Case {
 		c.Status = StatusResolved
 		c.Priority = PriorityNormal
 	}
+	if d.SourceQualification != nil {
+		c.Determination = "unqualified"
+		c.Status = StatusOpen
+		c.Priority = PriorityNormal
+		c.Why = "Retained lifecycle observation, not current verified acceptance. Preview the exact receipt/repository/head to replay current state. Recorded reason: " + d.Why
+	}
 	sum := sha256.Sum256([]byte(strings.Join([]string{d.Time, d.Host, d.Kind, d.Requester, d.Resource, d.Determination, d.Evidence}, "\x00")))
 	c.ID = "maat-case-" + hex.EncodeToString(sum[:8])
 	return c
 }
 
 func classify(d maat.Decision) string {
+	if d.SourceQualification != nil {
+		return "governance"
+	}
 	kind := strings.ToLower(d.Kind)
 	switch {
 	case strings.Contains(kind, "system one"):

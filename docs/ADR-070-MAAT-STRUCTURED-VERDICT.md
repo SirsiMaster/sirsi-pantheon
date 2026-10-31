@@ -154,6 +154,27 @@ jev's value is that "0.90 confidence is right ~90% of the time" — true only if
 
 ### 2.5 Source-import implementation scope (2026-10-24 corrective)
 
+#### Lifecycle observation and pure replay (2026-10-30)
+
+The additive `maat.source-lifecycle-receipt.v1` contract records bounded policy,
+evaluation, and outcome declarations and replays them as source-scoped
+observations. `maat lifecycle` previews exact canonical `Instructions` bytes
+for a selected repository/head and can retain a digest-bound observation or an
+explicit owner adoption under the existing decision-journal mutation lock.
+Canonical `Get` and `From` establish custody and attribution only; they do not
+authenticate a reviewer. Owner adoption records the operator's acceptance of
+the exact review/origin pair and is not reviewer authentication.
+
+Lifecycle replay remains informational. The embedded policy, evaluation, and
+independent-outcome inventories remain empty; missing, unpinned, or changed
+evidence stays unqualified. No model runs, qualification grant, probabilistic
+gate, new key authority, or change to the deterministic host/preflight floor is
+introduced. The lifecycle contract and compatibility limits are in
+[`MAAT_SOURCE_LIFECYCLE.md`](stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md)
+and [`source-lifecycle-v1.json`](../contracts/maat/source-lifecycle-v1.json).
+This continuation does not satisfy ADR-070's independent sampled calibration,
+drift, and requalification criteria.
+
 `maat.adr070.source-screen` schema **2** is an explicit, nonbinding source
 import contract, not activation of this ADR's proposed probabilistic gate.
 Historical `SystemOneSchemaVersion=1` journal records retain their original

@@ -198,6 +198,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                     VStack(spacing: 12) {
                         unavailableState(loadError)
                         screenImportControl
+                        MaatLifecycleControl(engine: engine)
                         LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),appUpdate:engine.maatCaseOperations.appUpdate)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -317,6 +318,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                         releasePreflightControl
                             .id("maat-release-preflight")
                         screenImportControl
+                        MaatLifecycleControl(engine: engine)
                         LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),appUpdate:engine.maatCaseOperations.appUpdate)
                         if screens.isEmpty && calibrations.isEmpty {
                             historyEmptyState(casebook)
@@ -418,7 +420,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         VStack(alignment: .leading, spacing: 8) {
             Text("Ma'at System One")
                 .sirsiFont(.title3, weight: .bold)
-            Text("Local deterministic screens are retained, evidence-bound, and calibrated only against distinct independent review outcomes.")
+            Text("Local deterministic screens remain model-free. Legacy comparison rows are declared history, not verified source-profile qualification.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -455,7 +457,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         let changesMetric = systemMetric("Changes", screens.filter { $0.systemOne?.gate == "changes" }.count, .orange)
         let blockedMetric = systemMetric("Blocked", screens.filter { $0.systemOne?.gate == "block" }.count, .red)
         let escalatedMetric = systemMetric("Escalated", screens.filter { $0.systemOne?.gate == "escalate" }.count, gold)
-        let calibratedMetric = systemMetric("Calibrated", calibrations.count, .green)
+        let legacyComparisonsMetric = systemMetric("Legacy comparisons", calibrations.count, .secondary)
 
         // A single metric row becomes unreadable at accessibility text sizes.
         // Keep the same facts, but let SwiftUI select a two-line layout when
@@ -466,7 +468,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 changesMetric
                 blockedMetric
                 escalatedMetric
-                calibratedMetric
+                legacyComparisonsMetric
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
@@ -476,7 +478,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 }
                 HStack(spacing: 8) {
                     escalatedMetric
-                    calibratedMetric
+                    legacyComparisonsMetric
                 }
             }
         }
@@ -1420,6 +1422,7 @@ struct MaatKnownFailureProposalsView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            MaatLifecycleControl(engine: engine)
             Button("Try again") { Task { await load() } }
                 .buttonStyle(.borderedProminent)
                 .tint(gold)
@@ -1447,6 +1450,7 @@ struct MaatKnownFailureProposalsView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            MaatLifecycleControl(engine: engine)
             NavLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
                 Label("Run Ma'at audit", systemImage: "checkmark.seal")
                     .padding(.horizontal, 12)
@@ -1464,6 +1468,7 @@ struct MaatKnownFailureProposalsView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(casebook.summary, history: casebook.history)
+                    MaatLifecycleControl(engine: engine)
                     if loading {
                         HStack {
                             Label("Searching retained history…", systemImage: "arrow.clockwise")
