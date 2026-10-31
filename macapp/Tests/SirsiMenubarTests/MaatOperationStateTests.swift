@@ -2,6 +2,41 @@ import XCTest
 @testable import SirsiMenubar
 
 final class MaatOperationStateTests: XCTestCase {
+    func testInactiveDispositionFailureSummaryIsBoundedAndDistinguishesUncertainOrInvalidReceipts() {
+        let longIssue = "\u{001B}[31m" + String(repeating: "x", count: 1300) + "\u{001B}[0m"
+        let incomplete = CommandExecution(
+            stderr: Data("secondary stderr".utf8), launchError: longIssue,
+            timedOut: true, childState: .exitUnknown
+        )
+        let incompleteSummary = MaatInactiveDispositionFailurePresentation.summary(incomplete)
+        XCTAssertTrue(incompleteSummary.contains("did not return a complete receipt"))
+        XCTAssertTrue(incompleteSummary.contains("disposition outcome is unverified"))
+        XCTAssertTrue(incompleteSummary.contains(String(repeating: "x", count: 1200)))
+        XCTAssertFalse(incompleteSummary.contains(String(repeating: "x", count: 1201)))
+        XCTAssertFalse(incompleteSummary.contains("\u{001B}"))
+        XCTAssertTrue(incompleteSummary.contains("No repair was performed"))
+        XCTAssertTrue(incompleteSummary.contains("Inspect this exact case's retained record and refresh Casebook before any retry"))
+        XCTAssertFalse(incompleteSummary.contains("disposition was not recorded"))
+
+        let rejected = CommandExecution(
+            stderr: Data("\u{001B}[33mcurrent case changed\u{001B}[0m".utf8),
+            exitCode: 1, childState: .exitConfirmed
+        )
+        let rejectedSummary = MaatInactiveDispositionFailurePresentation.summary(rejected)
+        XCTAssertTrue(rejectedSummary.contains("exited with status 1"))
+        XCTAssertTrue(rejectedSummary.contains("disposition outcome is unverified"))
+        XCTAssertTrue(rejectedSummary.contains("current case changed"))
+        XCTAssertTrue(rejectedSummary.contains("Inspect this exact case's retained record"))
+        XCTAssertFalse(rejectedSummary.contains("\u{001B}"))
+
+        let invalidReceipt = CommandExecution(stdout: Data("{}".utf8), exitCode: 0, childState: .exitConfirmed)
+        let invalidSummary = MaatInactiveDispositionFailurePresentation.summary(invalidReceipt)
+        XCTAssertTrue(invalidSummary.contains("receipt was invalid or did not match this case"))
+        XCTAssertTrue(invalidSummary.contains("outcome is unverified"))
+        XCTAssertTrue(invalidSummary.contains("No diagnostic details were returned"))
+        XCTAssertFalse(invalidSummary.contains("recorded"))
+    }
+
     @MainActor
     func testInactiveDispositionProgressTracksSelectedOperationAcrossRemount() {
         let entry = caseEntry(id: "binary-drift-case", kind: "system one screen", evidence: "screen:binary-drift",

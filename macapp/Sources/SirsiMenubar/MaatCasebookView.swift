@@ -2693,6 +2693,25 @@ func maatCasebookHistoryArguments(scope: String, query: String = "", cursor: Str
     return arguments
 }
 
+enum MaatInactiveDispositionFailurePresentation {
+    static func summary(_ capture: CommandExecution) -> String {
+        let reason: String
+        if !capture.complete {
+            reason = "The command did not return a complete receipt; the disposition outcome is unverified."
+        } else if capture.exitCode != 0 {
+            reason = "The command exited with status \(capture.exitCode.map(String.init) ?? "unavailable"); the disposition outcome is unverified."
+        } else {
+            reason = "The returned disposition receipt was invalid or did not match this case; the outcome is unverified."
+        }
+
+        let diagnostic = capture.issue ?? capture.stderr
+        let detail = diagnostic.isEmpty
+            ? "No diagnostic details were returned."
+            : String(SirsiEngine.stripANSI(diagnostic).prefix(1200))
+        return "Ma'at could not confirm the exact no-longer-active disposition. \(reason) \(detail) No repair was performed. Inspect this exact case's retained record and refresh Casebook before any retry."
+    }
+}
+
 private struct MaatCaseDetailView: View {
     @ObservedObject var engine: SirsiEngine
     @ObservedObject var operations: MaatCaseOperationStore
@@ -3350,7 +3369,9 @@ private struct MaatCaseDetailView: View {
             guard capture.complete, capture.exitCode == 0,
                   let receipt = try? JSONDecoder().decode(MaatBinaryDriftInactiveDispositionReceipt.self, from: capture.stdoutData),
                   receipt.isValid(for: action.evidence) else {
-                operations.complete(key, receipt: MaatOperationReceipt(summary: "Ma'at could not confirm the exact no-longer-active disposition. No repair was performed; refresh and review this case.", succeeded: false))
+                operations.complete(key, receipt: MaatOperationReceipt(
+                    summary: MaatInactiveDispositionFailurePresentation.summary(capture), succeeded: false
+                ))
                 return
             }
             binaryDriftInactiveReceipt = receipt

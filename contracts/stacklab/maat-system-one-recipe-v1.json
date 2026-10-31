@@ -255,6 +255,7 @@
         "existing memory evidence/attempts/WAL only for confirmed record custody; no new store or exporter"
       ],
       "upgrade_recipe": [
+        "retain bounded ANSI-stripped inactive-disposition capture diagnostics; incomplete execution or invalid receipt leaves outcome unverified and requires exact-record inspection before retry",
         "retain one diagnostic observation and hash its full typed report before screening",
         "never accept caller-supplied host-health findings, commands, or gate values",
         "retain host identity and report digest as the screen subject",
