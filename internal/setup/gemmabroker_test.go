@@ -60,6 +60,145 @@ func TestInstallGemmaBroker_SkipsWithoutSNE(t *testing.T) {
 	}
 }
 
+func TestInstallGemmaBroker_ProvidedByApolloApp(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	fakeSNERuntime(t, home) // SNE present too: Apollo.app must still win
+	router := filepath.Join(home, "Applications", "Apollo.app", "Contents", "Helpers", "apollo-router")
+	if err := os.MkdirAll(filepath.Dir(router), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(router, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	res := InstallGemmaBroker()
+	if res.Status != StatusSkipped || !strings.Contains(res.Message, "Apollo.app") {
+		t.Fatalf("want provided-by-Apollo skip, got %v %q", res.Status, res.Message)
+	}
+	if fileExists(GemmaBrokerPlistPath()) {
+		t.Fatal("setup wrote the broker plist although Apollo.app provides the model")
+	}
+	port, err := os.ReadFile(filepath.Join(home, ".sirsi", "gemma-server.port"))
+	if err != nil || strings.TrimSpace(string(port)) != "8520" {
+		t.Fatalf("port file = %q, %v; want 8520", port, err)
+	}
+}
+
+// apolloHome builds a temp HOME with SNE and Apollo.app's router present.
+func apolloHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	fakeSNERuntime(t, home)
+	router := filepath.Join(home, "Applications", "Apollo.app", "Contents", "Helpers", "apollo-router")
+	if err := os.MkdirAll(filepath.Dir(router), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(router, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
+func assertApolloRepointFailed(t *testing.T, res InstallResult) {
+	t.Helper()
+	if res.Status != StatusFailed || !strings.Contains(res.Message, "could not be repointed") {
+		t.Fatalf("want failed repoint, got %v %q", res.Status, res.Message)
+	}
+	if fileExists(GemmaBrokerPlistPath()) {
+		t.Fatal("failed repoint fell back to writing the legacy broker plist")
+	}
+}
+
+func TestInstallGemmaBroker_ApolloRepointFailures(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin only")
+	}
+	t.Run("obstructed parent dir", func(t *testing.T) {
+		home := apolloHome(t)
+		if err := os.WriteFile(filepath.Join(home, ".sirsi"), []byte("not a dir"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		assertApolloRepointFailed(t, InstallGemmaBroker())
+	})
+	t.Run("obstructed target file", func(t *testing.T) {
+		home := apolloHome(t)
+		target := filepath.Join(home, ".sirsi", "gemma-server.port")
+		if err := os.MkdirAll(filepath.Join(target, "child"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		assertApolloRepointFailed(t, InstallGemmaBroker())
+		if fi, err := os.Stat(filepath.Join(target, "child")); err != nil || !fi.IsDir() {
+			t.Fatalf("obstruction was disturbed: %v", err)
+		}
+	})
+	t.Run("unwritable dir keeps previous pointer", func(t *testing.T) {
+		home := apolloHome(t)
+		dir := filepath.Join(home, ".sirsi")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "gemma-server.port"), []byte("8477\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(dir, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+		assertApolloRepointFailed(t, InstallGemmaBroker())
+		if b, _ := os.ReadFile(filepath.Join(dir, "gemma-server.port")); string(b) != "8477\n" {
+			t.Fatalf("previous pointer changed to %q", b)
+		}
+	})
+}
+
+// A stale fixed-name staging leaf (here a symlink to another settings file)
+// must be neither followed nor clobbered; the port file is published as a
+// regular file.
+func TestInstallGemmaBroker_ApolloRepointIgnoresStaleStagingLeaf(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin only")
+	}
+	home := apolloHome(t)
+	dir := filepath.Join(home, ".sirsi")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	referent := filepath.Join(dir, "orchestrator.conf")
+	if err := os.WriteFile(referent, []byte("provider = gemma\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(dir, ".gemma-server.port.tmp")
+	if err := os.Symlink(referent, stale); err != nil {
+		t.Fatal(err)
+	}
+
+	if res := InstallGemmaBroker(); res.Status != StatusSkipped {
+		t.Fatalf("want provided-by-Apollo skip, got %v %q", res.Status, res.Message)
+	}
+	if b, _ := os.ReadFile(referent); string(b) != "provider = gemma\n" {
+		t.Fatalf("symlink referent overwritten: %q", b)
+	}
+	if target, err := os.Readlink(stale); err != nil || target != referent {
+		t.Fatalf("stale staging symlink disturbed: %q %v", target, err)
+	}
+	port := filepath.Join(dir, "gemma-server.port")
+	fi, err := os.Lstat(port)
+	if err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("port file not a regular file: %v %v", fi, err)
+	}
+	if b, _ := os.ReadFile(port); string(b) != "8520\n" {
+		t.Fatalf("port file = %q", b)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, ".gemma-server.port.[0-9]*")); len(left) != 0 {
+		t.Fatalf("owned temp leaked: %v", left)
+	}
+}
+
 func TestInstallGemmaBroker_HonorsQuarantine(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("darwin only")

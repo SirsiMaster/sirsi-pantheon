@@ -61,6 +61,20 @@ func snePort() int {
 	return p
 }
 
+// sneModel names the served model from ~/.sirsi/gemma-model.conf (the file the
+// liveness probe also reads). Apollo.app's router routes by model id and
+// rejects the placeholder "local", which only the retired broker accepted.
+func sneModel() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		if b, err := os.ReadFile(filepath.Join(home, ".sirsi", "gemma-model.conf")); err == nil {
+			if m := strings.TrimSpace(string(b)); m != "" {
+				return m
+			}
+		}
+	}
+	return "local"
+}
+
 type askRequest struct {
 	Question string `json:"question"`
 }
@@ -228,7 +242,7 @@ func askLocalEngine(ctx context.Context, question, grounding string) (modelSelec
 	url := fmt.Sprintf("http://127.0.0.1:%d/v1/chat/completions", port)
 
 	body, err := json.Marshal(chatRequest{
-		Model: "local",
+		Model: sneModel(),
 		Messages: []chatMessage{
 			{Role: "system", Content: askSystemPrompt + "\n\n--- LIVE DIAGNOSTIC REPORT ---\n" + grounding},
 			{Role: "user", Content: question},
