@@ -231,21 +231,21 @@ final class MaatOperationStateTests: XCTestCase {
         let integrity = MaatJournalIntegrity(invalidCount: 1, issues: [
             MaatJournalIssue(line: 91971, digest: "sha256:fixture", reason: "missing required field")
         ])
-        let incomplete = MaatCasebookProjection(
+        let dirtyTerminal = MaatCasebookProjection(
             cases: [entry],
             summary: MaatCasebookSummary(total: 1, open: 1, urgent: 0, high: 0, resolved: 0),
             journalIntegrity: integrity,
-            history: MaatHistoryWindow(scope: "all", queryID: "query:partial", snapshot: "sha256:partial",
-                returned: 1, candidateMatches: 1, countScope: "scanned-so-far", evidenceMatches: 1,
-                evidenceMatchesComplete: false, candidateMatchesComplete: false, pageSize: 2,
-                coverage: "partial", hasMore: true, hasMoreKnown: false, nextCursor: "cursor:next",
-                totalComplete: false, total: nil, scannedRecords: 50, scannedBytes: 4096)
+            history: MaatHistoryWindow(scope: "all", queryID: "query:terminal", snapshot: "sha256:terminal",
+                returned: 1, candidateMatches: 1, countScope: "query", evidenceMatches: 1,
+                evidenceMatchesComplete: nil, candidateMatchesComplete: false, pageSize: 2,
+                coverage: "complete", hasMore: false, hasMoreKnown: false, nextCursor: nil,
+                totalComplete: false, total: nil, scannedRecords: nil, scannedBytes: nil)
         )
         XCTAssertEqual(
             MaatOperationPreflight.evaluate(original: entry, exitStatus: 0, timedOut: false,
-                launchError: nil, projection: incomplete),
+                launchError: nil, projection: dirtyTerminal),
             .invalidIntegrity(integrity),
-            "Typed journal integrity must remain visible even when the exact history is incomplete."
+            "A terminal exact-evidence page keeps derived completeness false while invalid journal records remain; surface that typed refusal before generic history incompleteness."
         )
 
         let key = MaatOperationKey(case: entry)
