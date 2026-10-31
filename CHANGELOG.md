@@ -8,6 +8,84 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.148] — 2026-10-30
 
+### Packaged-engine authority test seam
+
+- Keep the fixed codesign argument assertion in the shared Darwin/Linux leaf
+  package so Linux lint sees the same production command coverage as Darwin.
+- Remove the Darwin-test-only setup wrapper; exported setup entry points and the
+  packaged-engine verification checks remain unchanged.
+
+Refs: `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, `contracts/stacklab/maat-system-one-recipe-v1.json`, ADR-004
+
+### Ma’at recipe test inventory
+
+- Add the shared Darwin/Linux packaged-engine authority test to the lifecycle
+  recipe inventory: `internal/packagedengine/authority_unix_test.go`, including
+  `TestVerificationCommandUsesFixedInlineTeamRequirement`.
+
+Refs: `contracts/stacklab/maat-system-one-recipe-v1.json`, `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, ADR-004
+
+### Ma'at Stack Lab recipe oracle
+
+- Add the accepted `maat-adr070-source-lifecycle-observation` component to the
+  recipe test's exact expected ID set. The strict count, component equality,
+  referenced-path, and component-content checks remain in force.
+
+Refs: `contracts/stacklab/maat-system-one-recipe-v1.json`, `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, ADR-070
+
+### Ma’at lifecycle native placement
+
+- Restore the source-lifecycle control beside screen import in System One's
+  normal and history-error views, while preserving the existing Decisions
+  controls, history layout, and maintenance panel.
+- Label retained historical calibration rows as neutral legacy comparisons and
+  clarify that they are not verified source-profile qualification.
+
+Refs: `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, `contracts/stacklab/maat-system-one-recipe-v1.json`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, ADR-004
+
+### Ma’at lifecycle import and authority cleanup
+
+- Normalize imports in the four lifecycle files flagged by the protected lint
+  gate and remove the unused setup validation wrapper after confirming it has no
+  callers; validation remains in the shared packaged-engine leaf.
+
+Refs: `contracts/stacklab/maat-system-one-recipe-v1.json`, `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, ADR-004
+
+### Ma’at lifecycle qualification fixtures
+
+- Update inert receipt fixtures to include the strict empty `host_binding`
+  member alongside `boundary`; retain explicit negative checks for both keys.
+- Keep the selected-head acceptance fixture pinned to its exact canonical raw
+  receipt, and inventory the shared packaged-engine authority implementation
+  plus existing setup authority fixtures in the System One recipe.
+
+Refs: `contracts/stacklab/maat-system-one-recipe-v1.json`, `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, ADR-004
+
+### Ma’at installed lifecycle authority composition
+
+- Move the existing exact packaged-engine identity, no-follow inspection, and
+  bounded Developer-ID verification into a dependency-leaf package shared by
+  setup and Ma’at, breaking the Darwin import cycle without changing authority.
+- Keep setup compatibility entry points and the opaque Ma’at token minting
+  boundary; canonical paths, Team ID, executable identity checks, and the empty
+  empirical acceptance inventory remain unchanged.
+
+Refs: `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, ADR-004
+
+### Ma’at source lifecycle observation
+
+- Adds strict lifecycle receipt preview, bounded replay, and digest-bound
+  observation/owner-adoption records through the existing decision journal and
+  Casebook surfaces.
+- Preserves canonical router custody as unauthenticated attribution, keeps the
+  installed acceptance inventories empty, and leaves every model profile
+  unqualified with the deterministic floor unchanged.
+- This source slice does not complete ADR-070 calibration or enable a gate.
+
+Refs: `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`, `docs/stacklab/pantheon-pt/canon/MAAT_SOURCE_LIFECYCLE.md`, `contracts/maat/source-lifecycle-v1.json`, ADR-004
+
+### Other changes
+
 - Shorten the router staging traffic tag to meet Cloud Run's service-plus-tag limit while preserving the full 96-bit nonce; promotion remains separate.
 
 - Correct model-router traceability for existing source-level streaming, JSON-object and determinism paths. Production backend behavior and installed handoff remain unqualified; retained qualifications keep their original source identity.
