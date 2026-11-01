@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,16 +30,34 @@ type emptyConflictStateStore struct{}
 func (emptyConflictStateStore) GetState(string) (string, bool, error) { return "", false, nil }
 func (emptyConflictStateStore) SetState(string, string) error         { return os.ErrPermission }
 
-type conflictFixtureStore struct{ values map[string]string }
+type conflictFixtureStore struct {
+	mu     sync.Mutex
+	values map[string]string
+}
 
 func (s *conflictFixtureStore) GetState(key string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	v, ok := s.values[key]
 	return v, ok, nil
 }
 
 func (s *conflictFixtureStore) SetState(key, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.values[key] = value
 	return nil
+}
+
+func (s *conflictFixtureStore) CompareAndSwapState(key, expected string, exists bool, value string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, found := s.values[key]
+	if found != exists || current != expected {
+		return false, nil
+	}
+	s.values[key] = value
+	return true, nil
 }
 
 func TestMaatConflictCheckJournalStrictCompatibility(t *testing.T) {
