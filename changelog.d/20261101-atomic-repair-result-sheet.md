@@ -1,2 +1,4 @@
 - Present typed and legacy diagnostic repair results from the frozen approval item, so the native sheet cannot briefly render a stale-review fallback while sibling state settles. Existing finding freshness, exact argv, project-scope and prelaunch authorization checks remain in force. Add mounted native-sheet coverage for the nil-to-item transition. Source candidate only; installed qualification remains open.
+- Keep the native sheet fixture's AppKit window alive through close and defer sheet/window teardown so timeout and assertion exits clean up safely; production behavior is unchanged.
 - Refs: `docs/ADR-033-REMEDIATION-CATALOG.md`, `docs/stacklab/pantheon-pt/canon/COMPONENT_CATALOG.md`, `macapp/Sources/SirsiMenubar/Views.swift`, `macapp/Sources/SirsiMenubar/ActionReviewSheet.swift`
+- Test follow-up: `macapp/Tests/SirsiMenubarTests/DiagnosticRepairPresentationTests.swift`

@@ -20,12 +20,15 @@ final class DiagnosticRepairPresentationTests: XCTestCase {
             let item = DiagnosticRepairPresentation(approval: try approval(), route: route)
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 180),
                                   styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: RepairSheetHarness(item: item, observation: observation))
+            defer {
+                if let sheet = window.attachedSheet { window.endSheet(sheet) }
+                window.close()
+            }
             window.makeKeyAndOrderFront(nil)
             await fulfillment(of: [presented], timeout: 2)
             XCTAssertNotNil(window.attachedSheet)
-            if let sheet = window.attachedSheet { window.endSheet(sheet) }
-            window.close()
         }
     }
 
