@@ -6,6 +6,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.156] — 2026-11-01
+
+- Open the audited memory-relief preview before asking to run a cache flush; other repairs retain explicit consent.
+
+- Show System One case and repair approvals in full, scrollable native review sheets with exact command/project or case/evidence and persistent Cancel/action controls, instead of relying on macOS confirmation dialogs that omit review details.
+
+- Explain changed repair evidence instead of silently ignoring an approval click.
+
+- Refresh changing diagnostic operands when opening resolution instead of leaving a stale disabled review button.
+
+- Show read-only case-history progress and a cancel action while retaining the exact history/case safeguards.
+
+- Close native command-result sheets without changing navigation behind them, and show a recovery explanation when a reviewed action becomes stale.
+
+- Revalidate approval when the review closes and show a return-to-finding route if it expires before the result opens; never present an empty repair sheet.
+
+- Refs: docs/ADR-033-REMEDIATION-CATALOG.md, docs/ADR-070-MAAT-STRUCTURED-VERDICT.md, PRODUCT.md
+
+- Retain bounded readable command receipts in native activity, classify captured repairs and their toast from the same complete-capture/exit/closed-status projection, and route legacy header-only/interrupted outcomes to evidence review without rewriting old entries. Keep nonreceipt activity at its prior first-meaningful-line scope before bounded retention.
+
+- Refs: docs/ADR-033-REMEDIATION-CATALOG.md, docs/ADR-070-MAAT-STRUCTURED-VERDICT.md
+
+- Keep the native repair source contract aligned with the full Action Review sheet, exact reviewed argv, cancellation/confirmation controls, and execution reauthorization; exercise those invariants with closed source fixtures.
+
+- Require the reviewed scope and detail to be rendered in the scrollable sheet, and bind Casebook action reviews to their frozen command, explanation, and evidence scope.
+
+- Pin title, confirmation detail, and case/evidence/conclusion scope at MaatCaseDetailView's actual review-sheet call site; keep ResultView authorization labeled separately.
+
+- Refs: scripts/verify-maat-native-resolution-contract.sh, scripts/verify-maat-native-resolution-contract.test.sh, docs/ADR-070-MAAT-STRUCTURED-VERDICT.md
+
+- Keep display-heading wording independent of consent/scope verification, with a passing renamed-heading fixture.
+
 ## [0.24.155] — 2026-10-31
 
 - Route release-step remote signing only to the existing enrolled M1 signer; if unavailable, fail instead of falling back to the M5 measurement host. Signing identity and verification policy are unchanged.
