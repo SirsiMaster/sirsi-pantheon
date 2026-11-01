@@ -1593,6 +1593,8 @@ struct MaatKnownFailureProposalsView: View {
     private var loadError: String? { historyRefresh.state.error }
     private var activeQuery: String { historyRefresh.state.query }
     @State private var query = ""
+    @State private var activeCaseSelection: MaatCaseSelection?
+    @State private var selectionFallbackMessage: String?
     @State private var showWithheld = false
     @State private var confirmKnowledgeRefresh = false
     @State private var knowledgeRefreshInFlight = false
@@ -1600,10 +1602,13 @@ struct MaatKnownFailureProposalsView: View {
     @State private var knowledgeRefreshError: String?
 
     init(engine: SirsiEngine, preloaded: MaatCasebookProjection? = nil, showsBackBar: Bool = true,
-         historyStore: MaatHistoryRefreshStore? = nil) {
+         historyStore: MaatHistoryRefreshStore? = nil, caseSelection: MaatCaseSelection? = nil,
+         selectionFallbackMessage: String? = nil) {
         self.engine = engine
         self.showsBackBar = showsBackBar
         _query = State(initialValue: historyStore?.state.query ?? "")
+        _activeCaseSelection = State(initialValue: caseSelection)
+        _selectionFallbackMessage = State(initialValue: selectionFallbackMessage)
         _historyRefresh = StateObject(wrappedValue: historyStore ?? MaatHistoryRefreshStore(projection: preloaded))
     }
 
@@ -1623,6 +1628,11 @@ struct MaatKnownFailureProposalsView: View {
         .task {
             guard casebook == nil else { return }
             await load()
+        }
+        .onChange(of: query) { newQuery in
+            activeCaseSelection = nil
+            selectionFallbackMessage = nil
+            historyRefresh.queryChanged(newQuery)
         }
         .onDisappear { historyRefresh.cancel() }
     }
@@ -1711,6 +1721,28 @@ struct MaatKnownFailureProposalsView: View {
                         MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
                     }
                     searchField
+                    if let selectionFallbackMessage {
+                        Label(selectionFallbackMessage, systemImage: "info.circle")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if activeCaseSelection != nil, casebook.history?.coverage == "complete",
+                       activeCaseSelection?.uniqueCompletedCase(in: casebook) == nil {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("The exact recorded case is not confirmed in this completed snapshot. No case was selected.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button("Browse the casebook") {
+                                activeCaseSelection = nil
+                                selectionFallbackMessage = nil
+                                query = ""
+                                Task { await load(query: "") }
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
                     if let loadError {
                         VStack(alignment: .leading, spacing: 8) {
                             Label(loadError, systemImage: "exclamationmark.triangle.fill")
@@ -1723,15 +1755,20 @@ struct MaatKnownFailureProposalsView: View {
                             }
                         }
                     }
-                    let visible = casebook.cases
-                    if visible.isEmpty, casebook.historyEmptyState == .incomplete, let cursor = casebook.history?.nextCursor {
+                    let visible = activeCaseSelection.flatMap { $0.uniqueCompletedCase(in: casebook).map { [$0] } } ??
+                        (activeCaseSelection == nil ? casebook.cases : [])
+                    if activeCaseSelection != nil, visible.isEmpty, casebook.history?.coverage != "partial" {
+                        Text("Confirm the exact case selection or browse the full casebook.")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else if visible.isEmpty, casebook.historyEmptyState == .incomplete, let cursor = casebook.history?.nextCursor {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("This bounded history scan is incomplete; no empty result is available yet.")
                                 .sirsiFont(.subheadline)
                                 .foregroundStyle(.secondary)
                             Button("Continue history search") { Task { await load(cursor: cursor) } }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(loading || historyRefresh.state.restartRequired)
+                                .disabled(loading || historyRefresh.state.restartRequired || query.trimmingCharacters(in: .whitespacesAndNewlines) != historyRefresh.state.query)
                         }
                     } else if visible.isEmpty, casebook.historyEmptyState == .olderPage, let cursor = casebook.history?.nextCursor {
                         VStack(alignment: .leading, spacing: 8) {
@@ -1740,7 +1777,7 @@ struct MaatKnownFailureProposalsView: View {
                                 .foregroundStyle(.secondary)
                             Button("Load older decisions") { Task { await load(cursor: cursor) } }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(loading || historyRefresh.state.restartRequired)
+                                .disabled(loading || historyRefresh.state.restartRequired || query.trimmingCharacters(in: .whitespacesAndNewlines) != historyRefresh.state.query)
                         }
                     } else if visible.isEmpty, casebook.historyEmptyState == .invalidHistory {
                         Text("No valid decision matched this page. Invalid journal rows prevent a complete absence conclusion.")
@@ -1780,7 +1817,7 @@ struct MaatKnownFailureProposalsView: View {
                         Label(history.coverage == "partial" ? "Continue history search" : "Load older", systemImage: "clock.arrow.circlepath")
                     }
                     .buttonStyle(.borderless)
-                    .disabled(loading || historyRefresh.state.restartRequired)
+                    .disabled(loading || historyRefresh.state.restartRequired || query.trimmingCharacters(in: .whitespacesAndNewlines) != historyRefresh.state.query)
                 }
             }
             .padding(.horizontal, 16)
@@ -1897,7 +1934,10 @@ struct MaatKnownFailureProposalsView: View {
     }
 
     @MainActor private func load(query requestedQuery: String? = nil, cursor: String? = nil) async {
-        await historyRefresh.load(scope: "all", query: requestedQuery, cursor: cursor) { args in
+        selectionFallbackMessage = nil
+        let effectiveQuery = requestedQuery ?? historyRefresh.state.refreshQuery
+        await historyRefresh.load(scope: "all", query: effectiveQuery, cursor: cursor,
+                                  selection: activeCaseSelection) { args in
             await SirsiEngine.runJSONRead(args: args)
         }
     }
@@ -2685,18 +2725,91 @@ func maatCasebookFailureMemoryArguments(_ action: MaatFailureMemoryAction) -> [S
     }
 }
 
+struct MaatCaseSelection: Equatable, Sendable {
+    let caseID: String
+    let evidence: String
+
+    init?(caseID: String, evidence: String) {
+        guard Self.isCanonicalCaseID(caseID), Self.isCanonicalEvidence(evidence) else { return nil }
+        self.caseID = caseID
+        self.evidence = evidence
+    }
+
+    static func recorded(from result: CommandResult?) -> MaatCaseSelection? {
+        guard let result, result.status == "ok", result.errors.isEmpty else { return nil }
+        let ids = result.evidence.filter { $0.label == "Case ID" }
+        let evidences = result.evidence.filter { $0.label == "Evidence" }
+        guard ids.count == 1, evidences.count == 1 else { return nil }
+        return MaatCaseSelection(caseID: ids[0].value, evidence: evidences[0].value)
+    }
+
+    static func fallbackMessage(for result: CommandResult?) -> String? {
+        recorded(from: result) == nil
+            ? "The result did not provide one canonical case ID and evidence pair. Casebook is open for browsing; no exact case was opened."
+            : nil
+    }
+
+    func uniqueCompletedCase(in projection: MaatCasebookProjection) -> MaatCase? {
+        guard projection.journalIntegrity.invalidCount == 0,
+              let history = projection.history,
+              history.scope == "all", history.countScope == "query",
+              !history.queryID.isEmpty, !history.snapshot.isEmpty,
+              history.coverage == "complete", history.hasMoreKnown, !history.hasMore,
+              history.candidateMatchesComplete, history.candidateMatches == 1,
+              history.evidenceMatchesComplete == true, let evidenceMatches = history.evidenceMatches, evidenceMatches > 0,
+              history.totalComplete, history.total == 1, history.nextCursor == nil,
+              history.returned == 1, projection.cases.count == 1,
+              let entry = projection.cases.first,
+              entry.id == caseID, entry.evidence == evidence else { return nil }
+        return entry
+    }
+
+    static func isCanonicalCaseID(_ value: String) -> Bool {
+        value.hasPrefix("maat-case-") && isLowerHex(String(value.dropFirst("maat-case-".count)), count: 16)
+    }
+
+    static func isCanonicalEvidence(_ value: String) -> Bool {
+        ["diagnostic-finding:sha256=", "maat-system-one:sha256="].contains { prefix in
+            value.hasPrefix(prefix) && isLowerHex(String(value.dropFirst(prefix.count)), count: 64)
+        }
+    }
+
+    private static func isLowerHex(_ value: String, count: Int) -> Bool {
+        value.utf8.count == count && value.utf8.allSatisfy {
+            (48...57).contains($0) || (97...102).contains($0)
+        }
+    }
+}
+
 func maatExactCasebookReadArguments(evidence: String, cursor: String? = nil) -> [String] {
-	var arguments = ["maat", "casebook", "--json", "--scope", "all", "--evidence", evidence, "--limit", "2"]
+	maatCasebookEvidenceReadArguments(scope: "all", evidence: evidence, cursor: cursor)
+}
+
+func maatCasebookEvidenceReadArguments(scope: String, evidence: String, cursor: String? = nil) -> [String] {
+	var arguments = ["maat", "casebook", "--json", "--scope", scope, "--evidence", evidence, "--limit", "2"]
 	if let cursor, !cursor.isEmpty { arguments += ["--cursor", cursor] }
 	return arguments
 }
 
+func maatExactCasebookSelectionReadArguments(_ selection: MaatCaseSelection, cursor: String? = nil) -> [String] {
+    var arguments = maatExactCasebookReadArguments(evidence: selection.evidence, cursor: cursor)
+    arguments.append(selection.caseID)
+    return arguments
+}
+
 func maatCasebookHistoryArguments(scope: String, query: String = "", cursor: String? = nil) -> [String] {
+    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let evidence = maatCanonicalFullCasebookEvidence(normalizedQuery) {
+        return maatCasebookEvidenceReadArguments(scope: scope, evidence: evidence, cursor: cursor)
+    }
     var arguments = ["maat", "casebook", "--json", "--scope", scope, "--limit", "50"]
     if let cursor, !cursor.isEmpty { arguments += ["--cursor", cursor] }
-    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     if !normalizedQuery.isEmpty { arguments.append(normalizedQuery) }
     return arguments
+}
+
+private func maatCanonicalFullCasebookEvidence(_ value: String) -> String? {
+    MaatCaseSelection.isCanonicalEvidence(value) ? value : nil
 }
 
 enum MaatInactiveDispositionFailurePresentation {
@@ -4176,6 +4289,8 @@ struct MaatHistoryRefreshState {
     private(set) var error: String?
     private(set) var failure: MaatHistoryRefreshFailure?
     private(set) var query: String
+    private(set) var selection: MaatCaseSelection?
+    private var requestedQuery: String
     private(set) var loading: Bool
     private(set) var continuationPaused: Bool
     private(set) var restartRequired: Bool
@@ -4184,6 +4299,8 @@ struct MaatHistoryRefreshState {
     init(projection: MaatCasebookProjection?, error: String? = nil, query: String = "") {
         self.projection = projection
         self.error = error
+        selection = nil
+        requestedQuery = query
         failure = nil
         self.query = query
         loading = projection == nil
@@ -4193,14 +4310,21 @@ struct MaatHistoryRefreshState {
 
     // A write refresh must not replace an in-flight newly selected filter with
     // the older committed query. Cursor reuse still requires a fresh snapshot.
-    var refreshQuery: String { pending?.query ?? query }
+    var refreshQuery: String { pending?.query ?? requestedQuery }
+    var refreshSelection: MaatCaseSelection? {
+        if let pending { return pending.selection }
+        return selection
+    }
 
-    mutating func begin(scope: String, query requestedQuery: String? = nil, cursor: String? = nil) -> MaatHistoryRefreshRequest? {
+    mutating func begin(scope: String, query requestedQuery: String? = nil, cursor: String? = nil,
+                        selection requestedSelection: MaatCaseSelection? = nil) -> MaatHistoryRefreshRequest? {
         let nextQuery = (requestedQuery ?? query).trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextSelection = requestedSelection
         let nextCursor = cursor.flatMap { $0.isEmpty ? nil : $0 }
         let history = projection?.history
         if let nextCursor {
             guard !restartRequired, history?.scope == scope, history?.nextCursor == nextCursor, nextQuery == query,
+                  nextSelection == selection,
                   history?.queryID.isEmpty == false, history?.snapshot.isEmpty == false else {
                 pending = nil
                 loading = false
@@ -4215,7 +4339,11 @@ struct MaatHistoryRefreshState {
             error = nil
         }
         continuationPaused = false
-        let request = MaatHistoryRefreshRequest(scope: scope, query: nextQuery, cursor: nextCursor,
+        if nextCursor == nil {
+            requestedQuery = nextQuery
+            selection = nextSelection
+        }
+        let request = MaatHistoryRefreshRequest(scope: scope, query: nextQuery, selection: nextSelection, cursor: nextCursor,
             queryID: nextCursor == nil ? nil : history?.queryID, snapshot: nextCursor == nil ? nil : history?.snapshot)
         pending = request
         loading = true
@@ -4278,6 +4406,8 @@ struct MaatHistoryRefreshState {
         }
         projection = next
         query = request.query
+        requestedQuery = request.query
+        selection = request.selection
         error = nil
         failure = nil
         restartRequired = false
@@ -4310,6 +4440,17 @@ struct MaatHistoryRefreshState {
         setFailure(.invalidResponse)
     }
 
+    mutating func updateQueryIntent(_ query: String, selection: MaatCaseSelection?) {
+        pending = nil
+        loading = false
+        continuationPaused = false
+        restartRequired = false
+        error = nil
+        failure = nil
+        requestedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.selection = selection
+    }
+
     func isCurrent(_ request: MaatHistoryRefreshRequest) -> Bool { pending == request }
 
     private mutating func setFailure(_ failure: MaatHistoryRefreshFailure) {
@@ -4334,19 +4475,24 @@ struct MaatHistoryRefreshRequest: Equatable, Sendable {
     private let generation = UUID()
     let scope: String
     let query: String
+    let selection: MaatCaseSelection?
     let cursor: String?
     let queryID: String?
     let snapshot: String?
 
-    fileprivate init(scope: String, query: String, cursor: String?, queryID: String?, snapshot: String?) {
+    fileprivate init(scope: String, query: String, selection: MaatCaseSelection?, cursor: String?, queryID: String?, snapshot: String?) {
         self.scope = scope
         self.query = query
+        self.selection = selection
         self.cursor = cursor
         self.queryID = queryID
         self.snapshot = snapshot
     }
 
-    var arguments: [String] { maatCasebookHistoryArguments(scope: scope, query: query, cursor: cursor) }
+    var arguments: [String] {
+        if let selection { return maatExactCasebookSelectionReadArguments(selection, cursor: cursor) }
+        return maatCasebookHistoryArguments(scope: scope, query: query, cursor: cursor)
+    }
 }
 
 struct MaatKnownFailureProposal: Decodable, Identifiable {
@@ -4523,7 +4669,7 @@ struct MaatCase: Decodable, Identifiable {
 
     var searchText: String {
         let caseFields = [
-            time, kind, category, status, requester, resource, affected,
+            id, time, kind, category, status, requester, resource, affected,
             determination, assessed, why, evidence, resolution, verifiedRepairEvidence, repairOutcomeEvidence, pendingRepairAttemptEvidence,
         ]
         let nextActionFields = [

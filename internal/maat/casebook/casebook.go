@@ -344,13 +344,17 @@ func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (Histo
 	}
 	kind := strings.ToLower(strings.TrimSpace(query.Kind))
 	text := strings.ToLower(strings.TrimSpace(query.Text))
+	exactCaseID := ""
+	if isCanonicalCaseID(text) {
+		exactCaseID = text
+	}
 	status := Status(strings.ToLower(strings.TrimSpace(string(query.Status))))
 	// Bind continuation to the projection/filter semantics as well as operands.
-	// Older cursors cannot silently omit newly searchable incident links.
+	// Older cursors cannot silently retain the old case-ID search semantics.
 	keyBytes, err := json.Marshal(struct {
 		ProjectionVersion, Scope, Evidence, Kind, Text, Status string
 		Limit                                                  int
-	}{"casebook-local-prevention-v3", query.Scope, query.Evidence, kind, text, string(status), query.Limit})
+	}{"casebook-local-prevention-v4", query.Scope, query.Evidence, kind, text, string(status), query.Limit})
 	if err != nil {
 		return HistorySearchResult{}, err
 	}
@@ -361,11 +365,11 @@ func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (Histo
 		QueryKey: queryID, Limit: query.Limit,
 		Cursor: query.Cursor, Context: query.Context,
 		Match: func(decision maat.Decision) bool {
-			if kind == "" {
-				return true
-			}
 			projected := project(decision)
-			return strings.EqualFold(projected.Kind, kind) || strings.EqualFold(projected.Category, kind)
+			if kind != "" && !strings.EqualFold(projected.Kind, kind) && !strings.EqualFold(projected.Category, kind) {
+				return false
+			}
+			return exactCaseID == "" || projected.ID == exactCaseID
 		},
 		NeedsState: func(decision maat.Decision) bool {
 			return status != "" || text != "" || decision.Kind == "diagnostic owner acceptance"
@@ -377,6 +381,9 @@ func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (Histo
 			projected := projectLinkedCase(decision, linked)
 			if status != "" && projected.Status != status {
 				return false
+			}
+			if exactCaseID != "" {
+				return true
 			}
 			return text == "" || matches(projected, text)
 		},
@@ -744,11 +751,20 @@ func failedFloorRecovery(c Case) *ResolutionPath {
 
 func matches(c Case, needle string) bool {
 	return strings.Contains(strings.ToLower(strings.Join([]string{
-		c.Time, c.Host, c.Kind, c.Category, c.Requester, c.Resource,
+		c.ID, c.Time, c.Host, c.Kind, c.Category, c.Requester, c.Resource,
 		c.Affected, c.Determination, c.Assessed, c.Why, c.Evidence, c.Resolution,
 		c.VerifiedRepairEvidence, c.RepairOutcomeEvidence, c.PendingRepairAttemptEvidence, resolutionText(c.NextAction),
 		calibrationText(c.SystemOneCalibration), failureMemoryIncidentText(c.FailureMemoryIncidentKeys),
 	}, "\n")), needle)
+}
+
+func isCanonicalCaseID(value string) bool {
+	const prefix = "maat-case-"
+	if len(value) != len(prefix)+16 || !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	_, err := hex.DecodeString(strings.TrimPrefix(value, prefix))
+	return err == nil && value == strings.ToLower(value)
 }
 
 func failureMemoryIncidentText(keys *[]string) string {

@@ -157,6 +157,11 @@ final class MaatOperationStateTests: XCTestCase {
     }
 
     func testCasebookPreflightReadsExactEvidenceFromHistorySnapshot() {
+        let fullEvidence = "diagnostic-finding:sha256=" + String(repeating: "c", count: 64)
+        XCTAssertEqual(maatCasebookHistoryArguments(scope: "all", query: fullEvidence),
+            ["maat", "casebook", "--json", "--scope", "all", "--evidence", fullEvidence, "--limit", "2"])
+        XCTAssertEqual(maatCasebookHistoryArguments(scope: "all", query: "prefix " + fullEvidence),
+            ["maat", "casebook", "--json", "--scope", "all", "--limit", "50", "prefix " + fullEvidence])
         XCTAssertEqual(
             maatExactCasebookReadArguments(evidence: "diagnostic:exact"),
             ["maat", "casebook", "--json", "--scope", "all", "--evidence", "diagnostic:exact", "--limit", "2"]
@@ -177,6 +182,123 @@ final class MaatOperationStateTests: XCTestCase {
             maatCasebookHistoryArguments(scope: "all", query: "exact older evidence", cursor: "query-bound-cursor"),
             ["maat", "casebook", "--json", "--scope", "all", "--limit", "50", "--cursor", "query-bound-cursor", "exact older evidence"]
         )
+    }
+
+    func testCasebookResultSelectionRequiresUniqueTypedIdentityAndCompletedMatch() throws {
+        let caseID = "maat-case-0123456789abcdef"
+        let evidence = "diagnostic-finding:sha256=" + String(repeating: "a", count: 64)
+        func result(_ facts: [[String: String]], status: String = "ok", errors: [String] = []) throws -> CommandResult {
+            let data = try JSONSerialization.data(withJSONObject: [
+                "summary": "recorded", "status": status, "errors": errors,
+                "evidence": facts.map { ["label": $0["label"]!, "value": $0["value"]!] },
+            ])
+            return try JSONDecoder().decode(CommandResult.self, from: data)
+        }
+        let valid = try result([["label": "Case ID", "value": caseID], ["label": "Evidence", "value": evidence]])
+        let selection = try XCTUnwrap(MaatCaseSelection.recorded(from: valid))
+        XCTAssertEqual(selection.caseID, caseID)
+        XCTAssertEqual(selection.evidence, evidence)
+        XCTAssertEqual(maatExactCasebookSelectionReadArguments(selection), [
+            "maat", "casebook", "--json", "--scope", "all", "--evidence", evidence, "--limit", "2", caseID,
+        ])
+        XCTAssertEqual(Array(maatExactCasebookSelectionReadArguments(selection, cursor: "bounded-cursor").suffix(3)),
+                       ["--cursor", "bounded-cursor", caseID])
+
+        XCTAssertNil(MaatCaseSelection.recorded(from: try result([
+            ["label": "Case ID", "value": caseID], ["label": "Case ID", "value": caseID], ["label": "Evidence", "value": evidence],
+        ])), "duplicate identity labels must not choose a case")
+        XCTAssertNil(MaatCaseSelection.recorded(from: try result([
+            ["label": "Case ID", "value": caseID], ["label": "Evidence", "value": evidence],
+        ], status: "error")))
+        XCTAssertNil(MaatCaseSelection.recorded(from: try result([
+            ["label": "Case ID", "value": caseID], ["label": "Evidence", "value": evidence],
+        ], errors: ["write failed"])))
+        XCTAssertNil(MaatCaseSelection(caseID: "maat-case-0123456789ABCDEF", evidence: evidence))
+        XCTAssertNil(MaatCaseSelection(caseID: caseID, evidence: "diagnostic-finding:sha256=short"))
+
+        let projectionJSON = """
+        {"cases":[{"id":"\(caseID)","kind":"diagnostic owner review","category":"assessment","status":"open","priority":"normal","evidence":"\(evidence)"}],
+         "summary":{"total":1,"open":1,"urgent":0,"high":0,"resolved":0},"journal_integrity":{"invalid_count":0,"issues":[]},
+         "history":{"scope":"all","query_id":"query:exact","snapshot":"sha256:stable","returned":1,"candidate_matches":1,
+          "count_scope":"query","evidence_matches":1,"evidence_matches_complete":true,"candidate_matches_complete":true,
+          "page_size":2,"coverage":"complete","has_more":false,"has_more_known":true,"total_complete":true,"total":1}}
+        """
+        let projection = try XCTUnwrap(MaatCasebookView.decode(projectionJSON))
+        XCTAssertEqual(selection.uniqueCompletedCase(in: projection)?.id, caseID)
+        XCTAssertTrue(projection.cases[0].searchText.contains(caseID))
+        let sharedEvidence = try XCTUnwrap(MaatCasebookView.decode(
+            projectionJSON.replacingOccurrences(of: "\"evidence_matches\":1", with: "\"evidence_matches\":2")))
+        XCTAssertEqual(selection.uniqueCompletedCase(in: sharedEvidence)?.id, caseID,
+            "the typed case ID disambiguates repeated evidence while the combined match remains unique")
+        let wrongEvidenceData = try JSONSerialization.data(withJSONObject: [
+                "cases": [["id": caseID, "kind": "diagnostic owner review", "category": "assessment", "status": "open", "priority": "normal", "evidence": "other"]],
+                "summary": ["total": 1, "open": 1, "urgent": 0, "high": 0, "resolved": 0],
+                "journal_integrity": ["invalid_count": 0, "issues": []],
+                "history": ["scope": "all", "query_id": "query:exact", "snapshot": "sha256:stable", "returned": 1,
+                    "candidate_matches": 1, "count_scope": "query", "evidence_matches": 1, "evidence_matches_complete": true,
+                    "candidate_matches_complete": true, "page_size": 2, "coverage": "complete", "has_more": false,
+                    "has_more_known": true, "total_complete": true, "total": 1],
+            ])
+        let wrongEvidenceRaw = try XCTUnwrap(String(data: wrongEvidenceData, encoding: .utf8))
+        let wrongEvidence = try XCTUnwrap(MaatCasebookView.decode(wrongEvidenceRaw))
+        XCTAssertNil(selection.uniqueCompletedCase(in: wrongEvidence))
+    }
+
+    func testCasebookQueryChangeAndCancelledPendingRefreshKeepGenericIntent() throws {
+        let evidence = "diagnostic-finding:sha256=" + String(repeating: "b", count: 64)
+        let selection = try XCTUnwrap(MaatCaseSelection(caseID: "maat-case-0123456789abcdef", evidence: evidence))
+        var state = MaatHistoryRefreshState(projection: nil)
+        let initial = try XCTUnwrap(state.begin(scope: "all", selection: selection))
+        XCTAssertEqual(state.refreshSelection, selection)
+        XCTAssertEqual(initial.arguments.last, selection.caseID)
+
+        state.updateQueryIntent("apollo", selection: nil)
+        XCTAssertFalse(state.isCurrent(initial), "editing the query invalidates the pending exact lookup")
+        XCTAssertNil(state.refreshSelection, "a pending generic query is an intentional nil selection")
+        XCTAssertEqual(state.refreshQuery, "apollo")
+        let generic = try XCTUnwrap(state.begin(scope: "all", query: state.refreshQuery, selection: state.refreshSelection))
+        XCTAssertNil(generic.selection)
+        XCTAssertEqual(generic.arguments, maatCasebookHistoryArguments(scope: "all", query: "apollo"))
+
+        state.pauseContinuation(failure: .cancelled)
+        XCTAssertNil(state.refreshSelection, "cancelling the generic query must not resurrect the old exact selector")
+        XCTAssertEqual(state.refreshQuery, "apollo")
+        let retry = try XCTUnwrap(state.begin(scope: "all", query: state.refreshQuery, selection: state.refreshSelection))
+        XCTAssertNil(retry.selection)
+        XCTAssertEqual(retry.query, "apollo")
+    }
+
+    @MainActor
+    func testCasebookRefreshDuringPendingGenericQueryUsesGenericSelectorAfterCancel() async throws {
+        let evidence = "diagnostic-finding:sha256=" + String(repeating: "d", count: 64)
+        let selection = try XCTUnwrap(MaatCaseSelection(caseID: "maat-case-0123456789abcdef", evidence: evidence))
+        let responses = ControlledHistoryResponses()
+        let store = MaatHistoryRefreshStore()
+        let exact = Task { await store.load(scope: "all", selection: selection) { await responses.read($0) } }
+        await responses.waitForCount(1)
+        store.queryChanged("apollo")
+        let firstRefresh = Task { await store.refresh(scope: "all") }
+        await responses.waitForCount(2)
+        let callsAfterRefresh = await responses.arguments()
+        XCTAssertEqual(callsAfterRefresh[1], maatCasebookHistoryArguments(scope: "all", query: "apollo"))
+        XCTAssertNil(store.state.refreshSelection)
+
+        store.cancel()
+        let retry = Task { await store.refresh(scope: "all") }
+        await responses.waitForCount(3)
+        let callsAfterRetry = await responses.arguments()
+        XCTAssertEqual(callsAfterRetry[2], maatCasebookHistoryArguments(scope: "all", query: "apollo"))
+        await responses.finish(2, with: try historyRead(scope: "all", queryID: "query:apollo",
+            snapshot: "snapshot:apollo", coverage: "complete", cursor: nil, countScope: "query"))
+        await retry.value
+        await responses.finish(0, with: try historyRead(scope: "all", queryID: "query:stale-exact",
+            snapshot: "snapshot:stale-exact", coverage: "complete", cursor: nil, countScope: "query"))
+        await responses.finish(1, with: try historyRead(scope: "all", queryID: "query:stale-generic",
+            snapshot: "snapshot:stale-generic", coverage: "complete", cursor: nil, countScope: "query"))
+        await exact.value
+        await firstRefresh.value
+        XCTAssertEqual(store.state.query, "apollo")
+        XCTAssertNil(store.state.refreshSelection)
     }
 
     @MainActor
