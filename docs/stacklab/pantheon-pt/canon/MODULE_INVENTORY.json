@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "118794673f38c176a708395c0c0119aee12ad1f2",
-  "source_tree": "94d1e129b364d8b463a08d4338a84cfe375dde57",
+  "source_commit": "e0f89788e6d6c8be4028b3ec680084910f305f18",
+  "source_tree": "aa543d6dbcf955e406d999b0fb0e8c0f95a75981",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -474,7 +474,7 @@
         },
         {
           "path": "cmd/sirsi/relieve.go",
-          "sha256": "e0a8df25321f2dbf4900aecd4419d331687bff920fe7ddcfa6d696cc4fb7c7df"
+          "sha256": "b77ddb0aa41e5620cf8c18afefe013768791da4eb5eb19237d515ee9f2eaeb6c"
         },
         {
           "path": "cmd/sirsi/remediate.go",
@@ -1156,7 +1156,7 @@
         },
         {
           "path": "cmd/sirsi/relieve_purge_test.go",
-          "sha256": "eddd94ce8cee4959ed01bc000811f8c734d5cb384f453aa6d6a4d3a7322753c9"
+          "sha256": "cbf0abfa7ba4e81764bdef09f604c2bcef0895069843c289fc03f5f7c0b0eea3"
         },
         {
           "path": "cmd/sirsi/reqcmd_test.go",
@@ -9098,7 +9098,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/Views.swift",
-          "sha256": "967d33e832794e33e93dbec85df814f5cac2cf3f7ca98334e7c507ccf6e1858e"
+          "sha256": "e13ba67298954edbe84d5aceb750464b36bdb2a0f95b6303ea0dfeac8bde9688"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/WorkspaceSession.swift",
@@ -9280,7 +9280,7 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/ResultPresentationTests.swift",
-          "sha256": "68d1a47b4b6fd0764b443f33fe35f18d0259701157a016ad9667e6e138aee3c7"
+          "sha256": "720632b82493ed04d7848bb963cbde75f940f23bfc4276bb113d9765194a8724"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/ResultScrollViewportTests.swift",
