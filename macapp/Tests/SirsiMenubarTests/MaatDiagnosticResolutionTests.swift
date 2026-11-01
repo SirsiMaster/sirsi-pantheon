@@ -28,6 +28,29 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
                      exitStatus: exit, timedOut: timeout, launchError: error)
     }
 
+    @MainActor
+    func testExplicitReviewRefreshesChangedOperandsInsteadOfDisablingTheRoute() async throws {
+        let v = try verdict()
+        let model = MaatDiagnosticResolutionModel()
+        let fresh = try read()
+        var calls = 0
+        var snapshot = FindingObservationSnapshot(current: false, finding: nil)
+        let reviewed = await model.refreshForReview(verdict: v, finding: v.findings[0], localHost: host,
+            snapshot: { snapshot }, read: {
+                calls += 1
+                let report = try! JSONDecoder().decode(DiagReport.self, from: fresh.data)
+                snapshot = FindingObservationSnapshot(current: true, finding: report.findings[0])
+                return fresh
+            })
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(reviewed?.message, "Fresh disk condition")
+        // An unavailable current snapshot must still fail closed after the read.
+        let refused = await model.refreshForReview(verdict: v, finding: v.findings[0], localHost: host,
+            snapshot: { FindingObservationSnapshot(current: false, finding: nil) }, read: { fresh })
+        XCTAssertNil(refused)
+        XCTAssertTrue(model.message.contains("changed"))
+    }
+
     func testDecodedCanonicalIdentityUsesFreshOperandsAndNeverHintText() throws {
         let v = try verdict()
         guard case .current(let current) = maatCurrentDiagnosticResolution(verdict: v, finding: v.findings[0], localHost: host, read: try read()) else {

@@ -2740,6 +2740,7 @@ private struct MaatCaseDetailView: View {
     @State private var failureMemoryHistoryKey: MaatOperationKey?
     @State private var failureMemoryHistoryAction: MaatFailureMemoryAction?
     @State private var retryReviewBusy = false
+    @State private var retryReviewTask: Task<Void, Never>?
     @State private var invalidJournalIntegrity: MaatJournalIntegrity?
 
     init(engine: SirsiEngine, operations: MaatCaseOperationStore, entry: MaatCase) {
@@ -3164,17 +3165,26 @@ private struct MaatCaseDetailView: View {
                     .foregroundStyle(.orange)
             }
             if operationRecord != nil && !operationInFlight {
+                if retryReviewBusy {
+                    ProgressView("Reading this case's retained history…").sirsiFont(.callout)
+                    Text("No approval or repair is being submitted. Your review progress is retained between bounded reads.")
+                        .sirsiFont(.callout).fixedSize(horizontal: false, vertical: true)
+                    if retryReviewTask != nil {
+                        Button("Cancel history read") { retryReviewTask?.cancel() }.buttonStyle(.bordered)
+                    }
+                }
                 Button {
-                    Task { await reviewRetry() }
+                    guard retryReviewTask == nil else { return }
+                    retryReviewTask = Task { await reviewRetry(); retryReviewTask = nil }
                 } label: {
                     Label(operations.hasHistoryContinuation(for: operationKey) ? "Continue exact history review" : operationRecord?.phase == .retryReady ? "Review again" : "Refresh and review retry", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
-                .disabled(operationInFlight || retryReviewBusy)
+                .disabled(operationInFlight || retryReviewBusy || retryReviewTask != nil)
                 if operations.hasHistoryContinuation(for: operationKey) {
                     Button("Start fresh history review") { operations.restartHistory(operationKey) }
                         .buttonStyle(.bordered)
-                        .disabled(operationInFlight || retryReviewBusy)
+                        .disabled(operationInFlight || retryReviewBusy || retryReviewTask != nil)
                 }
             }
         }
