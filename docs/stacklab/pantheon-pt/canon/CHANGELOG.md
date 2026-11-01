@@ -1,5 +1,14 @@
 # Changelog — Pantheon PT canon
 
+## 2026-11-01 — v0.24.157 release candidate
+
+- Align the memory-relief preview and quit guidance with the footprint-first metric used to rank memory consumers, retaining RSS only when footprint is unavailable.
+- Refs: docs/ADR-033-REMEDIATION-CATALOG.md, cmd/sirsi/relieve.go, cmd/sirsi/relieve_purge_test.go
+- Route legacy diagnostic memory findings through the exact read-only preview before repair consent; use the existing scrollable Action Review sheet with frozen registered argv/project scope and dismissal-time authorization for other bounded legacy repairs.
+- Refs: docs/ADR-033-REMEDIATION-CATALOG.md, macapp/Sources/SirsiMenubar/Views.swift, macapp/Sources/SirsiMenubar/ActionReviewSheet.swift, macapp/Tests/SirsiMenubarTests/DiagnosticRepairActionTests.swift, docs/stacklab/pantheon-pt/canon/COMPONENT_CATALOG.md
+- Show the complete owner-review rationale as distinct, selectable multiline Casebook evidence beside its assessment; keep explicit evidence-bound conclusion acceptance unchanged.
+- Refs: internal/maat/diagnostic_resolution.go, macapp/Sources/SirsiMenubar/MaatCasebookView.swift, macapp/Tests/SirsiMenubarTests/MaatDiagnosticResolutionTests.swift, docs/stacklab/pantheon-pt/canon/COMPONENT_CATALOG.md
+
 ## 2026-11-01 — v0.24.156 release candidate
 
 - Refresh Ma’at’s exact release-workflow source pin and provenance for the reviewed M1 runner binding and keychain-cleanup fence; retain the existing removed-control refusal fixtures.
