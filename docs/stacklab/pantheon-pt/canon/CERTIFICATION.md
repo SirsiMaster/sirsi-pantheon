@@ -12,11 +12,11 @@ describe that snapshot only; they are not the final inventory or a completeness
 claim for the subsequent corrective source.
 
 
-The refreshed `MODULE_INVENTORY.json` pins corrective code commit
-`81c78d4bd5f5e0ba95fc7658ea5b5a3a7d9ed0da`, tree
-`10635ac6956d886dd1885240cd9560cdc707294a`. It enumerates 103 Go packages
-and one Swift target: 1,026 source/data files, 904 test files and 232 supporting
-files (2,162 listed blobs). Source/data includes direct `go:embed` assets that
+The refreshed `MODULE_INVENTORY.json` pins merged code commit
+`118794673f38c176a708395c0c0119aee12ad1f2`, tree
+`94d1e129b364d8b463a08d4338a84cfe375dde57`. It enumerates 103 Go packages
+and one Swift target: 1,027 source/data files, 905 test files and 232 supporting
+files (2,164 listed blobs). Source/data includes direct `go:embed` assets that
 were absent from the previous inventory; the five dashboard assets already in
 support sets remain listed once. Literal imports and declared embed paths are
 a source view, not compiler-resolved dependencies or proof of packaged payload.
@@ -44,7 +44,7 @@ remain required. Focused selfupdate normal/race each passed 43 top-level and 25
 subtests; inactive-disposition normal/race each passed 6 top-level and 18 subtests.
 These bounded results do not replace full CI, signing, package or installed tests.
 
-The current corrective snapshot restores per-workspace Forward navigation,
+The historical corrective snapshot restores per-workspace Forward navigation,
 uses the independently validated service-root policy only for relay health readers,
 and reports native version identity from the app's own bundle before application
 startup. Main-actor callback ownership and readable inactive-disposition failures
@@ -68,7 +68,7 @@ warnings are not claimed absent. External receipts under `~/.sirsi/evidence/pant
 bind the actual commands and terminals; this is bounded qualification, not whole-app
 certification.
 
-The current public baseline is **v0.24.154**, source
+The historical public baseline is **v0.24.154**, source
 `03319bb1ca9a8e5ce678e76b2e23d20b9f09931c`, tree
 `03e6cc1310a907cb25a786c1ea86b5f3596572c1`. SSA's sole publisher
 `41236480321` completed, and Main verified the supported M5 installation, exact
@@ -76,6 +76,24 @@ loaded app identity, cask bytes, all 14 root navigation entries, the Ra composer
 frames/Cancel and the Horus memory confirmation/Cancel. These installed154 results
 do not certify the new corrective snapshot. Protected CI, its normal signed release
 and actual updated-app checks remain required.
+
+The current published baseline is **v0.24.158**, source
+`7cc2044763dc0d70efa2431cb761ccedcfd529ce`, tree
+`7835b67a26eb20bd0031d544e7b197a2b91fe5cf`. SSA's sole publisher
+`41330256990` and retained artifact/cask receipts establish publication;
+supported package receipts establish disk installation on M5, M1 and Studio.
+Loaded GUI and functionality remain separately scoped.
+
+The planned 0.24.159 corrective composition includes Ma'at case navigation and
+review and informational quiet-observation corrections. Independent source review
+accepted `eb985f6ec4855479bdbae2f8e747a402b6e0410d`, whose tree matches merged
+`118794673f38c176a708395c0c0119aee12ad1f2`. Focused Go normal and race each
+recorded 80 passing test events (48 top-level and 32 subtests), no failures or
+skips; this is not a full-suite result. On M1, 88 selected strict native tests
+passed at `6fa6759c5519973bc5559253a9550963add0cf27`, with the source/test
+byte-closure seal retained separately. These results do not establish release,
+installed behavior, case acceptance, quiet-interval qualification or integrated
+certification; bind subsequent receipts separately.
 
 The metadata commit follows this code snapshot. Its exact final commit/tree and
 every listed blob must be bound by the external final-byte comparison receipt;
@@ -123,7 +141,7 @@ versioned source and evidence, never a particular host or agent memory.
 |---|---|---|---|
 | PT-C01 / REQ11 | Origin/main wing, declared roster and byte-identical universal registry pin | Owning Pantheon24b4e50b and central Stack Lab8097b5d46e481e7437904da186848aee98934eaf independently read back2026-10-27T18:23:47Z: active and pin each3,111 bytes, same Git blob0560f9ae782dbf837acf1e7f76a58b2aa2ad0d9e and SHA256743e7148cf2e68e58b742231dc3064d1a0be968cf1ccfd239d3d4be3b39e7d21; exact PINNED line agrees. Main readback receipt SHAd2ce62684a5a4867252be52adff5f76ef059ef10a13c97aa273b1f229aa9122d; earlier27a7 evidence retained in history | PASS for current source wing identity; not release or runtime certification. Mirror synchronization remains C11 |
 | PT-C02 / REQ02,11 | Nine maintained records accurately cover current product | Nine records and84-group finite census independently accepted at f676 and normally merged as24b4e50b; the following corrective-source refresh is pending its final inventory and review | Main/SSA: preserve that acceptance scope and independently check the final refresh; product/runtime acceptance remains separate |
-| PT-C03 / REQ08,11 | Complete component/dependency/upgrade and process-diagram coverage | 84 groups,286 parsed Mermaid blocks; original finite-census semantics reviewed at f676 and corrective slices carry bounded reviews. The historical inventory enumerated1,944 digests from958db55b; the earlier corrective d037 inventory enumerated2,151 blobs; the current 81c78d4b inventory enumerates2,162 source/data/test/support blobs across104 packages/targets, including direct embedded assets. External final-head comparison remains separate from source classification and process/runtime qualification | Main: bind the final source inventory and review bounded corrective crosswalks; no runtime claim from diagrams or source inventory |
+| PT-C03 / REQ08,11 | Complete component/dependency/upgrade and process-diagram coverage | 84 groups,286 parsed Mermaid blocks; original finite-census semantics reviewed at f676 and corrective slices carry bounded reviews. The historical inventory enumerated1,944 digests from958db55b; the earlier corrective d037 inventory enumerated2,151 blobs; the current 11879467 inventory enumerates2,164 source/data/test/support blobs across104 packages/targets, including direct embedded assets. External final-head comparison remains separate from source classification and process/runtime qualification | Main: bind the final source inventory and review bounded corrective crosswalks; no runtime claim from diagrams or source inventory |
 | PT-C04 / REQ01,02,05 | Exact clean composed source, full Go/Swift correctness/security/resource qualification and Ma’at A17 assessment | Exact c165 tree equals qualified clean PR head3d5663dd. Full no-short normal Go8504PASS/29SKIP/0FAIL and race8504PASS/29SKIP/0FAIL, full vet exit0; independent SSA readback accepts receipt SHA9cd8b34af9b0ffdcd015ce553c9cfa14f6b4deae22022b8ee41b76e0c85704c5. Full default Swift346PASS/13SKIP/0FAIL receipt SHA77ee4325243bfc00805a67f8db7161cc5c0d11a321f10075d0186263f2acbc1d. Exact PR protected CI40568582554 attempt1 green; post-merge CI cancellation is retained, not called a pass. Earlier owned test-harness failures remain preserved | Actual full installed141 A17 audit at clean c165 returned91/100,83PASS/11WARN/3FAIL; disposition SHA4fd6db55a5c66363ec7f5dbbf65f82b1028fd3ce50e957e43562dcd1c14b8012. Numeric85 threshold met; FAIL remains for historical canon linkage2/10, mailops19.8% and servicedrain34.7% vs50%. Historical corrective snapshot958db55b raises mailops to63.6% and servicedrain to51.0% against unchanged50% floors; four-package normal/race each1843PASS/2explicitSKIP, receipt SHA9e84c924c9bfe3a5d7d4a9601d1069e89f1a10d0f22e8dbbed8b93c7c6487569. This does not rewrite c165 or constitute a new full audit. Main/SSA: bind the independently accepted historical crosswalk without rewriting commits (SSA review SHA57eee0a04a4b9462b1959a2acb1fe9db5adc391c3a9d20be008cd5924cefcf7e; original20%/FAIL preserved), qualify correction delta. Counts/score are not resource/installed certification |
 | PT-C05 / REQ03,10 | Same signed/notarized/stapled one-engine Python-free app in DMG and PKG | Public141 pair independently downloaded, exact size/SHA and staples matched; Application/Installer Team9D382WV988 and trusted notary verified. SSA exact signed-pair summary SHA6ab2c759b1b88ed1b22f374f01d56c2f604424e1ff9a215ac9bd38e3b87686f0 binds canonical inventory accepted=true,29entries,2expected engines,python_free=true (inventory SHAebfb0fcf99ab335d8bd27880196d5aa0b9b56457fbd68cfd0f4db9235f3a9a9b); package/app/built CLI+GUI hashes equal, expected resources/modes checked | PASS for exact observed canonical inventory, resource/mode and same-payload evidence. SSA linkage observation SHA f0186aca36fe3253d109307937b55b4685ef5be404e81f1f819e77ed2f695e75 lists only Apple/System/Swift dependencies for the two exact hash-pinned payload binaries. No Python dylib listed. Runtime resource behavior and transitive library closure remain distinct; no host-wide Python-free or all-runtime claim |
 | PT-C06 / REQ02,03 | One exact tag/release and canonical cask with remote bytes | Public141 release425936406 at20:13:02Z, annotated tag6b23bb53977a1be34881ab0d19cabb39d3864461 peels c165. Independent public pair receipt SHAef7ae3963e90ecde07ec3bbf19e5d65adbcefe21e4468d648d06b0c9d24c9007. Cask at tap a4388a1fa081a4b913ea9fe054596f765beddc65, exact bytes SHA54125c3e428b7125dcc91a3d63ca6ea88030e32f89e250a71cfae876ffc22a19; independent readback SHAc26f0ee53802c366857d3d39b401cd18cf0df6867ea4b37507e0a557727abec1 | PASS for observed public141 tag/assets/cask only. SSA owns one subsequent corrective publisher; never rewrite141 or infer installed functionality from download hashes |
