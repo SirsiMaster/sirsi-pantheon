@@ -4151,6 +4151,10 @@ struct ResultView: View {
                 Text(r.summary).sirsiFont(14, weight: .semibold)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if !r.errors.isEmpty {
+                    ResultErrorDetails(errors: r.errors)
+                }
+
                 if !r.evidence.isEmpty {
                     VStack(spacing: 0) {
                         ForEach(r.evidence) { f in
@@ -4181,6 +4185,25 @@ struct ResultView: View {
                     }
                 }
             }.padding(16)
+    }
+
+    struct ResultErrorDetails: View {
+        let errors: [String]
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("ERROR DETAILS").sirsiFont(.caption2, weight: .semibold)
+                    .foregroundStyle(.orange)
+                ForEach(Array(errors.enumerated()), id: \.offset) { _, error in
+                    Text(error).sirsiFont(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.10)))
+                }
+            }
+        }
     }
 
     @ViewBuilder private func actionButton(_ a: CRAction) -> some View {
