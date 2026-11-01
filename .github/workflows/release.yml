@@ -47,7 +47,7 @@ jobs:
 
   menubar:
     name: Build Pantheon (macOS DMG + PKG)
-    runs-on: [self-hosted, macOS, ARM64]  # Enrolled native runner; bind its actual host at execution.
+    runs-on: [self-hosted, macOS, ARM64, m1]
     needs: release
     # Fail fast instead of burning the 6h GitHub-Actions ceiling: if the signing
     # path wedges (a missing/invalid Developer-ID cert or app-specific password
@@ -55,6 +55,21 @@ jobs:
     # job at 30m. A 5h20m hung DMG job (run 27873488895) is what motivated this.
     timeout-minutes: 30
     steps:
+      - name: Bind native release to qualified M1 runner
+        env:
+          PANTHEON_RUNNER_NAME: ${{ runner.name }}
+          PANTHEON_RUNNER_OS: ${{ runner.os }}
+          PANTHEON_RUNNER_ARCH: ${{ runner.arch }}
+        run: |
+          set -euo pipefail
+          [[ "${PANTHEON_RUNNER_NAME:-}" == "m1-pantheon" ]] || { echo "requires runner m1-pantheon" >&2; exit 1; }
+          [[ "${PANTHEON_RUNNER_OS:-}" == "macOS" ]] || { echo "requires GitHub macOS runner context" >&2; exit 1; }
+          [[ "${PANTHEON_RUNNER_ARCH:-}" == "ARM64" ]] || { echo "requires GitHub ARM64 runner context" >&2; exit 1; }
+          [[ "$(/usr/bin/uname -s)" == "Darwin" ]] || { echo "requires native Darwin" >&2; exit 1; }
+          [[ "$(/usr/bin/uname -m)" == "arm64" ]] || { echo "requires native arm64" >&2; exit 1; }
+          ACTUAL_HW_MODEL=$(/usr/sbin/sysctl -n hw.model) || { echo "cannot read native hardware model" >&2; exit 1; }
+          [[ "$ACTUAL_HW_MODEL" == "MacBookPro18,1" ]] || { echo "requires qualified M1 model MacBookPro18,1" >&2; exit 1; }
+
       - name: Checkout
         uses: actions/checkout@v4
 
