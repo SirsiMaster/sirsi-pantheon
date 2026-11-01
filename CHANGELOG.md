@@ -8,7 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.156] — 2026-11-01
 
-- Bind the native release job to the existing m1 runner label and fail before checkout unless runner context, native Darwin/arm64, and hardware model identify the qualified M1 host; source fixtures bind the closed first-step fields/checks to jobs.menubar and run in hosted lint CI before any tag release. Their isolated checkout includes the empty `macapp` path required by mocked command fixtures.
+- Bind the native release job to the existing m1 runner label and fail before checkout unless runner context, native Darwin/arm64, and hardware model identify the qualified M1 host; source fixtures bind the closed first-step fields/checks to jobs.menubar and run in hosted lint CI before any tag release. Their isolated checkout includes the empty `macapp` path required by mocked command fixtures. Keychain cleanup now requires both accepted host binding and an explicit keychain-mutation marker, retaining cleanup after later signing failures.
 
 - Open the audited memory-relief preview before asking to run a cache flush; other repairs retain explicit consent.
 

@@ -139,6 +139,16 @@ reset_workflow
 replace_once '[[ "$ACTUAL_HW_MODEL" == "MacBookPro18,1" ]]' '[[ "$ACTUAL_HW_MODEL" == "MacBookPro18,3" ]]'
 expect_refusal 'wrong hardware model'
 
+reset_workflow
+replace_once "if: always() && steps.m1_binding.outputs.accepted == 'true' && steps.keychain_setup.outputs.cleanup == 'true'" \
+    "if: always() && steps.keychain_setup.outputs.cleanup == 'true'"
+expect_refusal 'cleanup after rejected host binding'
+
+reset_workflow
+replace_once "if: always() && steps.m1_binding.outputs.accepted == 'true' && steps.keychain_setup.outputs.cleanup == 'true'" \
+    "if: always() && steps.m1_binding.outputs.accepted == 'true'"
+expect_refusal 'cleanup before keychain mutation'
+
 for target in Checkout 'Setup Go' 'Import Developer ID signing identities'; do
     reset_workflow
     move_guard_after "$target"

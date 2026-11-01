@@ -39,6 +39,14 @@ require_step_line() {
     fi
 }
 
+require_cleanup_step_line() {
+    local line="$1" label="$2"
+    if ! grep -Fqx -- "$line" <<< "$CLEANUP_STEP_ACTIVE"; then
+        echo "menubar_release_contract accepted=false missing=${label} file=${RELEASE_WORKFLOW}" >&2
+        exit 1
+    fi
+}
+
 require_run_line() {
     local line="$1" label="$2"
     if ! grep -Fqx -- "$line" <<< "$FIRST_STEP_RUN_ACTIVE"; then
@@ -73,9 +81,10 @@ FIRST_STEP_RUN="$(awk '
 ' <<< "$FIRST_STEP")"
 FIRST_STEP_RUN_ACTIVE="$(sed '/^[[:space:]]*#/d' <<< "$FIRST_STEP_RUN")"
 require_text '^      - name: Bind native release to qualified M1 runner$' "$FIRST_STEP_ACTIVE" "first_step_m1_binding_guard"
+require_step_line '        id: m1_binding' "first_step_binding_output_id"
 require_step_line '        run: |' "inline_m1_binding_guard"
 STEP_FIELDS="$(awk '/^        [[:alnum:]_-]+:/ { print }' <<< "$FIRST_STEP_ACTIVE")"
-EXPECTED_STEP_FIELDS="$(printf '        env:\n        run: |')"
+EXPECTED_STEP_FIELDS="$(printf '        id: m1_binding\n        env:\n        run: |')"
 if [[ "$STEP_FIELDS" != "$EXPECTED_STEP_FIELDS" ]]; then
     echo "menubar_release_contract accepted=false unexpected_first_guard_step_field file=${RELEASE_WORKFLOW}" >&2
     exit 1
@@ -91,7 +100,7 @@ if [[ "$STEP_ENV_BLOCK" != "$EXPECTED_STEP_ENV_BLOCK" ]]; then
     exit 1
 fi
 RUN_COMMAND_COUNT="$(awk 'NF && $1 !~ /^#/ { count++ } END { print count + 0 }' <<< "$FIRST_STEP_RUN_ACTIVE")"
-if [[ "$RUN_COMMAND_COUNT" != 8 ]]; then
+if [[ "$RUN_COMMAND_COUNT" != 9 ]]; then
     echo "menubar_release_contract accepted=false unexpected_first_guard_commands count=${RUN_COMMAND_COUNT}" >&2
     exit 1
 fi
@@ -103,6 +112,46 @@ require_run_line '          [[ "$(/usr/bin/uname -s)" == "Darwin" ]] || { echo "
 require_run_line '          [[ "$(/usr/bin/uname -m)" == "arm64" ]] || { echo "requires native arm64" >&2; exit 1; }' "native_arm64_check"
 require_run_line '          ACTUAL_HW_MODEL=$(/usr/sbin/sysctl -n hw.model) || { echo "cannot read native hardware model" >&2; exit 1; }' "native_model_read"
 require_run_line '          [[ "$ACTUAL_HW_MODEL" == "MacBookPro18,1" ]] || { echo "requires qualified M1 model MacBookPro18,1" >&2; exit 1; }' "qualified_m1_model_check"
+require_run_line '          echo "accepted=true" >> "$GITHUB_OUTPUT"' "successful_binding_output"
+
+KEYCHAIN_SETUP_STEP="$(awk '
+    $0 == "      - name: Import Developer ID signing identities" { in_step = 1 }
+    in_step && /^      - / && $0 != "      - name: Import Developer ID signing identities" { exit }
+    in_step { print }
+' <<< "$MENUBAR_JOB")"
+KEYCHAIN_SETUP_ACTIVE="$(sed '/^[[:space:]]*#/d' <<< "$KEYCHAIN_SETUP_STEP")"
+require_text '^        id: keychain_setup$' "$KEYCHAIN_SETUP_ACTIVE" "keychain_cleanup_marker_step_id"
+KEYCHAIN_CLEANUP_MARKER_COUNT="$(grep -Fc 'echo "cleanup=true" >> "$GITHUB_OUTPUT"' <<< "$KEYCHAIN_SETUP_ACTIVE" || true)"
+if [[ "$KEYCHAIN_CLEANUP_MARKER_COUNT" != 2 ]]; then
+    echo "menubar_release_contract accepted=false keychain_cleanup_markers count=${KEYCHAIN_CLEANUP_MARKER_COUNT}" >&2
+    exit 1
+fi
+if ! awk '
+    /security create-keychain -p "\$KEYCHAIN_PWD" build.keychain/ { created = NR }
+    /echo "cleanup=true" >> "\$GITHUB_OUTPUT"/ && !imported_marker { marker = NR; imported_marker = 1 }
+    END { exit !(created && marker > created) }
+' <<< "$KEYCHAIN_SETUP_ACTIVE"; then
+    echo "menubar_release_contract accepted=false missing_imported_keychain_ownership_marker file=${RELEASE_WORKFLOW}" >&2
+    exit 1
+fi
+if ! awk '
+    /test -f "\$LOGIN_KEYCHAIN"/ { login_test = NR }
+    /echo "cleanup=true" >> "\$GITHUB_OUTPUT"/ && login_test && !login_marker { login_marker = NR }
+    /security default-keychain -s "\$LOGIN_KEYCHAIN"/ { login_default = NR }
+    END { exit !(login_test && login_marker > login_test && login_default > login_marker) }
+' <<< "$KEYCHAIN_SETUP_ACTIVE"; then
+    echo "menubar_release_contract accepted=false missing_enrolled_keychain_ownership_marker file=${RELEASE_WORKFLOW}" >&2
+    exit 1
+fi
+
+CLEANUP_STEP="$(awk '
+    $0 == "      - name: Restore login keychain as default (always)" { in_step = 1 }
+    in_step && /^      - / && $0 != "      - name: Restore login keychain as default (always)" { exit }
+    in_step { print }
+' <<< "$MENUBAR_JOB")"
+CLEANUP_STEP_ACTIVE="$(sed '/^[[:space:]]*#/d' <<< "$CLEANUP_STEP")"
+require_cleanup_step_line "        if: always() && steps.m1_binding.outputs.accepted == 'true' && steps.keychain_setup.outputs.cleanup == 'true'" "binding_and_keychain_scoped_cleanup"
+require_cleanup_step_line '        run: |' "unconditional_post_binding_cleanup_body"
 
 require '^PANTHEON_BUILD_JOBS="\$\{PANTHEON_BUILD_JOBS:-1\}"' "$DMG_SCRIPT" "native_swift_job_default"
 require '^\s*\( cd "\$\{PROJECT_ROOT\}/macapp" && swift build -c release --jobs "\$\{PANTHEON_BUILD_JOBS\}" \)' "$DMG_SCRIPT" "native_swift_release_build"
