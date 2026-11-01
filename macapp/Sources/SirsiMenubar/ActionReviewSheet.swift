@@ -1,5 +1,20 @@
 import SwiftUI
 
+struct DiagnosticRepairResultSheet<SheetContent: View>: ViewModifier {
+    @Binding var item: DiagnosticRepairPresentation?
+    let content: (DiagnosticRepairPresentation) -> SheetContent
+
+    init(item: Binding<DiagnosticRepairPresentation?>,
+         @ViewBuilder content: @escaping (DiagnosticRepairPresentation) -> SheetContent) {
+        _item = item
+        self.content = content
+    }
+
+    func body(content base: Content) -> some View {
+        base.sheet(item: $item, content: content)
+    }
+}
+
 // Only this audited command is a read-only preview. Other diagnostics retain
 // explicit consent; absence of --confirm alone never proves a command is safe.
 func diagnosticOpensMemoryPreview(_ args: [String]) -> Bool {

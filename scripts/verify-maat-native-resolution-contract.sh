@@ -8,6 +8,8 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 view="$root/macapp/Sources/SirsiMenubar/Views.swift"
 actionreview="$root/macapp/Sources/SirsiMenubar/ActionReviewSheet.swift"
+remediation="$root/macapp/Sources/SirsiMenubar/RemediationExecution.swift"
+presentationtest="$root/macapp/Tests/SirsiMenubarTests/DiagnosticRepairPresentationTests.swift"
 engine="$root/macapp/Sources/SirsiMenubar/SirsiEngine.swift"
 casebook="$root/macapp/Sources/SirsiMenubar/MaatCasebookView.swift"
 launchd="$root/internal/router/launchdkickstart.go"
@@ -23,6 +25,8 @@ catalog="$root/docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"
 
 [ -f "$view" ] || { echo "missing native views" >&2; exit 1; }
 [ -f "$actionreview" ] || { echo "missing native action review sheet" >&2; exit 1; }
+[ -f "$remediation" ] || { echo "missing native repair presentation model" >&2; exit 1; }
+[ -f "$presentationtest" ] || { echo "missing mounted native repair presentation regression" >&2; exit 1; }
 [ -f "$engine" ] || { echo "missing native engine" >&2; exit 1; }
 [ -f "$casebook" ] || { echo "missing native Ma'at casebook" >&2; exit 1; }
 [ -f "$launchd" ] || { echo "missing managed launchd recovery" >&2; exit 1; }
@@ -35,6 +39,29 @@ catalog="$root/docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"
 [ -f "$catalog" ] || { echo "missing Ma'at System One catalog" >&2; exit 1; }
 [ -f "$dashboardhistory" ] || { echo "missing canonical Ma'at history asset" >&2; exit 1; }
 [ -f "$dashboardassets" ] || { echo "missing canonical dashboard asset handler" >&2; exit 1; }
+
+require_code_line() {
+  source_path=$1
+  needle=$2
+  message=$3
+  # Pass source text via the environment: awk -v interprets Swift's \( as an escape.
+  NEEDLE="$needle" /usr/bin/awk 'index($0, ENVIRON["NEEDLE"]) && $0 !~ /^[[:space:]]*\/\// { found=1; exit } END { exit !found }' "$source_path" || {
+    echo "$message: $needle" >&2
+    exit 1
+  }
+}
+
+require_code_count() {
+  source_path=$1
+  needle=$2
+  minimum=$3
+  message=$4
+  count=$(NEEDLE="$needle" /usr/bin/awk 'index($0, ENVIRON["NEEDLE"]) && $0 !~ /^[[:space:]]*\/\// { count++ } END { print count+0 }' "$source_path")
+  [ "$count" -ge "$minimum" ] || {
+    echo "$message: expected at least $minimum actual code lines, found $count" >&2
+    exit 1
+  }
+}
 
 # History moved out of the page literal into its shipped embedded module.
 # Bind every projection check to that actual module AND its host/serving path;
@@ -153,7 +180,8 @@ done
 for needle in \
   '.sheet(isPresented: $confirmFix, onDismiss: {' \
   'guard approved(repairArgs) else {' \
-  'showConfirmedFix = true' \
+  'guard let frozen = approval else { return }' \
+  'presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .typed)' \
   'ActionReviewSheet(title:' \
   'scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) }' \
   'if approved(repairArgs) { executeReviewedFix = true }'; do
@@ -164,6 +192,36 @@ for needle in \
 done
 
 for needle in \
+  '.sheet(isPresented: $confirmLegacyRepair, onDismiss: {' \
+  'guard let args = legacyNativeRepairArgs, approved(args) else {' \
+  'presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .legacy)' \
+  'if let args = legacyNativeRepairArgs, approved(args) { executeReviewedLegacyRepair = true }'; do
+  /usr/bin/grep -Fq "$needle" "$view" || {
+    echo "native legacy repair review dismissal/consent guard missing: $needle" >&2
+    exit 1
+  }
+done
+
+for needle in \
+  '@State private var presentedRepair: DiagnosticRepairPresentation?' \
+  '.modifier(DiagnosticRepairResultSheet(item: $presentedRepair) { presentation in' \
+  'let frozen = presentation.approval' \
+  'case .typed:' \
+  'return approved(repairArgs, using: frozen)' \
+  'case .legacy:' \
+  'legacyNativeRepairArgs.map { approved($0, using: frozen) } ?? false' \
+  'args: frozen.args' \
+  'authorizeExecution: authorize'; do
+  require_code_line "$view" "$needle" 'native atomic repair result approval/payload/authorizer missing'
+done
+require_code_count "$view" 'presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .typed)' 2 'typed frozen handoff missing from preview or confirmed route'
+require_code_count "$view" 'presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .legacy)' 2 'legacy frozen handoff missing from preview or confirmed route'
+
+for needle in \
+  'struct DiagnosticRepairResultSheet<SheetContent: View>: ViewModifier' \
+  '@Binding var item: DiagnosticRepairPresentation?' \
+  'let content: (DiagnosticRepairPresentation) -> SheetContent' \
+  'base.sheet(item: $item, content: content)' \
   'ScrollView {' \
   'Text(detail).sirsiFont(.body)' \
   'Text(scope).sirsiFont(.callout, design: .monospaced)' \
@@ -172,16 +230,24 @@ for needle in \
   'Exact arguments: \(exact)' \
   'Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)' \
   'Button(confirmLabel, action: confirm)'; do
-  /usr/bin/grep -Fq "$needle" "$actionreview" || {
-    echo "native repair review scope or persistent controls missing: $needle" >&2
-    exit 1
-  }
+  require_code_line "$actionreview" "$needle" 'native repair review scope or persistent controls missing (item presentation included)'
 done
 
-/usr/bin/grep -Fq 'authorizeExecution: { approved(repairArgs) }' "$view" || {
-  echo "native ResultView launch authorizer missing" >&2
-  exit 1
-}
+for needle in \
+  'struct DiagnosticRepairPresentation: Identifiable {' \
+  'let id = UUID()' \
+  'enum Route {' \
+  'let approval: DiagnosticRepairApproval' \
+  'let route: Route'; do
+  require_code_line "$remediation" "$needle" 'frozen native repair presentation identity/payload missing'
+done
+
+for needle in \
+  'func testTypedAndLegacyResultSheetsWaitForTheirFrozenApprovalItem()' \
+  'window.isReleasedWhenClosed = false' \
+  '.onAppear { observation.record(presented) }'; do
+  require_code_line "$presentationtest" "$needle" 'mounted native repair sheet regression missing'
+done
 
 for needle in \
   'ActionReviewSheet(title: confirmationTitle,' \
