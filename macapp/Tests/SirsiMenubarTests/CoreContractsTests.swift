@@ -146,6 +146,104 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(activityResolution(for: "Error: evidence unavailable"), .maatReview)
     }
 
+    func testLegacyActivityUnknownReceiptHeadersAndInterruptedOutcomesNeedEvidenceReview() {
+        for result in [
+            "STDOUT:",
+            "STDERR:",
+            "STDOUT:\n\nSTDERR:\n\nExit status: 0",
+            "Capture deadline expired; execution outcome is not confirmed.",
+            "Cancelled; execution outcome is not confirmed.",
+            "Output exceeded the shared 4 MiB capture budget; execution outcome is not confirmed.",
+            "Owned child exit is unknown.",
+            "The command exited successfully, but returned no readable structured result. No repair is claimed.",
+        ] {
+            XCTAssertEqual(activityResolution(for: result), .evidenceOnly, result)
+        }
+        XCTAssertEqual(activityResolution(for: "Flushed inactive caches."), .resolved)
+    }
+
+    func testCapturedRepairActivityRequiresClosedTypedCompletion() {
+        func receipt(_ stdout: String, exitCode: Int32? = 0, complete: Bool = true,
+                     statusFlags: (timedOut: Bool, cancelled: Bool, overflow: Bool) = (false, false, false),
+                     childState: OwnedCommandState = .exitConfirmed) -> CommandExecution {
+            CommandExecution(stdout: Data(stdout.utf8), exitCode: exitCode,
+                timedOut: statusFlags.timedOut, cancelled: statusFlags.cancelled,
+                overflow: statusFlags.overflow,
+                childState: complete ? childState : .exitUnknown)
+        }
+        func report(status: String?, summary: String = "Flushed caches successfully.", errors: [String] = []) -> String {
+            let encodedStatus = status.map { "\"status\":\"\($0)\"," } ?? ""
+            let encodedErrors = errors.map { "\"\($0)\"" }.joined(separator: ",")
+            return "{\"summary\":\"\(summary)\",\"evidence\":[],\"next_actions\":[],\(encodedStatus)\"errors\":[\(encodedErrors)]}"
+        }
+        let cases: [(String, CommandExecution, ActivityResolution)] = [
+            ("structured ok", receipt(report(status: "ok")), .resolved),
+            ("producer success", receipt(report(status: "success")), .resolved),
+            ("typed error", receipt(report(status: "error", errors: ["admin authorization failed"])), .maatReview),
+            ("typed skipped", receipt(report(status: "skipped")), .maatReview),
+            ("preview is not completion", receipt(report(status: "preview")), .evidenceOnly),
+            ("future status with success prose", receipt(report(status: "future-status")), .evidenceOnly),
+            ("no structured status with success prose", receipt(report(status: nil)), .evidenceOnly),
+            ("cancelled", receipt(report(status: nil), exitCode: nil,
+                statusFlags: (false, true, false), childState: .exitUnknown), .evidenceOnly),
+            ("timed out", receipt(report(status: nil), exitCode: nil,
+                statusFlags: (true, false, false), childState: .exitUnknown), .evidenceOnly),
+            ("unknown child exit", receipt(report(status: nil), exitCode: nil,
+                childState: .exitUnknown), .evidenceOnly),
+            ("nonzero exit", receipt(report(status: "ok"), exitCode: 7), .maatReview),
+            ("empty output", receipt(""), .evidenceOnly),
+            ("capture overflow", receipt(report(status: "ok"), complete: false,
+                statusFlags: (false, false, true)), .evidenceOnly),
+        ]
+
+        for (name, command, expected) in cases {
+            let captured = capturedRepairActivity(command)
+            let entry = ActivityEntry(title: "Flush caches now", command: "relieve --memory --confirm",
+                when: "Oct 31, 4:43 PM", result: captured.evidence, executionOutcome: captured.outcome)
+            XCTAssertEqual(entry.resolution, expected, name)
+        }
+    }
+
+    func testCapturedRepairRetainsSummaryExitAndBoundedUTF8Receipt() {
+        let json = #"{"summary":"Flushed inactive caches; pressure now normal.","evidence":[],"next_actions":[],"status":"ok","errors":[]}"#
+        let complete = capturedRepairActivity(CommandExecution(stdout: Data(json.utf8), exitCode: 0,
+            childState: .exitConfirmed))
+        XCTAssertTrue(complete.evidence.contains("Flushed inactive caches; pressure now normal."))
+        XCTAssertTrue(complete.evidence.contains("Exit status: 0"))
+        XCTAssertNotEqual(complete.evidence, "STDOUT:")
+        XCTAssertEqual(activityResolution(for: complete.evidence, executionOutcome: complete.outcome), .resolved)
+
+        let large = "Readable summary: caches flushed.\n" + String(repeating: "🧾", count: 40_000)
+        let truncated = capturedRepairActivity(CommandExecution(stdout: Data(large.utf8), stderr: Data("final stderr evidence".utf8),
+            exitCode: 0, childState: .exitConfirmed))
+        XCTAssertLessThanOrEqual(truncated.evidence.utf8.count, activityEvidenceLimitBytes)
+        XCTAssertNotNil(String(data: Data(truncated.evidence.utf8), encoding: .utf8))
+        XCTAssertTrue(truncated.evidence.contains("Readable summary: caches flushed."))
+        XCTAssertTrue(truncated.evidence.contains("[Activity receipt truncated at 64 KiB"))
+        XCTAssertTrue(truncated.evidence.contains("final stderr evidence"))
+        XCTAssertTrue(truncated.evidence.contains("Exit status: 0"))
+        XCTAssertTrue(truncated.outcome.truncated)
+        XCTAssertEqual(activityResolution(for: truncated.evidence, executionOutcome: truncated.outcome), .evidenceOnly)
+    }
+
+    func testActivityEntryCodableKeepsLegacyAndUnknownStatusEvidence() throws {
+        let legacyData = Data(#"[{"title":"Flush caches now","command":"relieve --memory --confirm","when":"Oct 31, 4:43 PM","result":"STDOUT:"}]"#.utf8)
+        let legacy = try XCTUnwrap(JSONDecoder().decode([ActivityEntry].self, from: legacyData).first)
+        XCTAssertNil(legacy.executionOutcome)
+        XCTAssertEqual(legacy.resolution, .evidenceOnly)
+        let reviewArgs = activityMaatReviewArgs(for: legacy)
+        XCTAssertTrue(reviewArgs.contains("STDOUT:"))
+        XCTAssertTrue(reviewArgs.contains("Retained Pantheon activity command: sirsi relieve --memory --confirm"))
+
+        let unknown = ActivityEntry(title: "Flush caches now", command: "relieve --memory --confirm",
+            when: "Oct 31, 4:43 PM", result: "Flushed caches successfully.",
+            executionOutcome: ActivityExecutionOutcome(complete: true, exitCode: 0,
+                structuredStatus: "future-attestation", hasStructuredErrors: false, truncated: false))
+        let roundTrip = try JSONDecoder().decode([ActivityEntry].self, from: JSONEncoder().encode([unknown]))
+        XCTAssertEqual(roundTrip.first?.executionOutcome?.structuredStatus, "future-attestation")
+        XCTAssertEqual(roundTrip.first?.resolution, .evidenceOnly)
+    }
+
     func testActivityMaatReviewCarriesEvidenceButNeverReplaysTheActivityCommand() {
         let entry = ActivityEntry(
             title: "LaunchAgent restore",

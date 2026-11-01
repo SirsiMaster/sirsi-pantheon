@@ -4306,7 +4306,7 @@ struct ResultView: View {
         toast = toastOK ? "Command returned a complete report; check fresh evidence below."
             : "Outcome needs review — the command will not be replayed automatically."
         engine.recordActivity(title: action.label, command: action.command,
-            result: receipt.displayText)
+            result: receipt.displayText, receipt: receipt)
     }
 
     // applyHeadline pulls the human result line ("Cleaned 8 items. Reclaimed
