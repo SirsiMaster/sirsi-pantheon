@@ -1593,7 +1593,7 @@ struct FindingView: View {
         }) {
             ActionReviewSheet(title: "Review system repair",
                 detail: "Pantheon will run the exact command below, then recheck this finding. A changed finding or project requires a fresh review. No unrelated service is selected.",
-                scope: "Command: \(approval?.args.joined(separator: " ") ?? "unavailable")\n\nProject: \(approval?.directory.path ?? "unavailable")",
+                scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) } ?? "No current reviewed command is available.",
                 confirmLabel: fixButtonLabel,
                 cancel: { confirmFix = false },
                 confirm: {
@@ -4067,7 +4067,7 @@ struct ResultView: View {
             if let action = pendingApply, let frozen = actionApproval {
                 ActionReviewSheet(title: "Review: " + action.label,
                     detail: (action.description ?? "Review the exact scope before running this action.") + "\n\nPantheon will run only the command below. Any macOS administrator authorization appears separately. Cancel leaves this preview unchanged.",
-                    scope: "Command: \(frozen.args.joined(separator: " "))\n\nProject: \(frozen.directory.path)",
+                    scope: actionReviewScope(arguments: frozen.args, directory: frozen.directory),
                     confirmLabel: action.label,
                     cancel: { pendingApply = nil; actionApproval = nil },
                     confirm: {

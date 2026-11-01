@@ -13,6 +13,16 @@ final class DiagnosticRepairActionTests: XCTestCase {
         }
     }
 
+    func testReviewPreservesArgumentBoundariesAndProducingDirectory() throws {
+        let args = ["clean", "a path with spaces", "line\nbreak", "--confirm"]
+        let directory = URL(fileURLWithPath: "/owned/project with spaces")
+        let scope = actionReviewScope(arguments: args, directory: directory)
+        let exactLine = try XCTUnwrap(scope.components(separatedBy: "\n\n").first { $0.hasPrefix("Exact arguments: ") })
+        let json = Data(exactLine.dropFirst("Exact arguments: ".count).utf8)
+        XCTAssertEqual(try JSONDecoder().decode([String].self, from: json), args)
+        XCTAssertTrue(scope.contains("Project: " + directory.path))
+    }
+
     @MainActor
     func testTwoLineActionGrowsWithTextSizeWithoutSingleLineBezelClipping() throws {
         let regular = try render(width: 520, scale: 1)
