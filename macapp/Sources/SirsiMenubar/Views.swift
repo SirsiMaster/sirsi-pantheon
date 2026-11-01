@@ -1348,16 +1348,24 @@ struct FindingView: View {
     }
     private var snapshot: FindingObservationSnapshot { engine.diagnosticSnapshot(check: finding.check) }
     @State private var approval: DiagnosticRepairApproval?
+    // The frozen approval is the result-sheet trigger and content, atomically.
+    @State private var presentedRepair: DiagnosticRepairPresentation?
 
-    private func freezeRepair(_ args: [String]) {
+    private func freezeRepair(_ args: [String]) -> DiagnosticRepairApproval {
         let actual = remediationArguments(args)
-        approval = DiagnosticRepairApproval(snapshot: snapshot, args: actual,
+        let frozen = DiagnosticRepairApproval(snapshot: snapshot, args: actual,
             directory: SirsiEngine.workingDirectory(for: actual))
+        approval = frozen
+        return frozen
     }
     private func approved(_ args: [String]) -> Bool {
+        guard let approval else { return false }
+        return approved(args, using: approval)
+    }
+    private func approved(_ args: [String], using approval: DiagnosticRepairApproval) -> Bool {
         let actual = remediationArguments(args)
-        return approval?.authorizes(snapshot: snapshot, args: actual,
-            directory: SirsiEngine.workingDirectory(for: actual)) == true
+        return approval.authorizes(snapshot: snapshot, args: actual,
+            directory: SirsiEngine.workingDirectory(for: actual))
     }
 
     // The honesty class drives EVERY label so a 7-day history never wears an
@@ -1371,10 +1379,8 @@ struct FindingView: View {
     @State private var confirmFix = false
     @State private var executeReviewedFix = false
     @State private var repairReviewMessage: String?
-    @State private var showConfirmedFix = false
     @State private var confirmLegacyRepair = false
     @State private var executeReviewedLegacyRepair = false
-    @State private var showLegacyRepair = false
 
     // Older installed CLIs can omit `fix` and leave only prose or a backticked
     // command. Never turn that text into executable authority and never send a
@@ -1538,9 +1544,9 @@ struct FindingView: View {
                         Text(fixSectionLabel).sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
                         Button {
                             repairReviewMessage = nil
-                            freezeRepair(repairArgs)
+                            let frozen = freezeRepair(repairArgs)
                             if diagnosticOpensMemoryPreview(repairArgs) {
-                                showConfirmedFix = true
+                                presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .typed)
                             } else {
                                 confirmFix = true
                             }
@@ -1579,7 +1585,7 @@ struct FindingView: View {
             // Evidence changes invalidate an open dialog, not only the final launch.
             // Keep an executing sheet's receipt visible. Its final authorizer
             // still rejects changed evidence; do not discard capture on refresh.
-            if !showConfirmedFix && !showLegacyRepair { approval = nil }
+            if case nil = presentedRepair { approval = nil }
             confirmFix = false
             confirmLegacyRepair = false
         }
@@ -1596,7 +1602,8 @@ struct FindingView: View {
                 repairReviewMessage = "The finding changed while the review closed. No repair ran. Review the current finding again."
                 return
             }
-            showConfirmedFix = true
+            guard let frozen = approval else { return }
+            presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .typed)
         }) {
             ActionReviewSheet(title: "Review system repair",
                 detail: "Pantheon will run the exact command below, then recheck this finding. A changed finding or project requires a fresh review. No unrelated service is selected.",
@@ -1609,24 +1616,6 @@ struct FindingView: View {
                     confirmFix = false
                 })
         }
-        .sheet(isPresented: $showConfirmedFix) {
-            Group {
-                if let approval {
-                    ResultView(engine: engine, title: observedFinding.check, args: approval.args,
-                               reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
-                               authorizeExecution: { approved(repairArgs) })
-                } else {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("This review is no longer current").sirsiFont(.headline)
-                        Text("The finding changed before the result could open. No repair was started. Return to the finding and review its current evidence.")
-                            .sirsiFont(.body).fixedSize(horizontal: false, vertical: true)
-                        Button("Return to finding") { showConfirmedFix = false }
-                            .buttonStyle(.borderedProminent).tint(gold)
-                    }.padding(20)
-                }
-            }
-            .modifier(ResultPanelLayout())
-        }
         .sheet(isPresented: $confirmLegacyRepair, onDismiss: {
             guard executeReviewedLegacyRepair else { return }
             executeReviewedLegacyRepair = false
@@ -1634,7 +1623,8 @@ struct FindingView: View {
                 repairReviewMessage = "The finding changed while the review closed. No repair ran. Review the current finding again."
                 return
             }
-            showLegacyRepair = true
+            guard let frozen = approval else { return }
+            presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .legacy)
         }) {
             ActionReviewSheet(title: "Review bounded repair",
                 detail: "Pantheon will run only the registered repair shown here, then re-check this finding. It will not execute diagnostic message text. A changed finding or project requires a fresh review.",
@@ -1647,22 +1637,22 @@ struct FindingView: View {
                     confirmLegacyRepair = false
                 })
         }
-        .sheet(isPresented: $showLegacyRepair) {
-            Group {
-                if let approval {
-                    ResultView(engine: engine, title: observedFinding.check, args: approval.args,
-                               reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
-                               authorizeExecution: { legacyNativeRepairArgs.map { approved($0) } ?? false })
-                } else {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("This review is no longer current").sirsiFont(.headline)
-                        Text("No repair started. Return to the finding and review its current evidence.").sirsiFont(.body)
-                        Button("Return to finding") { showLegacyRepair = false }.buttonStyle(.bordered)
-                    }.padding(20)
+        .modifier(DiagnosticRepairResultSheet(item: $presentedRepair) { presentation in
+            let frozen = presentation.approval
+            let authorize: () -> Bool = {
+                switch presentation.route {
+                case .typed:
+                    return approved(repairArgs, using: frozen)
+                case .legacy:
+                    return legacyNativeRepairArgs.map { approved($0, using: frozen) } ?? false
                 }
             }
-            .modifier(ResultPanelLayout())
-        }
+            return ResultView(engine: engine, title: frozen.snapshot.check ?? observedFinding.check,
+                              args: frozen.args, reverifyCheck: frozen.snapshot.check,
+                              reverifyKind: frozen.snapshot.fixKind,
+                              authorizeExecution: authorize)
+                .modifier(ResultPanelLayout())
+        })
     }
 
     private func fixButtonContents(_ fix: String) -> some View {
@@ -1680,9 +1670,9 @@ struct FindingView: View {
             }
             Button {
                 guard let args = legacyNativeRepairArgs else { return }
-                freezeRepair(args)
+                let frozen = freezeRepair(args)
                 if diagnosticOpensMemoryPreview(args) {
-                    showLegacyRepair = true
+                    presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .legacy)
                 } else {
                     confirmLegacyRepair = true
                 }

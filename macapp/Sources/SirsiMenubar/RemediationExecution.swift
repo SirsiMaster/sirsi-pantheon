@@ -36,6 +36,17 @@ struct DiagnosticRepairApproval {
     }
 }
 
+struct DiagnosticRepairPresentation: Identifiable {
+    enum Route {
+        case typed
+        case legacy
+    }
+
+    let id = UUID()
+    let approval: DiagnosticRepairApproval
+    let route: Route
+}
+
 func remediationArguments(_ args: [String]) -> [String] {
     args.contains("--json") ? args : args + ["--json"]
 }
