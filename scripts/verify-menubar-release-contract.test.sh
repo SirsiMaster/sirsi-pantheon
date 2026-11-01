@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FIXTURE="$(mktemp -d "${TMPDIR:-/tmp}/pantheon-menubar-runner-contract.XXXXXXXX")"
 trap 'rm -rf "$FIXTURE"' EXIT
 
-mkdir -p "$FIXTURE/.github/workflows" "$FIXTURE/scripts/maat"
+mkdir -p "$FIXTURE/.github/workflows" "$FIXTURE/scripts/maat" "$FIXTURE/macapp"
 cp "$ROOT/.github/workflows/release.yml" "$FIXTURE/.github/workflows/release.yml"
 cp "$ROOT/scripts/build-dmg.sh" "$ROOT/scripts/verify-menubar-release-contract.sh" \
    "$ROOT/scripts/test_release_publication.py" "$ROOT/scripts/publish-release-assets.py" "$FIXTURE/scripts/"
