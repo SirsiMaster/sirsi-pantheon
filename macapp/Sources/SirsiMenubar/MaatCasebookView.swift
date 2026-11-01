@@ -2740,6 +2740,7 @@ private struct MaatCaseDetailView: View {
     @State private var failureMemoryHistoryKey: MaatOperationKey?
     @State private var failureMemoryHistoryAction: MaatFailureMemoryAction?
     @State private var retryReviewBusy = false
+    @State private var retryReviewTask: Task<Void, Never>?
     @State private var invalidJournalIntegrity: MaatJournalIntegrity?
 
     init(engine: SirsiEngine, operations: MaatCaseOperationStore, entry: MaatCase) {
@@ -2865,18 +2866,21 @@ private struct MaatCaseDetailView: View {
             guard entry.nextAction?.actionID == "liveness-watch" else { return }
             await refreshFailureMemoryStatus()
         }
-        .confirmationDialog(confirmationTitle, isPresented: $confirmAction, titleVisibility: .visible) {
-            Button(confirmationButton) {
-                let confirmedNote = conclusion.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let action = pendingFailureMemoryAction {
-                    Task { await performFailureMemoryAction(action) }
-                } else {
-                    Task { await performResolution(confirmedNote: confirmedNote) }
-                }
-            }
-            Button("Cancel", role: .cancel) { pendingFailureMemoryAction = nil; recordBinaryDriftInactive = false }
-        } message: {
-            Text(confirmationMessage)
+        .sheet(isPresented: $confirmAction) {
+            ActionReviewSheet(title: confirmationTitle,
+                detail: confirmationMessage,
+                scope: "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)",
+                confirmLabel: confirmationButton,
+                cancel: { confirmAction = false; pendingFailureMemoryAction = nil; recordBinaryDriftInactive = false },
+                confirm: {
+                    let confirmedNote = conclusion.trimmingCharacters(in: .whitespacesAndNewlines)
+                    confirmAction = false
+                    if let action = pendingFailureMemoryAction {
+                        Task { await performFailureMemoryAction(action) }
+                    } else {
+                        Task { await performResolution(confirmedNote: confirmedNote) }
+                    }
+                })
         }
     }
 
@@ -3161,17 +3165,26 @@ private struct MaatCaseDetailView: View {
                     .foregroundStyle(.orange)
             }
             if operationRecord != nil && !operationInFlight {
+                if retryReviewBusy {
+                    ProgressView("Reading this case's retained history…").sirsiFont(.callout)
+                    Text("No approval or repair is being submitted. Your review progress is retained between bounded reads.")
+                        .sirsiFont(.callout).fixedSize(horizontal: false, vertical: true)
+                    if retryReviewTask != nil {
+                        Button("Cancel history read") { retryReviewTask?.cancel() }.buttonStyle(.bordered)
+                    }
+                }
                 Button {
-                    Task { await reviewRetry() }
+                    guard retryReviewTask == nil else { return }
+                    retryReviewTask = Task { await reviewRetry(); retryReviewTask = nil }
                 } label: {
                     Label(operations.hasHistoryContinuation(for: operationKey) ? "Continue exact history review" : operationRecord?.phase == .retryReady ? "Review again" : "Refresh and review retry", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
-                .disabled(operationInFlight || retryReviewBusy)
+                .disabled(operationInFlight || retryReviewBusy || retryReviewTask != nil)
                 if operations.hasHistoryContinuation(for: operationKey) {
                     Button("Start fresh history review") { operations.restartHistory(operationKey) }
                         .buttonStyle(.bordered)
-                        .disabled(operationInFlight || retryReviewBusy)
+                        .disabled(operationInFlight || retryReviewBusy || retryReviewTask != nil)
                 }
             }
         }

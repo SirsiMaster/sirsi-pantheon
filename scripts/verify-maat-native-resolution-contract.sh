@@ -7,6 +7,7 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 view="$root/macapp/Sources/SirsiMenubar/Views.swift"
+actionreview="$root/macapp/Sources/SirsiMenubar/ActionReviewSheet.swift"
 engine="$root/macapp/Sources/SirsiMenubar/SirsiEngine.swift"
 casebook="$root/macapp/Sources/SirsiMenubar/MaatCasebookView.swift"
 launchd="$root/internal/router/launchdkickstart.go"
@@ -21,6 +22,7 @@ recipe="$root/contracts/stacklab/maat-system-one-recipe-v1.json"
 catalog="$root/docs/qa/MAAT_SYSTEM_ONE_CATALOG.md"
 
 [ -f "$view" ] || { echo "missing native views" >&2; exit 1; }
+[ -f "$actionreview" ] || { echo "missing native action review sheet" >&2; exit 1; }
 [ -f "$engine" ] || { echo "missing native engine" >&2; exit 1; }
 [ -f "$casebook" ] || { echo "missing native Ma'at casebook" >&2; exit 1; }
 [ -f "$launchd" ] || { echo "missing managed launchd recovery" >&2; exit 1; }
@@ -86,13 +88,17 @@ for needle in \
   'Record a Ma'\''at owner review?' \
   'record-resolution' \
   '"--confirm"' \
-  'Continue in Ma'\''at Casebook' \
-  'MaatCasebookView(engine: engine)'; do
+  'Continue in Ma'\''at Casebook'; do
   /usr/bin/grep -Fq "$needle" "$view" || {
     echo "native Ma'at resolution path missing: $needle" >&2
     exit 1
   }
 done
+
+/usr/bin/grep -Fq 'MaatCasebookView(engine: engine)' "$view" || {
+  echo "native Ma'at Casebook review wiring missing" >&2
+  exit 1
+}
 
 for target in "$casebookcli" "$tui" "$dashboardhistory"; do
 	/usr/bin/grep -Fq 'prescribed next step' "$target" || {
@@ -145,12 +151,44 @@ for target in "$recipe" "$catalog"; do
 done
 
 for needle in \
-  'confirmFix' \
-  'Apply this system repair?' \
-  'showConfirmedFix' \
-  'will not broaden the command or touch unrelated services'; do
+  '.sheet(isPresented: $confirmFix, onDismiss: {' \
+  'guard approved(repairArgs) else {' \
+  'showConfirmedFix = true' \
+  'ActionReviewSheet(title:' \
+  'scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) }' \
+  'if approved(repairArgs) { executeReviewedFix = true }'; do
   /usr/bin/grep -Fq "$needle" "$view" || {
-    echo "native confirmed repair contract missing: $needle" >&2
+    echo "native repair review approval handoff missing: $needle" >&2
+    exit 1
+  }
+done
+
+for needle in \
+  'ScrollView {' \
+  'Text(detail).sirsiFont(.body)' \
+  'Text(scope).sirsiFont(.callout, design: .monospaced)' \
+  '.textSelection(.enabled)' \
+  'JSONEncoder().encode(arguments)' \
+  'Exact arguments: \(exact)' \
+  'Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)' \
+  'Button(confirmLabel, action: confirm)'; do
+  /usr/bin/grep -Fq "$needle" "$actionreview" || {
+    echo "native repair review scope or persistent controls missing: $needle" >&2
+    exit 1
+  }
+done
+
+/usr/bin/grep -Fq 'authorizeExecution: { approved(repairArgs) }' "$view" || {
+  echo "native ResultView launch authorizer missing" >&2
+  exit 1
+}
+
+for needle in \
+  'ActionReviewSheet(title: confirmationTitle,' \
+  'detail: confirmationMessage,' \
+  'scope: "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)",'; do
+  /usr/bin/grep -Fq "$needle" "$casebook" || {
+    echo "native Ma'at Casebook action review wiring missing: $needle" >&2
     exit 1
   }
 done

@@ -39,4 +39,23 @@ negative served-file internal/dashboard/ui.go 's.serveEmbedded(w, "ui/maat-histo
 negative next-step internal/dashboard/ui/maat-history.js 'prescribed next step' 'recovery guidance projection missing'
 negative floor internal/dashboard/ui/maat-history.js 'deterministic floor' 'System One floor projection missing'
 negative recovery-level internal/dashboard/ui/maat-history.js 'recovery level' 'three-level recovery projection missing'
-echo 'PASS one positive and eight projection/host/serving negatives'
+negative approved-handoff macapp/Sources/SirsiMenubar/Views.swift 'guard approved(repairArgs) else {' 'repair review approval handoff missing'
+negative launch-authorizer macapp/Sources/SirsiMenubar/Views.swift 'authorizeExecution: { approved(repairArgs) }' 'ResultView launch authorizer missing'
+negative reviewed-scope macapp/Sources/SirsiMenubar/Views.swift 'scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) }' 'repair review approval handoff missing'
+negative exact-json-argv macapp/Sources/SirsiMenubar/ActionReviewSheet.swift 'JSONEncoder().encode(arguments)' 'review scope or persistent controls missing'
+negative cancel-control macapp/Sources/SirsiMenubar/ActionReviewSheet.swift 'Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)' 'review scope or persistent controls missing'
+negative confirm-control macapp/Sources/SirsiMenubar/ActionReviewSheet.swift 'Button(confirmLabel, action: confirm)' 'review scope or persistent controls missing'
+negative casebook-navigation-route macapp/Sources/SirsiMenubar/Views.swift 'MaatCasebookView(engine: engine)' "native Ma'at Casebook review wiring missing"
+negative review-body-scope macapp/Sources/SirsiMenubar/ActionReviewSheet.swift 'Text(scope).sirsiFont(.callout, design: .monospaced)' 'repair review scope or persistent controls missing'
+negative review-body-detail macapp/Sources/SirsiMenubar/ActionReviewSheet.swift 'Text(detail).sirsiFont(.body)' 'repair review scope or persistent controls missing'
+negative casebook-review-callsite macapp/Sources/SirsiMenubar/MaatCasebookView.swift 'ActionReviewSheet(title: confirmationTitle,' 'Casebook action review wiring missing'
+negative casebook-review-detail macapp/Sources/SirsiMenubar/MaatCasebookView.swift 'detail: confirmationMessage,' 'Casebook action review wiring missing'
+negative casebook-evidence-conclusion-scope macapp/Sources/SirsiMenubar/MaatCasebookView.swift 'scope: "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)",' 'Casebook action review wiring missing'
+# Display wording is not consent. Keep the actual handoff/scope/control
+# assertions while allowing a harmless title change in the source fixture.
+refresh
+perl -0pi -e 's/Review system repair/Inspect managed action/g' "$fixture/macapp/Sources/SirsiMenubar/Views.swift"
+bash "$fixture/scripts/verify-maat-native-resolution-contract.sh" > "$fixture/heading.log" 2>&1
+grep -Fq "Ma'at native resolution contract: pass" "$fixture/heading.log"
+echo 'PASS accepts display heading changes with consent and scope intact'
+echo 'PASS two positives and twenty causal projection/host/serving/review negatives'

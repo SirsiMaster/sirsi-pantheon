@@ -4,6 +4,25 @@ import XCTest
 @testable import SirsiMenubar
 
 final class DiagnosticRepairActionTests: XCTestCase {
+    func testMemoryPreviewEntryNeverTreatsOtherCommandsAsReadOnly() {
+        XCTAssertTrue(diagnosticOpensMemoryPreview(["relieve", "--memory"]))
+        for command in [["relieve", "--memory", "--confirm"], ["relieve"],
+                        ["clean", "--confirm"], ["maat", "repair", "liveness-watch"],
+                        ["relieve", "--memory", "--force"], ["relieve", "--memory", "--quiet"], []] {
+            XCTAssertFalse(diagnosticOpensMemoryPreview(command), "Unexpected preview authority: \(command)")
+        }
+    }
+
+    func testReviewPreservesArgumentBoundariesAndProducingDirectory() throws {
+        let args = ["clean", "a path with spaces", "line\nbreak", "--confirm"]
+        let directory = URL(fileURLWithPath: "/owned/project with spaces")
+        let scope = actionReviewScope(arguments: args, directory: directory)
+        let exactLine = try XCTUnwrap(scope.components(separatedBy: "\n\n").first { $0.hasPrefix("Exact arguments: ") })
+        let json = Data(exactLine.dropFirst("Exact arguments: ".count).utf8)
+        XCTAssertEqual(try JSONDecoder().decode([String].self, from: json), args)
+        XCTAssertTrue(scope.contains("Project: " + directory.path))
+    }
+
     @MainActor
     func testTwoLineActionGrowsWithTextSizeWithoutSingleLineBezelClipping() throws {
         let regular = try render(width: 520, scale: 1)
