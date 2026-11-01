@@ -21,6 +21,14 @@ var (
 // gib is 1 GiB, for byte→GB display math.
 const gib = float64(1 << 30)
 
+func relieveMemoryTopUser(p guard.MemProc) string {
+	name := p.Name
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:] // basename — "codex", not the full bundle path
+	}
+	return fmt.Sprintf("%s (%.1f GB)", name, float64(p.Size())/gib)
+}
+
 // `sirsi relieve` is the on-demand "Relieve the live cause" action: it finds the
 // process currently hogging the CPU and lowers its priority so the foreground app
 // regains responsiveness. Dry-run by default (Rule A1); --confirm to apply. Routes
@@ -181,11 +189,7 @@ func runRelieveMemory() error {
 	// was skipping.
 	hog := ""
 	if s, err := guard.SampleMemory(); err == nil && len(s.Top) > 0 {
-		name := s.Top[0].Name
-		if i := strings.LastIndex(name, "/"); i >= 0 {
-			name = name[i+1:] // basename — "codex", not the full bundle path
-		}
-		hog = fmt.Sprintf("%s (%.1f GB)", name, float64(s.Top[0].RSS)/gib)
+		hog = relieveMemoryTopUser(s.Top[0])
 	}
 
 	if !relieveConfirm {
