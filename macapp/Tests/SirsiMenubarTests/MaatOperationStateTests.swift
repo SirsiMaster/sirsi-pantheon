@@ -273,19 +273,19 @@ final class MaatOperationStateTests: XCTestCase {
         let evidence = "diagnostic-finding:sha256=" + String(repeating: "d", count: 64)
         let selection = try XCTUnwrap(MaatCaseSelection(caseID: "maat-case-0123456789abcdef", evidence: evidence))
         let responses = ControlledHistoryResponses()
-        let store = MaatHistoryRefreshStore()
+        let store = MaatHistoryRefreshStore(read: { await responses.read($0) })
         let exact = Task { await store.load(scope: "all", selection: selection) { await responses.read($0) } }
-        await responses.waitForCount(1)
+        try await responses.waitForCountBounded(1)
         store.queryChanged("apollo")
         let firstRefresh = Task { await store.refresh(scope: "all") }
-        await responses.waitForCount(2)
+        try await responses.waitForCountBounded(2)
         let callsAfterRefresh = await responses.arguments()
         XCTAssertEqual(callsAfterRefresh[1], maatCasebookHistoryArguments(scope: "all", query: "apollo"))
         XCTAssertNil(store.state.refreshSelection)
 
         store.cancel()
         let retry = Task { await store.refresh(scope: "all") }
-        await responses.waitForCount(3)
+        try await responses.waitForCountBounded(3)
         let callsAfterRetry = await responses.arguments()
         XCTAssertEqual(callsAfterRetry[2], maatCasebookHistoryArguments(scope: "all", query: "apollo"))
         await responses.finish(2, with: try historyRead(scope: "all", queryID: "query:apollo",
@@ -1796,6 +1796,15 @@ private actor ControlledHistoryResponses {
         await withCheckedContinuation { waiters.append((count, $0)) }
     }
 
+    func waitForCountBounded(_ count: Int, timeout: TimeInterval = 3) async throws {
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while recorded.count < count {
+            try Task.checkCancellation()
+            guard ProcessInfo.processInfo.systemUptime < deadline else { throw HistoryResponseWaitTimeout() }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
     func callCount() -> Int { recorded.count }
 
     func finish(_ index: Int, with read: SirsiEngine.JSONCommandRead) {
@@ -1807,6 +1816,8 @@ private actor ControlledHistoryResponses {
 
     func arguments() -> [[String]] { recorded }
 }
+
+private struct HistoryResponseWaitTimeout: Error {}
 
 private actor ControlledHistoryDeadline {
     private var continuations: [CheckedContinuation<Void, Never>] = []
