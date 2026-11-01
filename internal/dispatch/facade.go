@@ -211,12 +211,20 @@ func (f *Facade) SendContext(ctx context.Context, from, to, title, msgType, inst
 	if routercfg.StoreWake() {
 		return res, nil
 	}
-	path, err := f.store.ExportItem(filepath.Join(f.root, "items"), id)
+	itemsDir := filepath.Join(f.root, "items")
+	var path string
+	if exporter, ok := f.store.(interface {
+		ExportItemLocalContext(context.Context, string, string) (string, error)
+	}); ok {
+		path, err = exporter.ExportItemLocalContext(ctx, itemsDir, id)
+	} else if err = ctx.Err(); err == nil {
+		path, err = f.store.ExportItem(itemsDir, id)
+	}
 	if err != nil {
 		// The dispatch HAPPENED (store row committed); the audit view failed.
 		// Loud, not fatal — the sweep flags store-only items, and ExportMarkdown
 		// can regenerate every audit file from the store.
-		return res, fmt.Errorf("dispatch: item %s dispatched but audit file write failed: %w", id, err)
+		return res, fmt.Errorf("dispatch: item %s dispatched but local audit projection failed: %w", id, err)
 	}
 	res.AuditPath = path
 	return res, nil

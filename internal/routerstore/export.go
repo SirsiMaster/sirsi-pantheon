@@ -119,6 +119,13 @@ func (s *SQLiteStore) ExportItem(dir, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return writeItemExport(dir, id, it)
+}
+
+// writeItemExport is the shared canonical one-item file projection. Both the
+// local SQLite path and remote clients use this writer so their audit bytes,
+// destination, and permissions stay identical.
+func writeItemExport(dir, id string, it Item) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("routerstore: ExportItem: mkdir %q: %w", dir, err)
 	}
