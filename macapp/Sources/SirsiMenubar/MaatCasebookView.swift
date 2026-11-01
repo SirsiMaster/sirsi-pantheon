@@ -4340,7 +4340,7 @@ struct MaatHistoryRefreshState {
         }
         continuationPaused = false
         if nextCursor == nil {
-            requestedQuery = nextQuery
+            self.requestedQuery = nextQuery
             selection = nextSelection
         }
         let request = MaatHistoryRefreshRequest(scope: scope, query: nextQuery, selection: nextSelection, cursor: nextCursor,
