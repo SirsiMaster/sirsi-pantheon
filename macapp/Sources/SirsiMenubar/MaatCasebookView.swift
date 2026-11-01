@@ -1934,7 +1934,6 @@ struct MaatKnownFailureProposalsView: View {
     }
 
     @MainActor private func load(query requestedQuery: String? = nil, cursor: String? = nil) async {
-        selectionFallbackMessage = nil
         let effectiveQuery = requestedQuery ?? historyRefresh.state.refreshQuery
         await historyRefresh.load(scope: "all", query: effectiveQuery, cursor: cursor,
                                   selection: activeCaseSelection) { args in
