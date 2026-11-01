@@ -74,8 +74,8 @@ private struct RepairSheetHarness: View {
     var body: some View {
         Color.clear
             .modifier(DiagnosticRepairResultSheet(item: $item) { presented in
-                observation.record(presented)
                 Text(presented.approval.args.joined(separator: " "))
+                    .onAppear { observation.record(presented) }
             })
             .task {
                 await Task.yield()
