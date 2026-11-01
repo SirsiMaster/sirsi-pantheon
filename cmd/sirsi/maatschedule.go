@@ -488,7 +488,7 @@ var maatConflictCheckCmd = &cobra.Command{
 		if maatJSON {
 			_ = emitJSON(rep)
 		} else if rep.Clean {
-			fmt.Printf("𓆄 clean — %s\n", rep.Summary)
+			fmt.Printf("𓆄 policy clean — %s\n", rep.Summary)
 			for _, s := range rep.Shared {
 				fmt.Printf("    %s\n", s)
 			}

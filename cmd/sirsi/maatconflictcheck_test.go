@@ -1,11 +1,16 @@
 package main
 
 import (
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
@@ -24,6 +29,36 @@ type emptyConflictStateStore struct{}
 
 func (emptyConflictStateStore) GetState(string) (string, bool, error) { return "", false, nil }
 func (emptyConflictStateStore) SetState(string, string) error         { return os.ErrPermission }
+
+type conflictFixtureStore struct {
+	mu     sync.Mutex
+	values map[string]string
+}
+
+func (s *conflictFixtureStore) GetState(key string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.values[key]
+	return v, ok, nil
+}
+
+func (s *conflictFixtureStore) SetState(key, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.values[key] = value
+	return nil
+}
+
+func (s *conflictFixtureStore) CompareAndSwapState(key, expected string, exists bool, value string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, found := s.values[key]
+	if found != exists || current != expected {
+		return false, nil
+	}
+	s.values[key] = value
+	return true, nil
+}
 
 func TestMaatConflictCheckJournalStrictCompatibility(t *testing.T) {
 	oldLedger, oldMachine, oldJSON := maatLedger, conflictMachine, maatJSON
@@ -110,5 +145,112 @@ func TestMaatConflictCheckClassifiesCheckerFailureAsUnverifiedNotFail(t *testing
 	}
 	if strings.Contains(string(raw), `"determination":"conflict"`) || strings.Contains(string(raw), `"determination":"clean"`) {
 		t.Fatalf("a checker failure must never be recorded as clean/conflict, got %q", raw)
+	}
+}
+
+func TestMaatConflictCheckReportsFloorSampleAndKeepsBothReservationsLive(t *testing.T) {
+	oldLedger, oldMachine, oldJSON := maatLedger, conflictMachine, maatJSON
+	t.Cleanup(func() { maatLedger, conflictMachine, maatJSON = oldLedger, oldMachine, oldJSON })
+	conflictMachine, maatJSON = "", true
+
+	now := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
+	ledger := schedule.NewLedger(&conflictFixtureStore{values: map[string]string{}}).WithClock(func() time.Time { return now })
+	full, err := ledger.Reserve(schedule.Reservation{
+		Resource: "m5", Holder: "mercury", Work: "quiet fixture", Regime: schedule.RegimeQuiet,
+		Start: "2026-09-26T09:30:00Z", EstEnd: "2026-09-26T11:00:00Z", LeaseTTLSec: 120,
+	}, false)
+	if err != nil || !full.Granted || full.Reservation == nil || full.Reservation.Share != schedule.ShareFull {
+		t.Fatalf("quiet holder setup: result=%+v err=%v", full, err)
+	}
+	floor, err := ledger.Reserve(schedule.Reservation{
+		Resource: "m5", Holder: "sne", Work: "build fixture", Regime: schedule.RegimeBuild,
+		Start: "2026-09-26T09:30:00Z", EstEnd: "2026-09-26T11:00:00Z", LeaseTTLSec: 120,
+	}, false)
+	if err != nil || !floor.Granted || floor.Reservation == nil || floor.Reservation.Share != schedule.ShareFloor {
+		t.Fatalf("build floor setup: result=%+v err=%v", floor, err)
+	}
+
+	schedule.SetActivityProbe(func(string) ([]schedule.Actor, error) {
+		return []schedule.Actor{
+			{Kind: "bench", Detail: "quiet fixture", Owner: "mercury"},
+			{Kind: "build", Detail: "build fixture", Owner: "sne"},
+		}, nil
+	})
+	t.Cleanup(func() { schedule.SetActivityProbe(nil) })
+	schedule.SetPressureFn(func() (guard.PressureLevel, string) { return guard.PressureNormal, "fixture" })
+	t.Cleanup(func() { schedule.SetPressureFn(nil) })
+
+	journalPath := filepath.Join(t.TempDir(), "decisions.jsonl")
+	t.Setenv("SIRSI_MAAT_DECISIONS_PATH", journalPath)
+	t.Setenv("SIRSI_AGENT_ID", "codex-pantheon")
+	maatLedger = func() (*schedule.Ledger, error) { return ledger, nil }
+
+	output, err := os.CreateTemp(t.TempDir(), "conflict-check-*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousStdout := os.Stdout
+	os.Stdout = output
+	t.Cleanup(func() { os.Stdout = previousStdout })
+	err = maatConflictCheckCmd.RunE(maatConflictCheckCmd, []string{"m5"})
+	os.Stdout = previousStdout
+	if err != nil {
+		t.Fatalf("clean policy report must preserve the CLI success path: %v", err)
+	}
+	if err := output.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := output.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := io.ReadAll(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var report schedule.ConflictReport
+	if err := json.Unmarshal(raw, &report); err != nil {
+		t.Fatalf("CLI JSON must decode: %v; output=%s", err, raw)
+	}
+	observation := report.MeasurementObservation
+	if !report.Clean || observation.Status != schedule.SampleSharedFloorObserved || observation.Coverage != schedule.ObservationCoveragePointSample || len(observation.FloorShares) != 1 {
+		t.Fatalf("CLI must report a clean policy result with observed floor activity: %+v", report)
+	}
+	share := observation.FloorShares[0]
+	if share.ReservationID != floor.Reservation.ID || share.Holder != "sne" || share.Cores != floor.Reservation.Cores {
+		t.Fatalf("CLI observation must identify the exact admitted floor reservation, got %+v", share)
+	}
+
+	rows, err := (&maat.FileDecisionJournal{Path: journalPath}).Recent(10)
+	if err != nil {
+		t.Fatalf("CLI decision must satisfy the strict journal reader: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Determination != "clean" || !strings.Contains(rows[0].Why, "quiet interval unverified") {
+		t.Fatalf("journal must preserve policy determination and scoped observation, got %+v", rows)
+	}
+
+	active, err := ledger.Status("m5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []*schedule.Reservation{full.Reservation, floor.Reservation} {
+		found := false
+		for _, row := range active {
+			if row.ID == expected.ID && row.Status == schedule.StatusActive {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("CLI must leave admitted reservation %s active, got %+v", expected.ID, active)
+		}
+	}
+	now = now.Add(30 * time.Second)
+	for _, expected := range []*schedule.Reservation{full.Reservation, floor.Reservation} {
+		renewed, err := ledger.Heartbeat(expected.ID)
+		if err != nil || renewed.ID != expected.ID || renewed.Status != schedule.StatusActive || renewed.HeartbeatAt != now.Format(time.RFC3339) {
+			t.Fatalf("CLI must leave reservation %s active and renewable: renewed=%+v err=%v", expected.ID, renewed, err)
+		}
 	}
 }

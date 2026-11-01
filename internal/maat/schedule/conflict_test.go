@@ -7,6 +7,12 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
 
+func setNormalPressureFixture(t *testing.T) {
+	t.Helper()
+	SetPressureFn(func() (guard.PressureLevel, string) { return guard.PressureNormal, "fixture" })
+	t.Cleanup(func() { SetPressureFn(nil) })
+}
+
 func TestCheckConflicts_ReportsPressureAlongsideCleanReport(t *testing.T) {
 	l := fixedLedger("2026-09-24T10:00:00Z")
 	if _, err := l.Reserve(mkReq("m1", "claude-io", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeQuiet), false); err != nil {
@@ -143,6 +149,111 @@ func TestCheckConflicts_BuildRegimeSkipsPressureRead(t *testing.T) {
 	if rep.Pressure != guard.PressureUnknown {
 		t.Fatalf("build-regime report must not carry a pressure reading, got %+v", rep)
 	}
+}
+
+func TestCheckConflictsMeasurementObservationBoundsEvidence(t *testing.T) {
+	t.Run("no holder is unverified without probing", func(t *testing.T) {
+		l := fixedLedger("2026-09-24T10:00:00Z")
+		called := false
+		SetActivityProbe(func(string) ([]Actor, error) { called = true; return nil, nil })
+		t.Cleanup(func() { SetActivityProbe(probeProcesses) })
+		rep, err := l.CheckConflicts("m1", "m1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if called || rep.MeasurementObservation.Status != SampleUnverified || rep.MeasurementObservation.Coverage != ObservationCoverageNone || rep.MeasurementObservation.ObservedAt != nil {
+			t.Fatalf("no-holder result must remain unverified without a probe, called=%v report=%+v", called, rep.MeasurementObservation)
+		}
+	})
+
+	t.Run("build regime is unverified without probing", func(t *testing.T) {
+		l := fixedLedger("2026-09-24T10:00:00Z")
+		if _, err := l.Reserve(mkReq("m1", "builder", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeBuild), false); err != nil {
+			t.Fatal(err)
+		}
+		called := false
+		SetActivityProbe(func(string) ([]Actor, error) { called = true; return nil, nil })
+		t.Cleanup(func() { SetActivityProbe(probeProcesses) })
+		rep, err := l.CheckConflicts("m1", "m1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if called || rep.MeasurementObservation.Status != SampleUnverified || rep.MeasurementObservation.Coverage != ObservationCoverageNone || rep.MeasurementObservation.ObservedAt != nil {
+			t.Fatalf("build-regime result must remain unverified without a probe, called=%v report=%+v", called, rep.MeasurementObservation)
+		}
+	})
+
+	t.Run("successful empty probe is only a point sample", func(t *testing.T) {
+		setNormalPressureFixture(t)
+		l := fixedLedger("2026-09-24T10:00:00Z")
+		if _, err := l.Reserve(mkReq("m1", "owner", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeQuiet), false); err != nil {
+			t.Fatal(err)
+		}
+		SetActivityProbe(func(string) ([]Actor, error) { return nil, nil })
+		t.Cleanup(func() { SetActivityProbe(probeProcesses) })
+		rep, err := l.CheckConflicts("m1", "m1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		obs := rep.MeasurementObservation
+		if !rep.Clean || obs.Status != SampleNoForeignActorObserved || obs.Coverage != ObservationCoveragePointSample || obs.ObservedAt == nil || !obs.ObservedAt.Equal(at("2026-09-24T10:00:00Z")) {
+			t.Fatalf("want policy-clean point sample at the injected clock, got clean=%v observation=%+v", rep.Clean, obs)
+		}
+		if strings.Contains(rep.Summary, "qualified") || !strings.Contains(rep.Summary, "quiet interval unverified") {
+			t.Fatalf("point sample must not claim an interval, got %q", rep.Summary)
+		}
+	})
+
+	t.Run("admitted non-floor foreign actor is not reported as absent", func(t *testing.T) {
+		setNormalPressureFixture(t)
+		l := fixedLedger("2026-09-24T10:00:00Z")
+		build := mkReq("m1", "builder", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeBuild)
+		build.Cores = 1
+		if _, err := l.Reserve(build, false); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := l.Reserve(mkReq("m1", "loaded-owner", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeLoaded), false); err != nil {
+			t.Fatal(err)
+		}
+		SetActivityProbe(func(string) ([]Actor, error) {
+			return []Actor{{Kind: "build", Detail: "builder work", Owner: "builder"}}, nil
+		})
+		t.Cleanup(func() { SetActivityProbe(probeProcesses) })
+		rep, err := l.CheckConflicts("m1", "m1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !rep.Clean || rep.MeasurementObservation.Status != SampleForeignActorObserved || rep.MeasurementObservation.Coverage != ObservationCoveragePointSample {
+			t.Fatalf("admitted non-floor activity must be disclosed without changing policy Clean, got %+v", rep)
+		}
+	})
+
+	t.Run("intruder status retains an observed floor reservation", func(t *testing.T) {
+		setNormalPressureFixture(t)
+		l := fixedLedger("2026-09-24T10:00:00Z")
+		if _, err := l.Reserve(mkReq("m1", "quiet-owner", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeQuiet), false); err != nil {
+			t.Fatal(err)
+		}
+		floor, err := l.Reserve(mkReq("m1", "build-owner", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeBuild), false)
+		if err != nil || floor.Reservation == nil || floor.Reservation.Share != ShareFloor {
+			t.Fatalf("floor setup: result=%+v err=%v", floor, err)
+		}
+		SetActivityProbe(func(string) ([]Actor, error) {
+			return []Actor{
+				{Kind: "build", Detail: "build actor", Owner: "build-owner"},
+				{Kind: "bench", Detail: "foreign bench"},
+			}, nil
+		})
+		t.Cleanup(func() { SetActivityProbe(probeProcesses) })
+		rep, err := l.CheckConflicts("m1", "m1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		obs := rep.MeasurementObservation
+		if rep.Clean || obs.Status != SampleForeignActorObserved || len(obs.FloorShares) != 1 || obs.FloorShares[0].ReservationID != floor.Reservation.ID {
+			t.Fatalf("intruder precedence must preserve typed floor evidence, got %+v", rep)
+		}
+	})
 }
 
 // LiveActivity must surface what the process probe sees even when no reservation

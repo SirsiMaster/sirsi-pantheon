@@ -78,14 +78,15 @@ final class MaatHistoryRefreshStore: ObservableObject {
     // A verified write starts a new snapshot of the committed query; its old
     // cursor is not replayed. load retains the existing generation/cancel fence.
     func refresh(scope: String) async {
-        await load(scope: scope, query: state.refreshQuery, run: reader)
+        await load(scope: scope, query: state.refreshQuery, selection: state.refreshSelection, run: reader)
     }
 
     func load(scope: String, query: String? = nil, cursor: String? = nil,
+              selection: MaatCaseSelection? = nil,
               run: @escaping @Sendable ([String]) async -> SirsiEngine.JSONCommandRead) async {
         guard !Task.isCancelled else { return }
         cancelActiveBurst()
-        guard let request = state.begin(scope: scope, query: query, cursor: cursor) else { return }
+        guard let request = state.begin(scope: scope, query: query, cursor: cursor, selection: selection) else { return }
 
         let burstID = UUID()
         let cancellation = MaatHistoryBurstCancellation()
@@ -119,6 +120,11 @@ final class MaatHistoryRefreshStore: ObservableObject {
             }
         }
         finishBurst(id: burstID)
+    }
+
+    func queryChanged(_ query: String) {
+        cancelActiveBurst()
+        state.updateQueryIntent(query, selection: nil)
     }
 
     func cancel() {
@@ -174,7 +180,7 @@ final class MaatHistoryRefreshStore: ObservableObject {
                 pauseBurst(id: id, failure: .timedOut)
                 return
             }
-            guard let continuation = state.begin(scope: request.scope, cursor: next) else {
+            guard let continuation = state.begin(scope: request.scope, cursor: next, selection: request.selection) else {
                 finishBurst(id: id)
                 return
             }

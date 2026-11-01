@@ -1739,7 +1739,11 @@ struct FindingView: View {
                     .sirsiFont(.caption)
                     .foregroundStyle(result.ok ? .green : .orange)
                 if result.ok {
-                    NavLink { MaatCasebookView(engine: engine) } label: {
+                    NavLink {
+                        MaatCasebookView(engine: engine,
+                            caseSelection: MaatCaseSelection.recorded(from: result),
+                            selectionFallbackMessage: MaatCaseSelection.fallbackMessage(for: result))
+                    } label: {
                         Label("Continue in Ma'at Casebook", systemImage: "book.closed")
                     }
                     .buttonStyle(.bordered)
@@ -4808,7 +4812,11 @@ private struct ActivityDetailView: View {
                                     .foregroundStyle(result.ok ? .green : .orange)
                                     .fixedSize(horizontal: false, vertical: true)
                                 if result.ok {
-                                    NavLink { MaatCasebookView(engine: engine) } label: {
+                                    NavLink {
+                                        MaatCasebookView(engine: engine,
+                                            caseSelection: MaatCaseSelection.recorded(from: result),
+                                            selectionFallbackMessage: MaatCaseSelection.fallbackMessage(for: result))
+                                    } label: {
                                         Label("Open Ma'at Casebook", systemImage: "book.closed")
                                     }
                                     .buttonStyle(.bordered)

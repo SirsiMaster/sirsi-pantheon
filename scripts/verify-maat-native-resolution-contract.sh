@@ -122,10 +122,8 @@ for needle in \
   }
 done
 
-/usr/bin/grep -Fq 'MaatCasebookView(engine: engine)' "$view" || {
-  echo "native Ma'at Casebook review wiring missing" >&2
-  exit 1
-}
+require_code_count "$view" 'caseSelection: MaatCaseSelection.recorded(from: result),' 2 "native Ma'at typed Casebook review handoff missing"
+require_code_count "$view" 'selectionFallbackMessage: MaatCaseSelection.fallbackMessage(for: result)' 2 "native Ma'at Casebook browse fallback guidance missing"
 
 for target in "$casebookcli" "$tui" "$dashboardhistory"; do
 	/usr/bin/grep -Fq 'prescribed next step' "$target" || {

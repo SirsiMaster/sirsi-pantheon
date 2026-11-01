@@ -44,6 +44,9 @@ func RecordDiagnosticOwnerReview(j DecisionJournal, requester string, review Dia
 	if err != nil {
 		return Decision{}, err
 	}
+	if err := normalizeDecision(&decision); err != nil {
+		return Decision{}, fmt.Errorf("maat diagnostic resolution: normalize owner review: %w", err)
+	}
 	if err := j.Append(decision); err != nil {
 		return Decision{}, fmt.Errorf("maat diagnostic resolution: append owner review: %w", err)
 	}
