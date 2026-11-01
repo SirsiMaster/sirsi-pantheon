@@ -1589,7 +1589,13 @@ struct FindingView: View {
             Text("Ma'at will retain this exact diagnostic finding for review. It will not change the system or claim that the issue is repaired.")
         }
         .sheet(isPresented: $confirmFix, onDismiss: {
-            if executeReviewedFix { executeReviewedFix = false; showConfirmedFix = true }
+            guard executeReviewedFix else { return }
+            executeReviewedFix = false
+            guard approved(repairArgs) else {
+                repairReviewMessage = "The finding changed while the review closed. No repair ran. Review the current finding again."
+                return
+            }
+            showConfirmedFix = true
         }) {
             ActionReviewSheet(title: "Review system repair",
                 detail: "Pantheon will run the exact command below, then recheck this finding. A changed finding or project requires a fresh review. No unrelated service is selected.",
@@ -1608,6 +1614,14 @@ struct FindingView: View {
                     ResultView(engine: engine, title: observedFinding.check, args: approval.args,
                                reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
                                authorizeExecution: { approved(repairArgs) })
+                } else {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("This review is no longer current").sirsiFont(.headline)
+                        Text("The finding changed before the result could open. No repair was started. Return to the finding and review its current evidence.")
+                            .sirsiFont(.body).fixedSize(horizontal: false, vertical: true)
+                        Button("Return to finding") { showConfirmedFix = false }
+                            .buttonStyle(.borderedProminent).tint(gold)
+                    }.padding(20)
                 }
             }
             .modifier(ResultPanelLayout())
@@ -1627,7 +1641,11 @@ struct FindingView: View {
                                reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
                                authorizeExecution: { legacyNativeRepairArgs.map { approved($0) } ?? false })
                 } else {
-                    EmptyView()
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("This review is no longer current").sirsiFont(.headline)
+                        Text("No repair started. Return to the finding and review its current evidence.").sirsiFont(.body)
+                        Button("Return to finding") { showLegacyRepair = false }.buttonStyle(.bordered)
+                    }.padding(20)
                 }
             }
             .modifier(ResultPanelLayout())
