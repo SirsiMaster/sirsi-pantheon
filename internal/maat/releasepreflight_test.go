@@ -132,8 +132,11 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 		"scripts/build-dmg.sh":                 "2eae7c74a88e62f47a184d510974c1463baf139e63f9e40614f5d15fcdbe9385",
 		"scripts/build-pkg.sh":                 "82fd6b3377bf42d3be3ea68381f01067f75f7a91a8a470be5f71159be1cc66d6",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
-		// The 155 workflow also selects the enrolled M1 signer for the release step.
-		".github/workflows/release.yml": "e9cfed7d577e7787fe691a843a8368c46ef11bddc64106669caf9deea787fbe4",
+		// The reviewed 155 workflow selects the enrolled M1 signer, rejects
+		// unqualified runner bindings before checkout, and fences keychain cleanup
+		// to an accepted binding after keychain mutation. Keep its exact source
+		// digest pinned so deliberate workflow changes update this provenance.
+		".github/workflows/release.yml": "37712d0ff98feed52b28d6bc0782ef493b39dc374254ab45b98d4a59bb14e6b7",
 		"tools/signing/sirsi-sign":      "95db0601b45c56604e77b4b1d8ef6ecca2bbc165570889e9ec46d63b16288605",
 	}
 	for _, requirement := range releaseContractRequirements {

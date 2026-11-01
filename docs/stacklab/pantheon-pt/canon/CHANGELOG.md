@@ -2,6 +2,7 @@
 
 ## 2026-11-01 — v0.24.156 release candidate
 
+- Bind the native release job to the existing m1 runner label and fail before checkout unless runner context, native Darwin/arm64, and hardware model identify the qualified M1 host; source fixtures bind the closed first-step fields/checks to jobs.menubar and run in hosted lint CI before any tag release. Their isolated checkout includes the empty `macapp` path required by mocked command fixtures. Keychain cleanup now requires both accepted host binding and an explicit keychain-mutation marker, retaining cleanup after later signing failures.
 - Open the audited memory-relief preview before asking to run a cache flush; other repairs retain explicit consent.
 - Show System One case and repair approvals in full, scrollable native review sheets with exact command/project or case/evidence and persistent Cancel/action controls, instead of relying on macOS confirmation dialogs that omit review details.
 - Explain changed repair evidence instead of silently ignoring an approval click.

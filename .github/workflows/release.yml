@@ -47,7 +47,7 @@ jobs:
 
   menubar:
     name: Build Pantheon (macOS DMG + PKG)
-    runs-on: [self-hosted, macOS, ARM64]  # Enrolled native runner; bind its actual host at execution.
+    runs-on: [self-hosted, macOS, ARM64, m1]
     needs: release
     # Fail fast instead of burning the 6h GitHub-Actions ceiling: if the signing
     # path wedges (a missing/invalid Developer-ID cert or app-specific password
@@ -55,6 +55,23 @@ jobs:
     # job at 30m. A 5h20m hung DMG job (run 27873488895) is what motivated this.
     timeout-minutes: 30
     steps:
+      - name: Bind native release to qualified M1 runner
+        id: m1_binding
+        env:
+          PANTHEON_RUNNER_NAME: ${{ runner.name }}
+          PANTHEON_RUNNER_OS: ${{ runner.os }}
+          PANTHEON_RUNNER_ARCH: ${{ runner.arch }}
+        run: |
+          set -euo pipefail
+          [[ "${PANTHEON_RUNNER_NAME:-}" == "m1-pantheon" ]] || { echo "requires runner m1-pantheon" >&2; exit 1; }
+          [[ "${PANTHEON_RUNNER_OS:-}" == "macOS" ]] || { echo "requires GitHub macOS runner context" >&2; exit 1; }
+          [[ "${PANTHEON_RUNNER_ARCH:-}" == "ARM64" ]] || { echo "requires GitHub ARM64 runner context" >&2; exit 1; }
+          [[ "$(/usr/bin/uname -s)" == "Darwin" ]] || { echo "requires native Darwin" >&2; exit 1; }
+          [[ "$(/usr/bin/uname -m)" == "arm64" ]] || { echo "requires native arm64" >&2; exit 1; }
+          ACTUAL_HW_MODEL=$(/usr/sbin/sysctl -n hw.model) || { echo "cannot read native hardware model" >&2; exit 1; }
+          [[ "$ACTUAL_HW_MODEL" == "MacBookPro18,1" ]] || { echo "requires qualified M1 model MacBookPro18,1" >&2; exit 1; }
+          echo "accepted=true" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -76,6 +93,7 @@ jobs:
           echo "VERSION=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Import Developer ID signing identities
+        id: keychain_setup
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -87,6 +105,8 @@ jobs:
             : "${KEYCHAIN_PWD:?KEYCHAIN_PWD is required when MACOS_CERTIFICATE is supplied}"
             echo "$MACOS_CERTIFICATE" | base64 --decode > certificate.p12
             security create-keychain -p "$KEYCHAIN_PWD" build.keychain
+            echo "cleanup=true" >> "$GITHUB_OUTPUT"
+            echo "PANTHEON_SIGNING_MODE=imported-secret" >> "$GITHUB_ENV"
             security default-keychain -s build.keychain
             security unlock-keychain -p "$KEYCHAIN_PWD" build.keychain
             security import certificate.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign -T /usr/bin/pkgbuild -T /usr/bin/productsign
@@ -97,7 +117,6 @@ jobs:
               /Library/Keychains/System.keychain
             rm certificate.p12
             echo "PANTHEON_SIGNING_KEYCHAIN=$HOME/Library/Keychains/build.keychain-db" >> "$GITHUB_ENV"
-            echo "PANTHEON_SIGNING_MODE=imported-secret" >> "$GITHUB_ENV"
           else
             # Self-hosted release runners may already be enrolled with the
             # owner-approved Developer ID identities. Do not export, import,
@@ -105,6 +124,7 @@ jobs:
             LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
             test -f "$LOGIN_KEYCHAIN" \
               || { echo "MACOS_CERTIFICATE is empty and the enrolled login keychain is absent" >&2; exit 1; }
+            echo "cleanup=true" >> "$GITHUB_OUTPUT"
             security default-keychain -s "$LOGIN_KEYCHAIN"
             security list-keychains -d user -s "$LOGIN_KEYCHAIN" /Library/Keychains/System.keychain
             echo "PANTHEON_SIGNING_KEYCHAIN=$LOGIN_KEYCHAIN" >> "$GITHUB_ENV"
@@ -217,7 +237,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Restore login keychain as default (always)
-        if: always()
+        if: always() && steps.m1_binding.outputs.accepted == 'true' && steps.keychain_setup.outputs.cleanup == 'true'
         run: |
           # 2026-09-27: this job runs on self-hosted macOS runners (m1-pantheon,
           # M5). The "Import signing certificate" step sets build.keychain as the
@@ -225,8 +245,8 @@ jobs:
           # runner's default stayed build.keychain — a temporary, locked keychain.
           # Any later process touching the default keychain (a watch loop, the git
           # credential helper, assistantd) then re-prompted endlessly for a locked
-          # keychain on the developer's own Mac. Always restore the login keychain
-          # as default and drop the temp keychain — on success, failure, or skip.
+          # keychain on the developer's own Mac. Restore it only after the M1 guard
+          # passed and keychain setup recorded a mutation; later failures still clean up.
           LOGIN="$HOME/Library/Keychains/login.keychain-db"
           if [ -f "$LOGIN" ]; then
             security default-keychain -s "$LOGIN" 2>/dev/null || true
