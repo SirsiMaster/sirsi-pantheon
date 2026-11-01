@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -113,16 +114,32 @@ func TestRemoteLocalExportHonorsPerCallAndParentCancellation(t *testing.T) {
 				t.Fatalf("Handler: %v", err)
 			}
 			getStarted := make(chan struct{}, 1)
+			getHandlerDone := make(chan struct{})
+			releaseGetHandler := make(chan struct{})
 			var gets, sends, exports atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch filepath.Base(r.URL.Path) {
 				case "Get":
+					defer close(getHandlerDone)
+					_, drainErr := io.Copy(io.Discard, r.Body)
+					closeErr := r.Body.Close()
+					if drainErr != nil {
+						t.Errorf("drain stalled Get request body: %v", drainErr)
+						return
+					}
+					if closeErr != nil {
+						t.Errorf("close stalled Get request body: %v", closeErr)
+						return
+					}
 					gets.Add(1)
 					select {
 					case getStarted <- struct{}{}:
 					default:
 					}
-					<-r.Context().Done()
+					select {
+					case <-r.Context().Done():
+					case <-releaseGetHandler:
+					}
 					return
 				case "SendGuarded":
 					sends.Add(1)
@@ -131,7 +148,10 @@ func TestRemoteLocalExportHonorsPerCallAndParentCancellation(t *testing.T) {
 				}
 				h.ServeHTTP(w, r)
 			}))
-			t.Cleanup(server.Close)
+			t.Cleanup(func() {
+				close(releaseGetHandler)
+				server.Close()
+			})
 			rs := NewMemoryOnlyRemoteStore(server.URL, "t0k")
 			// Seed directly in the isolated backend; only the projection path is
 			// under test, and the sender is authorized to read this item.
@@ -174,6 +194,11 @@ func TestRemoteLocalExportHonorsPerCallAndParentCancellation(t *testing.T) {
 			case <-time.After(time.Second):
 				cancel()
 				t.Fatal("bounded export did not return after its context ended")
+			}
+			select {
+			case <-getHandlerDone:
+			case <-time.After(time.Second):
+				t.Fatal("stalled Get handler did not exit after the client request was canceled")
 			}
 			if tc.cancel {
 				if !errors.Is(exportErr, context.Canceled) {
