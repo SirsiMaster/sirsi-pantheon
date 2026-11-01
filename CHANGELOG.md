@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.159] — 2026-11-01
+
+- Casebook search now matches canonical case IDs before linked-state qualification, and native review results can open an existing case only after a unique complete ID-and-evidence match. Query edits clear stale exact selection while bounded refresh and continuation retain their current query and snapshot contract; the native source guard now checks the typed handoff and browse fallback.
+
+- Ma'at conflict checks report a typed point-sample observation, including admitted floor activity, without changing policy determinations or reservation rights. An empty sample does not establish quiet-interval qualification; no-holder and build-regime results remain unverified without an activity probe. See `docs/releases/0.24.159/source-fragments/20261101-maat-quiet-observation.md`.
+
+- Refs: `docs/stacklab/maat/canon/G04_BOUNDED_SURFACES.md`, `docs/ADR-070-MAAT-STRUCTURED-VERDICT.md`
+
 ## [0.24.158] — 2026-11-01
 
 - Present typed and legacy diagnostic repair results from the frozen approval item, so the native sheet cannot briefly render a stale-review fallback while sibling state settles. Existing finding freshness, exact argv, project-scope and prelaunch authorization checks remain in force. Add mounted native-sheet coverage for the nil-to-item transition. Source candidate only; installed qualification remains open.

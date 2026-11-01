@@ -1,7 +1,7 @@
 {
   "schema": "pantheon.source-module-inventory.v1",
-  "source_commit": "b2a07dd83b2d5b29c7a338039492e7b3ec87ed67",
-  "source_tree": "2af40b1b7ebcbe538439cad9acd708d3dd345f4d",
+  "source_commit": "118794673f38c176a708395c0c0119aee12ad1f2",
+  "source_tree": "94d1e129b364d8b463a08d4338a84cfe375dde57",
   "scope": "Tracked Go packages under cmd/internal and Swift source targets. Direct Go import literals only: not compiler-resolved transitive or platform-specific dependency proof. Scripts, contracts, external producers and operational processes are cataloged separately. A module is not automatically a separately created operational process.",
   "dependency_contracts": [
     "go.mod",
@@ -378,11 +378,11 @@
         },
         {
           "path": "cmd/sirsi/maatresolution.go",
-          "sha256": "0983a49c2b8281e232b3b40074eba82fb97b6242d55436762afbfb674cc986db"
+          "sha256": "29ad6389f703553a75956279c86013453ef1e8fd8eb4c2baa410974f3e2ff9fc"
         },
         {
           "path": "cmd/sirsi/maatschedule.go",
-          "sha256": "eb1c7cd03faf0636ff9e5da09bd67b3365fcee922c696515d7f1726fe9bee1fa"
+          "sha256": "9f2a54c943b3c9d7afa442ce0cf736396a870ffbfd309dd2766339a4f686ebec"
         },
         {
           "path": "cmd/sirsi/maatscreen.go",
@@ -474,7 +474,7 @@
         },
         {
           "path": "cmd/sirsi/relieve.go",
-          "sha256": "88611d39198b3f8adeb8408dba39aeb0b1bd14cc1f870f4d5bb9fea50e3ccae7"
+          "sha256": "e0a8df25321f2dbf4900aecd4419d331687bff920fe7ddcfa6d696cc4fb7c7df"
         },
         {
           "path": "cmd/sirsi/remediate.go",
@@ -1024,7 +1024,7 @@
         },
         {
           "path": "cmd/sirsi/maatconflictcheck_test.go",
-          "sha256": "4323f8f5fe195567a7c6d6108dac1ccfb1ed967115a575df12826547294e1070"
+          "sha256": "732acf99c1184dbe117ec7becc386ac154422744f1714d124f63da9c19c13b8d"
         },
         {
           "path": "cmd/sirsi/maatknowledge_literal_test.go",
@@ -1080,7 +1080,7 @@
         },
         {
           "path": "cmd/sirsi/maatresolution_test.go",
-          "sha256": "a4ae885fd28b41cea0d4474776bb888d93609e5e2e5952e6b6746e2c9930f8d0"
+          "sha256": "75a9d5423357bf40ca090b63172b1638384af17126b2e7dd9e25db1a99a63ed9"
         },
         {
           "path": "cmd/sirsi/maatschedule_cores_test.go",
@@ -1156,7 +1156,7 @@
         },
         {
           "path": "cmd/sirsi/relieve_purge_test.go",
-          "sha256": "4c221d667c593a1b4f994e8eccaf38c321eee08452b0fe6e1186d43f4c885df9"
+          "sha256": "eddd94ce8cee4959ed01bc000811f8c734d5cb384f453aa6d6a4d3a7322753c9"
         },
         {
           "path": "cmd/sirsi/reqcmd_test.go",
@@ -4104,7 +4104,7 @@
         },
         {
           "path": "internal/maat/diagnostic_resolution.go",
-          "sha256": "ebe39f219917f615302105f0b5d2bab3dc09693f6dd49cedd6d87df7707f9c92"
+          "sha256": "cd3486a7df38f6d47a671d469c90392885e8a76d90f2603e909d94bcf136d503"
         },
         {
           "path": "internal/maat/history_cursor_version_unix.go",
@@ -4458,7 +4458,7 @@
         },
         {
           "path": "internal/maat/releasepreflight_test.go",
-          "sha256": "d4f5f1687541e2f38b06fc815947504689d86e29aecba6582adc0fa4486d4a41"
+          "sha256": "3a0ebfe8bf0f0d94b06fbc21492cddabdb03751e16bba0ee951f51caf2f019c3"
         },
         {
           "path": "internal/maat/sourcescreen_test.go",
@@ -4486,7 +4486,7 @@
       "source": [
         {
           "path": "internal/maat/casebook/casebook.go",
-          "sha256": "f3cad1a88842a8b371cfdf183649917d0c2f058224eaa804d77b2316e2395acd"
+          "sha256": "95b3e601c7952fa400c9e515e0aae496566df7e8e799cea1f654e1ab8829dc90"
         }
       ],
       "tests": [
@@ -4500,7 +4500,7 @@
         },
         {
           "path": "internal/maat/casebook/history_test.go",
-          "sha256": "1bf9163cd64cb52f62ce7dbf46aeb8bc863df9911d6b0bde5b576e28f7f05687"
+          "sha256": "da577be9ff6052efa2f2f11b55bfd33296426e1010b347d51e3171f1dbbf709b"
         },
         {
           "path": "internal/maat/casebook/qualification_test.go",
@@ -4761,7 +4761,7 @@
         },
         {
           "path": "internal/maat/schedule/conflict.go",
-          "sha256": "92731cd4d17790aa1687da9d017a1b0ddb29f548a5d702ea5d4a69d9efb789f7"
+          "sha256": "d4ad5ba16e80840345f25a2d47acff7a33035378fff8b102c93425c33fb68814"
         },
         {
           "path": "internal/maat/schedule/delegation.go",
@@ -4815,7 +4815,7 @@
         },
         {
           "path": "internal/maat/schedule/conflict_test.go",
-          "sha256": "f398f417870650e8a5d3b5a46171a1523400f1c52e16cf62c30195160f60defc"
+          "sha256": "ae4795330bb52fb24b60dda4f3d29ed1e94c5858737a2cd7d33938b72e867cd9"
         },
         {
           "path": "internal/maat/schedule/cpufloororder_test.go",
@@ -4855,7 +4855,7 @@
         },
         {
           "path": "internal/maat/schedule/reservation_test.go",
-          "sha256": "42ed7401287a2b1ce4e8f693ed096c418d36e6d8bb5e92709b085f486e9bb10e"
+          "sha256": "9e6bca680f484083fbb6da40598a3cf60971c6d6c1d01502f30420b07c85a901"
         },
         {
           "path": "internal/maat/schedule/resource_test.go",
@@ -8889,6 +8889,10 @@
       "owner": "Pantheon source maintainer",
       "source": [
         {
+          "path": "macapp/Sources/SirsiMenubar/ActionReviewSheet.swift",
+          "sha256": "70da6976d987ae11df157bdcd86654b0a0d09f5d12c00a912977fe1611d296dc"
+        },
+        {
           "path": "macapp/Sources/SirsiMenubar/ApolloRunPlannerView.swift",
           "sha256": "ab38305a3bf68c5f2ec7c360cff5fa56c95f532d949267b41933cffc814f9e3b"
         },
@@ -8962,7 +8966,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
-          "sha256": "63b1decf03515f48cdde36996178563086851412378416e9e0c21dfd52ae3ab0"
+          "sha256": "8b0be5101f1b2d6ef02781a754960b29f27fbe90441909de89e540300ca79dff"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatDiagnosticCorrelation.swift",
@@ -8978,7 +8982,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatDiagnosticResolution.swift",
-          "sha256": "4fe7c0c0559861a54cefc2cde301b03a4909a9de0202ee24a7f696d17982ce3f"
+          "sha256": "467364af0cf0aef030c641e865ec1f28e9b7bba95fa8eaf241a4eda9d314d4a3"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatLifecycle.swift",
@@ -8990,7 +8994,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatOperationState.swift",
-          "sha256": "0e08be3b8c7553a3dbc316b51d61f99c01b33c92bdb0983f0974e6259a4f9581"
+          "sha256": "dfec2d5f0ee875ad1d33ccb61915089cd62e7756b4749a93ebb4c0aa7868bb38"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/MaatPreparedPreflightRecovery.swift",
@@ -9054,7 +9058,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/RemediationExecution.swift",
-          "sha256": "b73512c38818c7f10569410c87a01a2abf66463ba551108328f9331a8803eaf5"
+          "sha256": "8d4cca5e267fe5732346d3929a01c5aaafe5f0747703dec9b20380940b6c4810"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/ResultPresentation.swift",
@@ -9062,7 +9066,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/SirsiEngine.swift",
-          "sha256": "c7a16b8123db7590fa93d342d8183d0de99daeb93a7239cff456de2cd386a6ab"
+          "sha256": "44c3845e65d8a928baa2de63ddf46c9980085878d2239de54e594f97a17fc359"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/Snapshot.swift",
@@ -9094,7 +9098,7 @@
         },
         {
           "path": "macapp/Sources/SirsiMenubar/Views.swift",
-          "sha256": "5c04256a67eb63f5146d6b7e49bcecba02cb35aac5928523793ddf8fbcfb4b88"
+          "sha256": "967d33e832794e33e93dbec85df814f5cac2cf3f7ca98334e7c507ccf6e1858e"
         },
         {
           "path": "macapp/Sources/SirsiMenubar/WorkspaceSession.swift",
@@ -9124,11 +9128,15 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/CoreContractsTests.swift",
-          "sha256": "178089638c95a92b23f5d9ad2fe194a6f467b80ba8b4a92361647b9fbf313759"
+          "sha256": "dbfe3be8825d286ecf7ce18348f9b11fd7e44781db8405b8ce3e045b9a296cde"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/DiagnosticRepairActionTests.swift",
-          "sha256": "ca11ce49b47ff51eadd888aba48f288ba75762a5db491209282fc099cae57143"
+          "sha256": "89d7e731228e55f5fa69ef2434cfeee9fbd36c1e96cc556cbe5488e46cf31d70"
+        },
+        {
+          "path": "macapp/Tests/SirsiMenubarTests/DiagnosticRepairPresentationTests.swift",
+          "sha256": "35957d2fd670a2c661a3c090560f223ff7d6423645daa3d5a6df505525ffb2a3"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/FeaturePanelViewportTests.swift",
@@ -9192,7 +9200,7 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatDiagnosticResolutionTests.swift",
-          "sha256": "06a0285a935336862ddecf04e60caa5daf58ae98f42de4b56472a827f8d346c8"
+          "sha256": "b59ea8d0f67935272f452a95f216c0c0b596d0ed3e10ee2a0a1475d89f6a683e"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatKnowledgeArchiveTests.swift",
@@ -9208,7 +9216,7 @@
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatOperationStateTests.swift",
-          "sha256": "d9e58e394725952572e4ec44c8b3654f15a0f664676916156193cfe30b08870f"
+          "sha256": "84c284b52e087b85da750aba86cd5c6a2636f0374ddba033f83a691118f7742d"
         },
         {
           "path": "macapp/Tests/SirsiMenubarTests/MaatPreparedPreflightRecoveryTests.swift",
@@ -9845,11 +9853,11 @@
         },
         {
           "path": "scripts/verify-maat-native-resolution-contract.sh",
-          "sha256": "9fcb1e4f208fd21e12b86c8bfd1847ea3ddc74700387fae755e10f3a8df7c39c"
+          "sha256": "7bf3f81581c746e157fdd62d3a4832b5d51467ab0f4fb4d61c477c9e05f429df"
         },
         {
           "path": "scripts/verify-maat-native-resolution-contract.test.sh",
-          "sha256": "640f6bca8a18c74c10a08dc4b2ac531337605ab73c4b13f8e81d9a2e737a15db"
+          "sha256": "10971a31747369db005e26b808f0941b93be16a1e44ce5d4722803adda811ee4"
         },
         {
           "path": "scripts/verify-maat-release-preflight-contract.sh",
@@ -9857,7 +9865,7 @@
         },
         {
           "path": "scripts/verify-menubar-release-contract.sh",
-          "sha256": "8a03deba91d659abd7edc8288ccc24d373dcccf13cba08d7165fc43bf724d285"
+          "sha256": "d9abaa0d0e41f192827a32ee04b560a51780e2c227c1f61f39892d063eb33ac2"
         },
         {
           "path": "scripts/verify-stacklab-apollo-contract.sh",
@@ -10269,7 +10277,7 @@
         },
         {
           "path": ".github/workflows/ci.yml",
-          "sha256": "cf5e28e9945507be0bdb623dd0d85ca06a4e8807021950e7cdcb9df7fb5dd1b9"
+          "sha256": "105d41f8aecc6546b395161da77d072a8e41435d71201ff4df90d07fb4cac71c"
         },
         {
           "path": ".github/workflows/claude.yml",
@@ -10301,7 +10309,7 @@
         },
         {
           "path": ".github/workflows/release.yml",
-          "sha256": "e9cfed7d577e7787fe691a843a8368c46ef11bddc64106669caf9deea787fbe4"
+          "sha256": "37712d0ff98feed52b28d6bc0782ef493b39dc374254ab45b98d4a59bb14e6b7"
         }
       ]
     },
