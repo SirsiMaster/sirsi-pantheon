@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
 )
 
 // ── Reboot-durable Gemma broker (ADR-045, owner directive 2026-07-23) ────────
@@ -108,6 +110,33 @@ func gemmaBrokerPlistContent(_ string, home string) string {
 `, GemmaBrokerLabel, sneBin, modelDir, logPath, logPath)
 }
 
+// writeApolloPortFile atomically points ~/.sirsi/gemma-server.port at Apollo's router.
+func writeApolloPortFile(home string) error {
+	dir := filepath.Join(home, ".sirsi")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	// CreateTemp makes a fresh O_EXCL leaf: it never follows or clobbers an
+	// existing staging file or symlink. Only our own temp is ever removed.
+	f, err := os.CreateTemp(dir, ".gemma-server.port.*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer func() { _ = os.Remove(tmp) }() // no-op after a successful Rename
+	_, werr := fmt.Fprintf(f, "%d\n", liveness.ApolloRouterPort)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return werr
+	}
+	if err := os.Chmod(tmp, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(dir, "gemma-server.port"))
+}
+
 // GemmaBrokerInstalled reports whether the reboot-durable broker LaunchAgent
 // is in place. macOS only.
 func GemmaBrokerInstalled() bool {
@@ -124,11 +153,24 @@ func InstallGemmaBroker() InstallResult {
 		res.Status, res.Message = StatusSkipped, "local model broker is macOS only"
 		return res
 	}
+	home, _ := os.UserHomeDir()
+	if liveness.ApolloProvidesGemma(home) {
+		// Point every port-file client at Apollo's router; never write the broker
+		// plist. Temp+rename keeps the previous pointer intact on any failure, and
+		// a failure returns before any launchd action, so nothing legacy relaunches.
+		if err := writeApolloPortFile(home); err != nil {
+			res.Status = StatusFailed
+			res.Message = "Apollo.app provides the local model, but the port file could not be repointed: " + err.Error()
+			return res
+		}
+		res.Status = StatusSkipped
+		res.Message = fmt.Sprintf("local model provided by Apollo.app (router 127.0.0.1:%d); setup will not write %s", liveness.ApolloRouterPort, GemmaBrokerLabel)
+		return res
+	}
 	if GemmaBrokerQuarantined() {
 		res.Status, res.Message = StatusSkipped, "local model broker is intentionally quarantined; setup will not recreate or start it"
 		return res
 	}
-	home, _ := os.UserHomeDir()
 	if !fileExists(filepath.Join(home, ".local", "bin", "sirsi-inference")) {
 		res.Status, res.Message = StatusSkipped, "skipped — native SNE binary not installed"
 		return res
