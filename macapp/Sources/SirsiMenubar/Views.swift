@@ -3956,6 +3956,8 @@ struct ProjectBar: View {
 // that shape fall back to clean text. Every path is navigable; nothing dead-ends.
 struct ResultView: View {
     @ObservedObject var engine: SirsiEngine
+    @Environment(\.isPresented) private var isPresented
+    @Environment(\.dismiss) private var dismiss
     let title: String
     let args: [String]
     let directory: URL
@@ -4022,7 +4024,17 @@ struct ResultView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            BackBar(title: title)
+            if isPresented {
+                HStack {
+                    Text(title).sirsiFont(.headline)
+                    Spacer()
+                    Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
+                        .disabled(applying)
+                }.padding(16)
+                Divider()
+            } else {
+                BackBar(title: title)
+            }
             if isRepoScoped {
                 ProjectBar(engine: engine) { Task { await load() } }
             }
@@ -4144,6 +4156,7 @@ struct ResultView: View {
                     producingDirectory: executionDirectory, command: a.command,
                     currentDirectory: SirsiEngine.workingDirectory(for: actual))
                 if actionApproval != nil { pendingApply = a }
+                else { explainChangedAction() }
             } label: { actionLabel(a, prominent: true) }
                 .buttonStyle(ResultActionButtonStyle(prominent: true)).disabled(applying)
         } else {
@@ -4245,8 +4258,17 @@ struct ResultView: View {
             directory: SirsiEngine.workingDirectory(for: approval.args)) && authorizeExecution()
     }
 
+    private func explainChangedAction() {
+        toastOK = false
+        toast = "The finding, result, or project changed during review. No action ran. Close this result, read the current finding, and open a fresh preview before confirming again."
+    }
+
     private func apply(_ action: CRAction, approval: ResultActionApproval) async {
-        guard !applying, action.command == approval.command, actionStillAuthorized(approval) else { return }
+        guard !applying else { return }
+        guard action.command == approval.command, actionStillAuthorized(approval) else {
+            explainChangedAction()
+            return
+        }
         applying = true // Before await; repeated confirmation delivery cannot replay.
         _ = verification.begin()
         actionApproval = nil

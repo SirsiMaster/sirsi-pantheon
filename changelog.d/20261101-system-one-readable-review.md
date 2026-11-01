@@ -6,4 +6,6 @@
 - Refresh changing diagnostic operands when opening resolution instead of leaving a stale disabled review button.
 - Show read-only case-history progress and a cancel action while retaining the exact history/case safeguards.
 
+- Close native command-result sheets without changing navigation behind them, and show a recovery explanation when a reviewed action becomes stale.
+
 Refs: docs/ADR-033-REMEDIATION-CATALOG.md, docs/ADR-070-MAAT-STRUCTURED-VERDICT.md, PRODUCT.md
