@@ -1373,6 +1373,7 @@ struct FindingView: View {
     @State private var repairReviewMessage: String?
     @State private var showConfirmedFix = false
     @State private var confirmLegacyRepair = false
+    @State private var executeReviewedLegacyRepair = false
     @State private var showLegacyRepair = false
 
     // Older installed CLIs can omit `fix` and leave only prose or a backticked
@@ -1626,13 +1627,25 @@ struct FindingView: View {
             }
             .modifier(ResultPanelLayout())
         }
-        .confirmationDialog("Run this bounded repair in Pantheon?", isPresented: $confirmLegacyRepair, titleVisibility: .visible) {
-            Button("Run repair") { if let args = legacyNativeRepairArgs, approved(args) { showLegacyRepair = true } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Pantheon will run only the frozen registered repair, then re-check this finding. It will not execute diagnostic message text.")
-            Text("Command: \(approval?.args.joined(separator: " ") ?? "unavailable")")
-            Text("Project: \(approval?.directory.path ?? "unavailable")")
+        .sheet(isPresented: $confirmLegacyRepair, onDismiss: {
+            guard executeReviewedLegacyRepair else { return }
+            executeReviewedLegacyRepair = false
+            guard let args = legacyNativeRepairArgs, approved(args) else {
+                repairReviewMessage = "The finding changed while the review closed. No repair ran. Review the current finding again."
+                return
+            }
+            showLegacyRepair = true
+        }) {
+            ActionReviewSheet(title: "Review bounded repair",
+                detail: "Pantheon will run only the registered repair shown here, then re-check this finding. It will not execute diagnostic message text. A changed finding or project requires a fresh review.",
+                scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) } ?? "No current reviewed command is available.",
+                confirmLabel: "Run repair",
+                cancel: { confirmLegacyRepair = false },
+                confirm: {
+                    if let args = legacyNativeRepairArgs, approved(args) { executeReviewedLegacyRepair = true }
+                    else { repairReviewMessage = "The finding changed during review. Read the current finding and review it again; no repair ran." }
+                    confirmLegacyRepair = false
+                })
         }
         .sheet(isPresented: $showLegacyRepair) {
             Group {
@@ -1660,12 +1673,22 @@ struct FindingView: View {
     @ViewBuilder private var legacyNativeRepair: some View {
         VStack(alignment: .leading, spacing: 9) {
             Text("PANTHEON CAN REPAIR THIS").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-            Text("This diagnostic came from an older local contract. Pantheon matched it to a bounded built-in repair, not message text. Review, confirm, and Pantheon will verify the outcome here.")
+            Text("This diagnostic came from an older local contract. Pantheon matched it to a bounded built-in action, not message text. Read-only memory relief opens a preview first; other repairs show their exact scope and require confirmation.")
                 .sirsiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let repairReviewMessage {
+                Text(repairReviewMessage).sirsiFont(.callout).fixedSize(horizontal: false, vertical: true)
+            }
             Button {
-                if let args = legacyNativeRepairArgs { freezeRepair(args); confirmLegacyRepair = true }
+                guard let args = legacyNativeRepairArgs else { return }
+                freezeRepair(args)
+                if diagnosticOpensMemoryPreview(args) {
+                    showLegacyRepair = true
+                } else {
+                    confirmLegacyRepair = true
+                }
             } label: {
-                Label("Resolve in Pantheon", systemImage: "wrench.and.screwdriver.fill")
+                Label(legacyNativeRepairArgs.map { diagnosticOpensMemoryPreview($0) } == true ? "Review memory relief" : "Resolve in Pantheon",
+                      systemImage: "wrench.and.screwdriver.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).tint(gold)

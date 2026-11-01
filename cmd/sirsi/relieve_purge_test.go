@@ -18,7 +18,7 @@ func TestRelieveMemoryTopUserUsesFootprintThenRSSFallback(t *testing.T) {
 			proc: guard.MemProc{
 				Name:      "/Applications/Apollo.app/Contents/MacOS/Apollo",
 				RSS:       100 << 20,
-				Footprint: int64(13.3 * gib),
+				Footprint: 133 * (1 << 30) / 10,
 			},
 			want: "Apollo (13.3 GB)",
 		},
