@@ -8,6 +8,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.156] — 2026-11-01
 
+- Refresh Ma’at’s exact release-workflow source pin and provenance for the reviewed M1 runner binding and keychain-cleanup fence; retain the existing removed-control refusal fixtures.
+
+- Refs: internal/maat/releasepreflight_test.go, internal/maat/releasepreflight.go, .github/workflows/release.yml
+
+- Bind the native release job to the existing `m1` runner label and fail before checkout unless runner context, native Darwin/arm64, and `hw.model` match the qualified `MacBookPro18,1`. The hosted source fixture binds these checks to `jobs.menubar` and runs before tag release.
+
+- Run keychain cleanup only after accepted host binding and an explicit marker for keychain mutation; retain cleanup after later signing failures while leaving rejected or pre-keychain failures untouched.
+
+- Refs: docs/ADR-042-SELF-HOSTED-CI-ON-SIRSI-SILICON.md, scripts/verify-menubar-release-contract.sh, scripts/verify-menubar-release-contract.test.sh
+
 - Open the audited memory-relief preview before asking to run a cache flush; other repairs retain explicit consent.
 
 - Show System One case and repair approvals in full, scrollable native review sheets with exact command/project or case/evidence and persistent Cancel/action controls, instead of relying on macOS confirmation dialogs that omit review details.
