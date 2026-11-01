@@ -2718,6 +2718,18 @@ enum MaatInactiveDispositionFailurePresentation {
     }
 }
 
+struct MaatCaseAssessmentPresentation: Equatable {
+    let assessment: String
+    let why: String?
+}
+
+func maatCaseAssessmentPresentation(assessed: String, why: String) -> MaatCaseAssessmentPresentation {
+    MaatCaseAssessmentPresentation(
+        assessment: assessed.isEmpty ? why : assessed,
+        why: assessed.isEmpty || why.isEmpty ? nil : why
+    )
+}
+
 private struct MaatCaseDetailView: View {
     @ObservedObject var engine: SirsiEngine
     @ObservedObject var operations: MaatCaseOperationStore
@@ -2776,7 +2788,9 @@ private struct MaatCaseDetailView: View {
                             await refreshAfterIntegrityRepair()
                         }
                     }
-                    detailSection("Assessment", entry.assessed.isEmpty ? entry.why : entry.assessed)
+                    let assessment = maatCaseAssessmentPresentation(assessed: entry.assessed, why: entry.why)
+                    detailSection("Assessment", assessment.assessment)
+                    if let why = assessment.why { detailSection("Why", why, selectable: true) }
                     detailSection("Determination", entry.determination)
                     if !entry.resource.isEmpty { detailSection("Resource", entry.resource) }
                     if !entry.affected.isEmpty { detailSection("Affected", entry.affected) }
@@ -3545,14 +3559,21 @@ private struct MaatCaseDetailView: View {
         }
     }
 
-    private func detailSection(_ title: String, _ value: String) -> some View {
+    @ViewBuilder private func detailSection(_ title: String, _ value: String, selectable: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .sirsiFont(.caption, weight: .bold)
                 .foregroundStyle(.secondary)
-            Text(value)
-                .sirsiFont(.body)
-                .fixedSize(horizontal: false, vertical: true)
+            if selectable {
+                Text(value)
+                    .sirsiFont(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            } else {
+                Text(value)
+                    .sirsiFont(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
