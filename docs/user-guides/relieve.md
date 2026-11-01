@@ -17,10 +17,13 @@ back. It is gentle and reversible:
   and `sirsi` itself) are never touched — the renice routes through an
   A1-protected path that refuses them.
 
-With `--memory`, it switches to relieving *memory* pressure instead: it names the
-top memory user, then flushes macOS's inactive/cached pages with `purge` (the only
-safe, non-destructive memory lever — it returns cached pages to the free pool
-without touching any app).
+With `--memory`, the preview reports system memory pressure separately from the
+largest sampled process. That process sample is context, not proof that the
+process caused pressure or a recommendation to stop it. When pressure is normal,
+the preview says no active pressure cause is indicated; when pressure is unknown,
+it does not infer one. Flushing inactive caches with `purge` returns cached pages
+to the free pool. It does not release memory actively held by apps or model
+working sets, and it does not stop any process.
 
 ## Usage
 
@@ -84,8 +87,8 @@ Pressure      warn → normal
 ## Safety notes
 
 - **Reversible by design.** The CPU renice resets when the process exits;
-  `--memory` only flushes OS caches (macOS re-caches as it needs to). Nothing is
-  ever killed.
+  `--memory` only flushes OS caches (macOS re-caches as it needs to). Active
+  application/model allocations are unchanged; no process is stopped or killed.
 - **Protected processes refused.** Critical system processes are hardcoded off-
   limits. Processes you don't own need elevated privileges and are refused rather
   than force-touched.

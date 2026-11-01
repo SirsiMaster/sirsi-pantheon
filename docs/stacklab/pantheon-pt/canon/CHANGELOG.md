@@ -1,5 +1,12 @@
 # Changelog — Pantheon PT canon
 
+## 2026-11-01 — v0.24.160 release candidate
+
+- Native structured command results now show complete, selectable error details with the existing summary, evidence, and recovery actions.
+- Refs: `docs/design/PANTHEON_NATIVE_WORKSPACE.md`, `docs/ADR-018-NATIVE-MAC-APP.md`
+- Memory-relief previews distinguish current system pressure from the largest process sample and clarify that cache flushing does not release active app/model memory or recommend stopping a workload.
+- Refs: `cmd/sirsi/relieve.go`, `cmd/sirsi/relieve_purge_test.go`, `docs/user-guides/relieve.md`
+
 ## 2026-11-01 — v0.24.159 release candidate
 
 - Casebook search now matches canonical case IDs before linked-state qualification, and native review results can open an existing case only after a unique complete ID-and-evidence match. Query edits clear stale exact selection while bounded refresh and continuation retain their current query and snapshot contract; the native source guard now checks the typed handoff and browse fallback.
