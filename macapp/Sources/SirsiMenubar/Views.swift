@@ -4298,15 +4298,16 @@ struct ResultView: View {
     }
 
     private func retain(_ receipt: CommandExecution, action: CRAction, directory: URL) {
+        let captured = capturedRepairActivity(receipt)
         execution = receipt
         executionDirectory = directory
         result = receipt.result
         raw = result == nil ? receipt.displayText : ""
-        toastOK = receipt.complete && receipt.exitCode == 0 && receipt.result?.ok == true
+        toastOK = captured.resolution == .resolved
         toast = toastOK ? "Command returned a complete report; check fresh evidence below."
             : "Outcome needs review — the command will not be replayed automatically."
         engine.recordActivity(title: action.label, command: action.command,
-            result: receipt.displayText, receipt: receipt)
+            result: receipt.displayText, capturedRepair: captured)
     }
 
     // applyHeadline pulls the human result line ("Cleaned 8 items. Reclaimed

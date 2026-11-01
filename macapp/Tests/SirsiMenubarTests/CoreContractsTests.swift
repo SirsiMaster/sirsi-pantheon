@@ -192,15 +192,13 @@ final class CoreContractsTests: XCTestCase {
                 childState: .exitUnknown), .evidenceOnly),
             ("nonzero exit", receipt(report(status: "ok"), exitCode: 7), .maatReview),
             ("empty output", receipt(""), .evidenceOnly),
-            ("capture overflow", receipt(report(status: "ok"), complete: false,
+            ("incomplete success-looking capture", receipt(report(status: "success"), complete: false,
                 statusFlags: (false, false, true)), .evidenceOnly),
         ]
 
         for (name, command, expected) in cases {
             let captured = capturedRepairActivity(command)
-            let entry = ActivityEntry(title: "Flush caches now", command: "relieve --memory --confirm",
-                when: "Oct 31, 4:43 PM", result: captured.evidence, executionOutcome: captured.outcome)
-            XCTAssertEqual(entry.resolution, expected, name)
+            XCTAssertEqual(captured.resolution, expected, name)
         }
     }
 
@@ -213,8 +211,8 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertNotEqual(complete.evidence, "STDOUT:")
         XCTAssertEqual(activityResolution(for: complete.evidence, executionOutcome: complete.outcome), .resolved)
 
-        let large = "Readable summary: caches flushed.\n" + String(repeating: "🧾", count: 40_000)
-        let truncated = capturedRepairActivity(CommandExecution(stdout: Data(large.utf8), stderr: Data("final stderr evidence".utf8),
+        let largeJSON = #"{"summary":"Readable summary: caches flushed.","evidence":[],"next_actions":[],"status":"success","errors":[],"padding":"\#(String(repeating: "🧾", count: 40_000))"}"#
+        let truncated = capturedRepairActivity(CommandExecution(stdout: Data(largeJSON.utf8), stderr: Data("final stderr evidence".utf8),
             exitCode: 0, childState: .exitConfirmed))
         XCTAssertLessThanOrEqual(truncated.evidence.utf8.count, activityEvidenceLimitBytes)
         XCTAssertNotNil(String(data: Data(truncated.evidence.utf8), encoding: .utf8))
@@ -223,7 +221,27 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertTrue(truncated.evidence.contains("final stderr evidence"))
         XCTAssertTrue(truncated.evidence.contains("Exit status: 0"))
         XCTAssertTrue(truncated.outcome.truncated)
-        XCTAssertEqual(activityResolution(for: truncated.evidence, executionOutcome: truncated.outcome), .evidenceOnly)
+        XCTAssertEqual(truncated.outcome.structuredStatus, "success")
+        XCTAssertEqual(truncated.resolution, .evidenceOnly)
+    }
+
+    func testGenericBoundedActivityOutputCannotResolveTruncatedSuccessLookingText() {
+        let large = "Operation completed successfully.\n" + String(repeating: "Readable diagnostic evidence. ", count: 3_000)
+        let bounded = boundedActivityEvidence(large)
+
+        XCTAssertTrue(bounded.truncated)
+        XCTAssertTrue(bounded.text.contains("Operation completed successfully."))
+        XCTAssertTrue(bounded.text.contains("[Activity receipt truncated at 64 KiB"))
+        XCTAssertEqual(activityResolution(for: bounded.text), .evidenceOnly)
+
+        let nonreceipt = nonreceiptActivityEvidence("Human summary first.\nRaw diagnostic detail that should not be retained.")
+        XCTAssertEqual(nonreceipt, "Human summary first.")
+
+        let longHeadline = nonreceiptActivityEvidence(
+            "Completed successfully. " + String(repeating: "private-looking detail ", count: 4_000))
+        XCTAssertLessThanOrEqual(longHeadline.utf8.count, activityEvidenceLimitBytes)
+        XCTAssertTrue(longHeadline.contains("[Activity receipt truncated at 64 KiB"))
+        XCTAssertEqual(activityResolution(for: longHeadline), .evidenceOnly)
     }
 
     func testActivityEntryCodableKeepsLegacyAndUnknownStatusEvidence() throws {

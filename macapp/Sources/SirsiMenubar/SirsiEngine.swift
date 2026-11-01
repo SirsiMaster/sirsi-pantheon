@@ -562,19 +562,21 @@ struct ActivityExecutionOutcome: Codable, Equatable {
 struct CapturedRepairActivity: Equatable {
     let evidence: String
     let outcome: ActivityExecutionOutcome
+
+    var resolution: ActivityResolution { activityResolution(for: evidence, executionOutcome: outcome) }
 }
 
 let activityEvidenceLimitBytes = 64 * 1024
 let activityAcceptedStructuredStatuses: Set<String> = ["ok", "success"]
 
-func boundedActivityEvidence(_ text: String, limit: Int = activityEvidenceLimitBytes) -> (text: String, truncated: Bool) {
+func boundedActivityEvidence(_ text: String) -> (text: String, truncated: Bool) {
     let bytes = Array(text.utf8)
-    guard bytes.count > limit else { return (text, false) }
+    guard bytes.count > activityEvidenceLimitBytes else { return (text, false) }
 
     let marker = "\n\n[Activity receipt truncated at 64 KiB; middle content omitted. Truncated evidence is not accepted as completion.]\n\n"
     let markerSize = marker.utf8.count
-    let suffixBudget = min(512, max(0, limit - markerSize))
-    let prefixBudget = max(0, limit - markerSize - suffixBudget)
+    let suffixBudget = min(512, max(0, activityEvidenceLimitBytes - markerSize))
+    let prefixBudget = max(0, activityEvidenceLimitBytes - markerSize - suffixBudget)
 
     var prefixEnd = min(prefixBudget, bytes.count)
     while prefixEnd > 0,
@@ -589,6 +591,18 @@ func boundedActivityEvidence(_ text: String, limit: Int = activityEvidenceLimitB
     let prefix = String(data: Data(bytes[0..<prefixEnd]), encoding: .utf8) ?? ""
     let suffix = String(data: Data(bytes[suffixStart..<bytes.count]), encoding: .utf8) ?? ""
     return (prefix + marker + suffix, true)
+}
+
+func firstMeaningfulActivityLine(_ text: String) -> String {
+    for line in text.split(separator: "\n") {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty { return trimmed }
+    }
+    return "done"
+}
+
+func nonreceiptActivityEvidence(_ text: String) -> String {
+    boundedActivityEvidence(firstMeaningfulActivityLine(text)).text
 }
 
 func capturedRepairActivity(_ receipt: CommandExecution) -> CapturedRepairActivity {
@@ -657,6 +671,7 @@ func activityResolution(for result: String, executionOutcome: ActivityExecutionO
     if normalized.isEmpty || normalized == "done" ||
         normalized.contains("no readable structured result") ||
         normalized.contains("no repair is claimed") ||
+        normalized.contains("[activity receipt truncated at 64 kib;") ||
         normalized.hasPrefix("capture deadline expired; execution outcome is not confirmed") ||
         normalized.hasPrefix("cancelled; execution outcome is not confirmed") ||
         normalized.hasPrefix("output exceeded the shared 4 mib capture budget;") ||
@@ -1560,12 +1575,10 @@ final class SirsiEngine: ObservableObject {
     }
 
     // recordActivity appends one line to the on-disk ledger and the live list.
-    func recordActivity(title: String, command: String, result: String, receipt: CommandExecution? = nil) {
-        let captured = receipt.map(capturedRepairActivity)
-        let bounded = captured == nil ? boundedActivityEvidence(result) : nil
+    func recordActivity(title: String, command: String, result: String, capturedRepair: CapturedRepairActivity? = nil) {
         let entry = ActivityEntry(title: title, command: command, when: Self.nowStamp(),
-                                  result: captured?.evidence ?? bounded?.text ?? "",
-                                  executionOutcome: captured?.outcome)
+                                  result: capturedRepair?.evidence ?? nonreceiptActivityEvidence(result),
+                                  executionOutcome: capturedRepair?.outcome)
         var all = [ActivityEntry]()
         if let data = FileManager.default.contents(atPath: activityPath),
            let existing = try? JSONDecoder().decode([ActivityEntry].self, from: data) {
@@ -1630,11 +1643,7 @@ final class SirsiEngine: ObservableObject {
     }
 
     static func firstMeaningful(_ s: String) -> String {
-        for line in s.split(separator: "\n") {
-            let t = line.trimmingCharacters(in: .whitespaces)
-            if !t.isEmpty { return t }
-        }
-        return "done"
+        firstMeaningfulActivityLine(s)
     }
 
     // resultOK reports whether a command's JSON output signals success — an
