@@ -29,6 +29,13 @@ a control.
   `tcp-bench` were ignored); a foreign actor during a quiet/loaded window marks
   the block `invalidated`, names the intruder, and (CLI) notifies its inbox.
   Rail-specific traffic detectors plug into the same `ActivityProbe` interface.
+- **Observation scope.** `clean` means the current policy check found no
+  intruder requiring invalidation. The additive `measurement_observation`
+  reports whether the existing probe completed, whether admitted floor activity
+  or another admitted actor was observed, and the UTC completion time. Its
+  `point_sample` coverage never establishes a quiet interval; no-holder and
+  build-regime early returns remain `unverified` with `none` coverage. The
+  existing `Shared` strings and policy result remain compatible.
 - **Dashboard read-model.** `Coverage` computes per-resource utilization %,
   the current holder, upcoming windows, and conflicts caught in 24h — the JSON a
   dashboard tile consumes (`sirsi maat coverage <resource> --json`).
@@ -47,6 +54,13 @@ sirsi maat coverage <resource> [--horizon 24] [--json]
 sirsi maat should-defer <machine>    # exit 97 if a runner must defer
 sirsi maat conflict-check <resource> [--machine <m>] [--json]  # invalidate + notify
 ```
+
+For a successful conflict check, JSON includes `measurement_observation` with
+`status`, `coverage`, `observed_at`, and typed `floor_shares`. The human output
+labels a passing policy check `policy clean`. An empty point sample means only
+that no foreign actor was observed at that sample; it does not establish that
+the full reservation interval was quiet. Admitted floor actors remain policy
+clean and are reported as observed shared activity without invalidation.
 
 Harness hook points: `maat-repro-lint.sh` calls `reserve` before touching a
 cable; `maat-bench-watchdog.sh` calls `conflict-check` per block; a self-hosted
