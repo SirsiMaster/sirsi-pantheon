@@ -3,7 +3,39 @@ package main
 import (
 	"errors"
 	"testing"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
+
+func TestRelieveMemoryTopUserUsesFootprintThenRSSFallback(t *testing.T) {
+	tests := []struct {
+		name string
+		proc guard.MemProc
+		want string
+	}{
+		{
+			name: "physical footprint",
+			proc: guard.MemProc{
+				Name:      "/Applications/Apollo.app/Contents/MacOS/Apollo",
+				RSS:       100 << 20,
+				Footprint: int64(13.3 * gib),
+			},
+			want: "Apollo (13.3 GB)",
+		},
+		{
+			name: "RSS fallback",
+			proc: guard.MemProc{Name: "Apollo", RSS: 100 << 20},
+			want: "Apollo (0.1 GB)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := relieveMemoryTopUser(tt.proc); got != tt.want {
+				t.Fatalf("relieveMemoryTopUser() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestPurgeCachesNeverPromptsUnattended(t *testing.T) {
 	cases := []struct {
