@@ -44,7 +44,8 @@ require_code_line() {
   source_path=$1
   needle=$2
   message=$3
-  /usr/bin/awk -v needle="$needle" 'index($0, needle) && $0 !~ /^[[:space:]]*\/\// { found=1; exit } END { exit !found }' "$source_path" || {
+  # Pass source text via the environment: awk -v interprets Swift's \( as an escape.
+  NEEDLE="$needle" /usr/bin/awk 'index($0, ENVIRON["NEEDLE"]) && $0 !~ /^[[:space:]]*\/\// { found=1; exit } END { exit !found }' "$source_path" || {
     echo "$message: $needle" >&2
     exit 1
   }
@@ -55,7 +56,7 @@ require_code_count() {
   needle=$2
   minimum=$3
   message=$4
-  count=$(/usr/bin/awk -v needle="$needle" 'index($0, needle) && $0 !~ /^[[:space:]]*\/\// { count++ } END { print count+0 }' "$source_path")
+  count=$(NEEDLE="$needle" /usr/bin/awk 'index($0, ENVIRON["NEEDLE"]) && $0 !~ /^[[:space:]]*\/\// { count++ } END { print count+0 }' "$source_path")
   [ "$count" -ge "$minimum" ] || {
     echo "$message: expected at least $minimum actual code lines, found $count" >&2
     exit 1
@@ -229,7 +230,7 @@ for needle in \
   'Exact arguments: \(exact)' \
   'Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)' \
   'Button(confirmLabel, action: confirm)'; do
-  require_code_line "$actionreview" "$needle" 'native repair review scope, item presentation or persistent controls missing'
+  require_code_line "$actionreview" "$needle" 'native repair review scope or persistent controls missing (item presentation included)'
 done
 
 for needle in \
