@@ -165,12 +165,26 @@ for needle in \
 done
 
 for needle in \
+  'ScrollView {' \
+  'Text(detail).sirsiFont(.body)' \
+  'Text(scope).sirsiFont(.callout, design: .monospaced)' \
+  '.textSelection(.enabled)' \
   'JSONEncoder().encode(arguments)' \
   'Exact arguments: \(exact)' \
   'Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)' \
   'Button(confirmLabel, action: confirm)'; do
   /usr/bin/grep -Fq "$needle" "$actionreview" || {
     echo "native repair review scope or persistent controls missing: $needle" >&2
+    exit 1
+  }
+done
+
+for needle in \
+  'ActionReviewSheet(title: "Review: " + action.label,' \
+  'detail: (action.description ?? "Review the exact scope before running this action.")' \
+  'scope: actionReviewScope(arguments: frozen.args, directory: frozen.directory)'; do
+  /usr/bin/grep -Fq "$needle" "$view" || {
+    echo "native Casebook action review title, detail, or evidence scope missing: $needle" >&2
     exit 1
   }
 done
