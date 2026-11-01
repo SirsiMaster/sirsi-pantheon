@@ -156,10 +156,9 @@ for needle in \
   'showConfirmedFix = true' \
   'ActionReviewSheet(title: "Review system repair",' \
   'scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) }' \
-  'if approved(repairArgs) { executeReviewedFix = true }' \
-  'authorizeExecution: { approved(repairArgs) }'; do
+  'if approved(repairArgs) { executeReviewedFix = true }'; do
   /usr/bin/grep -Fq "$needle" "$view" || {
-    echo "native reviewed repair handoff or authorization missing: $needle" >&2
+    echo "native repair review approval handoff missing: $needle" >&2
     exit 1
   }
 done
@@ -179,12 +178,17 @@ for needle in \
   }
 done
 
+/usr/bin/grep -Fq 'authorizeExecution: { approved(repairArgs) }' "$view" || {
+  echo "native ResultView launch authorizer missing" >&2
+  exit 1
+}
+
 for needle in \
-  'ActionReviewSheet(title: "Review: " + action.label,' \
-  'detail: (action.description ?? "Review the exact scope before running this action.")' \
-  'scope: actionReviewScope(arguments: frozen.args, directory: frozen.directory)'; do
-  /usr/bin/grep -Fq "$needle" "$view" || {
-    echo "native Casebook action review title, detail, or evidence scope missing: $needle" >&2
+  'ActionReviewSheet(title: confirmationTitle,' \
+  'detail: confirmationMessage,' \
+  'scope: "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)",'; do
+  /usr/bin/grep -Fq "$needle" "$casebook" || {
+    echo "native Ma'at Casebook action review wiring missing: $needle" >&2
     exit 1
   }
 done
