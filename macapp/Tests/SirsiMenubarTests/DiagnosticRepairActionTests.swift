@@ -4,6 +4,15 @@ import XCTest
 @testable import SirsiMenubar
 
 final class DiagnosticRepairActionTests: XCTestCase {
+    func testMemoryPreviewEntryNeverTreatsOtherCommandsAsReadOnly() {
+        XCTAssertTrue(diagnosticOpensMemoryPreview(["relieve", "--memory"]))
+        for command in [["relieve", "--memory", "--confirm"], ["relieve"],
+                        ["clean", "--confirm"], ["maat", "repair", "liveness-watch"],
+                        ["relieve", "--memory", "--force"], ["relieve", "--memory", "--quiet"], []] {
+            XCTAssertFalse(diagnosticOpensMemoryPreview(command), "Unexpected preview authority: \(command)")
+        }
+    }
+
     @MainActor
     func testTwoLineActionGrowsWithTextSizeWithoutSingleLineBezelClipping() throws {
         let regular = try render(width: 520, scale: 1)

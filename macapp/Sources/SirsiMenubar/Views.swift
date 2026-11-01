@@ -1369,6 +1369,8 @@ struct FindingView: View {
     @State private var maatReviewInFlight = false
     @State private var confirmMaatReview = false
     @State private var confirmFix = false
+    @State private var executeReviewedFix = false
+    @State private var repairReviewMessage: String?
     @State private var showConfirmedFix = false
     @State private var confirmLegacyRepair = false
     @State private var showLegacyRepair = false
@@ -1424,6 +1426,7 @@ struct FindingView: View {
         }
     }
     private var fixButtonLabel: String {
+        if diagnosticOpensMemoryPreview(repairArgs) { return "Review memory relief" }
         if observedFinding.check == "launchd Disabled Override" {
             return "Restore managed services"
         }
@@ -1532,15 +1535,19 @@ struct FindingView: View {
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                         }
                         Text(fixSectionLabel).sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-                        if fixRequiresConfirmation {
-                            Button { freezeRepair(repairArgs); confirmFix = true } label: { fixButtonContents(fix) }
-                                .buttonStyle(DiagnosticRepairButtonStyle())
-                        } else {
-                            Button {
-                                freezeRepair(repairArgs)
+                        Button {
+                            repairReviewMessage = nil
+                            freezeRepair(repairArgs)
+                            if diagnosticOpensMemoryPreview(repairArgs) {
+                                showConfirmedFix = true
+                            } else {
                                 confirmFix = true
-                            } label: { fixButtonContents(fix) }
-                            .buttonStyle(DiagnosticRepairButtonStyle())
+                            }
+                        } label: { fixButtonContents(fix) }
+                        .buttonStyle(DiagnosticRepairButtonStyle())
+                        if let repairReviewMessage {
+                            Text(repairReviewMessage).sirsiFont(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     } else if requiresNativeCleanupReview {
                         nativeCleanupReview
@@ -1581,18 +1588,19 @@ struct FindingView: View {
         } message: {
             Text("Ma'at will retain this exact diagnostic finding for review. It will not change the system or claim that the issue is repaired.")
         }
-        .confirmationDialog("Apply this system repair?", isPresented: $confirmFix, titleVisibility: .visible) {
-            Button(fixButtonLabel) { if approved(repairArgs) { showConfirmedFix = true } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            if observedFinding.check == "launchd Disabled Override" {
-                Text("Ma'at will re-check the exact managed disabled labels, restore only that bounded set, verify the same diagnostic afterward, and retain either a verified recovery receipt or an explicit incomplete outcome.")
-            } else {
-                Text("Pantheon will run only the frozen managed repair, then re-check this finding. Changed, stale or unavailable evidence requires new confirmation.")
-            }
-            Text("Pantheon will not broaden the command or touch unrelated services.")
-            Text("Command: \(approval?.args.joined(separator: " ") ?? "unavailable")")
-            Text("Project: \(approval?.directory.path ?? "unavailable")")
+        .sheet(isPresented: $confirmFix, onDismiss: {
+            if executeReviewedFix { executeReviewedFix = false; showConfirmedFix = true }
+        }) {
+            ActionReviewSheet(title: "Review system repair",
+                detail: "Pantheon will run the exact command below, then recheck this finding. A changed finding or project requires a fresh review. No unrelated service is selected.",
+                scope: "Command: \(approval?.args.joined(separator: " ") ?? "unavailable")\n\nProject: \(approval?.directory.path ?? "unavailable")",
+                confirmLabel: fixButtonLabel,
+                cancel: { confirmFix = false },
+                confirm: {
+                    if approved(repairArgs) { executeReviewedFix = true }
+                    else { repairReviewMessage = "The finding changed during review. Read the current finding and review it again; no repair ran." }
+                    confirmFix = false
+                })
         }
         .sheet(isPresented: $showConfirmedFix) {
             Group {
@@ -4055,20 +4063,17 @@ struct ResultView: View {
             }.padding(.horizontal, 14).padding(.vertical, 10)
         }
         .task { if result == nil && raw.isEmpty { await load() } }   // preloaded → already have it
-        .confirmationDialog(
-            "Apply this fix?",
-            isPresented: Binding(get: { pendingApply != nil }, set: { if !$0 { pendingApply = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Apply", role: .destructive) {
-                if let a = pendingApply, let frozen = actionApproval { Task { await apply(a, approval: frozen) } }
-                pendingApply = nil
-            }
-            Button("Cancel", role: .cancel) { pendingApply = nil }
-        } message: {
-            if let a = pendingApply {
-                Text("Runs the frozen command `\(actionApproval?.args.joined(separator: " ") ?? a.command)` for the current result and project. Review its scope; a changed result requires new confirmation.")
-                Text("Project: \(actionApproval?.directory.path ?? "unavailable")")
+        .sheet(isPresented: Binding(get: { pendingApply != nil }, set: { if !$0 { pendingApply = nil } })) {
+            if let action = pendingApply, let frozen = actionApproval {
+                ActionReviewSheet(title: "Review: " + action.label,
+                    detail: (action.description ?? "Review the exact scope before running this action.") + "\n\nPantheon will run only the command below. Any macOS administrator authorization appears separately. Cancel leaves this preview unchanged.",
+                    scope: "Command: \(frozen.args.joined(separator: " "))\n\nProject: \(frozen.directory.path)",
+                    confirmLabel: action.label,
+                    cancel: { pendingApply = nil; actionApproval = nil },
+                    confirm: {
+                        pendingApply = nil
+                        Task { await apply(action, approval: frozen) }
+                    })
             }
         }
     }

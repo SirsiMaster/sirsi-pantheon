@@ -2865,18 +2865,21 @@ private struct MaatCaseDetailView: View {
             guard entry.nextAction?.actionID == "liveness-watch" else { return }
             await refreshFailureMemoryStatus()
         }
-        .confirmationDialog(confirmationTitle, isPresented: $confirmAction, titleVisibility: .visible) {
-            Button(confirmationButton) {
-                let confirmedNote = conclusion.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let action = pendingFailureMemoryAction {
-                    Task { await performFailureMemoryAction(action) }
-                } else {
-                    Task { await performResolution(confirmedNote: confirmedNote) }
-                }
-            }
-            Button("Cancel", role: .cancel) { pendingFailureMemoryAction = nil; recordBinaryDriftInactive = false }
-        } message: {
-            Text(confirmationMessage)
+        .sheet(isPresented: $confirmAction) {
+            ActionReviewSheet(title: confirmationTitle,
+                detail: confirmationMessage,
+                scope: "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)",
+                confirmLabel: confirmationButton,
+                cancel: { confirmAction = false; pendingFailureMemoryAction = nil; recordBinaryDriftInactive = false },
+                confirm: {
+                    let confirmedNote = conclusion.trimmingCharacters(in: .whitespacesAndNewlines)
+                    confirmAction = false
+                    if let action = pendingFailureMemoryAction {
+                        Task { await performFailureMemoryAction(action) }
+                    } else {
+                        Task { await performResolution(confirmedNote: confirmedNote) }
+                    }
+                })
         }
     }
 
