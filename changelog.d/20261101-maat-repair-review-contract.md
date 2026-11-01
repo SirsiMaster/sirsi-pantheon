@@ -4,3 +4,5 @@
 - Pin title, confirmation detail, and case/evidence/conclusion scope at MaatCaseDetailView's actual review-sheet call site; keep ResultView authorization labeled separately.
 
 Refs: scripts/verify-maat-native-resolution-contract.sh, scripts/verify-maat-native-resolution-contract.test.sh, docs/ADR-070-MAAT-STRUCTURED-VERDICT.md
+
+- Keep display-heading wording independent of consent/scope verification, with a passing renamed-heading fixture.

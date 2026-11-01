@@ -154,7 +154,7 @@ for needle in \
   '.sheet(isPresented: $confirmFix, onDismiss: {' \
   'guard approved(repairArgs) else {' \
   'showConfirmedFix = true' \
-  'ActionReviewSheet(title: "Review system repair",' \
+  'ActionReviewSheet(title:' \
   'scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) }' \
   'if approved(repairArgs) { executeReviewedFix = true }'; do
   /usr/bin/grep -Fq "$needle" "$view" || {

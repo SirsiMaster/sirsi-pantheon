@@ -51,4 +51,11 @@ negative review-body-detail macapp/Sources/SirsiMenubar/ActionReviewSheet.swift 
 negative casebook-review-callsite macapp/Sources/SirsiMenubar/MaatCasebookView.swift 'ActionReviewSheet(title: confirmationTitle,' 'Casebook action review wiring missing'
 negative casebook-review-detail macapp/Sources/SirsiMenubar/MaatCasebookView.swift 'detail: confirmationMessage,' 'Casebook action review wiring missing'
 negative casebook-evidence-conclusion-scope macapp/Sources/SirsiMenubar/MaatCasebookView.swift 'scope: "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)",' 'Casebook action review wiring missing'
-echo 'PASS one positive and twenty causal projection/host/serving/review negatives'
+# Display wording is not consent. Keep the actual handoff/scope/control
+# assertions while allowing a harmless title change in the source fixture.
+refresh
+perl -0pi -e 's/Review system repair/Inspect managed action/g' "$fixture/macapp/Sources/SirsiMenubar/Views.swift"
+bash "$fixture/scripts/verify-maat-native-resolution-contract.sh" > "$fixture/heading.log" 2>&1
+grep -Fq "Ma'at native resolution contract: pass" "$fixture/heading.log"
+echo 'PASS accepts display heading changes with consent and scope intact'
+echo 'PASS two positives and twenty causal projection/host/serving/review negatives'
