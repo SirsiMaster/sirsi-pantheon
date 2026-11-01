@@ -1,5 +1,16 @@
 # Changelog — Pantheon PT canon
 
+## 2026-11-01 — v0.24.158 release candidate
+
+- Present typed and legacy diagnostic repair results from the frozen approval item, so the native sheet cannot briefly render a stale-review fallback while sibling state settles. Existing finding freshness, exact argv, project-scope and prelaunch authorization checks remain in force. Add mounted native-sheet coverage for the nil-to-item transition. Source candidate only; installed qualification remains open.
+- Keep the native sheet fixture's AppKit window alive through close and defer sheet/window teardown so timeout and assertion exits clean up safely; production behavior is unchanged.
+- Record the fixture expectation from the sheet content view's `onAppear`, after native presentation, rather than during `@ViewBuilder` construction.
+- Bind the native-resolution source contract to the actual `.sheet(item:)` modifier, typed and legacy frozen handoffs, item payload, both frozen launch authorizers, existing dismissal guards and mounted regression. Extend its inert source mutations for missing item binding, typed/legacy route, payload, authorizer, modifier and legacy dismissal guard, plus a comment-only decoy for the actual view attachment. The fixture copies the production modifier, presentation model and test; no product behavior changes.
+- Preserve Swift interpolation needles literally through AWK via `ENVIRON`, and retain the established scope/control failure diagnostic so existing causal negatives stay aligned.
+- Refs: `docs/ADR-033-REMEDIATION-CATALOG.md`, `docs/stacklab/pantheon-pt/canon/COMPONENT_CATALOG.md`, `macapp/Sources/SirsiMenubar/Views.swift`, `macapp/Sources/SirsiMenubar/ActionReviewSheet.swift`
+- Contract follow-up refs: `scripts/verify-maat-native-resolution-contract.sh`, `scripts/verify-maat-native-resolution-contract.test.sh`, `macapp/Sources/SirsiMenubar/RemediationExecution.swift`, `macapp/Tests/SirsiMenubarTests/DiagnosticRepairPresentationTests.swift`
+- Test follow-up: `macapp/Tests/SirsiMenubarTests/DiagnosticRepairPresentationTests.swift`
+
 ## 2026-11-01 — v0.24.157 release candidate
 
 - Align the memory-relief preview and quit guidance with the footprint-first metric used to rank memory consumers, retaining RSS only when footprint is unavailable.
