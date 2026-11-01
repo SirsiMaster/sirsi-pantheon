@@ -6,6 +6,24 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
     private let head = String(repeating: "a", count: 64)
     private let host = "fixture-mac"
 
+    func testCaseDetailKeepsFullLongWhySeparateFromNonemptyAssessment() {
+        let why = "First paragraph: the diagnostic needs owner review.\n\n" +
+            String(repeating: "This evidence explains the observed condition and the decision boundary. ", count: 8)
+        let detail = maatCaseAssessmentPresentation(assessed: "diagnostic finding", why: why)
+
+        XCTAssertEqual(detail.assessment, "diagnostic finding")
+        XCTAssertEqual(detail.why, why)
+        XCTAssertGreaterThan(detail.why?.count ?? 0, 2 * 80)
+    }
+
+    func testCaseDetailUsesWhyAsAssessmentWhenAssessedIsAbsent() {
+        let why = "The complete retained explanation remains visible."
+        let detail = maatCaseAssessmentPresentation(assessed: "", why: why)
+
+        XCTAssertEqual(detail.assessment, why)
+        XCTAssertNil(detail.why)
+    }
+
     private func screenObject() -> [String: Any] {
         ["schema_version": 1, "feather_weight": 60, "confidence": 1, "gate": "changes",
          "subject": ["kind": "host", "repo": host, "ref": "diagnostic", "head_sha": head],
