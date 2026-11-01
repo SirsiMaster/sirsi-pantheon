@@ -543,9 +543,81 @@ struct ActivityEntry: Codable, Identifiable {
     let command: String
     let when: String
     let result: String
-    enum CodingKeys: String, CodingKey { case title, command, when, result }
+    // Optional and string-backed so old ledger rows decode unchanged and a
+    // future status value remains unknown evidence rather than breaking history.
+    var executionOutcome: ActivityExecutionOutcome? = nil
+    enum CodingKeys: String, CodingKey { case title, command, when, result, executionOutcome }
 
-    var resolution: ActivityResolution { activityResolution(for: result) }
+    var resolution: ActivityResolution { activityResolution(for: result, executionOutcome: executionOutcome) }
+}
+
+struct ActivityExecutionOutcome: Codable, Equatable {
+    let complete: Bool
+    let exitCode: Int32?
+    let structuredStatus: String? // String-backed for forward-compatible, fail-closed decoding.
+    let hasStructuredErrors: Bool
+    let truncated: Bool
+}
+
+struct CapturedRepairActivity: Equatable {
+    let evidence: String
+    let outcome: ActivityExecutionOutcome
+
+    var resolution: ActivityResolution { activityResolution(for: evidence, executionOutcome: outcome) }
+}
+
+let activityEvidenceLimitBytes = 64 * 1024
+let activityAcceptedStructuredStatuses: Set<String> = ["ok", "success"]
+
+func boundedActivityEvidence(_ text: String) -> (text: String, truncated: Bool) {
+    let bytes = Array(text.utf8)
+    guard bytes.count > activityEvidenceLimitBytes else { return (text, false) }
+
+    let marker = "\n\n[Activity receipt truncated at 64 KiB; middle content omitted. Truncated evidence is not accepted as completion.]\n\n"
+    let markerSize = marker.utf8.count
+    let suffixBudget = min(512, max(0, activityEvidenceLimitBytes - markerSize))
+    let prefixBudget = max(0, activityEvidenceLimitBytes - markerSize - suffixBudget)
+
+    var prefixEnd = min(prefixBudget, bytes.count)
+    while prefixEnd > 0,
+          String(data: Data(bytes[0..<prefixEnd]), encoding: .utf8) == nil {
+        prefixEnd -= 1
+    }
+    var suffixStart = max(prefixEnd, bytes.count - suffixBudget)
+    while suffixStart < bytes.count, bytes[suffixStart] & 0xC0 == 0x80 {
+        suffixStart += 1
+    }
+
+    let prefix = String(data: Data(bytes[0..<prefixEnd]), encoding: .utf8) ?? ""
+    let suffix = String(data: Data(bytes[suffixStart..<bytes.count]), encoding: .utf8) ?? ""
+    return (prefix + marker + suffix, true)
+}
+
+func firstMeaningfulActivityLine(_ text: String) -> String {
+    for line in text.split(separator: "\n") {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty { return trimmed }
+    }
+    return "done"
+}
+
+func nonreceiptActivityEvidence(_ text: String) -> String {
+    boundedActivityEvidence(firstMeaningfulActivityLine(text)).text
+}
+
+func capturedRepairActivity(_ receipt: CommandExecution) -> CapturedRepairActivity {
+    let bounded = boundedActivityEvidence(receipt.displayText)
+    let structured = receipt.result
+    return CapturedRepairActivity(
+        evidence: bounded.text,
+        outcome: ActivityExecutionOutcome(
+            complete: receipt.complete,
+            exitCode: receipt.exitCode,
+            structuredStatus: structured?.status,
+            hasStructuredErrors: structured.map { !$0.errors.isEmpty } ?? false,
+            truncated: bounded.truncated
+        )
+    )
 }
 
 // Activity is a user-facing ledger, not a terminal transcript.  An entry must
@@ -584,11 +656,32 @@ enum ActivityResolution: Equatable {
     }
 }
 
-func activityResolution(for result: String) -> ActivityResolution {
+func activityResolution(for result: String, executionOutcome: ActivityExecutionOutcome? = nil) -> ActivityResolution {
+    if let executionOutcome {
+        guard executionOutcome.complete, !executionOutcome.truncated,
+              let exitCode = executionOutcome.exitCode else { return .evidenceOnly }
+        if exitCode != 0 || executionOutcome.structuredStatus == "error" ||
+            executionOutcome.hasStructuredErrors || executionOutcome.structuredStatus == "skipped" {
+            return .maatReview
+        }
+        return activityAcceptedStructuredStatuses.contains(executionOutcome.structuredStatus ?? "") ? .resolved : .evidenceOnly
+    }
+
     let normalized = result.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     if normalized.isEmpty || normalized == "done" ||
         normalized.contains("no readable structured result") ||
-        normalized.contains("no repair is claimed") {
+        normalized.contains("no repair is claimed") ||
+        normalized.contains("[activity receipt truncated at 64 kib;") ||
+        normalized.hasPrefix("capture deadline expired; execution outcome is not confirmed") ||
+        normalized.hasPrefix("cancelled; execution outcome is not confirmed") ||
+        normalized.hasPrefix("output exceeded the shared 4 mib capture budget;") ||
+        normalized.contains("owned child exit is unknown") {
+        return .evidenceOnly
+    }
+    let receiptLines = normalized.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    if !receiptLines.isEmpty && receiptLines.allSatisfy({
+        $0 == "stdout:" || $0 == "stderr:" || $0.hasPrefix("exit status:")
+    }) {
         return .evidenceOnly
     }
     if normalized.contains("error") || normalized.contains("exit status") ||
@@ -1482,9 +1575,10 @@ final class SirsiEngine: ObservableObject {
     }
 
     // recordActivity appends one line to the on-disk ledger and the live list.
-    func recordActivity(title: String, command: String, result: String) {
+    func recordActivity(title: String, command: String, result: String, capturedRepair: CapturedRepairActivity? = nil) {
         let entry = ActivityEntry(title: title, command: command, when: Self.nowStamp(),
-                                  result: Self.firstMeaningful(result))
+                                  result: capturedRepair?.evidence ?? nonreceiptActivityEvidence(result),
+                                  executionOutcome: capturedRepair?.outcome)
         var all = [ActivityEntry]()
         if let data = FileManager.default.contents(atPath: activityPath),
            let existing = try? JSONDecoder().decode([ActivityEntry].self, from: data) {
@@ -1549,11 +1643,7 @@ final class SirsiEngine: ObservableObject {
     }
 
     static func firstMeaningful(_ s: String) -> String {
-        for line in s.split(separator: "\n") {
-            let t = line.trimmingCharacters(in: .whitespaces)
-            if !t.isEmpty { return t }
-        }
-        return "done"
+        firstMeaningfulActivityLine(s)
     }
 
     // resultOK reports whether a command's JSON output signals success — an
