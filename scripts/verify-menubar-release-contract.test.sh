@@ -97,6 +97,21 @@ replace_once '  menubar:\n' '    # decoy runner.name and M1 pin in another job\n
 expect_refusal 'other-job comment decoy'
 
 reset_workflow
+replace_once '      - name: Bind native release to qualified M1 runner' \
+    '      - name: Bind native release to qualified M1 runner\n        if: false'
+expect_refusal 'step-level if false'
+
+reset_workflow
+replace_once '      - name: Bind native release to qualified M1 runner' \
+    '      - name: Bind native release to qualified M1 runner\n        continue-on-error: true'
+expect_refusal 'step-level continue-on-error'
+
+reset_workflow
+replace_once '          PANTHEON_RUNNER_ARCH: ${{ runner.arch }}' \
+    '          PANTHEON_RUNNER_ARCH: ${{ runner.arch }}\n          EXTRA_RUNNER_CONTEXT: ${{ runner.name }}'
+expect_refusal 'extra guard environment'
+
+reset_workflow
 replace_once 'PANTHEON_RUNNER_OS: ${{ runner.os }}' 'PANTHEON_RUNNER_OS: ${{ runner.environment }}'
 expect_refusal 'wrong runner OS context'
 

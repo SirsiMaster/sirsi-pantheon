@@ -99,6 +99,9 @@ jobs:
           bash scripts/verify-maat-native-resolution-contract.sh
           bash scripts/verify-maat-native-resolution-contract.test.sh
 
+      - name: native release M1 runner-binding source fixtures (model-free)
+        run: bash scripts/verify-menubar-release-contract.test.sh
+
       # Gemma resolver guards run on the HOSTED runner (bash + python3 only, no
       # Xcode/MLX): extracted ranking/conf checks plus a whole-program inert
       # lifecycle fixture cover the versioned resolver, including downstream

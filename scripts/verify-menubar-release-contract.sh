@@ -74,9 +74,22 @@ FIRST_STEP_RUN="$(awk '
 FIRST_STEP_RUN_ACTIVE="$(sed '/^[[:space:]]*#/d' <<< "$FIRST_STEP_RUN")"
 require_text '^      - name: Bind native release to qualified M1 runner$' "$FIRST_STEP_ACTIVE" "first_step_m1_binding_guard"
 require_step_line '        run: |' "inline_m1_binding_guard"
-require_step_line '          PANTHEON_RUNNER_NAME: ${{ runner.name }}' "actual_runner_name_context"
-require_step_line '          PANTHEON_RUNNER_OS: ${{ runner.os }}' "actual_runner_os_context"
-require_step_line '          PANTHEON_RUNNER_ARCH: ${{ runner.arch }}' "actual_runner_arch_context"
+STEP_FIELDS="$(awk '/^        [[:alnum:]_-]+:/ { print }' <<< "$FIRST_STEP_ACTIVE")"
+EXPECTED_STEP_FIELDS="$(printf '        env:\n        run: |')"
+if [[ "$STEP_FIELDS" != "$EXPECTED_STEP_FIELDS" ]]; then
+    echo "menubar_release_contract accepted=false unexpected_first_guard_step_field file=${RELEASE_WORKFLOW}" >&2
+    exit 1
+fi
+STEP_ENV_BLOCK="$(awk '
+    /^        env:$/ { in_env = 1; next }
+    in_env && /^        [[:alnum:]_-]+:/ { exit }
+    in_env { print }
+' <<< "$FIRST_STEP_ACTIVE")"
+EXPECTED_STEP_ENV_BLOCK="$(printf '          PANTHEON_RUNNER_NAME: ${{ runner.name }}\n          PANTHEON_RUNNER_OS: ${{ runner.os }}\n          PANTHEON_RUNNER_ARCH: ${{ runner.arch }}')"
+if [[ "$STEP_ENV_BLOCK" != "$EXPECTED_STEP_ENV_BLOCK" ]]; then
+    echo "menubar_release_contract accepted=false unexpected_first_guard_environment file=${RELEASE_WORKFLOW}" >&2
+    exit 1
+fi
 RUN_COMMAND_COUNT="$(awk 'NF && $1 !~ /^#/ { count++ } END { print count + 0 }' <<< "$FIRST_STEP_RUN_ACTIVE")"
 if [[ "$RUN_COMMAND_COUNT" != 8 ]]; then
     echo "menubar_release_contract accepted=false unexpected_first_guard_commands count=${RUN_COMMAND_COUNT}" >&2
