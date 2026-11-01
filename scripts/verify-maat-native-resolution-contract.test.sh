@@ -39,4 +39,11 @@ negative served-file internal/dashboard/ui.go 's.serveEmbedded(w, "ui/maat-histo
 negative next-step internal/dashboard/ui/maat-history.js 'prescribed next step' 'recovery guidance projection missing'
 negative floor internal/dashboard/ui/maat-history.js 'deterministic floor' 'System One floor projection missing'
 negative recovery-level internal/dashboard/ui/maat-history.js 'recovery level' 'three-level recovery projection missing'
-echo 'PASS one positive and eight projection/host/serving negatives'
+negative approved-handoff macapp/Sources/SirsiMenubar/Views.swift 'ActionReviewSheet(title: "Review system repair",' 'reviewed repair handoff or authorization missing'
+negative launch-authorizer macapp/Sources/SirsiMenubar/Views.swift 'authorizeExecution: { approved(repairArgs) }' 'reviewed repair handoff or authorization missing'
+negative reviewed-scope macapp/Sources/SirsiMenubar/Views.swift 'scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) }' 'reviewed repair handoff or authorization missing'
+negative exact-json-argv macapp/Sources/SirsiMenubar/ActionReviewSheet.swift 'JSONEncoder().encode(arguments)' 'review scope or persistent controls missing'
+negative cancel-control macapp/Sources/SirsiMenubar/ActionReviewSheet.swift 'Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)' 'review scope or persistent controls missing'
+negative confirm-control macapp/Sources/SirsiMenubar/ActionReviewSheet.swift 'Button(confirmLabel, action: confirm)' 'review scope or persistent controls missing'
+negative casebook-review-wiring macapp/Sources/SirsiMenubar/Views.swift 'MaatCasebookView(engine: engine)' "native Ma'at Casebook review wiring missing"
+echo 'PASS one positive and fifteen causal projection/host/serving/review negatives'
