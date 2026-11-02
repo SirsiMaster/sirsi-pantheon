@@ -254,7 +254,8 @@ func appendHistoryIndexWith(rootFD int, id string, at time.Time, digest string, 
 	if err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return fmt.Errorf("Trash receipt history is busy; retry the operation: %w", err)
 	}
-	defer unix.Flock(fd, unix.LOCK_UN)
+	// Darwin releases flock on the last close; this deferred close keeps the
+	// exclusive lock through tail repair, row append and both syncs.
 	if fault != nil {
 		if err := fault("index"); err != nil {
 			return err
@@ -313,10 +314,6 @@ func ensureHistoryIndexLineBoundary(fd int, fault func(string) error, write func
 		return fmt.Errorf("persist Trash receipt history row boundary: %w", err)
 	}
 	return nil
-}
-
-func writeAll(fd int, p []byte) error {
-	return writeAllWith(fd, p, unix.Write)
 }
 
 func writeAllWith(fd int, p []byte, write func(int, []byte) (int, error)) error {

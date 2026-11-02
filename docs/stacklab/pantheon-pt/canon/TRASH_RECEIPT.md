@@ -1,9 +1,17 @@
 # Review-bound native Empty Trash correction
 
-Status: current child is source-only; its tests, build, race, independent review
-and installed UX qualification are unrun. b966f2c9 compiled in Main's actual
-pr42NX qualification but failed three cursor/coverage tests; race and Swift did
-not run. That immutable failure is not acceptance of its stateless design.
+Status (durable-history qualification at source 7960a495): Go normal and race
+runs on exact source 4629f327 passed; all Go blobs are unchanged at 7960a495.
+Each run reported 29 top-level tests and 93 passing test events across two
+packages (normal 40.016s; race 120.613s). At 7960a495, strict-concurrency Swift
+build passed and XCTest reported 18 passes, but the qualification wrapper failed
+afterward because its expected XML was missing; the native qualification is
+incomplete and independent review is pending. Release qualification and
+installed-history verification remain unrun.
+
+Historical browse qualification: b966f2c9 compiled in Main's actual pr42NX
+qualification but failed three cursor/coverage tests; race and Swift did not
+run. That immutable failure is not acceptance of its stateless design.
 Main's subsequent 0701770c normal/race Go runs passed and Swift built, but one
 fixture failed because APFS refused creation of an invalid UTF-8 name. Its
 minimal child tests inert raw bytes through the exact production name decoder;
@@ -208,7 +216,22 @@ original operation receipt and deleted prefix. UI branding/layout remains the
 incumbent black/emerald/gold native surface, with explicit loading/error/empty/
 browsing/ready/applying/result states.
 
-## Qualification handoff (not executed by author)
+## Qualification status and remaining browse handoff
+
+### Durable-history qualification at source 7960a495
+
+The Go results above are pinned to exact source 4629f327; every Go source and
+test blob is identical at 7960a495. Normal completed in 40.016s and race in
+120.613s; each reported 29 top-level tests and 93 passing test events across two
+packages. This qualifies only the executed Go package inventory.
+
+For exact source 7960a495, the strict-concurrency Swift build passed and the
+test output reported 18 XCTest passes. The enclosing qualification wrapper then
+failed because its expected XML output was missing. Treat that native attempt as
+incomplete, not accepted; independent review is pending. Release qualification
+and installed Empty Trash history verification remain unrun.
+
+### Remaining browse qualification handoff
 
 - Go: `./internal/trashreceipt`, selector `^TestTrash(Receipt|Browse|Oversized|Selected|Selection)`.
   Includes >1024 paged inventory, oversized-folder descendant selection,
