@@ -9,6 +9,10 @@ afterward because its expected XML was missing; the native qualification is
 incomplete and independent review is pending. Release qualification and
 installed-history verification remain unrun.
 
+Current source is successor 44685c22. It removes the explicit flock unlock
+(Darwin releases it when the last descriptor closes) and an unused write
+wrapper; no Go test/build was rerun on this successor.
+
 Historical browse qualification: b966f2c9 compiled in Main's actual pr42NX
 qualification but failed three cursor/coverage tests; race and Swift did not
 run. That immutable failure is not acceptance of its stateless design.
@@ -221,9 +225,13 @@ browsing/ready/applying/result states.
 ### Durable-history qualification at source 7960a495
 
 The Go results above are pinned to exact source 4629f327; every Go source and
-test blob is identical at 7960a495. Normal completed in 40.016s and race in
+test blob was identical at 7960a495. Normal completed in 40.016s and race in
 120.613s; each reported 29 top-level tests and 93 passing test events across two
 packages. This qualifies only the executed Go package inventory.
+
+Successor 44685c22 changes only the Darwin receipt-journal Go blob for the
+last-close lock release and unused-wrapper cleanup. Those test results were not
+rerun on 44685c22.
 
 For exact source 7960a495, the strict-concurrency Swift build passed and the
 test output reported 18 XCTest passes. The enclosing qualification wrapper then
