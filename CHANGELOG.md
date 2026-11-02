@@ -6,6 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.161] — 2026-11-01
+
+- The review-bound Empty Trash apply path now persists the exact reviewed manifest before its first unlink, records each durable attempt and known result, and exposes bounded newest-first history plus exact operation detail through `sirsi anubis empty-trash history`. Existing Report v1 fields and explicit confirmation remain unchanged; unfinished or damaged records stay visible as unknown evidence. Receipts do not restore permanently deleted bytes or claim Trash namespace durability. Independent cumulative source review accepted the final correction; installed-history verification remains separate.
+
+- History file opens now refuse blocking/special-file substitutions, and index lock contention fails before deletion with retry guidance. A partial crash-left index tail is isolated with a synced newline boundary before a later row is appended; failure to persist that boundary prevents deletion. Corrupt attempt indexes and terminal counts are surfaced as unknown history instead of panicking. Failure fixtures distinguish a partially written attempt (unknown outcome) from zero progress (not finalized).
+
+- Manifest integrity bookkeeping stays in the Darwin parser and is recomputed from a validated reviewed manifest for history-index comparison; the shared history DTO and wire format remain unchanged.
+
+- Qualification record: Go normal/race passed for the durable-history package inventory on source 4629f327: 29 top-level tests and 93 passing events across two packages in each run. At 7960a495, the strict-concurrency native build passed and XCTest reported 18 passes, but its wrapper failed on missing XML. Later exact-head e1d56cbe protected CI passed; earlier results remain scoped to their executed source and do not prove installed-history behavior.
+
+- The native history fixture propagates JSON encoding errors through XCTest's throwing test method.
+
+- Refs: `docs/stacklab/pantheon-pt/canon/TRASH_RECEIPT.md`, `contracts/stacklab/anubis-trash-receipt-v1.json`, `docs/ADR-033-REMEDIATION-CATALOG.md`
+
 ## [0.24.160] — 2026-11-01
 
 - Native structured command results now show complete, selectable error details with the existing summary, evidence, and recovery actions.
