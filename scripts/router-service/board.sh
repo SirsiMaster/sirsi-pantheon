@@ -74,9 +74,19 @@ need_job_sa() {
     { echo "board: set JOB_SA=<name>@$PROJECT.iam.gserviceaccount.com (the mint job's principal)" >&2; exit 2; }
 }
 
+# has_adder_binding reads a secret IAM policy on stdin. Only an UNCONDITIONAL binding counts: a
+# conditional one may not apply when the job runs, and evaluating conditions here would be a guess.
+has_adder_binding() {
+  jq -e --arg m "serviceAccount:$1" \
+    'any(.bindings[]?; .role=="roles/secretmanager.secretVersionAdder" and (.members|index($m)) and (.condition == null))' >/dev/null
+}
+
 case "${1:-}" in
 verify)
   verify
+  ;;
+--has-adder-binding)
+  has_adder_binding "${2:?usage: board.sh --has-adder-binding SA < policy.json}"
   ;;
 provision)
   run $G services enable iap.googleapis.com
@@ -90,9 +100,8 @@ provision)
   ;;
 mint)
   need_job_sa
-  [ "${DRY_RUN:-0}" = 1 ] || $G secrets get-iam-policy "$SECRET" --format=json | jq -e --arg m "serviceAccount:$JOB_SA" \
-    'any(.bindings[]?; .role=="roles/secretmanager.secretVersionAdder" and (.members|index($m)))' >/dev/null ||
-    { echo "board: $JOB_SA lacks secretVersionAdder on $SECRET (run board.sh provision)" >&2; exit 1; }
+  [ "${DRY_RUN:-0}" = 1 ] || $G secrets get-iam-policy "$SECRET" --format=json | has_adder_binding "$JOB_SA" ||
+    { echo "board: $JOB_SA lacks an unconditional secretVersionAdder binding on $SECRET (run board.sh provision)" >&2; exit 1; }
   # Same shape as migrate-job.sh: only VPC hosts reach the private-IP ledger. The job writes the new
   # token as a secret version itself (publishMintedRouterToken) and prints only its id and scope.
   if [ "${DRY_RUN:-0}" = 1 ]; then IMAGE="<dry-run:router-image>"; else
