@@ -144,6 +144,7 @@ type Store interface {
 	Satisfy(reqID string) error
 	Send(from, to, title, msgType, instructions string) (string, error)
 	SendGuarded(r SendReq) (string, bool, error)
+	RecipientLoad(agent string) (RecipientLoad, error)
 	// ReopenItem returns a closed item to open, preserving its close result in the
 	// body (inverse of CloseItem). Authorization is dispatch's.
 	ReopenItem(id, note string) error

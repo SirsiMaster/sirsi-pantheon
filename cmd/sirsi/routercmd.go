@@ -255,6 +255,7 @@ type routerSendJSON struct {
 	From    string `json:"from"`
 	To      string `json:"to"`
 	Deduped bool   `json:"deduped"`
+	Warning string `json:"warning,omitempty"`
 }
 
 func newRouterSendCmd(load func(string) (string, error), send routerSendOperation) *cobra.Command {
@@ -306,10 +307,13 @@ cutover live the store row IS the record.
 				return err
 			}
 			if JsonOutput {
-				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(routerSendJSON{ID: res.ID, From: from, To: res.To, Deduped: res.Deduped}); err != nil {
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(routerSendJSON{ID: res.ID, From: from, To: res.To, Deduped: res.Deduped, Warning: res.Warning}); err != nil {
 					return fmt.Errorf("router send committed item %s but JSON response write failed; reconcile by ID and do not retry: %w", res.ID, err)
 				}
 				return nil
+			}
+			if res.Warning != "" {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  ⚠ %s\n", res.Warning)
 			}
 			if res.Deduped {
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  Deduped %s → %s: %s (same logical send this window — nothing appended)\n", from, to, res.ID); err != nil {

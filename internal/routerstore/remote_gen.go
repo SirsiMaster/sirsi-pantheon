@@ -300,6 +300,11 @@ func (rs *RemoteStore) SendGuarded(r SendReq) (string, bool, error) {
 	err := rs.call("SendGuarded", []any{r}, &o0, &o1)
 	return o0, o1, err
 }
+func (rs *RemoteStore) RecipientLoad(agent string) (RecipientLoad, error) {
+	var o0 RecipientLoad
+	err := rs.call("RecipientLoad", []any{agent}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) ReopenItem(id, note string) error {
 	return rs.call("ReopenItem", []any{id, note})
 }

@@ -112,7 +112,7 @@ var ruleOfRaExempt = map[string]bool{
 	"Heartbeat": true, "RegisterAgent": true, "ListThreads": true, "GetThreadRecord": true, "AdoptTokenMachineID": true,
 	"Get": true, "Inbox": true, "ListAll": true, "ListPage": true, "ListTasks": true, "GetTask": true, "GetAgent": true, "ListAgents": true,
 	"GetState": true, "Counters": true, "Breakers": true, "Render": true, "ListWakeEvents": true, "ListIdentifiers": true,
-	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "OperationalAgents": true,
+	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "RecipientLoad": true, "OperationalAgents": true,
 	"Wait": true, "ListenNotify": true, "NotifyAgent": true, "NotifyPath": true, "ExportItem": true, "ExportMarkdown": true,
 	"ForceOwner": true, "AudienceSince": true, "TaskLeaseEventsSince": true,
 }

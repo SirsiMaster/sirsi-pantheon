@@ -194,6 +194,20 @@ func (s *SQLiteStore) Send(from, to, title, msgType, instructions string) (strin
 	if err := validateMessageType(msgType); err != nil {
 		return "", err
 	}
+	// Send is servable over RPC, so it honors the same recipient limit as
+	// SendGuarded; without this any lane token could route around it.
+	// ponytail: read outside the insert tx, so a burst can overshoot the limit by
+	// its concurrency; the singleton escalation lives on the SendGuarded path.
+	if from != "routerstore" {
+		load, err := s.RecipientLoad(to)
+		if err != nil {
+			return "", err
+		}
+		if load.saturated() {
+			return "", fmt.Errorf("%w: %s has %d unacknowledged items and %d stalled tasks (limit %d)",
+				ErrRecipientSaturated, to, load.Unacked, load.Stalled, RecipientHaltAt)
+		}
+	}
 	now := s.clock()
 	id := fmt.Sprintf("%s-%s-%s-%s", now.Format("20060102-150405"), slugify(from), slugify(to), slugify(title))
 	it := Item{
