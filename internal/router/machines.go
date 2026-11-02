@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,4 +78,34 @@ func parseMachines(b []byte) ([]Machine, error) {
 		return nil, errors.New("machine registry: no machines")
 	}
 	return f.Machines, nil
+}
+
+// tailnetRange is Tailscale's CGNAT address block; every node address falls inside it.
+var tailnetRange = netip.MustParsePrefix("100.64.0.0/10")
+
+// machineTailnetDomains renders each admitted Mac's Tailscale address as codex
+// permission-table entries ("ip"="allow",...). It fails closed on an address that
+// is not a tailnet IPv4 or is claimed twice: a bad registry record must never
+// widen a lane's sandbox or break the table's syntax.
+func machineTailnetDomains(ms []Machine) (string, error) {
+	seen := map[netip.Addr]string{}
+	var entries []string
+	for _, m := range ms {
+		if m.Tailscale == "" {
+			continue
+		}
+		a, err := netip.ParseAddr(m.Tailscale)
+		if err != nil || !a.Is4() || !tailnetRange.Contains(a) {
+			return "", fmt.Errorf("machine %q tailscale %q is not a tailnet IPv4 address", m.ID, m.Tailscale)
+		}
+		if other, dup := seen[a]; dup {
+			return "", fmt.Errorf("machines %q and %q both claim tailscale %s", other, m.ID, a)
+		}
+		seen[a] = m.ID
+		entries = append(entries, fmt.Sprintf("%q=\"allow\"", a.String()))
+	}
+	if len(entries) == 0 {
+		return "", errors.New("machine registry lists no tailscale addresses")
+	}
+	return strings.Join(entries, ","), nil
 }
