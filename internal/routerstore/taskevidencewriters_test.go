@@ -185,7 +185,7 @@ func TestTaskEvidenceOrdinaryUpdateKeepsStatusAndLeaseRefusals(t *testing.T) {
 						t.Fatal("renewal did not land", err, n)
 					}
 				case "terminal":
-					if err := peer.CompleteTaskLease(req.Manifest.Agent, "a", "secret-expired-lease", "/terminal/proof"); err != nil {
+					if err := peer.CompleteTaskLease(req.Manifest.Agent, "a", "secret-expired-lease", "pr:SirsiMaster/fixture#12"); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -277,7 +277,7 @@ func TestTaskEvidenceLeaseTransitionsBeforeRelocation(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "complete":
-				if err := peer.CompleteTaskLease(req.Manifest.Agent, "a", "secret-expired-lease", "/terminal/proof"); err != nil {
+				if err := peer.CompleteTaskLease(req.Manifest.Agent, "a", "secret-expired-lease", "pr:SirsiMaster/fixture#12"); err != nil {
 					t.Fatal(err)
 				}
 			}

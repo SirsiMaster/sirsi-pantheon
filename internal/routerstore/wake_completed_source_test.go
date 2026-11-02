@@ -18,7 +18,7 @@ func legacyDoneWake(t *testing.T, s *SQLiteStore, status string) WakeEvent {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.CompleteTaskLease("lane", "old", l.Token, "canonical://real-old-result"); err != nil {
+	if err = s.CompleteTaskLease("lane", "old", l.Token, "pr:SirsiMaster/fixture#22"); err != nil {
 		t.Fatal(err)
 	}
 	expires := s.clock().UTC().Add(-time.Minute).Format(time.RFC3339)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ var (
 	taskLeaseWorker, taskLeaseThread, taskLeaseToken, taskLeaseResult, taskLeaseReason               string
 	taskLeaseTTL                                                                                     time.Duration
 	taskReclaimDryRun                                                                                bool
+	taskRecheckOlderThan                                                                             time.Duration
 )
 
 var routerLedgerCmd = &cobra.Command{
@@ -164,7 +166,72 @@ var routerTaskCompleteCmd = &cobra.Command{
 			return err
 		}
 		defer f.Close()
-		return f.Store().CompleteTaskLease(args[0], args[1], taskLeaseToken, taskLeaseResult)
+		receipt, err := resolveReceipt(taskLeaseResult)
+		if err != nil {
+			return err
+		}
+		return f.Store().CompleteTaskLease(args[0], args[1], taskLeaseToken, receipt)
+	},
+}
+
+// resolveReceipt is a convenience only: "maat:<run-dir>" naming a local
+// ~/.sirsi/evidence/maat-runs/<run-dir> becomes "maat:<its reservation id>".
+// Proof never comes from this file — the router checks the reservation in its
+// own Ma'at ledger. Everything else passes through unchanged.
+func resolveReceipt(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	runDir, ok := strings.CutPrefix(raw, "maat:")
+	if !ok || runDir == "" || strings.ContainsAny(runDir, `/\`) || runDir == "." || runDir == ".." {
+		return raw, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return raw, nil
+	}
+	b, err := os.ReadFile(filepath.Join(home, ".sirsi", "evidence", "maat-runs", runDir, "terminal.json"))
+	if err != nil {
+		return raw, nil // not a run dir: treat it as a reservation id
+	}
+	var term struct {
+		Admission string `json:"admission"`
+	}
+	if json.Unmarshal(b, &term) != nil || term.Admission == "" {
+		return "", fmt.Errorf("maat receipt: run %s recorded no reservation", runDir)
+	}
+	return "maat:" + term.Admission, nil
+}
+
+// receiptRecheckAge is how stale a verification must be before the supervisor re-checks it.
+const receiptRecheckAge = 24 * time.Hour
+
+var routerTaskRecheckReceiptsCmd = &cobra.Command{
+	Use:   "recheck-receipts",
+	Args:  cobra.NoArgs,
+	Short: "Re-verify done tasks' PR/CI/tag receipts; reopen any now proven false",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		found, err := f.Store().RecheckTaskReceipts(taskRecheckOlderThan)
+		if err != nil {
+			return err
+		}
+		if ledgerJSON {
+			return json.NewEncoder(os.Stdout).Encode(found)
+		}
+		for _, r := range found {
+			state := "still valid"
+			switch {
+			case r.Reopened:
+				state = "REOPENED: " + r.Error
+			case r.Error != "":
+				state = "unverifiable (left done): " + r.Error
+			}
+			fmt.Printf("%s/%s  %s  %s\n", r.Agent, r.TaskID, r.Receipt, state)
+		}
+		return nil
 	},
 }
 
@@ -462,11 +529,15 @@ func init() {
 		c.Flags().StringVar(&taskLeaseToken, "lease", "", "Fenced task lease token (required)")
 	}
 	routerTaskRenewCmd.Flags().DurationVar(&taskLeaseTTL, "ttl", 10*time.Minute, "Lease duration")
-	routerTaskCompleteCmd.Flags().StringVar(&taskLeaseResult, "result-ref", "", "Evidence/proof reference (required)")
+	routerTaskCompleteCmd.Flags().StringVar(&taskLeaseResult, "receipt", "", "Completion receipt the router verifies: pr:owner/repo#N | ci:owner/repo#RUN@SHA | tag:owner/repo@TAG | maat:RESERVATION-ID (required)")
+	routerTaskCompleteCmd.Flags().StringVar(&taskLeaseResult, "result-ref", "", "Deprecated alias of --receipt; free text is refused")
+	_ = routerTaskCompleteCmd.Flags().MarkDeprecated("result-ref", "use --receipt; only a verifiable receipt completes a task")
+	routerTaskRecheckReceiptsCmd.Flags().DurationVar(&taskRecheckOlderThan, "older-than", 24*time.Hour, "Re-verify receipts last checked longer ago than this")
+	routerTaskRecheckReceiptsCmd.Flags().BoolVar(&ledgerJSON, "json", false, "Emit JSON")
 	routerTaskReleaseCmd.Flags().StringVar(&taskLeaseReason, "reason", "", "Recoverable failure reason")
 	routerTaskReclaimExpiredCmd.Flags().BoolVar(&taskReclaimDryRun, "dry-run", false, "Report what would be reclaimed without writing")
 	routerTaskReclaimExpiredCmd.Flags().BoolVar(&ledgerJSON, "json", false, "Emit JSON")
 	routerTaskWhyCmd.Flags().BoolVar(&taskWhyJSON, "json", false, "Emit JSON")
-	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd, routerTaskReclaimExpiredCmd, routerTaskResetAttemptsCmd, routerTaskWhyCmd)
+	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd, routerTaskReclaimExpiredCmd, routerTaskRecheckReceiptsCmd, routerTaskResetAttemptsCmd, routerTaskWhyCmd)
 	routerCmd.AddCommand(routerLedgerCmd, routerTaskCmd, routerDependCmd)
 }

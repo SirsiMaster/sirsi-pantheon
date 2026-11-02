@@ -117,7 +117,7 @@ func TestCompletedTaskDependencyBecomesRunnableClaimableAndWoken(t *testing.T) {
 	if lease.TaskID != "A" {
 		t.Fatalf("claimed %s", lease.TaskID)
 	}
-	if ifErr15 := s.CompleteTaskLease("codex-home", "A", lease.Token, "proof://A"); ifErr15 != nil {
+	if ifErr15 := s.CompleteTaskLease("codex-home", "A", lease.Token, "pr:SirsiMaster/fixture#3"); ifErr15 != nil {
 		t.Fatal(ifErr15)
 	}
 	r, err := s.RunnableFor("codex-home")
