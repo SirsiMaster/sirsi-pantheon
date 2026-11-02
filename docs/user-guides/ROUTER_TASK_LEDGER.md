@@ -86,7 +86,7 @@ sirsi router task complete <agent> <task-id> --lease <token> --receipt pr:SirsiM
 | `pr:owner/repo#N` | GitHub says the PR is merged and its merge commit is on the default branch |
 | `ci:owner/repo#RUN@SHA` | the Actions run finished `success`, on exactly that 40-character commit |
 | `tag:owner/repo@TAG` | the tag exists; every check run on its commit (all pages) finished, none failed, and at least one succeeded — skipped/neutral alone is not enough |
-| `maat:RESERVATION-ID` | the router's own Ma'at ledger: the reservation exists, the task's agent held it, it was released, and the release recorded exit 0. `maat:<run-dir>` naming a local `~/.sirsi/evidence/maat-runs/<run-dir>` is translated to its reservation id for convenience; the file is never the proof |
+| `maat:RESERVATION-ID` | the router's own Ma'at ledger shows that a host-token holder released, with exit 0, a reservation held under the task agent's name. **Not proof the run happened**: the exit code is what the releaser reported, and any host token can release in an agent's name (scoped cloud tokens cannot reserve or release). `maat:<run-dir>` naming a local `~/.sirsi/evidence/maat-runs/<run-dir>` is translated to its reservation id for convenience; the file is never the proof |
 
 - **Bound.** Repos must belong to an allowed GitHub owner (`SirsiMaster` by
   default, `routerstore.ReceiptRepoOwners`); empty, `.` and `..` path segments are

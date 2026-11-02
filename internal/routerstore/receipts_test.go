@@ -176,6 +176,14 @@ func TestReceiptBinding(t *testing.T) {
 	if err := s.CompleteTaskLease("lane", "d", claimed(t, s, "lane", "d"), run); !errors.Is(err, ErrReceiptInvalid) {
 		t.Fatalf("reused Ma'at run: %v, want invalid", err)
 	}
+	// The uniqueness scan ran behind the shared lock row (PostgreSQL also takes
+	// FOR UPDATE on it; the cross-replica race itself is covered by review).
+	if _, ok, _ := s.GetState(receiptLockKey); !ok {
+		t.Fatal("receipt lock row was not taken")
+	}
+	if err := s.SetState(receiptLockKey, "x"); err == nil {
+		t.Fatal("generic SetState wrote the receipt lock row")
+	}
 }
 
 func TestNoVerifierFailsClosed(t *testing.T) {

@@ -217,7 +217,7 @@ func (s *SQLiteStore) CompleteTaskLease(agent, taskID, token, resultRef string) 
 	if n, _ := res.RowsAffected(); n != 1 {
 		return ErrLeaseInvalid
 	}
-	if err = putReceiptTx(tx, agent, taskID, receipt); err != nil {
+	if err = s.putReceiptTx(tx, agent, taskID, receipt); err != nil {
 		return err
 	}
 	return tx.Commit()

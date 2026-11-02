@@ -6,8 +6,11 @@ package routerstore
 //	pr:owner/repo#N             GitHub says merged; merge commit is on the default branch
 //	ci:owner/repo#RUN@SHA       the Actions run concluded success on exactly SHA
 //	tag:owner/repo@TAG          the tag exists on origin; its commit has a passing CI check
-//	maat:RESERVATION-ID         the router's own Ma'at ledger: the task's agent held it,
-//	                            it was released, and the release recorded exit 0
+//	maat:RESERVATION-ID         the router's own Ma'at ledger records that a host-token
+//	                            holder released, with exit 0, a reservation held under the
+//	                            task agent's name. NOT proof the run happened: the exit code
+//	                            is what the releaser reported. Scoped cloud tokens cannot
+//	                            reserve or release.
 //
 // Repos are bound to ReceiptRepoOwners and a receipt proves one task only.
 // Owner sign-off is not a receipt string; it is CompleteTaskByOwner, which is
@@ -402,18 +405,34 @@ func (s *SQLiteStore) ownerTerminal(agent, taskID, actor, reason, status string)
 		return fmt.Errorf("%w: %s/%s is missing or already terminal", ErrNotFound, agent, taskID)
 	}
 	if status == "done" {
-		if err = putReceiptTx(tx, agent, taskID, Receipt{Kind: "owner", Value: actor, Tier: "owner", VerifiedAt: now.Format(time.RFC3339), Actor: actor, Reason: reason}); err != nil {
+		if err = s.putReceiptTx(tx, agent, taskID, Receipt{Kind: "owner", Value: actor, Tier: "owner", VerifiedAt: now.Format(time.RFC3339), Actor: actor, Reason: reason}); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
 }
 
+// receiptLockKey is the row every receipt uniqueness check locks first. It is
+// outside receiptStatePrefix so receipt scans never see it.
+const receiptLockKey = "task-receipt-lock"
+
 // putReceiptTx records the receipt beside its task. A pr/ci/tag/maat receipt
 // proves one task: the same receipt recorded for any other task is refused.
-func putReceiptTx(tx *txHandle, agent, taskID string, r Receipt) error {
+func (s *SQLiteStore) putReceiptTx(tx *txHandle, agent, taskID string, r Receipt) error {
 	key := receiptKey(agent, taskID)
 	if r.Kind != "owner" {
+		// Serialize scan+insert across service replicas. Under PostgreSQL READ
+		// COMMITTED two completions naming the same receipt would otherwise both
+		// see "unused" and both commit; SQLite's BEGIN IMMEDIATE already serializes.
+		if _, err := tx.Exec(`INSERT INTO state(key,value) VALUES(?,'') ON CONFLICT(key) DO NOTHING;`, receiptLockKey); err != nil {
+			return fmt.Errorf("routerstore: receipt lock: %w", err)
+		}
+		if s.dialect().name == "postgres" {
+			var k string
+			if err := tx.QueryRow(`SELECT key FROM state WHERE key=? FOR UPDATE;`, receiptLockKey).Scan(&k); err != nil {
+				return fmt.Errorf("routerstore: receipt lock: %w", err)
+			}
+		}
 		// ponytail: O(receipts) scan inside the tx; add an indexed receipt column if the ledger grows large.
 		rows, err := tx.Query(`SELECT key, value FROM state WHERE key LIKE ? AND key <> ?;`, receiptStatePrefix+"%", key)
 		if err != nil {
