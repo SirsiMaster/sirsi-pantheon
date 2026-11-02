@@ -31,7 +31,7 @@ func TestClassifyLaneNewFencedCompletionResolvesOnlyOlderFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	now = now.Add(time.Second)
-	if err := s.CompleteTaskLease("codex-home", "proof", lease.Token, "canonical://actual-result"); err != nil {
+	if err := s.CompleteTaskLease("codex-home", "proof", lease.Token, "pr:SirsiMaster/fixture#8"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.AddTask(Task{Agent: "codex-home", TaskID: "remaining", Subject: "remaining work"}); err != nil {
@@ -188,7 +188,7 @@ func TestClassifyLaneIntegrityFailureStillBlocksRunnableLane(t *testing.T) {
 	if err != nil || state.Classification != LaneWorking || state.CompletionIntegrityFailures == 0 {
 		t.Fatalf("historical integrity debt hid live fenced work: %+v %v", state, err)
 	}
-	if err := s.CompleteTaskLease("codex-home", "work", lease.Token, "canonical://live-work"); err != nil {
+	if err := s.CompleteTaskLease("codex-home", "work", lease.Token, "pr:SirsiMaster/fixture#9"); err != nil {
 		t.Fatal(err)
 	}
 	state, err = s.ClassifyLane("codex-home", true, time.Minute)

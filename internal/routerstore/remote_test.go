@@ -152,7 +152,7 @@ func TestSentinelsRoundTrip(t *testing.T) {
 	all := []error{ErrTaskResumeInput, ErrNotComplete, ErrBreakerOpen, ErrOverQuota, ErrRecipientSaturated, ErrIdentifierTaken, ErrNoWork, ErrLanePaused,
 		ErrNoClaimableTask, ErrLeaseInvalid, ErrTerminal, ErrBudgetExceeded, ErrReasonRequired,
 		ErrIncompleteEvidence, ErrNotFound, ErrAlreadyClosed, ErrConcurrentTaskUpdate, ErrTaskExists,
-		ErrSessionUnknown, ErrSessionRevoked, ErrNotOwner, ErrTokenUnknown, ErrTokenRevoked, ErrHostMismatch, ErrServiceUnavailable, ErrUnregistered, ErrThreadUnknown, ErrThreadAuthority, ErrWorkerAnswers}
+		ErrSessionUnknown, ErrSessionRevoked, ErrNotOwner, ErrTokenUnknown, ErrTokenRevoked, ErrHostMismatch, ErrServiceUnavailable, ErrUnregistered, ErrThreadUnknown, ErrThreadAuthority, ErrWorkerAnswers, ErrReceiptInvalid, ErrReceiptUnverifiable}
 	if len(all) != len(sentinelErrors) {
 		t.Fatalf("sentinel table has %d entries, package exports %d", len(sentinelErrors), len(all))
 	}

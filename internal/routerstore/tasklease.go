@@ -193,17 +193,34 @@ func (s *SQLiteStore) RenewTaskLease(agent, taskID, token string, ttl time.Durat
 		now.Add(ttl).Format(time.RFC3339), now.Format(time.RFC3339))
 }
 
-// CompleteTaskLease records evidence and completes the task under the live
-// fence. An empty result reference is refused: completion must point at proof.
+// CompleteTaskLease completes the task under the live fence, and only on a
+// receipt the router verifies itself (receipts.go). Free text is refused.
 func (s *SQLiteStore) CompleteTaskLease(agent, taskID, token, resultRef string) error {
-	resultRef = strings.TrimSpace(resultRef)
-	if resultRef == "" {
-		return fmt.Errorf("routerstore: task completion evidence reference is required")
+	if strings.TrimSpace(resultRef) == "" {
+		return fmt.Errorf("routerstore: task completion receipt is required (%s)", receipts)
 	}
 	now := s.clock().UTC()
-	return s.taskLeaseUpdate(agent, taskID, token,
-		`UPDATE tasks SET status='done',result_ref=?,lease_token='',lease_expires='',claimed_by='',thread_id='',updated=? WHERE agent=? AND task_id=?`,
-		resultRef, now.Format(time.RFC3339))
+	receipt, err := s.verifyReceipt(agent, resultRef, now)
+	if err != nil {
+		return err
+	}
+	tx, err := s.beginImmediate()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.Exec(`UPDATE tasks SET status='done',result_ref=?,lease_token='',lease_expires='',claimed_by='',thread_id='',updated=? WHERE agent=? AND task_id=?`+taskLeaseFence+`;`,
+		receipt.String(), now.Format(time.RFC3339), agent, taskID, token, now.Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("routerstore: task lease update: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return ErrLeaseInvalid
+	}
+	if err = s.putReceiptTx(tx, agent, taskID, receipt); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ReleaseTaskLease returns a live task to pending after a recoverable failure.
