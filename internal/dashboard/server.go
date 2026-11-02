@@ -40,7 +40,11 @@ type Config struct {
 	// same console only to signed-in tailnet users in TailnetDomains (default
 	// sirsi.ai). It is the sole target of `tailscale serve`; the keyboard port
 	// never faces the tailnet.
-	TailnetPort    int
+	TailnetPort int
+	// TailnetSocket serves the same entrance on a Unix socket (0600, private
+	// directory) instead of a port, so only this user and tailscaled can reach
+	// the handler that trusts the identity header. Exclusive with TailnetPort.
+	TailnetSocket  string
 	TailnetDomains []string
 	// Macs lists the Mac consoles a hosted board links to (name → https URL),
 	// for the Mac picker and the offline fallback. The board never calls them.
@@ -299,6 +303,13 @@ func (s *Server) Start() error {
 		return nil
 	}
 
+	tailnet := !s.cfg.CloudBoard && (s.cfg.TailnetPort != 0 || s.cfg.TailnetSocket != "")
+	if tailnet {
+		if err := tailnetConfigErr(s.cfg); err != nil {
+			return fmt.Errorf("dashboard: %w", err)
+		}
+	}
+
 	unlock := func() {}
 	if !s.cfg.CloudBoard {
 		var err error
@@ -310,6 +321,16 @@ func (s *Server) Start() error {
 	if err != nil {
 		unlock()
 		return fmt.Errorf("dashboard: bind %s: %w", s.srv.Addr, err)
+	}
+	// The tailnet entrance is bound here, before anything serves: unlike the
+	// alias ports, a console asked to face the tailnet must not start without it.
+	var tl net.Listener
+	if tailnet {
+		if tl, err = listenTailnet(s.cfg); err != nil {
+			_ = listener.Close()
+			unlock()
+			return fmt.Errorf("dashboard: tailnet entrance: %w", err)
+		}
 	}
 	s.unlock = unlock
 
@@ -327,8 +348,14 @@ func (s *Server) Start() error {
 		}
 		s.serveAlt(p, s.handler)
 	}
-	if s.cfg.TailnetPort != 0 && !s.cfg.CloudBoard {
-		s.serveAlt(s.cfg.TailnetPort, tailnetOnly(s.handler, s.cfg.TailnetDomains))
+	if tl != nil {
+		t := &http.Server{Handler: tailnetOnly(s.handler, s.cfg.TailnetDomains, s.cfg.TailnetSocket == ""), ReadTimeout: 10 * time.Second}
+		s.alt = append(s.alt, t)
+		go func() {
+			if err := t.Serve(tl); err != nil && err != http.ErrServerClosed {
+				fmt.Printf("dashboard: tailnet entrance: %v\n", err)
+			}
+		}()
 	}
 
 	s.running = true
