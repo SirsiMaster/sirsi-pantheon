@@ -2,11 +2,14 @@
 # Hosted router board (Cloud Run service sirsi-router-board): the owner's live
 # router console, readable from any device, behind Google sign-in limited to
 # sirsi.ai accounts (IAP). It reads the ledger through the router service with
-# a read-only @observer token; no Mac builds or serves it.
+# an @observer token that also carries @ledger-editor: the signed-in account may
+# close, convert and reassign items and add, relabel and reassign tasks, each
+# recorded as board:<email>. It cannot send, delete, or hold another lane's
+# task lease. No Mac builds or serves it.
 #
 #   board.sh provision   one-time: service account, token secret, IAP binding target
 #   JOB_SA=<sa> board.sh provision|mint   (the mint principal is always explicit)
-#   board.sh mint        one-time (and on rotation): mint the @observer token straight
+#   board.sh mint        one-time (and on rotation): mint the @observer+@ledger-editor token straight
 #                        into Secret Manager from a Cloud Run job on the service VPC;
 #                        the plaintext is never printed or seen by anyone
 #   board.sh deploy      build from committed source and deploy (repeatable); ends with verify
@@ -109,7 +112,7 @@ mint)
   run $G run jobs deploy sirsi-router-board-mint --region="$REGION" --image="$IMAGE" --service-account="$JOB_SA" \
     --set-cloudsql-instances="$PROJECT:$REGION:$INSTANCE" --network=default --subnet=default --vpc-egress=private-ranges-only \
     --set-secrets="SIRSI_ROUTER_STORE=sirsi-router-service-dsn:latest" \
-    --command=/sirsi --args="router,token,mint,cloud-board,--label,hosted router board (read-only),--agents,router-board,--agents,@observer,--secret-resource,projects/$PROJECT/secrets/$SECRET" \
+    --command=/sirsi --args="router,token,mint,cloud-board,--label,hosted router board (observer + ledger editor),--agents,router-board,--agents,@observer,--agents,@ledger-editor,--secret-resource,projects/$PROJECT/secrets/$SECRET" \
     --max-retries=0 --task-timeout=5m --labels=workstream=router-board >/dev/null
   run $G run jobs execute sirsi-router-board-mint --region="$REGION" --wait
   ;;
@@ -119,11 +122,14 @@ deploy)
   CTX=$(mktemp -d); trap 'rm -rf "$CTX"' EXIT
   context "$CTX"
   PREV=$($G run services describe "$SERVICE" --region="$REGION" --format='value(status.traffic[0].revisionName)' 2>/dev/null || true)
+  NUM=$($G projects describe "$PROJECT" --format='value(projectNumber)')
+  [[ "$NUM" =~ ^[0-9]+$ ]] || { echo "board: cannot read the project number" >&2; exit 1; }
+  # The audience Cloud Run IAP signs into x-goog-iap-jwt-assertion; ledger edits refuse any other.
+  AUD="/projects/$NUM/locations/$REGION/services/$SERVICE"
   run $G beta run deploy "$SERVICE" --source "$CTX" --region="$REGION" --service-account="$SA" \
     --no-allow-unauthenticated --iap --min-instances=0 --max-instances=2 --cpu=1 --memory=512Mi --timeout=120 \
-    --set-env-vars="SIRSI_ROUTER_URL=$URL,SIRSI_ROUTER_CLOUD_HOST=cloud-board,SIRSI_AGENT_ID=router-board" \
+    --set-env-vars="SIRSI_ROUTER_URL=$URL,SIRSI_ROUTER_CLOUD_HOST=cloud-board,SIRSI_AGENT_ID=router-board,SIRSI_BOARD_IAP_AUDIENCE=$AUD" \
     --set-secrets="SIRSI_ROUTER_TOKEN=$SECRET:latest" --labels=workstream=router-board
-  NUM=$($G projects describe "$PROJECT" --format='value(projectNumber)')
   # IAP must be allowed to invoke the service; only the sirsi.ai domain may pass IAP.
   run $G run services add-iam-policy-binding "$SERVICE" --region="$REGION" \
     --member="serviceAccount:service-$NUM@gcp-sa-iap.iam.gserviceaccount.com" --role=roles/run.invoker

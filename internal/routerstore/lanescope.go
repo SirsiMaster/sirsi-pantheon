@@ -152,32 +152,63 @@ var observerOwnThread = map[string]bool{
 	"ResumeThreadCAS": true,
 }
 
-// splitObserver separates the observer marker from a token's agent scope. The marker is a capability, never
-// an identity: the returned scope never contains it, so nothing may mint, register or act as "@observer".
-func splitObserver(scope map[string]bool) (map[string]bool, bool) {
-	if !scope[ObserverScope] {
-		return scope, false
+// LedgerEditorScope is the second reserved capability (owner decision 2026-11-02, "full ledger edit"): the
+// hosted board edits the ledger on behalf of the signed-in sirsi.ai account. It permits exactly ledgerEdits,
+// on any agent's items and tasks, and nothing else — never Send, thread control for another lane, token or
+// session administration, or deletion. Like ObserverScope it is a capability, never an identity. The board
+// records its actor ("board:<email>") in each result, reason or timeline entry it writes.
+const LedgerEditorScope = "@ledger-editor"
+
+// ledgerEdits are the ledger mutations (and the reads they need) a ledger editor may make fabric-wide.
+// ConvertItemToTask is the atomic item→task RPC; it is allowed here so the capability covers it the moment
+// the store serves it. Adding a method here grants every editor token that write on every lane.
+//
+// Task leases (ClaimTask/Renew/Release/CompleteTaskLease) are deliberately absent: a lease is bound to the
+// claiming agent's own authenticated thread (serve.go task-claim binding), so an editor claiming another
+// lane's task would be impersonating that lane. UpdateTask likewise still refuses in-progress/done without
+// a fenced lease; the editor relabels (pending/blocked), reassigns and rewrites, it does not execute.
+var ledgerEdits = map[string]bool{
+	"Get": true, "GetTask": true, "CloseItem": true, "ReassignItem": true, "ConvertItemToTask": true,
+	"AddTask": true, "UpdateTask": true,
+}
+
+// splitCapabilities separates the reserved capability markers from a token's agent scope. A marker is a
+// capability, never an identity: the returned scope never contains one, so nothing may mint, register or act
+// as "@observer" or "@ledger-editor".
+func splitCapabilities(scope map[string]bool) (agents map[string]bool, observer, editor bool) {
+	observer, editor = scope[ObserverScope], scope[LedgerEditorScope]
+	if !observer && !editor {
+		return scope, false, false
 	}
-	agents := make(map[string]bool, len(scope))
+	agents = make(map[string]bool, len(scope))
 	for a := range scope {
-		if a != ObserverScope {
+		if a != ObserverScope && a != LedgerEditorScope {
 			agents[a] = true
 		}
 	}
-	return agents, true
+	return agents, observer, editor
 }
 
 // laneScope returns nil when the call is inside the token's scope, ErrLaneScope otherwise.
-func (s *server) laneScope(scope map[string]bool, observer bool, sess Session, name string, in []reflect.Value) error {
-	if observer {
+func (s *server) laneScope(scope map[string]bool, observer, editor bool, sess Session, name string, in []reflect.Value) error {
+	if editor && ledgerEdits[name] {
 		if sess.Agent != "" && !scope[sess.Agent] {
 			return fmt.Errorf("%w: session agent %q is outside the token's scope", ErrLaneScope, sess.Agent)
 		}
-		if observerReads[name] {
+		return nil
+	}
+	// A capability token is confined to its capabilities: ledgerEdits (editor), observerReads (observer), and
+	// its own agent's thread registration. It never falls through to the lane API's messaging or work verbs,
+	// so an editor-only token cannot Send even as its own listed agent.
+	if observer || editor {
+		if sess.Agent != "" && !scope[sess.Agent] {
+			return fmt.Errorf("%w: session agent %q is outside the token's scope", ErrLaneScope, sess.Agent)
+		}
+		if observer && observerReads[name] {
 			return nil
 		}
 		if !observerOwnThread[name] {
-			return fmt.Errorf("%w: %s is not permitted for a read-only observer", ErrLaneScope, name)
+			return fmt.Errorf("%w: %s is not permitted for an observer or ledger-editor token", ErrLaneScope, name)
 		}
 	}
 	rule, ok := laneAPI[name]

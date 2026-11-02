@@ -37,6 +37,8 @@ func (s *Server) handleUIAsset(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/assets/fabric.js":
 		s.serveEmbedded(w, "ui/fabric.js", "application/javascript; charset=utf-8")
+	case "/assets/board-actions.js":
+		s.serveEmbedded(w, "ui/board-actions.js", "application/javascript; charset=utf-8")
 	case "/assets/maat-history.js":
 		s.serveEmbedded(w, "ui/maat-history.js", "application/javascript; charset=utf-8")
 	case "/assets/mercury.css":

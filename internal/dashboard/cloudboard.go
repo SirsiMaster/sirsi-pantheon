@@ -15,7 +15,9 @@ var cloudBoardPrefixes = []string{"/assets/", "/api/router/v1/"}
 
 func cloudBoardOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+		// The ledger-edit API is the one write path; it checks identity and origin itself (boardact.go).
+		edit := r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, boardActPrefix)
+		if !edit && r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
