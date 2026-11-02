@@ -194,9 +194,22 @@ func (j *durableJournal) append(e operationEvent, stage string) error {
 	if sync == nil {
 		sync = unix.Fsync
 	}
-	if err := sync(j.fileFD); err != nil {
+	syncErr := error(nil)
+	if j.fault != nil {
+		syncErr = j.fault(stage + "-fsync")
+	}
+	if syncErr == nil {
+		syncErr = sync(j.fileFD)
+	}
+	if syncErr != nil {
 		j.poisoned = true
-		return err
+		if rollbackErr := unix.Ftruncate(j.fileFD, st.Size); rollbackErr != nil {
+			return fmt.Errorf("%w; cannot roll back unsynced receipt event: %v", syncErr, rollbackErr)
+		}
+		if rollbackSyncErr := unix.Fsync(j.fileFD); rollbackSyncErr != nil {
+			return fmt.Errorf("%w; cannot sync receipt-event rollback: %v", syncErr, rollbackSyncErr)
+		}
+		return syncErr
 	}
 	return nil
 }
@@ -234,7 +247,7 @@ func appendHistoryIndex(rootFD int, id string, at time.Time, digest string, faul
 		return err
 	}
 	if err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		return err
+		return fmt.Errorf("Trash receipt history is busy; retry the operation: %w", err)
 	}
 	defer unix.Flock(fd, unix.LOCK_UN)
 	if fault != nil {
@@ -249,6 +262,11 @@ func appendHistoryIndex(rootFD int, id string, at time.Time, digest string, faul
 	row = append(row, '\n')
 	if err := writeAll(fd, row); err != nil {
 		return err
+	}
+	if fault != nil {
+		if err := fault("index-fsync"); err != nil {
+			return err
+		}
 	}
 	if err := unix.Fsync(fd); err != nil {
 		return err
@@ -266,7 +284,7 @@ func writeAllWith(fd int, p []byte, write func(int, []byte) (int, error)) error 
 		if err != nil {
 			return err
 		}
-		if n <= 0 {
+		if n <= 0 || n > len(p) {
 			return io.ErrShortWrite
 		}
 		p = p[n:]
@@ -426,6 +444,11 @@ func historyPageAtFD(rootFD, limit int, cursor string) HistoryPage {
 	}
 	position := st.Size
 	if cursor != "" {
+		if len(cursor) > 256 {
+			page.Incomplete = true
+			page.Issues = append(page.Issues, "history cursor exceeds its input bound; refresh history")
+			return page
+		}
 		decoded, err := base64.RawURLEncoding.DecodeString(cursor)
 		var c historyCursor
 		if err != nil || decodeExact(decoded, &c) != nil || c.Device != uint64(st.Dev) || c.Inode != st.Ino || c.Offset < 0 || c.Offset > st.Size {

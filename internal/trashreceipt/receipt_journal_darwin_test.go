@@ -86,11 +86,14 @@ func TestTrashJournalFailuresFenceUnlinksAndPreserveOutcomeDebt(t *testing.T) {
 		name       string
 		stage      string
 		configure  func(*durableJournal)
+		indexed    bool
 		deleted    bool
 		wantState  string
 		wantStatus string
 	}{
 		{name: "intent-write", stage: "intent", wantState: "unknown", wantStatus: "review_required"},
+		{name: "index-fsync", stage: "index-fsync", indexed: true, wantState: "unknown", wantStatus: "review_required"},
+		{name: "intent-fsync", stage: "intent-fsync", indexed: true, wantState: "unknown", wantStatus: "review_required"},
 		{name: "attempt-start-sync", configure: func(j *durableJournal) { j.syncFn = func(int) error { return errors.New("injected fsync failure") } }, wantState: "not_finalized", wantStatus: "review_required"},
 		{name: "attempt-start-short-write", configure: func(j *durableJournal) {
 			writes := 0
@@ -103,6 +106,16 @@ func TestTrashJournalFailuresFenceUnlinksAndPreserveOutcomeDebt(t *testing.T) {
 			}
 		}, wantState: "unknown", wantStatus: "review_required"},
 		{name: "attempt-result", stage: "attempt-result", deleted: true, wantState: "not_finalized", wantStatus: "partial"},
+		{name: "attempt-result-fsync", configure: func(j *durableJournal) {
+			calls := 0
+			j.syncFn = func(fd int) error {
+				calls++
+				if calls == 2 {
+					return errors.New("injected result fsync failure")
+				}
+				return unix.Fsync(fd)
+			}
+		}, deleted: true, wantState: "not_finalized", wantStatus: "partial"},
 		{name: "terminal", stage: "terminal", deleted: true, wantState: "not_finalized", wantStatus: "partial"},
 	}
 	for _, tc := range cases {
@@ -125,7 +138,7 @@ func TestTrashJournalFailuresFenceUnlinksAndPreserveOutcomeDebt(t *testing.T) {
 				t.Fatalf("deleted=%t want %t (stat error %v), report=%+v", wasDeleted, tc.deleted, statErr, report)
 			}
 			if report.OperationID == "" {
-				if tc.name != "intent-write" {
+				if !tc.indexed && tc.name != "intent-write" {
 					t.Fatal("persisted intent did not return its operation identity")
 				}
 				page := historyPageAt(receipts, 20, "")
@@ -222,9 +235,12 @@ func TestTrashHistoryNonRegularLeavesFailWithoutBlocking(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			page := historyPageAt(root, 20, "")
+			page := requireBoundedResult(t, func() HistoryPage { return historyPageAt(root, 20, "") })
 			if !page.Incomplete {
 				t.Fatalf("non-regular index accepted: %+v", page)
+			}
+			if _, err := os.Lstat(index); err != nil {
+				t.Fatalf("substituted index was removed: %v", err)
 			}
 			if kind != "fifo" {
 				data, err := os.ReadFile(filepath.Join(root, "target"))
@@ -281,9 +297,60 @@ func TestTrashHistoryOperationLeafSubstitutionsAreVisibleUnknownRows(t *testing.
 					t.Fatal(err)
 				}
 			}
-			page := historyPageAt(root, 20, "")
+			page := requireBoundedResult(t, func() HistoryPage { return historyPageAt(root, 20, "") })
 			if len(page.Items) != 1 || page.Items[0].State != "unknown" || page.Items[0].StartedAt != started || !page.Incomplete || len(page.Issues) == 0 {
 				t.Fatalf("substituted operation file not surfaced: %+v", page)
+			}
+			if target != "" {
+				data, err := os.ReadFile(target)
+				if err != nil || string(data) != "preserve" {
+					t.Fatalf("substituted target changed: %q %v", data, err)
+				}
+			}
+			if _, err := os.Lstat(leaf); err != nil {
+				t.Fatalf("substituted operation leaf was removed: %v", err)
+			}
+		})
+	}
+}
+
+func TestTrashHistoryIndexAppendRejectsSubstitutionsWithoutMutation(t *testing.T) {
+	for _, kind := range []string{"fifo", "symlink", "hardlink"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			index := filepath.Join(root, "history-index.jsonl")
+			var target string
+			switch kind {
+			case "fifo":
+				if err := unix.Mkfifo(index, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "symlink", "hardlink":
+				target = filepath.Join(root, "target")
+				if err := os.WriteFile(target, []byte("preserve"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if kind == "symlink" {
+					if err := os.Symlink(target, index); err != nil {
+						t.Fatal(err)
+					}
+				} else if err := os.Link(target, index); err != nil {
+					t.Fatal(err)
+				}
+			}
+			rootFD, err := unix.Open(root, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer unix.Close(rootFD)
+			err = requireBoundedResult(t, func() error {
+				return appendHistoryIndex(rootFD, strings.Repeat("d", 32), time.Now().UTC(), strings.Repeat("e", 64), nil)
+			})
+			if err == nil {
+				t.Fatal("substituted history index accepted for append")
+			}
+			if _, err := os.Lstat(index); err != nil {
+				t.Fatalf("substituted index was removed: %v", err)
 			}
 			if target != "" {
 				data, err := os.ReadFile(target)
@@ -315,9 +382,28 @@ func TestTrashHistoryIndexLockIsNonblocking(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer unix.Close(rootFD)
-	err = appendHistoryIndex(rootFD, strings.Repeat("b", 32), time.Now().UTC(), strings.Repeat("c", 64), nil)
+	err = requireBoundedResult(t, func() error {
+		return appendHistoryIndex(rootFD, strings.Repeat("b", 32), time.Now().UTC(), strings.Repeat("c", 64), nil)
+	})
 	if err == nil {
 		t.Fatal("contended history index lock was accepted")
+	}
+	if !strings.Contains(err.Error(), "retry") {
+		t.Fatalf("lock contention lacks visible retry guidance: %v", err)
+	}
+}
+
+func requireBoundedResult[T any](t *testing.T, operation func() T) T {
+	t.Helper()
+	result := make(chan T, 1)
+	go func() { result <- operation() }()
+	select {
+	case value := <-result:
+		return value
+	case <-time.After(time.Second):
+		t.Fatal("history operation did not return within one second")
+		var zero T
+		return zero
 	}
 }
 

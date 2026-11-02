@@ -174,6 +174,12 @@ time and manifest digest; the per-operation journal contains the reviewed paths
 and results. No history command constructs approval, replays deletion, or
 changes the Trash contents.
 
+Existing index and operation files are opened nonblocking and rejected unless
+they are private regular single-link files; substituted FIFOs, symlinks and
+hardlinks are surfaced as incomplete/unknown evidence without changing them.
+Index writers take a nonblocking exclusive lock. Contention aborts before any
+Trash unlink and returns a visible retry error.
+
 If an attempt-start is durable without a durable syscall result, that member is
 `outcome_unknown`. A missing terminal is `not_finalized`; the record does not
 claim whether a process is live or interrupted. Corrupt records remain visible
