@@ -85,18 +85,30 @@ sirsi router task complete <agent> <task-id> --lease <token> --receipt pr:SirsiM
 |---|---|
 | `pr:owner/repo#N` | GitHub says the PR is merged and its merge commit is on the default branch |
 | `ci:owner/repo#RUN@SHA` | the Actions run finished `success`, on exactly that 40-character commit |
-| `tag:owner/repo@TAG` | the tag exists, and every check run on its commit passed (none at all fails) |
-| `maat:RUN` | **host-attested, not verified**: the CLI reads `~/.sirsi/evidence/maat-runs/RUN/terminal.json`, requires `status: success` and exit 0, and sends its SHA-256. The service cannot read your Mac, so it records the hash; it cannot prove the run happened |
+| `tag:owner/repo@TAG` | the tag exists; every check run on its commit (all pages) finished, none failed, and at least one succeeded — skipped/neutral alone is not enough |
+| `maat:RESERVATION-ID` | the router's own Ma'at ledger: the reservation exists, the task's agent held it, it was released, and the release recorded exit 0. `maat:<run-dir>` naming a local `~/.sirsi/evidence/maat-runs/<run-dir>` is translated to its reservation id for convenience; the file is never the proof |
 
+- **Bound.** Repos must belong to an allowed GitHub owner (`SirsiMaster` by
+  default, `routerstore.ReceiptRepoOwners`); empty, `.` and `..` path segments are
+  refused; and one receipt proves one task — a receipt already recorded for
+  another task is refused.
+- **Ma'at exit outcome.** A release only carries an exit status when it is made
+  with `sirsi maat release <id> --exit-code N`. Until the launcher
+  (`sirsi-maat-run`) passes it, `maat:` receipts are refused as unverifiable.
 - **Fails closed.** If the router cannot reach GitHub or has no token, the task
   stays not-done and the error says the receipt is unverifiable. The service
   reads a read-only GitHub token from `SIRSI_ROUTER_GITHUB_TOKEN`; the owner
   provisions it into Secret Manager. Agents never create tokens.
 - **Re-checked.** `sirsi router task recheck-receipts [--older-than 24h]` (and the
   supervisor's `receipt-recheck` duty, every 6 hours) re-verifies PR, CI and tag
-  receipts. One now proven false — a reverted merge, a deleted tag — reopens its
-  task to `pending` with a timeline note `receipt no longer valid: …`. A network
-  or token failure never reopens anything: unknown is not invalid.
+  receipts. Only a receipt positively proven false reopens its task to `pending`
+  with a timeline note `receipt no longer valid: …`: a PR no longer merged or
+  whose merge commit left the default branch (history rewrite), a tag deleted
+  from a repo the token can still read, a run whose conclusion changed. A network
+  or token failure, or a bare 404 (expired Actions runs, token scope), never
+  reopens anything: unknown is not invalid. A revert *commit* leaves the original
+  merge reachable, so it is not detected. Ma'at receipts are ledger facts and are
+  not re-checked. Reopen and refresh only apply to the exact receipt that was read.
 - **Owner sign-off and cancel.** Work with nothing to build (a decision, a read)
   is closed by the owner with a required reason, recorded as tier `owner`. A task
   that will not be done is `canceled` with a reason; canceled never counts as done.

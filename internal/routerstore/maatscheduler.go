@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
@@ -86,7 +87,16 @@ func (s *SQLiteStore) MaatMutate(action, id, value string) (*schedule.Reservatio
 		case "heartbeat":
 			out, err = l.Heartbeat(id)
 		case "release":
-			out, err = l.Release(id)
+			if value == "" {
+				out, err = l.Release(id)
+				break
+			}
+			code, ok := strings.CutPrefix(value, "exit=")
+			n, convErr := strconv.Atoi(code)
+			if !ok || convErr != nil {
+				return fmt.Errorf("Ma'at release outcome %q: want exit=<code>", value)
+			}
+			out, err = l.ReleaseExit(id, n)
 		case "extend":
 			out, err = l.Extend(id, value)
 		case "invalidate":

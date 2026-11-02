@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -21,10 +22,24 @@ func (f fakeVerifier) Verify(_ context.Context, kind, value string) error {
 	return fmt.Errorf("%w: fake has no answer for %s:%s", ErrReceiptUnverifiable, kind, value)
 }
 
+// fixtureVerifier accepts only pr:SirsiMaster/fixture#N. The package's other
+// tests complete tasks with those receipts; they test leases, not receipts.
+type fixtureVerifier struct{}
+
+func (fixtureVerifier) Verify(_ context.Context, kind, value string) error {
+	if kind == "pr" && strings.HasPrefix(value, "SirsiMaster/fixture#") {
+		return nil
+	}
+	return fmt.Errorf("%w: fixture verifier only accepts pr:SirsiMaster/fixture#N", ErrReceiptUnverifiable)
+}
+
+func init() { SetReceiptVerifier(fixtureVerifier{}) }
+
 func useVerifier(t *testing.T, v ReceiptVerifier) {
 	t.Helper()
+	prev := getReceiptVerifier()
 	SetReceiptVerifier(v)
-	t.Cleanup(func() { SetReceiptVerifier(nil) })
+	t.Cleanup(func() { SetReceiptVerifier(prev) })
 }
 
 const (
@@ -33,7 +48,6 @@ const (
 	prBad   = "pr:SirsiMaster/sirsi-pantheon#9"
 	ciOK    = "ci:SirsiMaster/sirsi-pantheon#42@" + sha40
 	tagOK   = "tag:SirsiMaster/sirsi-pantheon@v0.24.200"
-	maatOK  = "maat:run1@sha256:" + "ab" + "cdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"
 	unknown = "pr:SirsiMaster/sirsi-pantheon#77"
 )
 
@@ -41,7 +55,7 @@ const (
 // other code treats finished work. Production has no such path: done needs a receipt.
 func markDoneFixture(t *testing.T, s *SQLiteStore, agent, id string) {
 	t.Helper()
-	if _, err := s.exec(`UPDATE tasks SET status='done',result_ref=? WHERE agent=? AND task_id=?;`, maatOK, agent, id); err != nil {
+	if _, err := s.exec(`UPDATE tasks SET status='done',result_ref=? WHERE agent=? AND task_id=?;`, "pr:SirsiMaster/fixture#0", agent, id); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -58,30 +72,59 @@ func claimed(t *testing.T, s *SQLiteStore, agent, id string) string {
 	return l.Token
 }
 
+// maatRun books a reservation in the router's own Ma'at ledger and releases it
+// the way sirsi-maat-run does; exit < 0 releases without an outcome.
+func maatRun(t *testing.T, s *SQLiteStore, id, holder string, exit int) string {
+	t.Helper()
+	if _, err := s.MaatReserve(maatRequest(s, id, "m1", holder), false); err != nil {
+		t.Fatal(err)
+	}
+	value := ""
+	if exit >= 0 {
+		value = "exit=" + strconv.Itoa(exit)
+	}
+	if _, err := s.MaatMutate("release", id, value); err != nil {
+		t.Fatal(err)
+	}
+	return "maat:" + id
+}
+
 func TestCompletionNeedsAVerifiedReceipt(t *testing.T) {
 	useVerifier(t, fakeVerifier{
 		prOK: nil, ciOK: nil, tagOK: nil,
 		prBad: fmt.Errorf("%w: not merged", ErrReceiptInvalid),
 	})
 	for _, tc := range []struct {
-		name, receipt string
-		want          error // nil = completes
-		tier          string
+		name    string
+		receipt func(*SQLiteStore) string
+		want    error // nil = completes
 	}{
-		{"merged PR", prOK, nil, "router-verified"},
-		{"green CI run", ciOK, nil, "router-verified"},
-		{"release tag", tagOK, nil, "router-verified"},
-		{"maat run is host-attested", maatOK, nil, "host-attested"},
-		{"unmerged PR refused", prBad, ErrReceiptInvalid, ""},
-		{"unverifiable refused (fail closed)", unknown, ErrReceiptUnverifiable, ""},
-		{"free text refused", "proof://whatever", ErrReceiptInvalid, ""},
-		{"ci without the commit refused", "ci:SirsiMaster/sirsi-pantheon#42", ErrReceiptInvalid, ""},
-		{"owner is not a lane receipt", "owner:someone", ErrReceiptInvalid, ""},
+		{"merged PR", func(*SQLiteStore) string { return prOK }, nil},
+		{"green CI run", func(*SQLiteStore) string { return ciOK }, nil},
+		{"release tag", func(*SQLiteStore) string { return tagOK }, nil},
+		{"own clean Ma'at run", func(s *SQLiteStore) string { return maatRun(t, s, "res-ok", "lane", 0) }, nil},
+		{"Ma'at run that failed", func(s *SQLiteStore) string { return maatRun(t, s, "res-fail", "lane", 2) }, ErrReceiptInvalid},
+		{"another agent's Ma'at run", func(s *SQLiteStore) string { return maatRun(t, s, "res-other", "someone-else", 0) }, ErrReceiptInvalid},
+		{"Ma'at release without outcome", func(s *SQLiteStore) string { return maatRun(t, s, "res-noexit", "lane", -1) }, ErrReceiptUnverifiable},
+		{"Ma'at run still active", func(s *SQLiteStore) string {
+			if _, err := s.MaatReserve(maatRequest(s, "res-live", "m1", "lane"), false); err != nil {
+				t.Fatal(err)
+			}
+			return "maat:res-live"
+		}, ErrReceiptInvalid},
+		{"unknown Ma'at reservation", func(*SQLiteStore) string { return "maat:nope" }, ErrReceiptInvalid},
+		{"old self-attested Ma'at hash refused", func(*SQLiteStore) string { return "maat:run1@sha256:" + strings.Repeat("0", 64) }, ErrReceiptInvalid},
+		{"unmerged PR refused", func(*SQLiteStore) string { return prBad }, ErrReceiptInvalid},
+		{"unverifiable refused (fail closed)", func(*SQLiteStore) string { return unknown }, ErrReceiptUnverifiable},
+		{"free text refused", func(*SQLiteStore) string { return "proof://whatever" }, ErrReceiptInvalid},
+		{"ci without the commit refused", func(*SQLiteStore) string { return "ci:SirsiMaster/sirsi-pantheon#42" }, ErrReceiptInvalid},
+		{"owner is not a lane receipt", func(*SQLiteStore) string { return "owner:someone" }, ErrReceiptInvalid},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := openTestStore(t)
+			receipt := tc.receipt(s)
 			tok := claimed(t, s, "lane", "t")
-			err := s.CompleteTaskLease("lane", "t", tok, tc.receipt)
+			err := s.CompleteTaskLease("lane", "t", tok, receipt)
 			got, _ := s.GetTask("lane", "t")
 			if tc.want != nil {
 				if !errors.Is(err, tc.want) || got.Status == "done" {
@@ -89,13 +132,49 @@ func TestCompletionNeedsAVerifiedReceipt(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || got.Status != "done" || got.ResultRef != tc.receipt {
+			if err != nil || got.Status != "done" || got.ResultRef != receipt {
 				t.Fatalf("err=%v status=%s ref=%q", err, got.Status, got.ResultRef)
 			}
-			if raw, ok, _ := s.GetState(receiptKey("lane", "t")); !ok || !strings.Contains(raw, `"tier":"`+tc.tier+`"`) {
+			if raw, ok, _ := s.GetState(receiptKey("lane", "t")); !ok || !strings.Contains(raw, `"tier":"router-verified"`) {
 				t.Fatalf("receipt record %q", raw)
 			}
 		})
+	}
+}
+
+func TestReceiptBinding(t *testing.T) {
+	for _, raw := range []string{
+		"pr:someone-else/repo#1",              // outside the org allowlist
+		"tag:SirsiMaster/sirsi-pantheon@../x", // path traversal in the tag
+		"tag:SirsiMaster/sirsi-pantheon@a//b",
+		"pr:SirsiMaster/..#1",
+		"ci:../sirsi-pantheon#1@" + sha40,
+	} {
+		if _, _, err := ParseReceipt(raw); !errors.Is(err, ErrReceiptInvalid) {
+			t.Errorf("ParseReceipt(%q) = %v, want invalid", raw, err)
+		}
+	}
+	if _, _, err := ParseReceipt("pr:sirsimaster/sirsi-pantheon#1"); err != nil {
+		t.Errorf("owner match must be case-insensitive: %v", err)
+	}
+	// One receipt proves one task.
+	useVerifier(t, fakeVerifier{prOK: nil})
+	s := openTestStore(t)
+	if err := s.CompleteTaskLease("lane", "a", claimed(t, s, "lane", "a"), prOK); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteTaskLease("lane", "b", claimed(t, s, "lane", "b"), prOK); !errors.Is(err, ErrReceiptInvalid) {
+		t.Fatalf("reused receipt: %v, want invalid", err)
+	}
+	if b, _ := s.GetTask("lane", "b"); b.Status == "done" {
+		t.Fatal("a reused receipt completed a second task")
+	}
+	run := maatRun(t, s, "res-once", "lane", 0)
+	if err := s.CompleteTaskLease("lane", "c", claimed(t, s, "lane", "c"), run); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteTaskLease("lane", "d", claimed(t, s, "lane", "d"), run); !errors.Is(err, ErrReceiptInvalid) {
+		t.Fatalf("reused Ma'at run: %v, want invalid", err)
 	}
 }
 
@@ -176,64 +255,115 @@ func TestOwnerPathsAreNotServed(t *testing.T) {
 }
 
 func TestRecheckReopensOnlyProvenFalseReceipts(t *testing.T) {
-	v := fakeVerifier{prOK: nil, ciOK: nil}
+	prGone := "pr:SirsiMaster/sirsi-pantheon#55"
+	ciGone := "ci:SirsiMaster/sirsi-pantheon#43@" + sha40
+	v := fakeVerifier{prOK: nil, ciOK: nil, prGone: nil, ciGone: nil}
 	useVerifier(t, v)
 	s := openTestStore(t)
-	for id, r := range map[string]string{"merged": prOK, "ci": ciOK, "maat": maatOK} {
+	run := maatRun(t, s, "res-r", "lane", 0)
+	for id, r := range map[string]string{"merged": prOK, "ci": ciOK, "maat": run, "pr404": prGone, "ci404": ciGone} {
 		if err := s.CompleteTaskLease("lane", id, claimed(t, s, "lane", id), r); err != nil {
 			t.Fatal(id, err)
 		}
 	}
-	// The PR is reverted (now invalid); the CI run's API is down (unverifiable).
-	v[prOK] = fmt.Errorf("%w: merge commit no longer on main", ErrReceiptInvalid)
-	v[ciOK] = fmt.Errorf("%w: GitHub answered 503", ErrReceiptUnverifiable)
+	v[prOK] = fmt.Errorf("%w: merge commit no longer on main", ErrReceiptInvalid) // history rewritten: proven false
+	v[ciOK] = fmt.Errorf("%w: GitHub answered 503", ErrReceiptUnverifiable)       // down: unknown
+	v[prGone] = fmt.Errorf("%w: /repos/x/pulls/55", errReceiptNotFound)           // token scope: unknown
+	v[ciGone] = fmt.Errorf("%w: /repos/x/actions/runs/43", errReceiptNotFound)    // run retention: unknown
 	out, err := s.RecheckTaskReceipts(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 2 { // maat is host-attested: never re-checked
-		t.Fatalf("rechecked %d receipts, want 2: %+v", len(out), out)
+	if len(out) != 4 { // the Ma'at receipt is a ledger fact: never re-checked
+		t.Fatalf("rechecked %d receipts, want 4: %+v", len(out), out)
+	}
+	want := map[string]string{"merged": "pending", "ci": "done", "maat": "done", "pr404": "done", "ci404": "done"}
+	for id, st := range want {
+		if got, _ := s.GetTask("lane", id); got.Status != st {
+			t.Errorf("%s = %s, want %s", id, got.Status, st)
+		}
 	}
 	merged, _ := s.GetTask("lane", "merged")
-	ci, _ := s.GetTask("lane", "ci")
-	if merged.Status != "pending" || ci.Status != "done" {
-		t.Fatalf("merged=%s (want pending) ci=%s (want done: unknown is not invalid)", merged.Status, ci.Status)
-	}
-	last := merged.Timeline[len(merged.Timeline)-1]
-	if !strings.HasPrefix(last.Label, "receipt no longer valid:") {
+	if last := merged.Timeline[len(merged.Timeline)-1]; !strings.HasPrefix(last.Label, "receipt no longer valid:") {
 		t.Fatalf("timeline note %q", last.Label)
 	}
 }
 
+// A reopen decided on a stale read must not clobber a task that has since
+// moved on (reopened and re-completed with a different receipt).
+func TestRecheckReopenIsGuardedOnTheCheckedReceipt(t *testing.T) {
+	useVerifier(t, fakeVerifier{prOK: nil})
+	s := openTestStore(t)
+	if err := s.CompleteTaskLease("lane", "t", claimed(t, s, "lane", "t"), prOK); err != nil {
+		t.Fatal(err)
+	}
+	key := receiptKey("lane", "t")
+	stored, _, _ := s.GetState(key)
+	// Meanwhile the task was reopened and finished again on a different receipt.
+	if _, err := s.exec(`UPDATE tasks SET result_ref='pr:SirsiMaster/sirsi-pantheon#2' WHERE agent='lane' AND task_id='t';`); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := s.reopenForReceipt("lane", "t", key, stored, prOK, ErrReceiptInvalid, time.Now())
+	if err != nil || reopened {
+		t.Fatalf("stale reopen applied: reopened=%v err=%v", reopened, err)
+	}
+	if got, _ := s.GetTask("lane", "t"); got.Status != "done" {
+		t.Fatalf("status %s, want done", got.Status)
+	}
+	if _, ok, _ := s.GetState(key); !ok {
+		t.Fatal("stale reopen deleted the receipt row")
+	}
+}
+
 func TestGitHubVerifier(t *testing.T) {
+	runs := func(n int, conclusion string) string {
+		parts := make([]string, n)
+		for i := range parts {
+			parts[i] = `{"status":"completed","conclusion":"` + conclusion + `"}`
+		}
+		return strings.Join(parts, ",")
+	}
 	api := map[string]string{
-		"/repos/o/r":                       `{"default_branch":"main"}`,
-		"/repos/o/r/pulls/1":               `{"merged":true,"merge_commit_sha":"m1"}`,
-		"/repos/o/r/pulls/2":               `{"merged":false}`,
-		"/repos/o/r/pulls/3":               `{"merged":true,"merge_commit_sha":"m3"}`,
-		"/repos/o/r/compare/main...m1":     `{"status":"behind"}`,
-		"/repos/o/r/compare/main...m3":     `{"status":"ahead"}`,
-		"/repos/o/r/actions/runs/5":        `{"status":"completed","conclusion":"success","head_sha":"` + sha40 + `"}`,
-		"/repos/o/r/actions/runs/6":        `{"status":"completed","conclusion":"failure","head_sha":"` + sha40 + `"}`,
-		"/repos/o/r/git/ref/tags/v1":       `{"object":{"type":"tag","sha":"t1"}}`,
-		"/repos/o/r/git/tags/t1":           `{"object":{"sha":"c1"}}`,
-		"/repos/o/r/commits/c1/check-runs": `{"total_count":1,"check_runs":[{"status":"completed","conclusion":"success"}]}`,
-		"/repos/o/r/git/ref/tags/v2":       `{"object":{"type":"commit","sha":"c2"}}`,
-		"/repos/o/r/commits/c2/check-runs": `{"total_count":1,"check_runs":[{"status":"completed","conclusion":"failure"}]}`,
-		"/repos/o/r/git/ref/tags/v3":       `{"object":{"type":"commit","sha":"c3"}}`,
-		"/repos/o/r/commits/c3/check-runs": `{"total_count":0,"check_runs":[]}`,
+		"/repos/SirsiMaster/r":                         `{"default_branch":"main"}`,
+		"/repos/SirsiMaster/r/pulls/1":                 `{"merged":true,"merge_commit_sha":"m1"}`,
+		"/repos/SirsiMaster/r/pulls/2":                 `{"merged":false}`,
+		"/repos/SirsiMaster/r/pulls/3":                 `{"merged":true,"merge_commit_sha":"m3"}`,
+		"/repos/SirsiMaster/r/compare/main...m1":       `{"status":"behind"}`,
+		"/repos/SirsiMaster/r/compare/main...m3":       `{"status":"ahead"}`,
+		"/repos/SirsiMaster/r/actions/runs/5":          `{"status":"completed","conclusion":"success","head_sha":"` + sha40 + `"}`,
+		"/repos/SirsiMaster/r/actions/runs/6":          `{"status":"completed","conclusion":"failure","head_sha":"` + sha40 + `"}`,
+		"/repos/SirsiMaster/r/git/ref/tags/v1":         `{"object":{"type":"tag","sha":"t1"}}`,
+		"/repos/SirsiMaster/r/git/tags/t1":             `{"object":{"sha":"c1"}}`,
+		"/repos/SirsiMaster/r/commits/c1/check-runs?1": `{"total_count":1,"check_runs":[` + runs(1, "success") + `]}`,
+		"/repos/SirsiMaster/r/git/ref/tags/v2":         `{"object":{"type":"commit","sha":"c2"}}`,
+		"/repos/SirsiMaster/r/commits/c2/check-runs?1": `{"total_count":2,"check_runs":[` + runs(1, "success") + `,` + runs(1, "failure") + `]}`,
+		"/repos/SirsiMaster/r/git/ref/tags/v3":         `{"object":{"type":"commit","sha":"c3"}}`,
+		"/repos/SirsiMaster/r/commits/c3/check-runs?1": `{"total_count":0,"check_runs":[]}`,
+		"/repos/SirsiMaster/r/git/ref/tags/v4":         `{"object":{"type":"commit","sha":"c4"}}`, // only skipped/neutral
+		"/repos/SirsiMaster/r/commits/c4/check-runs?1": `{"total_count":2,"check_runs":[` + runs(1, "skipped") + `,` + runs(1, "neutral") + `]}`,
+		"/repos/SirsiMaster/r/git/ref/tags/v5":         `{"object":{"type":"commit","sha":"c5"}}`, // failure on page 2
+		"/repos/SirsiMaster/r/commits/c5/check-runs?1": `{"total_count":101,"check_runs":[` + runs(100, "success") + `]}`,
+		"/repos/SirsiMaster/r/commits/c5/check-runs?2": `{"total_count":101,"check_runs":[` + runs(1, "failure") + `]}`,
+		"/repos/SirsiMaster/r/git/ref/tags/v6":         `{"object":{"type":"commit","sha":"c6"}}`, // total lies beyond pages
+		"/repos/SirsiMaster/r/commits/c6/check-runs?1": `{"total_count":5,"check_runs":[` + runs(1, "success") + `]}`,
+		"/repos/SirsiMaster/r/commits/c6/check-runs?2": `{"total_count":5,"check_runs":[]}`,
+		"/repos/SirsiMaster/hidden/git/ref/tags/v1":    "", // 404, and the repo is not readable either
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer tok" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if r.URL.Path == "/repos/o/r/pulls/500" {
+		if r.URL.Path == "/repos/SirsiMaster/r/pulls/500" {
 			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
-		body, ok := api[r.URL.Path]
-		if !ok {
+		key := r.URL.Path
+		if p := r.URL.Query().Get("page"); p != "" {
+			key += "?" + p
+		}
+		body, ok := api[key]
+		if !ok || body == "" {
 			http.NotFound(w, r)
 			return
 		}
@@ -245,27 +375,37 @@ func TestGitHubVerifier(t *testing.T) {
 	for _, tc := range []struct {
 		kind, value string
 		want        error
+		notFound    bool // a bare 404 that a re-check must not treat as proof
 	}{
-		{"pr", "o/r#1", nil},
-		{"pr", "o/r#2", ErrReceiptInvalid},        // not merged
-		{"pr", "o/r#3", ErrReceiptInvalid},        // merge commit not on main
-		{"pr", "o/r#4", ErrReceiptInvalid},        // 404
-		{"pr", "o/r#500", ErrReceiptUnverifiable}, // GitHub down
-		{"ci", "o/r#5@" + sha40, nil},
-		{"ci", "o/r#6@" + sha40, ErrReceiptInvalid},                   // failed
-		{"ci", "o/r#5@" + strings.Repeat("f", 40), ErrReceiptInvalid}, // different commit
-		{"tag", "o/r@v1", nil},                                        // annotated tag, green
-		{"tag", "o/r@v2", ErrReceiptInvalid},                          // red check run
-		{"tag", "o/r@v3", ErrReceiptInvalid},                          // no CI at all
+		{"pr", "SirsiMaster/r#1", nil, false},
+		{"pr", "SirsiMaster/r#2", ErrReceiptInvalid, false}, // not merged
+		{"pr", "SirsiMaster/r#3", ErrReceiptInvalid, false}, // merge commit not on main
+		{"pr", "SirsiMaster/r#4", ErrReceiptInvalid, true},  // 404
+		{"pr", "SirsiMaster/r#500", ErrReceiptUnverifiable, false},
+		{"ci", "SirsiMaster/r#5@" + sha40, nil, false},
+		{"ci", "SirsiMaster/r#6@" + sha40, ErrReceiptInvalid, false},
+		{"ci", "SirsiMaster/r#5@" + strings.Repeat("f", 40), ErrReceiptInvalid, false},
+		{"ci", "SirsiMaster/r#7@" + sha40, ErrReceiptInvalid, true}, // expired run: bare 404
+		{"tag", "SirsiMaster/r@v1", nil, false},                     // annotated tag, green
+		{"tag", "SirsiMaster/r@v2", ErrReceiptInvalid, false},       // a red check run
+		{"tag", "SirsiMaster/r@v3", ErrReceiptInvalid, false},       // no CI at all
+		{"tag", "SirsiMaster/r@v4", ErrReceiptInvalid, false},       // skipped/neutral only: not sufficient
+		{"tag", "SirsiMaster/r@v5", ErrReceiptInvalid, false},       // failure on page 2 is found
+		{"tag", "SirsiMaster/r@v6", ErrReceiptUnverifiable, false},  // could not read every run
+		{"tag", "SirsiMaster/r@gone", ErrReceiptInvalid, false},     // deleted tag in a readable repo: proof
+		{"tag", "SirsiMaster/hidden@v1", ErrReceiptInvalid, true},   // 404 with unreadable repo: not proof
 	} {
 		err := g.Verify(context.Background(), tc.kind, tc.value)
 		if (tc.want == nil) != (err == nil) || (tc.want != nil && !errors.Is(err, tc.want)) {
 			t.Errorf("%s:%s = %v, want %v", tc.kind, tc.value, err, tc.want)
 		}
+		if errors.Is(err, errReceiptNotFound) != tc.notFound {
+			t.Errorf("%s:%s notFound=%v, want %v (%v)", tc.kind, tc.value, !tc.notFound, tc.notFound, err)
+		}
 	}
 	bad := newGitHubVerifier("wrong")
 	bad.base = srv.URL
-	if err := bad.Verify(context.Background(), "pr", "o/r#1"); !errors.Is(err, ErrReceiptUnverifiable) {
+	if err := bad.Verify(context.Background(), "pr", "SirsiMaster/r#1"); !errors.Is(err, ErrReceiptUnverifiable) {
 		t.Errorf("auth failure = %v, want unverifiable", err)
 	}
 }

@@ -39,7 +39,7 @@ func TestClassifyLaneHonestStates(t *testing.T) {
 
 	now = now.Add(2 * time.Minute) // lease valid, mutation no longer recent
 	assertLane(true, LaneAssigned)
-	if ifErr3 := s.CompleteTaskLease(agent, "T", lease.Token, "maat:T@sha256:0000000000000000000000000000000000000000000000000000000000000000"); ifErr3 != nil {
+	if ifErr3 := s.CompleteTaskLease(agent, "T", lease.Token, "pr:SirsiMaster/fixture#10"); ifErr3 != nil {
 		t.Fatal(ifErr3)
 	}
 	assertLane(true, LaneComplete)

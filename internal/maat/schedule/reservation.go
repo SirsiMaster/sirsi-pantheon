@@ -32,6 +32,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -104,6 +105,10 @@ type Reservation struct {
 	LeaseTTLSec   int      `json:"lease_ttl_sec"`           // reservation void if heartbeat older than this
 	Status        Status   `json:"status"`
 	InvalidatedBy string   `json:"invalidated_by,omitempty"` // intruder description
+	// ExitCode is the guarded run's exit status, recorded by ReleaseExit. nil
+	// means the release carried no outcome (older launchers): a completion
+	// receipt naming this reservation cannot then prove the run succeeded.
+	ExitCode *int `json:"exit_code,omitempty"`
 	// ExemptPID is the PID of the process tree that runs this reservation's own
 	// guarded work (e.g. the run-guard script that later spawns a same-run ssh
 	// launcher). CheckConflicts never counts a process in the same ancestry
@@ -547,6 +552,23 @@ func (l *Ledger) Release(id string) (*Reservation, error) {
 			return fmt.Errorf("maat: reservation %s already %s", id, r.Status)
 		}
 		r.Status = StatusReleased
+		return nil
+	})
+}
+
+// ReleaseExit is Release that also records the guarded run's exit status, so
+// the router can verify a `maat:<reservation-id>` completion receipt.
+func (l *Ledger) ReleaseExit(id string, exitCode int) (*Reservation, error) {
+	if atomic, ok := l.store.(AtomicScheduler); ok {
+		return atomic.MaatMutate("release", id, "exit="+strconv.Itoa(exitCode))
+	}
+	return l.mutate(id, func(r *Reservation) error {
+		if isTerminal(r.Status) {
+			return fmt.Errorf("maat: reservation %s already %s", id, r.Status)
+		}
+		r.Status = StatusReleased
+		code := exitCode
+		r.ExitCode = &code
 		return nil
 	})
 }

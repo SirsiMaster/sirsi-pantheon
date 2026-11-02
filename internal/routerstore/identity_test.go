@@ -267,7 +267,7 @@ func TestIdentityTaskOwnershipSurvivesSessionRemintSameAgentThread(t *testing.T)
 	second.threadID = thread
 
 	// Before the fix: ErrNotOwner, forever — the exact deadlock reported.
-	if err := second.CompleteTaskLease("claude-remint-task", "remint-task", lease.Token, "maat:remint@sha256:0000000000000000000000000000000000000000000000000000000000000000"); err != nil {
+	if err := second.CompleteTaskLease("claude-remint-task", "remint-task", lease.Token, "pr:SirsiMaster/fixture#4"); err != nil {
 		t.Fatalf("CompleteTaskLease from the reminted session = %v, want success", err)
 	}
 }
@@ -336,7 +336,7 @@ func TestIdentityOwnershipRemintFallbackRequiresSameHostItem(t *testing.T) {
 	impostor := h.client("claude-cross-host")
 	impostor.host = "host-b"
 	impostor.threadID = thread
-	if err := impostor.Complete(id, lease.Token, "maat:stolen@sha256:0000000000000000000000000000000000000000000000000000000000000000"); !errors.Is(err, ErrNotOwner) {
+	if err := impostor.Complete(id, lease.Token, "pr:SirsiMaster/fixture#5"); !errors.Is(err, ErrNotOwner) {
 		t.Fatalf("cross-host Complete with matching agent+thread = %v, want ErrNotOwner", err)
 	}
 	// Positive control: the real owner, same host, still completes fine.
@@ -366,10 +366,10 @@ func TestIdentityOwnershipRemintFallbackRequiresSameHostTask(t *testing.T) {
 	impostor := h.client("claude-cross-host-task")
 	impostor.host = "host-b"
 	impostor.threadID = thread
-	if err := impostor.CompleteTaskLease("claude-cross-host-task", "cross-host-task", lease.Token, "maat:stolen@sha256:0000000000000000000000000000000000000000000000000000000000000000"); !errors.Is(err, ErrNotOwner) {
+	if err := impostor.CompleteTaskLease("claude-cross-host-task", "cross-host-task", lease.Token, "pr:SirsiMaster/fixture#5"); !errors.Is(err, ErrNotOwner) {
 		t.Fatalf("cross-host CompleteTaskLease with matching agent+thread = %v, want ErrNotOwner", err)
 	}
-	if err := owner.CompleteTaskLease("claude-cross-host-task", "cross-host-task", lease.Token, "maat:mine@sha256:0000000000000000000000000000000000000000000000000000000000000000"); err != nil {
+	if err := owner.CompleteTaskLease("claude-cross-host-task", "cross-host-task", lease.Token, "pr:SirsiMaster/fixture#6"); err != nil {
 		t.Fatalf("owner completing its own task lease: %v", err)
 	}
 }

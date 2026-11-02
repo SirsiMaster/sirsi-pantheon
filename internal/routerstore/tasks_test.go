@@ -47,7 +47,7 @@ func TestTaskExecutionTransitionsRequireLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.CompleteTaskLease("codex-home", "R1", lease.Token, "maat:R1@sha256:0000000000000000000000000000000000000000000000000000000000000000"); err != nil {
+	if err := s.CompleteTaskLease("codex-home", "R1", lease.Token, "pr:SirsiMaster/fixture#14"); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -60,7 +60,7 @@ func TestRunnableForThreeSourcesAndAuditedEmpty(t *testing.T) {
 	if reconcile.WakeEventsCreated != 0 {
 		t.Fatalf("leased task caused duplicate wake backfill: %+v", reconcile)
 	}
-	if ifErr4 := s.CompleteTaskLease(agent, "T1", lease.Token, "maat:T1@sha256:0000000000000000000000000000000000000000000000000000000000000000"); ifErr4 != nil {
+	if ifErr4 := s.CompleteTaskLease(agent, "T1", lease.Token, "pr:SirsiMaster/fixture#11"); ifErr4 != nil {
 		t.Fatal(ifErr4)
 	}
 

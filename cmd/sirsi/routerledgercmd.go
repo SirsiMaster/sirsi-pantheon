@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -175,38 +174,31 @@ var routerTaskCompleteCmd = &cobra.Command{
 	},
 }
 
-// resolveReceipt turns "maat:<run-id>" into the host-attested
-// "maat:<run-id>@sha256:<hex>" the service records: the service cannot read
-// this Mac's evidence, so the CLI reads it, checks it ended clean, and hashes
-// it. Every other kind is passed through for the router to verify itself.
+// resolveReceipt is a convenience only: "maat:<run-dir>" naming a local
+// ~/.sirsi/evidence/maat-runs/<run-dir> becomes "maat:<its reservation id>".
+// Proof never comes from this file — the router checks the reservation in its
+// own Ma'at ledger. Everything else passes through unchanged.
 func resolveReceipt(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
-	runID, ok := strings.CutPrefix(raw, "maat:")
-	if !ok || strings.Contains(runID, "@") {
+	runDir, ok := strings.CutPrefix(raw, "maat:")
+	if !ok || runDir == "" || strings.ContainsAny(runDir, `/\`) || runDir == "." || runDir == ".." {
 		return raw, nil
-	}
-	if runID == "" || strings.ContainsAny(runID, `/\.`) {
-		return "", fmt.Errorf("maat receipt: bad run id %q", runID)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return raw, nil
 	}
-	b, err := os.ReadFile(filepath.Join(home, ".sirsi", "evidence", "maat-runs", runID, "terminal.json"))
+	b, err := os.ReadFile(filepath.Join(home, ".sirsi", "evidence", "maat-runs", runDir, "terminal.json"))
 	if err != nil {
-		return "", fmt.Errorf("maat receipt: %w", err)
+		return raw, nil // not a run dir: treat it as a reservation id
 	}
 	var term struct {
-		Status   string `json:"status"`
-		ExitCode *int   `json:"exit_code"`
+		Admission string `json:"admission"`
 	}
-	if err := json.Unmarshal(b, &term); err != nil {
-		return "", fmt.Errorf("maat receipt: terminal.json: %w", err)
+	if json.Unmarshal(b, &term) != nil || term.Admission == "" {
+		return "", fmt.Errorf("maat receipt: run %s recorded no reservation", runDir)
 	}
-	if term.Status != "success" || term.ExitCode == nil || *term.ExitCode != 0 {
-		return "", fmt.Errorf("maat receipt: run %s did not end clean (status %q)", runID, term.Status)
-	}
-	return fmt.Sprintf("maat:%s@sha256:%x", runID, sha256.Sum256(b)), nil
+	return "maat:" + term.Admission, nil
 }
 
 // receiptRecheckAge is how stale a verification must be before the supervisor re-checks it.
@@ -537,7 +529,7 @@ func init() {
 		c.Flags().StringVar(&taskLeaseToken, "lease", "", "Fenced task lease token (required)")
 	}
 	routerTaskRenewCmd.Flags().DurationVar(&taskLeaseTTL, "ttl", 10*time.Minute, "Lease duration")
-	routerTaskCompleteCmd.Flags().StringVar(&taskLeaseResult, "receipt", "", "Completion receipt the router verifies: pr:owner/repo#N | ci:owner/repo#RUN@SHA | tag:owner/repo@TAG | maat:RUN (required)")
+	routerTaskCompleteCmd.Flags().StringVar(&taskLeaseResult, "receipt", "", "Completion receipt the router verifies: pr:owner/repo#N | ci:owner/repo#RUN@SHA | tag:owner/repo@TAG | maat:RESERVATION-ID (required)")
 	routerTaskCompleteCmd.Flags().StringVar(&taskLeaseResult, "result-ref", "", "Deprecated alias of --receipt; free text is refused")
 	_ = routerTaskCompleteCmd.Flags().MarkDeprecated("result-ref", "use --receipt; only a verifiable receipt completes a task")
 	routerTaskRecheckReceiptsCmd.Flags().DurationVar(&taskRecheckOlderThan, "older-than", 24*time.Hour, "Re-verify receipts last checked longer ago than this")

@@ -200,7 +200,7 @@ func (s *SQLiteStore) CompleteTaskLease(agent, taskID, token, resultRef string) 
 		return fmt.Errorf("routerstore: task completion receipt is required (%s)", receipts)
 	}
 	now := s.clock().UTC()
-	receipt, err := verifyReceipt(resultRef, now)
+	receipt, err := s.verifyReceipt(agent, resultRef, now)
 	if err != nil {
 		return err
 	}
