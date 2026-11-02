@@ -208,6 +208,70 @@ func TestTrashHistoryCorruptIndexRowsDoNotHideValidNeighbors(t *testing.T) {
 	}
 }
 
+func TestTrashHistoryPartialIndexTailIsSeparatedBeforeRetry(t *testing.T) {
+	home, root, receipts := prepareReceiptHome(t, "owned")
+	index := filepath.Join(receipts, "history-index.jsonl")
+	if err := os.WriteFile(index, []byte(`{"operation_id":"crash-left-prefix`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := mustPreview(t, home)
+	fault := func(stage string) error {
+		if stage == "index-boundary-fsync" {
+			return errors.New("injected boundary fsync failure")
+		}
+		return nil
+	}
+	failed := applyHomeWithJournal(home, manifest, true, nil, journalFactory(receipts, fault, nil))
+	if failed.Status != "review_required" || len(failed.Errors) == 0 {
+		t.Fatalf("failed boundary durability must be reported: %+v", failed)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "owned")); err != nil {
+		t.Fatalf("unlink ran before the repaired boundary was durable: %v", err)
+	}
+
+	succeeded := applyHomeWithJournal(home, manifest, true, nil, journalFactory(receipts, nil, nil))
+	if succeeded.Status != "completed" || succeeded.OperationID == "" {
+		t.Fatalf("retry after crash-left tail: %+v", succeeded)
+	}
+	page := historyPageAt(receipts, 20, "")
+	if !page.Incomplete || len(page.Issues) == 0 || !containsString(historyOperationIDs(page), succeeded.OperationID) {
+		t.Fatalf("valid later operation must remain visible beside old corruption: %+v", page)
+	}
+}
+
+func TestTrashHistoryPartialIndexWriteThenLaterOperation(t *testing.T) {
+	home, _, receipts := prepareReceiptHome(t, "owned")
+	rootFD, err := unix.Open(receipts, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writerCalls := 0
+	err = appendHistoryIndexWith(rootFD, strings.Repeat("f", 32), time.Now().UTC(), strings.Repeat("a", 64), nil,
+		func(fd int, data []byte) (int, error) {
+			writerCalls++
+			if writerCalls == 1 {
+				return unix.Write(fd, data[:min(10, len(data))])
+			}
+			return 0, errors.New("injected crash after partial index write")
+		})
+	if closeErr := unix.Close(rootFD); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if err == nil {
+		t.Fatal("partial index write fixture unexpectedly succeeded")
+	}
+
+	manifest := mustPreview(t, home)
+	report := applyHomeWithJournal(home, manifest, true, nil, journalFactory(receipts, nil, nil))
+	if report.Status != "completed" || report.OperationID == "" {
+		t.Fatalf("later operation after partial index write: %+v", report)
+	}
+	page := historyPageAt(receipts, 20, "")
+	if !page.Incomplete || len(page.Issues) == 0 || !containsString(historyOperationIDs(page), report.OperationID) {
+		t.Fatalf("partial old row must be reported without hiding the later operation: %+v", page)
+	}
+}
+
 func TestTrashHistoryNonRegularLeavesFailWithoutBlocking(t *testing.T) {
 	for _, kind := range []string{"fifo", "symlink", "hardlink"} {
 		t.Run(kind, func(t *testing.T) {
@@ -432,4 +496,12 @@ func containsString(values []string, expected string) bool {
 		}
 	}
 	return false
+}
+
+func historyOperationIDs(page HistoryPage) []string {
+	ids := make([]string, 0, len(page.Items))
+	for _, item := range page.Items {
+		ids = append(ids, item.OperationID)
+	}
+	return ids
 }

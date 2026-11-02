@@ -29,10 +29,11 @@ const (
 	maxHistoryScanBytes  = 64 << 10
 )
 
-// The maximum event volume is below 1 MiB: a <=64 KiB reviewed manifest,
-// at most two small index-only events per 1,024 entries, one bounded error,
-// and a terminal Report whose deleted paths are already bounded by that
-// manifest. The cap is therefore above the valid full-batch worst case.
+// A valid full batch stays below 1 MiB: the intent manifest is <=64 KiB;
+// 1,024 attempt-start/result pairs have bounded metadata and at most one
+// <=1 KiB unlink error because apply stops at the first unlink failure; and
+// terminal deleted paths are a prefix of the <=64 KiB manifest. The cap is
+// checked on every append, including attempt-start, before its unlink.
 
 type operationEvent struct {
 	Schema      string    `json:"schema"`
@@ -238,7 +239,11 @@ func (j *durableJournal) Close() error {
 }
 
 func appendHistoryIndex(rootFD int, id string, at time.Time, digest string, fault func(string) error) error {
-	fd, err := unix.Openat(rootFD, "history-index.jsonl", unix.O_WRONLY|unix.O_APPEND|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0o600)
+	return appendHistoryIndexWith(rootFD, id, at, digest, fault, unix.Write)
+}
+
+func appendHistoryIndexWith(rootFD int, id string, at time.Time, digest string, fault func(string) error, write func(int, []byte) (int, error)) error {
+	fd, err := unix.Openat(rootFD, "history-index.jsonl", unix.O_RDWR|unix.O_APPEND|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0o600)
 	if err != nil {
 		return err
 	}
@@ -255,12 +260,15 @@ func appendHistoryIndex(rootFD int, id string, at time.Time, digest string, faul
 			return err
 		}
 	}
+	if err := ensureHistoryIndexLineBoundary(fd, fault, write); err != nil {
+		return err
+	}
 	row, err := json.Marshal(historyIndexRow{OperationID: id, StartedAt: at.UTC().Format(time.RFC3339Nano), ManifestSHA: digest})
 	if err != nil {
 		return err
 	}
 	row = append(row, '\n')
-	if err := writeAll(fd, row); err != nil {
+	if err := writeAllWith(fd, row, write); err != nil {
 		return err
 	}
 	if fault != nil {
@@ -272,6 +280,39 @@ func appendHistoryIndex(rootFD int, id string, at time.Time, digest string, faul
 		return err
 	}
 	return unix.Fsync(rootFD)
+}
+
+func ensureHistoryIndexLineBoundary(fd int, fault func(string) error, write func(int, []byte) (int, error)) error {
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		return err
+	}
+	if st.Size == 0 {
+		return nil
+	}
+	var last [1]byte
+	n, err := unix.Pread(fd, last[:], st.Size-1)
+	if err != nil {
+		return fmt.Errorf("inspect Trash receipt history tail: %w", err)
+	}
+	if n != 1 {
+		return io.ErrUnexpectedEOF
+	}
+	if last[0] == '\n' {
+		return nil
+	}
+	if err := writeAllWith(fd, []byte{'\n'}, write); err != nil {
+		return fmt.Errorf("separate incomplete Trash receipt history row: %w", err)
+	}
+	if fault != nil {
+		if err := fault("index-boundary-fsync"); err != nil {
+			return fmt.Errorf("persist Trash receipt history row boundary: %w", err)
+		}
+	}
+	if err := unix.Fsync(fd); err != nil {
+		return fmt.Errorf("persist Trash receipt history row boundary: %w", err)
+	}
+	return nil
 }
 
 func writeAll(fd int, p []byte) error {

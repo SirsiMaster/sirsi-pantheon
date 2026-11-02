@@ -174,6 +174,15 @@ time and manifest digest; the per-operation journal contains the reviewed paths
 and results. No history command constructs approval, replays deletion, or
 changes the Trash contents.
 
+The operation byte budget derives from the 64 KiB manifest limit, 1,024 maximum
+entry-attempt pairs, bounded event/error fields, and the terminal deleted-path
+prefix. Every append checks the 1 MiB cap; an attempt-start that cannot fit
+fails before its unlink. Index appenders hold the verified descriptor and the
+nonblocking exclusive lock while checking the final byte. If an earlier crash
+left an unterminated row, they append and fsync a newline boundary before the
+next row; they never truncate the old bytes. A failed boundary write or sync
+stops the current apply before any unlink.
+
 Existing index and operation files are opened nonblocking and rejected unless
 they are private regular single-link files; substituted FIFOs, symlinks and
 hardlinks are surfaced as incomplete/unknown evidence without changing them.
