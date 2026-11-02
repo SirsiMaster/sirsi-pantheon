@@ -635,6 +635,45 @@ func (f *Facade) CloseItem(actor, id, result string) error {
 	return f.closeRaw(id, result)
 }
 
+// ConvertItemToTask closes an open item and turns it into a task on agent's ledger in one store
+// transaction (routerstore.ConvertItemToTask). Same authority as CloseItem: an owner-addressed item is
+// refused, and converting another lane's item needs close:any. Store first, then the best-effort file
+// mirror, like completeRaw, so a refused convert never leaves a file marked closed.
+func (f *Facade) ConvertItemToTask(actor, id, agent, taskID string) (routerstore.Task, error) {
+	if err := f.ValidateAgent("acting agent", actor); err != nil {
+		return routerstore.Task{}, err
+	}
+	if err := f.ValidateAgent("ledger agent", agent); err != nil {
+		return routerstore.Task{}, err
+	}
+	item, err := f.Get(id)
+	if err != nil {
+		return routerstore.Task{}, err
+	}
+	if work.IsOwnerRecipient(item.To) {
+		return routerstore.Task{}, fmt.Errorf("dispatch: item %s is addressed to the owner (%q) and cannot be converted by an agent", id, item.To)
+	}
+	if item.To != actor {
+		allowed, capabilityErr := f.agentHasCapability(actor, "close:any")
+		if capabilityErr != nil {
+			return routerstore.Task{}, fmt.Errorf("dispatch: verify delegated-close authority: %w", capabilityErr)
+		}
+		if !allowed {
+			return routerstore.Task{}, fmt.Errorf("dispatch: acting agent %q cannot convert item %s addressed to %q without capability close:any", actor, id, item.To)
+		}
+	}
+	t, err := f.store.ConvertItemToTask(id, agent, taskID, actor)
+	if err != nil {
+		return routerstore.Task{}, fmt.Errorf("dispatch: item %s convert failed: %w", id, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(f.root, "items", id+".md")); statErr == nil {
+		if err := work.Close(f.root, id, "converted to task "+t.Agent+"/"+t.TaskID); err != nil && !errors.Is(err, work.ErrAlreadyClosed) {
+			return t, fmt.Errorf("dispatch: item %s converted in the store but file mirror failed: %w", id, err)
+		}
+	}
+	return t, nil
+}
+
 // CompleteItem finishes a CLAIMED item (status claimed/working) under its
 // live lease token, in both worlds. Unlike CloseItem (which guards on
 // status='open' and is for items closed without ever being claimed),
