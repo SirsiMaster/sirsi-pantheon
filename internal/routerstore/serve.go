@@ -753,13 +753,18 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// readable (liveness is needed to see where a send will land), but the unfiltered row carries each
 	// thread's full continuation payload (ResumePrompt, OwnedOpenItems, …), not just liveness (SSA PR
 	// #1079 review, P1).
-	// A read-only observer (the hosted board) is the exception: lane verdicts need every lane's thread.
-	if tokenScope != nil && !observer && name == "ListThreads" && len(results) == 1 {
+	// A read-only observer (the hosted board) needs every lane's thread for lane verdicts, so it gets every
+	// row — projected to the observer contract (observerThreadView), never the continuation payload. Its own
+	// agent's rows stay whole: its register/heartbeat CAS compares against the stored payload.
+	if tokenScope != nil && name == "ListThreads" && len(results) == 1 {
 		if recs, ok := results[0].Interface().([]ThreadRecord); ok {
 			kept := make([]ThreadRecord, 0, len(recs))
 			for _, r := range recs {
-				if tokenScope[r.Agent] {
+				switch {
+				case tokenScope[r.Agent]:
 					kept = append(kept, r)
+				case observer:
+					kept = append(kept, observerThreadView(r))
 				}
 			}
 			results[0] = reflect.ValueOf(kept)

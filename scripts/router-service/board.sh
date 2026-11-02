@@ -8,7 +8,10 @@
 #   board.sh mint        one-time (and on rotation): mint the @observer token straight
 #                        into Secret Manager from a Cloud Run job on the service VPC;
 #                        the plaintext is never printed or seen by anyone
-#   board.sh deploy      build from committed source and deploy (repeatable)
+#   board.sh deploy      build from committed source and deploy (repeatable); ends with verify
+#   board.sh verify      read back the EFFECTIVE policy and fail unless it is exactly: IAP on,
+#                        run.invoker = the IAP service agent only, IAP access = domain:sirsi.ai only,
+#                        no other service binding, and no public member at service or project level
 #   DRY_RUN=1 board.sh … prints every gcloud command, mutates nothing remote
 #
 # Rollback: gcloud run services update-traffic sirsi-router-board --to-revisions PREV=100
@@ -39,7 +42,34 @@ context() {
   printf 'FROM gcr.io/distroless/static-debian12:nonroot\nCOPY sirsi /sirsi\nCOPY recipient-registry.json /.agents/idea-router/agents.json\nCOPY CHANGELOG.md /CHANGELOG.md\nWORKDIR /\nENTRYPOINT ["/sirsi"]\nCMD ["router","board-serve"]\n' >"$1/Dockerfile"
 }
 
+# verify reads the policy that is actually in force, so a broader binding someone added earlier (or by hand)
+# fails the rollout instead of hiding behind the two bindings deploy adds. Members are printed; no secrets.
+verify() {
+  local num iapsa svc iap proj bad=0
+  num=$($G projects describe "$PROJECT" --format='value(projectNumber)')
+  iapsa="serviceAccount:service-$num@gcp-sa-iap.iam.gserviceaccount.com"
+  [ "$($G run services describe "$SERVICE" --region="$REGION" --format='value(metadata.annotations.run\.googleapis\.com/iap-enabled)')" = true ] ||
+    { echo "verify: IAP is not enabled on $SERVICE" >&2; bad=1; }
+  svc=$($G run services get-iam-policy "$SERVICE" --region="$REGION" --format=json)
+  iap=$($G beta iap web get-iam-policy --resource-type=cloud-run --service="$SERVICE" --region="$REGION" --format=json)
+  proj=$($G projects get-iam-policy "$PROJECT" --format=json)
+  echo "service policy:"; jq -r '.bindings[]? | "  \(.role): \(.members|join(", "))"' <<<"$svc"
+  echo "IAP policy:";     jq -r '.bindings[]? | "  \(.role): \(.members|join(", "))"' <<<"$iap"
+  echo "project run.invoker:"; jq -r '.bindings[]? | select(.role=="roles/run.invoker") | "  \(.members|join(", "))"' <<<"$proj"
+  jq -e --arg sa "$iapsa" '[.bindings[]?] == [{role:"roles/run.invoker",members:[$sa]}]' <<<"$svc" >/dev/null ||
+    { echo "verify: service policy must be exactly run.invoker → $iapsa" >&2; bad=1; }
+  jq -e --arg d "domain:$DOMAIN" '[.bindings[]? | {role,members}] == [{role:"roles/iap.httpsResourceAccessor",members:[$d]}]' <<<"$iap" >/dev/null ||
+    { echo "verify: IAP policy must be exactly iap.httpsResourceAccessor → domain:$DOMAIN" >&2; bad=1; }
+  jq -e '[.bindings[]? | .members[] | select(.=="allUsers" or .=="allAuthenticatedUsers")] | length == 0' <<<"$proj" >/dev/null ||
+    { echo "verify: the project grants a role to allUsers/allAuthenticatedUsers" >&2; bad=1; }
+  [ "$bad" = 0 ] && echo "verify: OK — only $DOMAIN accounts through IAP can reach $SERVICE"
+  return "$bad"
+}
+
 case "${1:-}" in
+verify)
+  verify
+  ;;
 provision)
   run $G services enable iap.googleapis.com
   $G iam service-accounts describe "$SA" >/dev/null 2>&1 || \
@@ -79,10 +109,11 @@ deploy)
   echo "PREV=$PREV"
   echo "NEW=$($G run services describe "$SERVICE" --region="$REGION" --format='value(status.latestReadyRevisionName)')"
   echo "URL=$($G run services describe "$SERVICE" --region="$REGION" --format='value(status.url)')"
+  [ "${DRY_RUN:-0}" = 1 ] || verify
   ;;
 --context-only)
   [ -n "${2:-}" ] || { echo "usage: board.sh --context-only DIR" >&2; exit 2; }
   context "$2"
   ;;
-*) echo "usage: board.sh provision|mint|deploy|--context-only DIR" >&2; exit 2 ;;
+*) echo "usage: board.sh provision|mint|deploy|verify|--context-only DIR" >&2; exit 2 ;;
 esac
