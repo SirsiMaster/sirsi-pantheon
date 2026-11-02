@@ -64,10 +64,12 @@ verify() {
   local num iapsa svc iap proj bad=0
   num=$($G projects describe "$PROJECT" --format='value(projectNumber)')
   iapsa="serviceAccount:service-$num@gcp-sa-iap.iam.gserviceaccount.com"
-  [ "$($G run services describe "$SERVICE" --region="$REGION" --format='value(metadata.annotations.run\.googleapis\.com/iap-enabled)')" = true ] ||
+  [ "$($G run services describe "$SERVICE" --region="$REGION" --format=json | jq -r '.metadata.annotations["run.googleapis.com/iap-enabled"] // ""')" = true ] ||
     { echo "verify: IAP is not enabled on $SERVICE" >&2; bad=1; }
   svc=$($G run services get-iam-policy "$SERVICE" --region="$REGION" --format=json)
-  iap=$($G beta iap web get-iam-policy --resource-type=cloud-run --service="$SERVICE" --region="$REGION" --format=json)
+  # Reading the IAP policy needs iap.webServices.getIamPolicy; without it say so rather than misreport the binding.
+  iap=$($G beta iap web get-iam-policy --resource-type=cloud-run --service="$SERVICE" --region="$REGION" --format=json) ||
+    { echo "verify: cannot read the IAP policy (needs iap.webServices.getIamPolicy) — confirm domain:$DOMAIN in Console" >&2; iap='{}'; bad=1; }
   proj=$($G projects get-iam-policy "$PROJECT" --format=json)
   echo "service policy:"; jq -r '.bindings[]? | "  \(.role): \(.members|join(", "))"' <<<"$svc"
   echo "IAP policy:";     jq -r '.bindings[]? | "  \(.role): \(.members|join(", "))"' <<<"$iap"
