@@ -168,8 +168,10 @@ func TestRemoteSendProjectsAuditLocallyAfterSingleCommit(t *testing.T) {
 		failGet    bool
 		blockWrite bool
 		duplicate  bool
+		warnLoad   bool
 	}{
 		{name: "canonical local projection"},
+		{name: "projection failure preserves backlog warning", failGet: true, warnLoad: true},
 		{name: "Get failure preserves committed row", failGet: true},
 		{name: "local write failure preserves committed row", blockWrite: true},
 		{name: "duplicate Get failure preserves deduped result", failGet: true, duplicate: true},
@@ -212,6 +214,11 @@ func TestRemoteSendProjectsAuditLocallyAfterSingleCommit(t *testing.T) {
 				mu.Unlock()
 				if failGet {
 					http.Error(w, "inert Get failure", http.StatusServiceUnavailable)
+					return
+				}
+				if tc.warnLoad && method == "RecipientLoad" {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"result":[{"unacked":50,"stalled":0}]}`))
 					return
 				}
 				// Keep the test response uncompressed so this inert wrapper can
@@ -277,6 +284,9 @@ func TestRemoteSendProjectsAuditLocallyAfterSingleCommit(t *testing.T) {
 			}
 			if gotCalls["SendGuarded"] != wantSends || gotCalls["ExportItem"] != 0 || gotCallerPathSent {
 				t.Fatalf("remote calls/path = calls:%+v callerPathSent:%t, want %d SendGuarded calls, no ExportItem RPC, and no caller directory on wire", gotCalls, gotCallerPathSent, wantSends)
+			}
+			if tc.warnLoad && !strings.Contains(res.Warning, "backlogged") {
+				t.Fatalf("projection failure lost backlog warning: %+v", res)
 			}
 			if res.ID == "" || res.To != "b" || res.Deduped != tc.duplicate || (tc.duplicate && res.ID != priorID) {
 				t.Fatalf("committed send result lost identity: %+v", res)
