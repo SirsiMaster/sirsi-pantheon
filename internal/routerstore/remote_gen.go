@@ -88,6 +88,11 @@ func (rs *RemoteStore) ClassifyLane(agent string, wakeRoutable bool, recentWithi
 func (rs *RemoteStore) CloseItem(id, result string) error {
 	return rs.call("CloseItem", []any{id, result})
 }
+func (rs *RemoteStore) ConvertItemToTask(itemID, agent, taskID, actor string) (Task, error) {
+	var o0 Task
+	err := rs.call("ConvertItemToTask", []any{itemID, agent, taskID, actor}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) Complete(id, token, result string) error {
 	return rs.call("Complete", []any{id, token, result})
 }

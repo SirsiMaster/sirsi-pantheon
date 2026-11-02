@@ -53,6 +53,21 @@ Statuses are `pending`, `in-progress`, `blocked`, and `done`.
 `--blocked-by <task-id>` when a task has a prerequisite; pass an empty
 `--blocked-by` on update to clear it.
 
+## Turn a router item into ledger work
+
+```sh
+sirsi router convert <item-id>                      # task on your ledger, id = item id
+sirsi router convert <item-id> --agent claude-nexus --task sne-02
+```
+
+One transaction: the item closes with the result `converted to task <agent>/<task-id> by
+<you>` and a `pending` task appears, with the item title as its subject and its sender and
+instructions in the outline. If anything fails, neither happens. Running it again on the same
+item returns the same task. An item already closed some other way is refused. Converting an
+item addressed to another lane needs `close:any`, the same as `router close`. Over the router
+service, a lane-scoped token may convert only items addressed to itself, onto its own ledger,
+and the close result names the authenticated session.
+
 ## Declare item dependencies
 
 ```sh

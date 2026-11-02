@@ -602,6 +602,10 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		}
 		in[0] = reflect.ValueOf(machine)
 	}
+	// The convert's close result names who did it: the authenticated session, never a client-supplied name.
+	if name == "ConvertItemToTask" && sess.Agent != "" {
+		in[3] = reflect.ValueOf(sess.Agent + "@" + sess.Host)
+	}
 	// 6. ownership — before the call, against the session bound at claim time.
 	if idx, ok := itemOwnership[name]; ok && idx < len(in) {
 		if err := s.checkItemOwner(in[idx].String(), sess); err != nil {
