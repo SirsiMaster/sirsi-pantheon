@@ -1,0 +1,24 @@
+# Source-only policy fixture. This file is not installed or activated by this
+# correction. It grants no machine authority and does not cover GUI actions.
+[features]
+hooks = true
+
+[hooks]
+managed_dir = "/etc/codex/hooks"
+
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/etc/codex/hooks/sirsi-display-power-guard"
+timeout = 3
+statusMessage = "Checking managed command safety"
+
+# Inspect command/cmd fields for every tool name; allow non-command payloads.
+[[hooks.PreToolUse]]
+matcher = ".*"
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/etc/codex/hooks/sirsi-display-power-guard"
+timeout = 3
+statusMessage = "Checking managed command safety"
