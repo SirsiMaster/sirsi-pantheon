@@ -189,7 +189,7 @@ class RegistryDeadlineTests(unittest.TestCase):
         native.call = mock.Mock(side_effect=[runner.TransientTransport('HTTP 502'), {'thread_id': 'own'}])
         clock = Clock()
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)):
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance):
             self.assertEqual(native.registration_observation('own'), {'thread_id': 'own'})
         self.assertEqual(native.call.call_count, 2)
         self.assertEqual(native.deadline, 75)
@@ -214,7 +214,7 @@ class RegistryDeadlineTests(unittest.TestCase):
             return dict(agent_id='lane', pid=os.getpid(), status='active', thread_id=identity)
         native.call = call
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)):
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance):
             identity = native.register_executor('lane')
         self.assertEqual([c[:2] for c in calls], [('thread', 'register'), ('thread', 'heartbeat'), ('thread', 'heartbeat')])
         self.assertTrue(all(c[c.index('--thread') + 1] == identity for c in calls))
@@ -247,7 +247,7 @@ class RegistryDeadlineTests(unittest.TestCase):
             "Control call ('thread', 'heartbeat') failed: thread \"own\" not registered: heartbeat registration unavailable"))
         clock = Clock()
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)), \
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
                 self.assertRaises(runner.TransientTransport):
             native.registration_observation('own', pending_registration=True)
         self.assertEqual(clock.now, 3)
@@ -270,7 +270,7 @@ class RegistryDeadlineTests(unittest.TestCase):
                 native.call = mock.Mock(side_effect=runner.Refused(message))
                 clock = Clock()
                 with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                        mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)) as sleep, \
+                        mock.patch.object(runner.time, 'sleep', side_effect=clock.advance) as sleep, \
                         self.assertRaises(runner.Refused):
                     native.registration_observation('own', pending_registration=True)
                 self.assertEqual(native.call.call_count, 1)
@@ -281,7 +281,7 @@ class RegistryDeadlineTests(unittest.TestCase):
         native.call = mock.Mock(side_effect=runner.TransientTransport('HTTP 502'))
         clock = Clock()
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)), \
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
                 self.assertRaises(runner.TransientTransport):
             native.registration_observation('own')
         self.assertEqual(clock.now, 120)
@@ -447,7 +447,7 @@ class RegistryDeadlineTests(unittest.TestCase):
         with mock.patch.object(runner.subprocess, 'run', side_effect=subprocess.TimeoutExpired('sirsi',30)), \
                 mock.patch.object(runner.subprocess, 'check_output') as process, \
                 mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)):
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance):
             with self.assertRaises(runner.TransientTransport):
                 native.registered('lane','thread')
             process.assert_not_called()
@@ -691,6 +691,9 @@ class Clock:
         self.now = 0
     def monotonic(self):
         return self.now
+    def advance(self, seconds):
+        # Keep repeated subsecond poll steps on a deterministic nanosecond grid.
+        self.now = round(self.now + seconds, 9)
 
 
 class FakeChild:
@@ -711,7 +714,7 @@ class FakeChild:
     def wait(self, timeout=None):
         self.wait_timeouts.append(timeout)
         if timeout is not None and self.clock.now + timeout < self.finish:
-            self.clock.now += timeout
+            self.clock.advance(timeout)
             raise subprocess.TimeoutExpired('fixture', timeout)
         self.clock.now = max(self.clock.now, self.finish)
         self.returncode = self.exit_code
@@ -742,7 +745,7 @@ class RecurringTests(unittest.TestCase):
             clock.now += 5
             return code
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)), \
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
                 mock.patch.object(runner, 'supervise', side_effect=iteration) as supervise:
             code = runner.supervise_iterations(['fixture'], 'm5', 'lane', 'thr-real',
                                                'work', 60, backend, record, 3, interval, lifetime,
@@ -843,7 +846,7 @@ class RecoveryTests(unittest.TestCase):
         backend.child = child
         record = {}
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)), \
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
                 mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
                 mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
                 mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda target: target.terminal_status()), \
@@ -857,6 +860,7 @@ class RecoveryTests(unittest.TestCase):
     def test_healthy_run_bounds_remote_reads_without_slowing_child_monitoring(self):
         code, record, backend, clock, events = self.run_case(finish=95)
         self.assertEqual(code, 0)
+        self.assertEqual(clock.now, 95)
         reads = [at for kind,at in events if kind == 'read']
         renewals = [at for kind,at in events if kind == 'renew']
         # Initial observation + pre-spawn + three healthy checks + terminal.
@@ -998,7 +1002,7 @@ class RecoveryTests(unittest.TestCase):
             backend.heartbeat = mock.Mock()
             record = {}
             with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                    mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)), \
+                    mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
                     mock.patch.object(runner.subprocess, 'Popen', return_value=FakeChild(clock, 1000)), \
                     mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
                     mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda child: child.terminal_status()), \
@@ -1082,7 +1086,7 @@ class RecoveryTests(unittest.TestCase):
             target.returncode = 0
         runner.stop(child, observe=observe, send_group=send_group, reap=reap,
                     monotonic=clock.monotonic,
-                    sleep=lambda seconds: setattr(clock, 'now', clock.now + seconds))
+                    sleep=clock.advance)
         self.assertEqual(events[0][0:2], ('signal', runner.signal.SIGTERM))
         self.assertEqual(events[-1][0], 'reap')
         self.assertGreaterEqual(events[-1][1], 2)
