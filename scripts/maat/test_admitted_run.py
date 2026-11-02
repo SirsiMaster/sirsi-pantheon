@@ -595,6 +595,7 @@ class SupervisorTests(unittest.TestCase):
         record = {}
         child = FakeChild(clock, 1000)
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
                 mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
                 mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
                 mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda target: target.terminal_status()), \
