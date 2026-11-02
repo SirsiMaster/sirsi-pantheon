@@ -48,9 +48,22 @@ func TestCompassPointBackstopsDeclareWorkingOwnQueueConsumers(t *testing.T) {
 				t.Fatal("Claude backstop must retain its bounded invocation budget")
 			}
 			// Resolve without starting a model, using a real isolated cwd.
+			// The router root carries the checked-in machine registry its allowlist renders from.
 			cfg.Cwd = t.TempDir()
-			if c, reason := ResolveConsumer(cfg, t.TempDir()); c == nil {
+			root := t.TempDir()
+			mb, err := os.ReadFile("../../.agents/idea-router/machines.json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(root+"/machines.json", mb, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			c, reason := ResolveConsumer(cfg, root)
+			if c == nil {
 				t.Fatalf("backstop cannot resolve: %s", reason)
+			}
+			if cfg.Type == "codex" && !strings.Contains(strings.Join(c.Argv, "\n"), legacyLaneDomains) {
+				t.Fatal("resolved argv must carry the registry-rendered allowlist")
 			}
 			cfg.Consumer = ConsumerConfig{}
 			if c, _ := ResolveConsumer(cfg, t.TempDir()); c != nil {
