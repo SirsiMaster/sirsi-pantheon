@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/casebook"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/output"
 )
 
@@ -47,11 +48,7 @@ var maatRecordResolutionCmd = &cobra.Command{
 			BriefTitle: "Ma'at Owner Resolution",
 			Status:     "ok",
 			Summary:    "Ma'at recorded the owner-resolution decision. No system change was made.",
-			Evidence: []output.Evidence{
-				{Label: "Finding", Value: decision.Resource},
-				{Label: "Evidence", Value: decision.Evidence},
-				{Label: "Conclusion", Value: "owner review required"},
-			},
+			Evidence:   maatRecordResolutionEvidence(decision),
 			NextActions: []output.NextAction{{
 				Label: "Review Ma'at casebook", Command: "sirsi maat casebook", Description: "Inspect the durable evidence and record the owner decision when the required action is known.",
 			}},
@@ -59,6 +56,18 @@ var maatRecordResolutionCmd = &cobra.Command{
 		result.Render()
 		return nil
 	},
+}
+
+func maatRecordResolutionEvidence(decision maat.Decision) []output.Evidence {
+	evidence := []output.Evidence{
+		{Label: "Finding", Value: decision.Resource},
+		{Label: "Evidence", Value: decision.Evidence},
+		{Label: "Conclusion", Value: "owner review required"},
+	}
+	if cases := casebook.Build([]maat.Decision{decision}).Cases; len(cases) == 1 {
+		evidence = append(evidence, output.Evidence{Label: "Case ID", Value: cases[0].ID})
+	}
+	return evidence
 }
 
 var maatAcceptResolutionCmd = &cobra.Command{

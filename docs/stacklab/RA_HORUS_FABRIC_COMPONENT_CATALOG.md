@@ -42,3 +42,13 @@ and the record must be byte-pinned by the universal registry before the wing
 is called canonical.
 
 **Diagrams:** every process this catalog covers is indexed in [RA_HORUS_FABRIC_DIAGRAM_INDEX.md](RA_HORUS_FABRIC_DIAGRAM_INDEX.md) (SL-DIAGRAM-001).
+
+### Thread retirement fence — existing store correction
+
+Recipe component `thread-retirement-fence` maps `internal/routerstore/threads.go`
+to the real-method SQLite and PostgreSQL fixtures in `threadprune*_test.go`.
+Exact retired row identity remains reserved with empty user payload; no new
+store/schema/RPC or fence GC. See the N2 continuation in ADR-057 and the
+routerstore README for the G1 server/direct-writer/rollback deployment floor.
+Status: source candidate; no live prune, canonical rollout or installed-fabric
+completion claimed by this catalog entry.

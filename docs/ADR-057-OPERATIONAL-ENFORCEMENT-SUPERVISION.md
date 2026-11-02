@@ -142,3 +142,23 @@ distinct ADR-054 documents (`ADR-054-CONTRACTS-IDENTITY-AND-LEDGER-V7.md` and
 `ADR-054-ONE-HORUS-UNIFIED-AGENT-FABRIC.md`) plus an ADR-055, while open PRs claim 051, 054,
 055, and 056. PR #464 adds the ADR-uniqueness CI gate that makes this class detectable. If
 that gate renumbers this range, this document moves with it.
+
+## N2 corrective producer — retained thread retirement (2026-10-31 source candidate)
+
+The original N2 contract is implemented in the existing scoped/unscoped
+`DeleteThreadCAS` producer: preserve the primary key and authority identity,
+set reserved `pruned`, and clear payload to `{}` under the exact observed-row
+predicate. Existing G1 guards remain prerequisites, not a substitute producer.
+Normal reads hide the row; authority binding and raw migration retain it.
+No schema/RPC/store, new approval surface or fence collection is introduced.
+
+The causal regression uses two handles and the real production retirement.
+PostgreSQL qualification must observe an actual peer write waiting across the
+production retirement statement's uncommitted transaction and refusing after
+commit. A legacy raw physical delete remains an explicit negative control.
+
+Source/fixture acceptance does not grant canonical DB deployment. Ra/SSA
+establish compatible server/direct-writer and rollback floors, including
+in-flight/rejoining writers, before any G2 producer reaches that authority.
+The desktop release does not silently restart or upgrade the router service.
+This continues ADR-062-ROUTER-SERVICE-RA-CONCURRENCY, not a second router.

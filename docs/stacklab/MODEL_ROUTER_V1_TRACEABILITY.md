@@ -27,37 +27,67 @@ not a runtime or empirical acceptance record.
 | One real ask execution path; alarms visible during explicit routing; final lane shown in text/JSON | `ask-routing-intent-and-final-decision-surface`: `cmd/sirsi/ask.go` | Doctor findings, ask flags, provider ladder → heuristic answer or one `Router.Complete`, visible alarms, final route/provider/model and response/refusal | `ask_test.go`: `TestAskRejectsJSONFixBeforeDiagnosis`, `TestAskExplicitRouteKeepsDoctorAlarmsAndUsesSingleFinalDecision`, `TestAskJSONShowsAlarmAndActualRoutedCompletion`, `TestAskDefaultHeuristicAlarmDoesNotInvokeModel`, `TestAskSurfacesDecisionSinkFailureWithoutRepeatingCompletion` | Alarms remain visible with `--route`; alarms remain model-free by default; existing `--json --fix` and `--route --fix` refusals remain. Do not bypass `Router.Complete` or repeat inference after sink failure. |
 | Correct captured ask output without changing other global writers | `ask-command-writer-and-terminal-formatting`: `cmd/sirsi/ask.go`, `internal/output/terminal.go` | selected Cobra `io.Writer` plus existing severity/style → normal human rendering or JSON bytes on that writer | ask explicit-route and JSON tests above; `terminal_test.go`: `TestHeader`, `TestInfo`, `TestDim`, `TestSuccess`, `TestWarn`, `TestStyles_Render` | Ask output is command-scoped; existing terminal styling and non-ask process-writer behavior remain. No package-global writer/race workaround. |
 
-## Explicitly open original criteria
+## Request support and open runtime criteria
 
-The provider interface already has an optional `StreamingProvider`; the
-OpenAI-compatible adapter has `Stream` SSE parsing and adapter-level tests in
-`internal/provider/openaicompat_test.go` (`TestStreamParsesSSEChunksAndDone`,
-`TestStreamCancellationClosesResponse`,
-`TestStreamRejectsEOFBeforeTerminalMarker`). The local profile also requires an
-explicit streaming declaration. Those facts do **not** make streaming a
-qualified routed request: `modelrouter.Request` has no streaming requirement,
-`Router.Complete` is buffered, and `sirsi ask` calls that buffered path. There
-is no routed-stream fixture proving capability refusal, fallback before first
-chunk, terminal failure after partial output, or bounded cancellation.
+Current source represents and routes the client-side requirements; this is
+distinct from evidence that a particular backend satisfies them:
 
-Likewise, `provider.Caps` has no JSON response-mode or determinism evidence,
-and `modelrouter.Request` cannot require either. `sirsi ask --json` describes
-the CLI answer envelope, not a provider JSON-generation capability. These
-three requirements remain **unknown/unqualified** until request requirement,
-backend evidence, the shared route predicate, and actual wire execution are
-connected. Do not infer support from a profile name, endpoint shape, or adapter
-implementation.
+- `modelrouter.Request` in `internal/modelrouter/router.go` carries
+  `RequireStreaming`, `provider.ResponseFormat`, and
+  `provider.DeterminismMode`. `provider.Request` carries the response format
+  and determinism request; `provider.Caps` carries streaming, JSON-object,
+  determinism, and determinism-mode declarations (`internal/provider/provider.go`).
+- `Router.Stream` applies the normal policy and capability-selection path,
+  including explicit `StreamingProvider` interface and streaming declaration
+  checks. `cmd/sirsi/ask.go` sends `--stream` through this path. Existing inert
+  controls are in `internal/modelrouter/stream_test.go`, including
+  `TestStreamRequiresExplicitCapabilityAndHonorsPrivacy`,
+  `TestStreamRemoteExhaustionFallsDownOnceBeforeFirstChunk`, and
+  `TestStreamDoesNotFallbackAfterExposingPartialOutput`.
+- JSON-object requirements are validated and qualified in
+  `internal/provider/requirements.go`; `LocalProfile.JSONObject` is an
+  optional declaration for the selected profile in
+  `internal/provider/local_profile.go`. The request is carried separately from
+  the `sirsi ask --json` output envelope. Existing tests include
+  `internal/provider/requirements_test.go#TestGenerationRequirementsExactJSONObjectWireAndDefault`
+  and `cmd/sirsi/ask_requirements_test.go#TestAskGenerationCobraSelectedProfileToHTTP`.
+- Determinism is represented as the typed `batch_invariant` request and matching
+  provider declaration. `QualifyRequirements` refuses unknown or mismatched
+  declarations. This does not establish that the current OpenAI-compatible
+  backend can produce that mode.
+
+The remaining criteria are still **unknown/unqualified** at the actual backend
+and installed-runtime boundary. There is no empirical JSON-object or
+deterministic-generation qualification for a production backend, and no
+successful real routed-request handoff or installed streaming acceptance. Do
+not infer these from typed fields, a selected-profile declaration, adapter
+wire support, or inert fixtures. Preserve unknown/refusal until the exact
+backend has evidence for the requested mode and any separately authorized
+handoff has its own retained receipt.
 
 Provider-readiness R5 has separate accepted normal/race/negative source
 qualification at `d0a12981a3dfba955baa32ccf6c0796f4e5be488` with accepted
 evidence reference `b04b…`; the later 0.24.132 combined candidate is reported
 at 199 each green. This maps that owner-boundary evidence but does not attribute
-it to or rerun it on the 691-based model-router candidate. The model-router
-recipe's test names identify authored fixtures; this documentation change
-claims no execution of those fixtures, live provider/model call, successful
-real routed-request handoff, cost, quality, latency, or performance. Main-owned
-qualification for the exact model-router source tuple and any separately
-authorized real handoff remain distinct evidence.
+it to or rerun it on the model-router candidate. The accepted retained source
+qualification is bound to production parent
+`b3a3c47f7c856c13cde4b71a6f983c492622baf5` and donor
+`24e4b669672895554c5228fce5e400e72b58d157`; independent composed review
+`c05f73ff39d05d18c2e9fa526a6b20ac05dcc50adf40b9f7de72de1e4e7d7e05`
+accepts 338 named normal/race passes on the parent, 40 affected-helper
+named normal/race passes on the donor, five compiled controls, lint/build, and
+its native receipt. Composition
+`9da345045251abcc5a8245e629e9d053adf63383` and release136 are ancestors of
+current main `09377bdb3476b072b7f44414afa99e6dcba81b2e`, but these retained
+results are not a fresh qualification at that current-main identity. The
+`verification` values in
+`contracts/stacklab/model-router-generation-requirements-v1.json` are the
+original `f66dbf76` source-packet checkpoint, not a current-main test report;
+the retained qualification above remains bound to its own source receipts.
+No live provider/model call, successful real routed-request handoff, cost,
+quality, latency, or performance is claimed. Main-owned exact-source
+qualification and any separately authorized real handoff remain distinct
+evidence.
 
 ## Negative controls and safe replacement boundary
 

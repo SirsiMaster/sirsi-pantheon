@@ -11,6 +11,18 @@ final class CLIArgumentsTests: XCTestCase {
         XCTAssertEqual(try MenubarCommandParser.parse(["SirsiMenubar", "-h"]), .help)
     }
 
+    func testExactVersionJSONProbeNeverFallsThroughToLaunch() throws {
+        XCTAssertEqual(try MenubarCommandParser.parse(["SirsiMenubar", "version", "--json"]), .versionJSON)
+        for arguments in [
+            ["SirsiMenubar", "version"],
+            ["SirsiMenubar", "version", "--json", "extra"],
+            ["SirsiMenubar", "--json", "version"],
+            ["SirsiMenubar", "--version", "--json"]
+        ] {
+            XCTAssertThrowsError(try MenubarCommandParser.parse(arguments), "Unexpectedly accepted \(arguments)")
+        }
+    }
+
     func testSnapshotCapturesAllOptions() throws {
         XCTAssertEqual(
             try MenubarCommandParser.parse(["SirsiMenubar", "--snapshot", "/tmp/out", "--width", "500", "--appearance", "light"]),

@@ -156,10 +156,10 @@ status or certify any criterion.
   was not measured. Owner: Pantheon PT; refresh this index with any catalog,
   source, requirement, story, release or runtime process change.
 
-## Corrective141 composition crosswalk
+## Historical corrective141 composition crosswalk
 
-The accepted finite census is retained at f676/normal merge24b4e50b. The fresh
-module inventory binds corrective source958db55b; it does not silently repin older
+The accepted finite census is retained at f676/normal merge24b4e50b. The historical
+module inventory bound corrective source958db55b; the current inventory does not silently repin older
 process review evidence. Joined-worker behavior remains in PT-P55. Legacy
 129/137 profiles extend the existing selected maintenance flow, preserving
 unknown outcomes. The corrected consumer bootstrap separates coordination from

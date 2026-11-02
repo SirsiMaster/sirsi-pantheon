@@ -22,6 +22,13 @@ import (
 
 const Schema = "pantheon.package-inventory/v1"
 
+const (
+	ApolloCapabilityInfoKey           = "SirsiApolloNativeCapability"
+	ApolloCapabilityEnabled           = "enabled"
+	ApolloCapabilityDisabled          = "disabled"
+	ApolloCapabilityLegacyDevelopment = "legacy-development"
+)
+
 // maxPayloadFileSize bounds one regular file admitted to the signed Pantheon
 // app. The Go CLI is a real native executable and currently exceeds 32 MiB;
 // the previous 32 MiB parser cap made the verifier reject the product it is
@@ -37,6 +44,7 @@ type Expectations struct {
 	PkgInfo              []byte
 	LaunchAgent          []byte
 	BrandLogo            []byte
+	ApolloCapability     string
 	ApolloProfile        []byte
 	RequireCodeSignature bool
 }
@@ -415,6 +423,19 @@ func readOnce(fd int, size int64) ([]byte, error) {
 func validateReport(report Report, contents map[string][]byte, expected Expectations) error {
 	if report.Schema != Schema || !report.PythonFree || report.EngineCount != 2 {
 		return errors.New("package inventory: malformed report")
+	}
+	switch expected.ApolloCapability {
+	case ApolloCapabilityEnabled:
+		if len(expected.ApolloProfile) == 0 {
+			return errors.New("package inventory: enabled Apollo capability requires an explicit profile")
+		}
+	case ApolloCapabilityDisabled:
+		if len(expected.ApolloProfile) != 0 {
+			return errors.New("package inventory: disabled Apollo capability forbids a profile")
+		}
+	case ApolloCapabilityLegacyDevelopment:
+	default:
+		return errors.New("package inventory: explicit Apollo capability is required")
 	}
 	if !hasExact(report, "Contents/Info.plist", expected.InfoPlist) || !hasExact(report, "Contents/PkgInfo", expected.PkgInfo) || !hasExact(report, "Contents/Resources/ai.sirsi.pantheon.plist", expected.LaunchAgent) || !hasExact(report, "Contents/Resources/sirsi-logo-white.png", expected.BrandLogo) {
 		return errors.New("package inventory: canonical payload bytes mismatch")

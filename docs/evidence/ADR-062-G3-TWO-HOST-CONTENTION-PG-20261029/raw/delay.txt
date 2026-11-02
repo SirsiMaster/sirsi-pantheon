@@ -1,0 +1,2 @@
+TEST DELAY = 2 x p99 = 204ms
+period 0.66s

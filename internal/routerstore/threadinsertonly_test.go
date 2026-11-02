@@ -44,6 +44,38 @@ func TestThreadInsertOnlyCASPreservesOccupiedAndScopedRows(t *testing.T) {
 	}
 }
 
+func TestThreadInsertOnlyCASRejectsReservedPrunedInput(t *testing.T) {
+	f := newScopedFixture(t, []string{"cloud-a"})
+	for _, tc := range []struct {
+		name string
+		call func(ThreadRecord) (bool, error)
+	}{
+		{
+			name: "unscoped-create-only",
+			call: f.backend.UpsertThreadCAS,
+		},
+		{
+			name: "versioned-scoped-create-only",
+			call: f.client("cloud-a").UpsertThreadCAS,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			record := ThreadRecord{
+				ThreadID: "reserved-" + tc.name, Agent: "cloud-a", Host: f.host,
+				Status: threadStatusPruned, LastSeenAt: "2026-10-31T00:00:00Z",
+				Payload: []byte(`{}`), CreateOnly: true,
+			}
+			if applied, err := tc.call(record); err == nil || applied {
+				t.Fatalf("reserved insert-only input was not refused: applied=%v err=%v", applied, err)
+			}
+			var count int
+			if err := f.backend.db.QueryRow(`SELECT count(*) FROM threads WHERE thread_id=?`, record.ThreadID).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("reserved insert-only input wrote a row: count=%d err=%v", count, err)
+			}
+		})
+	}
+}
+
 func TestThreadInsertOnlyVersionFailsClosedForLegacyDecoder(t *testing.T) {
 	r := ThreadRecord{ThreadID: "own", CreateOnly: true}
 	wire, err := json.Marshal([]any{"thread-insert-only.v1", r})

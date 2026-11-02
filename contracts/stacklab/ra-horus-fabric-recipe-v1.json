@@ -57,11 +57,11 @@
     {
       "id": "relay-owned-outbox-observation",
       "source": ["internal/routerstore/spool.go", "internal/routerstore/spoolobservation.go", "internal/routerstore/spoolobservation_unix.go", "internal/routerstore/spoolhealth.go", "internal/routerstore/spoolrepair_unix.go", "internal/router/nodestatus.go", "macapp/Sources/SirsiMenubar/SirsiEngine.swift", "macapp/Sources/SirsiMenubar/Views.swift", "docs/runbooks/RELAY-OUTBOX-OBSERVATION.md"],
-      "tests": ["internal/routerstore/spoolobservation_test.go", "internal/routerstore/spoolobservation_unix_test.go", "macapp/Tests/SirsiMenubarTests/RelayObservationTests.swift"],
-      "inputs": ["independently validated existing root/service producer identity", "exact configured reader trust group", "bounded name-only per-lane metadata", "producer observation interval"],
+      "tests": ["internal/routerstore/spoolobservation_test.go", "internal/routerstore/spoolobservation_unix_test.go", "internal/routerstore/spoolhealth_test.go", "macapp/Tests/SirsiMenubarTests/RelayObservationTests.swift"],
+      "inputs": ["independently validated existing root/service producer identity", "exact explicit reader trust group or independently validated protected-service root-declared reader policy", "bounded name-only per-lane metadata", "producer observation interval"],
       "outputs": ["versioned per-lane observed/unavailable/absent retry evidence", "aggregate only under complete enumeration and lane coverage", "separate direct observer access, explicit inventory coverage and same-user repair eligibility", "immutable agent/canonical-spool/root confirmation followed by same-scope fresh board verification"],
       "writes": ["new reserved relay health summary from the existing relay loop only; no request-body access or existing permission changes"],
-      "upgrade_recipe": ["retain the service-owned private outbox permissions", "never infer producer identity from group access or snapshot claims", "publish only exact declared metadata gid/mode with no extended ACL", "fail projection honestly without stopping transport", "do not promote a partial lane sum or stale snapshot to current truth", "require owner-managed selected-service upgrade when the publisher is absent; no automatic restart", "offer repair only after read-only same-user preflight and repeat checks in the existing command", "qualify owned filesystem and native projection fixtures before claiming installed behavior"]
+      "upgrade_recipe": ["retain the service-owned private outbox permissions", "allow root-declared group only in the read-only collector for the exact independently validated protected service root; explicit mismatched groups refuse without fallback", "keep publisher policy unchanged and qualify actual collector role selection with inert nonmutation fixtures", "never infer producer identity from group access or snapshot claims", "publish only exact declared metadata gid/mode with no extended ACL", "fail projection honestly without stopping transport", "do not promote a partial lane sum or stale snapshot to current truth", "require owner-managed selected-service upgrade when the publisher is absent; no automatic restart", "offer repair only after read-only same-user preflight and repeat checks in the existing command", "qualify owned filesystem and native projection fixtures before claiming installed behavior"]
     },
     {
       "id": "finite-service-mailbox-reconciliation",
@@ -189,6 +189,38 @@
       ]
     },
     {
+      "id": "thread-retirement-fence",
+      "source": [
+        "internal/routerstore/threads.go",
+        "internal/routerstore/migratestore.go",
+        "docs/ADR-057-OPERATIONAL-ENFORCEMENT-SUPERVISION.md",
+        "internal/routerstore/README.md"
+      ],
+      "tests": [
+        "internal/routerstore/threadprune_test.go",
+        "internal/routerstore/threadprune_postgres_test.go"
+      ],
+      "inputs": [
+        "exact observed thread ID/status/last-seen/host",
+        "existing authenticated lane scope and compatible G1 writer/server floor"
+      ],
+      "outputs": [
+        "truthful retired/no-op CAS result",
+        "retained non-live primary-key authority binding with empty user payload"
+      ],
+      "writes": [
+        "existing threads row status and payload only; preserve ID/agent/host/last-seen; no new schema or fence garbage collection"
+      ],
+      "upgrade_recipe": [
+        "verify compatible canonical server, direct-writer and rollback floor before G2 deployment",
+        "keep current reserved-status input and all scoped/unscoped upsert fences",
+        "use exact production retirement CAS in SQLite and disposable PostgreSQL fixtures",
+        "require causal physical-delete regression and real PostgreSQL lock-wait evidence",
+        "preserve raw migration and all-pruned import fences plus unrelated new-ID registration",
+        "source candidate only; app installation is not canonical service or mixed-writer rollout proof; no live pruning for qualification"
+      ]
+    },
+    {
       "id": "router-service",
       "source": [
         "internal/router",
@@ -197,6 +229,7 @@
       ],
       "tests": [
         "internal/router tests",
+        "internal/router/wakeidentity_test.go::TestWakeLoopTerminalObserverStopsWithoutRevival",
         "router rollback fixtures"
       ],
       "inputs": [
@@ -214,6 +247,7 @@
       ],
       "upgrade_recipe": [
         "preserve TTL and revocation fencing",
+        "synchronize terminal-observer fixtures at the existing post-heartbeat log boundary; keep bounded lifecycle retries unchanged",
         "rehearse outage and rollback",
         "never reopen local fallback"
       ]

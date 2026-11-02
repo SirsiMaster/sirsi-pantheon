@@ -76,6 +76,21 @@ func (j *concurrentBinaryDriftJournal) FindByEvidence(kind, evidence string) (ma
 	}
 	return maat.Decision{}, false, nil
 }
+func (j *concurrentBinaryDriftJournal) FindUniqueByEvidence(evidence string) (maat.Decision, int, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	var found maat.Decision
+	matches := 0
+	for _, row := range j.rows {
+		if row.Evidence == evidence {
+			matches++
+			if matches == 1 {
+				found = row
+			}
+		}
+	}
+	return found, matches, nil
+}
 
 func installMaatBinaryDriftFixture(t *testing.T) (*maatTestJournal, string, string, string) {
 	t.Helper()
@@ -372,6 +387,139 @@ func TestMaatBinaryDriftRefusesSeparateOwnerDecisionForOriginalCase(t *testing.T
 	if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "separate owner decision") {
 		t.Fatalf("case with existing owner review was accepted for repair: %v", err)
 	}
+}
+
+func binaryDriftFileCaseFixture(t *testing.T) (*maat.FileDecisionJournal, maat.Decision, string) {
+	t.Helper()
+	inMemory, evidence, _, _ := installMaatBinaryDriftFixture(t)
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	journal := &maat.FileDecisionJournal{Path: path}
+	decision := inMemory.decisions[0]
+	decision.Time = "2026-10-01T12:00:00Z"
+	if err := journal.Append(decision); err != nil {
+		t.Fatal(err)
+	}
+	return journal, decision, evidence
+}
+
+func appendBinaryDriftFillerDecisions(t *testing.T, journal *maat.FileDecisionJournal, count int) {
+	t.Helper()
+	for i := 0; i < count; i++ {
+		if err := journal.Append(maat.Decision{
+			Time: "2026-10-02T12:01:00Z", Host: "fixture", Kind: "knowledge owner review",
+			Requester: "maat", Resource: "fixture", Assessed: "retained fixture", Determination: "accepted", Why: "fixture row",
+			Evidence: fmt.Sprintf("filler:%d", i),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func assertRecentBinaryDriftEvidenceCount(t *testing.T, journal *maat.FileDecisionJournal, evidence string, want int) {
+	t.Helper()
+	rows, err := journal.Recent(100)
+	if err != nil {
+		t.Fatalf("read recent journal window: %v", err)
+	}
+	if len(rows) != 100 {
+		t.Fatalf("Recent(100) returned %d rows, want 100", len(rows))
+	}
+	matches := 0
+	for _, row := range rows {
+		if row.Evidence == evidence {
+			matches++
+		}
+	}
+	if matches != want {
+		t.Fatalf("Recent(100) exact-evidence count = %d, want %d", matches, want)
+	}
+}
+
+func TestMaatBinaryDriftValidationFindsExactCaseBeyondRecentWindow(t *testing.T) {
+	journal, _, evidence := binaryDriftFileCaseFixture(t)
+	appendBinaryDriftFillerDecisions(t, journal, 105)
+	assertRecentBinaryDriftEvidenceCount(t, journal, evidence, 0)
+	row, matches, err := journal.FindUniqueByEvidence(evidence)
+	if err != nil || matches != 1 || row.Evidence != evidence {
+		t.Fatalf("full retained exact-evidence lookup = %+v, matches=%d, err=%v", row, matches, err)
+	}
+	if err := validateMaatBinaryDriftCase(journal, evidence); err != nil {
+		t.Fatalf("valid retained case outside recent window refused: %v", err)
+	}
+}
+
+func TestMaatBinaryDriftValidationRefusesDuplicateAcrossRecentBoundary(t *testing.T) {
+	journal, decision, evidence := binaryDriftFileCaseFixture(t)
+	appendBinaryDriftFillerDecisions(t, journal, 100)
+	decision.Time = "2026-10-03T12:00:00Z"
+	if err := journal.Append(decision); err != nil {
+		t.Fatal(err)
+	}
+	assertRecentBinaryDriftEvidenceCount(t, journal, evidence, 1)
+	if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "multiple journal rows") {
+		t.Fatalf("duplicate exact case across recent boundary = %v, want ambiguity refusal", err)
+	}
+}
+
+func TestMaatBinaryDriftValidationRefusesDifferentKindEvidenceDuplicateAcrossRecentBoundary(t *testing.T) {
+	journal, _, evidence := binaryDriftFileCaseFixture(t)
+	appendBinaryDriftFillerDecisions(t, journal, 100)
+	if err := journal.Append(maat.Decision{
+		Time: "2026-10-03T12:00:00Z", Host: "fixture", Kind: "knowledge owner review",
+		Requester: "maat", Resource: "fixture", Assessed: "unrelated typed row", Determination: "accepted", Why: "duplicate evidence fixture",
+		Evidence: evidence,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertRecentBinaryDriftEvidenceCount(t, journal, evidence, 1)
+	if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "multiple journal rows") {
+		t.Fatalf("different-kind same-evidence row across recent boundary = %v, want ambiguity refusal", err)
+	}
+}
+
+func TestMaatBinaryDriftValidationRejectsMalformedTailAfterExactMatch(t *testing.T) {
+	journal, _, evidence := binaryDriftFileCaseFixture(t)
+	f, err := os.OpenFile(journal.Path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("{malformed retained tail}\n"); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "malformed strict-lookup history") {
+		t.Fatalf("malformed tail after exact match = %v, want fail-closed journal error", err)
+	}
+}
+
+func TestMaatBinaryDriftValidationPreservesMissingHostAndDigestRefusals(t *testing.T) {
+	t.Run("missing", func(t *testing.T) {
+		journal, evidence, _, _ := installMaatBinaryDriftFixture(t)
+		missing := "maat-system-one:sha256=" + strings.Repeat("c", 64)
+		if missing == evidence {
+			t.Fatal("fixture evidence unexpectedly equals missing reference")
+		}
+		if err := validateMaatBinaryDriftCase(journal, missing); err == nil || !strings.Contains(err.Error(), "exact retained System One case is unavailable") {
+			t.Fatalf("missing exact case = %v", err)
+		}
+	})
+	t.Run("wrong host", func(t *testing.T) {
+		journal, evidence, _, _ := installMaatBinaryDriftFixture(t)
+		journal.decisions[0].SystemOne.Subject.Repo = "local-host-" + strings.Repeat("d", 64)
+		if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "not this host's diagnostic screen") {
+			t.Fatalf("wrong-host exact case = %v", err)
+		}
+	})
+	t.Run("digest mismatch", func(t *testing.T) {
+		journal, evidence, _, _ := installMaatBinaryDriftFixture(t)
+		journal.decisions[0].SystemOne.Findings[0].Claim += " changed after recording"
+		if err := validateMaatBinaryDriftCase(journal, evidence); err == nil || !strings.Contains(err.Error(), "digest does not match") {
+			t.Fatalf("mutated verdict digest = %v", err)
+		}
+	})
 }
 
 func TestMaatBinaryDriftDurableAttemptBlocksSameCaseReplay(t *testing.T) {

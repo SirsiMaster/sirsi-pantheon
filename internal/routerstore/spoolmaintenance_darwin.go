@@ -14,10 +14,20 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// No marker means no additional requirement on the ordinary/producer-covered
-// route. A root-authored pending transaction, however, is consumed BEFORE any
+type maintenanceRootCloser struct {
+	endpoint io.Closer
+	rootDir  *os.File
+}
+
+func (c *maintenanceRootCloser) Close() error {
+	return errors.Join(c.endpoint.Close(), c.rootDir.Close())
+}
+
+// A root-authored pending transaction is consumed BEFORE any
 // recoverInflight/discovery/retry/housekeeping call, including after reboot.
-func (rl *Relay) awaitMaintenanceStartup(ctx context.Context) (io.Closer, error) {
+// Ordinary root relay lifetimes also retain the existing PID-bound maintenance
+// endpoint, but do not create a durable transaction marker.
+func (rl *Relay) awaitMaintenanceStartup(ctx context.Context) (endpoint io.Closer, retErr error) {
 	if rl.Spool != "/private/var/sirsipantheon/relay" {
 		return io.NopCloser(strings.NewReader("")), nil
 	}
@@ -31,7 +41,39 @@ func (rl *Relay) awaitMaintenanceStartup(ctx context.Context) (io.Closer, error)
 		return nil, err
 	}
 	if intent == nil {
-		return io.NopCloser(strings.NewReader("")), nil
+		dir, err := root.Open(".")
+		if err != nil {
+			return nil, err
+		}
+		retainDir := false
+		defer func() {
+			if !retainDir {
+				retErr = errors.Join(retErr, dir.Close())
+			}
+		}()
+		var identity unix.Stat_t
+		if err := unix.Fstat(int(dir.Fd()), &identity); err != nil {
+			return nil, errors.Join(errors.New("relay maintenance: active spool identity unavailable"), err)
+		}
+		started, err := servicedrain.MaintenanceStart(os.Getpid())
+		if err != nil {
+			return nil, err
+		}
+		gate, err := servicedrain.NewActiveMaintenance(os.Getpid(), started, uint64(identity.Dev), uint64(identity.Ino))
+		if err != nil {
+			return nil, err
+		}
+		if err := gate.SetDrainHandlers(rl.prepareDrain, rl.resumeAfterDrain, func(expected servicedrain.MaintenanceReady) error {
+			return verifyActiveRelayMaintenanceIdentity(dir, rl.Spool, expected)
+		}); err != nil {
+			return nil, err
+		}
+		server, err := servicedrain.StartMaintenance(gate)
+		if err != nil {
+			return nil, err
+		}
+		retainDir = true
+		return &maintenanceRootCloser{endpoint: server, rootDir: dir}, nil
 	}
 	defer intent.Close()
 	marker := intent.Marker
@@ -39,7 +81,12 @@ func (rl *Relay) awaitMaintenanceStartup(ctx context.Context) (io.Closer, error)
 	if err != nil {
 		return nil, err
 	}
-	defer dir.Close()
+	retainDir := false
+	defer func() {
+		if !retainDir {
+			retErr = errors.Join(retErr, dir.Close())
+		}
+	}()
 	count, err := maintenanceCustodyCount(ctx, root, marker.ID)
 	if err != nil {
 		return nil, err
@@ -67,6 +114,11 @@ func (rl *Relay) awaitMaintenanceStartup(ctx context.Context) (io.Closer, error)
 	if err != nil {
 		return nil, err
 	}
+	if err := gate.SetDrainHandlers(rl.prepareDrain, rl.resumeAfterDrain, func(expected servicedrain.MaintenanceReady) error {
+		return verifyActiveRelayMaintenanceIdentity(dir, rl.Spool, expected)
+	}); err != nil {
+		return nil, err
+	}
 	server, err := servicedrain.StartMaintenance(gate)
 	if err != nil {
 		return nil, err
@@ -74,7 +126,31 @@ func (rl *Relay) awaitMaintenanceStartup(ctx context.Context) (io.Closer, error)
 	if err := gate.Wait(ctx); err != nil {
 		return nil, errors.Join(err, server.Close())
 	}
-	return server, nil
+	retainDir = true
+	return &maintenanceRootCloser{endpoint: server, rootDir: dir}, nil
+}
+
+func verifyActiveRelayMaintenanceIdentity(rootDir *os.File, spool string, expected servicedrain.MaintenanceReady) error {
+	if expected.Marker.Validate() != nil {
+		return errors.New("relay maintenance: exact active root identity required")
+	}
+	started, err := servicedrain.MaintenanceStart(os.Getpid())
+	if err != nil || expected.PID != os.Getpid() || expected.Started != started {
+		return errors.New("relay maintenance: active producer PID/start changed")
+	}
+	var opened, named unix.Stat_t
+	if err := unix.Fstat(int(rootDir.Fd()), &opened); err != nil {
+		return errors.Join(errors.New("relay maintenance: retained spool root unavailable"), err)
+	}
+	if err := unix.Lstat(spool, &named); err != nil {
+		return errors.Join(errors.New("relay maintenance: named spool root unavailable"), err)
+	}
+	if opened.Mode&unix.S_IFMT != unix.S_IFDIR || named.Mode&unix.S_IFMT != unix.S_IFDIR ||
+		opened.Dev != named.Dev || opened.Ino != named.Ino ||
+		uint64(opened.Dev) != expected.Marker.RootDevice || uint64(opened.Ino) != expected.Marker.RootInode {
+		return errors.New("relay maintenance: active spool root identity changed")
+	}
+	return nil
 }
 
 // Names and metadata only. Payloads retained under failed/.maintenance-ID are

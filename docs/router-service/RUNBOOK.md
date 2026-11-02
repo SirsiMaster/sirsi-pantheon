@@ -31,7 +31,15 @@ sirsi router token revoke <token-id> --store <dsn-or-path>                     #
 bash scripts/router-service/stage.sh
 ```
 
-Run it from a checkout where the private `sirsi-inference` module builds (your Go module cache, or under `scripts/ci-private-sdk.sh`). It cross-compiles the linux/amd64 binary locally and deploys a COPY-only image, because Cloud Build cannot fetch the private module. The new revision first gets no traffic, must answer `/v1/healthz` three times, and only then takes 100%. It prints `PREV=` (the rollback target) and `NEW=`. Do not run `gcloud run deploy --source .` from the repo root: the root Dockerfile deliberately refuses. `scripts/router-service/deploy.sh` does the same with the full service configuration.
+Run it from a checkout where the private `sirsi-inference` module builds (your Go module cache, or under `scripts/ci-private-sdk.sh`). It cross-compiles the linux/amd64 binary locally and deploys a COPY-only image, because Cloud Build cannot fetch the private module. The new revision first gets no traffic and must answer `/v1/healthz` three times. In the default mode, the script then shifts 100% and removes the temporary tag. Do not run `gcloud run deploy --source .` from the repo root: the root Dockerfile deliberately refuses. `scripts/router-service/deploy.sh` does the same with the full service configuration.
+
+To stop after health checks with the revision still tagged at zero traffic, use:
+
+```bash
+bash scripts/router-service/stage.sh --stage-only
+```
+
+This mode requires an existing service and prints `PREV=`, `NEW=`, `TAG=`, `TURL=`, and `PHASE=zero-traffic` after rechecking the tagged revision and serving target. It does not shift traffic or remove the tag. The printed identity tuple is a handoff for review, not promotion authority: the release operator separately owns any explicitly authorized promotion or rollback, its traffic readback, and cleanup of the retained tag. The script never resumes or promotes this stage automatically.
 
 Deploy the service before any client that uses a new Store method. `scripts/release-train.sh <version> --deploy-service` does this in order through `stage.sh`.
 

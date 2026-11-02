@@ -272,9 +272,32 @@ extension View {
 final class Nav: ObservableObject {
     struct Frame: Identifiable { let id = UUID(); let view: AnyView }
     @Published var stack: [Frame] = []
-    func push<V: View>(_ v: V) { stack.append(Frame(view: AnyView(v))) }
-    func pop() { if !stack.isEmpty { stack.removeLast() } }
-    func popToRoot() { stack.removeAll() }
+    private var forwardFrames: [Frame] = []
+    var canGoBack: Bool { !stack.isEmpty }
+    var canGoForward: Bool { !forwardFrames.isEmpty }
+
+    func push<V: View>(_ v: V) {
+        forwardFrames.removeAll()
+        stack.append(Frame(view: AnyView(v)))
+    }
+
+    func pop() {
+        guard let frame = stack.last else { return }
+        forwardFrames.append(frame)
+        stack.removeLast()
+    }
+
+    func forward() {
+        guard let frame = forwardFrames.popLast() else { return }
+        stack.append(frame)
+    }
+
+    func popToRoot() {
+        guard !stack.isEmpty || !forwardFrames.isEmpty else { return }
+        forwardFrames.removeAll()
+        stack = []
+    }
+
     var atRoot: Bool { stack.isEmpty }
 }
 
@@ -901,56 +924,58 @@ struct FDAGuideView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-        BackBar(title: "Full Disk Access")
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Grant Full Disk Access")
-                .sirsiFont(.headline).foregroundStyle(gold)
-            Text("\(guide.appName) cannot grant its own access. A folder denial may involve permissions or privacy restrictions; it does not prove Full Disk Access is missing. Review access yourself in macOS:")
-                .sirsiFont(.callout).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            BackBar(title: "Full Disk Access")
+            MaybeScroll {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Grant Full Disk Access")
+                        .sirsiFont(.headline).foregroundStyle(gold)
+                    Text("\(guide.appName) cannot grant its own access. A folder denial may involve permissions or privacy restrictions; it does not prove Full Disk Access is missing. Review access yourself in macOS:")
+                        .sirsiFont(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(steps, id: \.0) { step in
-                    HStack(alignment: .top, spacing: 10) {
-                        Text(step.0)
-                            .sirsiFont(12, weight: .bold)
-                            .frame(width: 20, height: 20)
-                            .background(Circle().fill(gold.opacity(0.20)))
-                            .foregroundStyle(gold)
-                        Text(step.1).sirsiFont(12)
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(steps, id: \.0) { step in
+                            HStack(alignment: .top, spacing: 10) {
+                                Text(step.0)
+                                    .sirsiFont(12, weight: .bold)
+                                    .frame(width: 20, height: 20)
+                                    .background(Circle().fill(gold.opacity(0.20)))
+                                    .foregroundStyle(gold)
+                                Text(step.1).sirsiFont(12)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+
+                    VStack(spacing: 8) {
+                        Button {
+                            guide.openSettings(open: { _ = NSWorkspace.shared.open($0) },
+                                               reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) })
+                        } label: {
+                            Label("Open Full Disk Access", systemImage: "lock.open")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(ResultActionButtonStyle(prominent: true))
+
+                        Button {
+                            revealAppInFinder()
+                        } label: {
+                            Label("Reveal \(guide.appName) in Finder", systemImage: "folder")
+                        }
+                        .buttonStyle(ResultActionButtonStyle(prominent: false))
+                    }
+
+                    if returnToTrash {
+                        Text("Return to Trash, then explicitly start a fresh browse. Access is not confirmed until that read succeeds. Old selections and approvals are discarded. If macOS requires a relaunch, do so yourself; Pantheon will not restart automatically.")
+                            .sirsiFont(12).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                        Button("Back to Trash") { returnToOrigin(using: nav) }.buttonStyle(.bordered)
                     }
                 }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            VStack(spacing: 8) {
-                Button {
-                    guide.openSettings(open: { _ = NSWorkspace.shared.open($0) },
-                                       reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) })
-                } label: {
-                    Label("Open Full Disk Access", systemImage: "lock.open")
-                        .frame(maxWidth: .infinity)
-                }.buttonStyle(.borderedProminent).tint(gold)
-
-                Button {
-                    revealAppInFinder()
-                } label: {
-                    Label("Reveal \(guide.appName) in Finder", systemImage: "folder")
-                        .frame(maxWidth: .infinity)
-                }.buttonStyle(.bordered)
-            }
-
-            if returnToTrash {
-                Text("Return to Trash, then explicitly start a fresh browse. Access is not confirmed until that read succeeds. Old selections and approvals are discarded. If macOS requires a relaunch, do so yourself; Pantheon will not restart automatically.")
-                    .sirsiFont(12).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Back to Trash") { returnToOrigin(using: nav) }.buttonStyle(.bordered)
-            }
-
-            Spacer()
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .navigationTitle("Full Disk Access")
     }
@@ -1231,6 +1256,21 @@ struct HealthRow: View {
 // → fix" made real. It explains the finding and, when a safe remediation exists,
 // offers a direct repair or a confirmation-gated repair. No finding dead-ends
 // at "here's a problem" with no way to act.
+func diagnosticFixExpectation(kind: String, check: String) -> String? {
+    switch kind {
+    case "relief" where check == "Jetsam Events (7d)":
+        return "This is a 7-day record of past memory-pressure events. Relieving a live cause may help prevent more events; the historical count changes only as the window advances."
+    case "relief":
+        return "This is a current reading. Relieving an active cause may ease pressure, but it does not guarantee an immediate change to this reading. Recheck after the workload or system state changes."
+    case "guidance":
+        return "This acts only while the issue is happening live. If it isn't happening right now, you'll get steps to prevent it — the status won't change immediately."
+    case "instant" where check == "App Crashes (7d)":
+        return "These are the last 7 days of crash reports. Clearing the backlog drops the count now — it won't stop future crashes, but the signal clears."
+    default:
+        return nil
+    }
+}
+
 // FindingDetailEntry is one parsed row of a pipe-separated finding detail —
 // "Name (SIZE) | Name (SIZE) | …" (the Top Memory Consumers shape) or
 // "name 45% | name 12%" (the Spotlight shape, no parenthesised value).
@@ -1308,16 +1348,24 @@ struct FindingView: View {
     }
     private var snapshot: FindingObservationSnapshot { engine.diagnosticSnapshot(check: finding.check) }
     @State private var approval: DiagnosticRepairApproval?
+    // The frozen approval is the result-sheet trigger and content, atomically.
+    @State private var presentedRepair: DiagnosticRepairPresentation?
 
-    private func freezeRepair(_ args: [String]) {
+    private func freezeRepair(_ args: [String]) -> DiagnosticRepairApproval {
         let actual = remediationArguments(args)
-        approval = DiagnosticRepairApproval(snapshot: snapshot, args: actual,
+        let frozen = DiagnosticRepairApproval(snapshot: snapshot, args: actual,
             directory: SirsiEngine.workingDirectory(for: actual))
+        approval = frozen
+        return frozen
     }
     private func approved(_ args: [String]) -> Bool {
+        guard let approval else { return false }
+        return approved(args, using: approval)
+    }
+    private func approved(_ args: [String], using approval: DiagnosticRepairApproval) -> Bool {
         let actual = remediationArguments(args)
-        return approval?.authorizes(snapshot: snapshot, args: actual,
-            directory: SirsiEngine.workingDirectory(for: actual)) == true
+        return approval.authorizes(snapshot: snapshot, args: actual,
+            directory: SirsiEngine.workingDirectory(for: actual))
     }
 
     // The honesty class drives EVERY label so a 7-day history never wears an
@@ -1329,9 +1377,10 @@ struct FindingView: View {
     @State private var maatReviewInFlight = false
     @State private var confirmMaatReview = false
     @State private var confirmFix = false
-    @State private var showConfirmedFix = false
+    @State private var executeReviewedFix = false
+    @State private var repairReviewMessage: String?
     @State private var confirmLegacyRepair = false
-    @State private var showLegacyRepair = false
+    @State private var executeReviewedLegacyRepair = false
 
     // Older installed CLIs can omit `fix` and leave only prose or a backticked
     // command. Never turn that text into executable authority and never send a
@@ -1384,6 +1433,7 @@ struct FindingView: View {
         }
     }
     private var fixButtonLabel: String {
+        if diagnosticOpensMemoryPreview(repairArgs) { return "Review memory relief" }
         if observedFinding.check == "launchd Disabled Override" {
             return "Restore managed services"
         }
@@ -1421,19 +1471,7 @@ struct FindingView: View {
     }
     // The expectation set BEFORE the click — the heart of the honesty fix.
     private var fixExpectation: String? {
-        switch kind {
-        case "relief":
-            return "This is a 7-day pattern — a record of what already happened. Relieving the live cause eases it now; the historical count decays as clean days pass, so it won't drop the instant you click."
-        case "guidance":
-            return "This acts only while the issue is happening live. If it isn't happening right now, you'll get steps to prevent it — the status won't change immediately."
-        case "instant":
-            if observedFinding.check == "App Crashes (7d)" {
-                return "These are the last 7 days of crash reports. Clearing the backlog drops the count now — it won't stop future crashes, but the signal clears."
-            }
-            return nil   // disk / binary-drift: a plain instant fix, no caveat needed
-        default:
-            return nil
-        }
+        diagnosticFixExpectation(kind: kind, check: observedFinding.check)
     }
 
     var body: some View {
@@ -1467,7 +1505,7 @@ struct FindingView: View {
                                 ForEach(entries) { e in
                                     HStack(alignment: .firstTextBaseline) {
                                         Text(e.name).sirsiFont(.callout)
-                                            .lineLimit(1).truncationMode(.middle)
+                                            .fixedSize(horizontal: false, vertical: true)
                                         Spacer(minLength: 12)
                                         if let v = e.value {
                                             Text(v).sirsiFont(.callout, design: .monospaced)
@@ -1504,15 +1542,19 @@ struct FindingView: View {
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                         }
                         Text(fixSectionLabel).sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-                        if fixRequiresConfirmation {
-                            Button { freezeRepair(repairArgs); confirmFix = true } label: { fixButtonContents(fix) }
-                                .buttonStyle(.borderedProminent).tint(gold)
-                        } else {
-                            Button {
-                                freezeRepair(repairArgs)
+                        Button {
+                            repairReviewMessage = nil
+                            let frozen = freezeRepair(repairArgs)
+                            if diagnosticOpensMemoryPreview(repairArgs) {
+                                presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .typed)
+                            } else {
                                 confirmFix = true
-                            } label: { fixButtonContents(fix) }
-                            .buttonStyle(.borderedProminent).tint(gold)
+                            }
+                        } label: { fixButtonContents(fix) }
+                        .buttonStyle(DiagnosticRepairButtonStyle())
+                        if let repairReviewMessage {
+                            Text(repairReviewMessage).sirsiFont(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     } else if requiresNativeCleanupReview {
                         nativeCleanupReview
@@ -1543,7 +1585,7 @@ struct FindingView: View {
             // Evidence changes invalidate an open dialog, not only the final launch.
             // Keep an executing sheet's receipt visible. Its final authorizer
             // still rejects changed evidence; do not discard capture on refresh.
-            if !showConfirmedFix && !showLegacyRepair { approval = nil }
+            if case nil = presentedRepair { approval = nil }
             confirmFix = false
             confirmLegacyRepair = false
         }
@@ -1553,68 +1595,90 @@ struct FindingView: View {
         } message: {
             Text("Ma'at will retain this exact diagnostic finding for review. It will not change the system or claim that the issue is repaired.")
         }
-        .confirmationDialog("Apply this system repair?", isPresented: $confirmFix, titleVisibility: .visible) {
-            Button(fixButtonLabel) { if approved(repairArgs) { showConfirmedFix = true } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            if observedFinding.check == "launchd Disabled Override" {
-                Text("Ma'at will re-check the exact managed disabled labels, restore only that bounded set, verify the same diagnostic afterward, and retain either a verified recovery receipt or an explicit incomplete outcome.")
-            } else {
-                Text("Pantheon will run only the frozen managed repair, then re-check this finding. Changed, stale or unavailable evidence requires new confirmation.")
+        .sheet(isPresented: $confirmFix, onDismiss: {
+            guard executeReviewedFix else { return }
+            executeReviewedFix = false
+            guard approved(repairArgs) else {
+                repairReviewMessage = "The finding changed while the review closed. No repair ran. Review the current finding again."
+                return
             }
-            Text("Pantheon will not broaden the command or touch unrelated services.")
-            Text("Command: \(approval?.args.joined(separator: " ") ?? "unavailable")")
-            Text("Project: \(approval?.directory.path ?? "unavailable")")
+            guard let frozen = approval else { return }
+            presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .typed)
+        }) {
+            ActionReviewSheet(title: "Review system repair",
+                detail: "Pantheon will run the exact command below, then recheck this finding. A changed finding or project requires a fresh review. No unrelated service is selected.",
+                scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) } ?? "No current reviewed command is available.",
+                confirmLabel: fixButtonLabel,
+                cancel: { confirmFix = false },
+                confirm: {
+                    if approved(repairArgs) { executeReviewedFix = true }
+                    else { repairReviewMessage = "The finding changed during review. Read the current finding and review it again; no repair ran." }
+                    confirmFix = false
+                })
         }
-        .sheet(isPresented: $showConfirmedFix) {
-            if let approval {
-                ResultView(engine: engine, title: observedFinding.check, args: approval.args,
-                           reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
-                           authorizeExecution: { approved(repairArgs) })
+        .sheet(isPresented: $confirmLegacyRepair, onDismiss: {
+            guard executeReviewedLegacyRepair else { return }
+            executeReviewedLegacyRepair = false
+            guard let args = legacyNativeRepairArgs, approved(args) else {
+                repairReviewMessage = "The finding changed while the review closed. No repair ran. Review the current finding again."
+                return
             }
+            guard let frozen = approval else { return }
+            presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .legacy)
+        }) {
+            ActionReviewSheet(title: "Review bounded repair",
+                detail: "Pantheon will run only the registered repair shown here, then re-check this finding. It will not execute diagnostic message text. A changed finding or project requires a fresh review.",
+                scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) } ?? "No current reviewed command is available.",
+                confirmLabel: "Run repair",
+                cancel: { confirmLegacyRepair = false },
+                confirm: {
+                    if let args = legacyNativeRepairArgs, approved(args) { executeReviewedLegacyRepair = true }
+                    else { repairReviewMessage = "The finding changed during review. Read the current finding and review it again; no repair ran." }
+                    confirmLegacyRepair = false
+                })
         }
-        .confirmationDialog("Run this bounded repair in Pantheon?", isPresented: $confirmLegacyRepair, titleVisibility: .visible) {
-            Button("Run repair") { if let args = legacyNativeRepairArgs, approved(args) { showLegacyRepair = true } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Pantheon will run only the frozen registered repair, then re-check this finding. It will not execute diagnostic message text.")
-            Text("Command: \(approval?.args.joined(separator: " ") ?? "unavailable")")
-            Text("Project: \(approval?.directory.path ?? "unavailable")")
-        }
-        .sheet(isPresented: $showLegacyRepair) {
-            if let approval {
-                ResultView(engine: engine, title: observedFinding.check, args: approval.args,
-                           reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
-                           authorizeExecution: { legacyNativeRepairArgs.map { approved($0) } ?? false })
-            } else {
-                EmptyView()
+        .modifier(DiagnosticRepairResultSheet(item: $presentedRepair) { presentation in
+            let frozen = presentation.approval
+            let authorize: () -> Bool = {
+                switch presentation.route {
+                case .typed:
+                    return approved(repairArgs, using: frozen)
+                case .legacy:
+                    return legacyNativeRepairArgs.map { approved($0, using: frozen) } ?? false
+                }
             }
-        }
+            return ResultView(engine: engine, title: frozen.snapshot.check ?? observedFinding.check,
+                              args: frozen.args, reverifyCheck: frozen.snapshot.check,
+                              reverifyKind: frozen.snapshot.fixKind,
+                              authorizeExecution: authorize)
+                .modifier(ResultPanelLayout())
+        })
     }
 
     private func fixButtonContents(_ fix: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: fixIcon)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(fixButtonLabel).sirsiFont(12, weight: .semibold)
-                Text(repairCommand).sirsiFont(.caption2, design: .monospaced)
-                    .foregroundStyle(Color.white.opacity(0.85))
-            }
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 2)
+        DiagnosticRepairActionLabel(title: fixButtonLabel, command: repairCommand,
+                                    systemImage: fixIcon)
     }
 
     @ViewBuilder private var legacyNativeRepair: some View {
         VStack(alignment: .leading, spacing: 9) {
             Text("PANTHEON CAN REPAIR THIS").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-            Text("This diagnostic came from an older local contract. Pantheon matched it to a bounded built-in repair, not message text. Review, confirm, and Pantheon will verify the outcome here.")
+            Text("This diagnostic came from an older local contract. Pantheon matched it to a bounded built-in action, not message text. Read-only memory relief opens a preview first; other repairs show their exact scope and require confirmation.")
                 .sirsiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let repairReviewMessage {
+                Text(repairReviewMessage).sirsiFont(.callout).fixedSize(horizontal: false, vertical: true)
+            }
             Button {
-                if let args = legacyNativeRepairArgs { freezeRepair(args); confirmLegacyRepair = true }
+                guard let args = legacyNativeRepairArgs else { return }
+                let frozen = freezeRepair(args)
+                if diagnosticOpensMemoryPreview(args) {
+                    presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .legacy)
+                } else {
+                    confirmLegacyRepair = true
+                }
             } label: {
-                Label("Resolve in Pantheon", systemImage: "wrench.and.screwdriver.fill")
+                Label(legacyNativeRepairArgs.map { diagnosticOpensMemoryPreview($0) } == true ? "Review memory relief" : "Resolve in Pantheon",
+                      systemImage: "wrench.and.screwdriver.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).tint(gold)
@@ -1675,7 +1739,11 @@ struct FindingView: View {
                     .sirsiFont(.caption)
                     .foregroundStyle(result.ok ? .green : .orange)
                 if result.ok {
-                    NavLink { MaatCasebookView(engine: engine) } label: {
+                    NavLink {
+                        MaatCasebookView(engine: engine,
+                            caseSelection: MaatCaseSelection.recorded(from: result),
+                            selectionFallbackMessage: MaatCaseSelection.fallbackMessage(for: result))
+                    } label: {
                         Label("Continue in Ma'at Casebook", systemImage: "book.closed")
                     }
                     .buttonStyle(.bordered)
@@ -2190,6 +2258,7 @@ struct RaHandoffView: View {
                 Spacer()
                 Button("Cancel") { isPresented = false }
                     .disabled(sending)
+                    .accessibilityIdentifier("ra-handoff-cancel")
             }
             .padding(16)
 
@@ -2223,6 +2292,8 @@ struct RaHandoffView: View {
                                     }
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityIdentifier("ra-handoff-recipient-scroll")
                         }
                     }
 
@@ -2261,6 +2332,7 @@ struct RaHandoffView: View {
                 }
                 .padding(16)
             }
+            .accessibilityIdentifier("ra-handoff-form-scroll")
             Divider()
             Button {
                 sending = true
@@ -2278,9 +2350,11 @@ struct RaHandoffView: View {
             .buttonStyle(.borderedProminent)
             .tint(gold)
             .disabled(!canSend)
+            .accessibilityIdentifier("ra-handoff-send")
             .padding(16)
         }
-        .frame(minWidth: 460, minHeight: 560)
+        .frame(minWidth: 420, idealWidth: 620, maxWidth: 720,
+               minHeight: 420, idealHeight: 560, maxHeight: 680)
     }
 
     private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {
@@ -2774,6 +2848,7 @@ struct AnubisView: View {
     // Own the model in that value, not remount-scoped StateObject storage: a
     // return must preserve the explicit-retry fence, never create new intent.
     @ObservedObject var workflow: TrashWorkflow
+    @State private var historyExpanded = false
 
     init(engine: SirsiEngine, workflow: TrashWorkflow? = nil) {
         self.engine = engine
@@ -2921,6 +2996,103 @@ struct AnubisView: View {
                         }
                         if let message = workflow.message { Text(message).sirsiFont(12).foregroundStyle(.orange) }
                     }
+                    Divider()
+                    DisclosureGroup("Operation history", isExpanded: $historyExpanded) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Read-only records of reviewed Empty Trash operations. History cannot repeat deletion or restore items. No undo is available for permanent deletion.")
+                                .sirsiFont(12).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            HStack(spacing: 12) {
+                                Button(workflow.historyItems.isEmpty ? "Load history" : "Refresh history") {
+                                    Task { await workflow.loadHistory { limit, cursor in
+                                        await engine.emptyTrashHistory(limit: limit, cursor: cursor)
+                                    } }
+                                }.disabled(workflow.historyLoading)
+                                if workflow.historyLoading {
+                                    ProgressView().controlSize(.small)
+                                    Button("Cancel read") { workflow.cancelHistoryRead() }
+                                }
+                            }
+                            if let message = workflow.historyMessage {
+                                Text(message).sirsiFont(12).foregroundStyle(.orange)
+                                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            }
+                            if workflow.historyIncomplete {
+                                Label("History is incomplete; some records may be missing or corrupt.", systemImage: "exclamationmark.triangle")
+                                    .sirsiFont(12).foregroundStyle(.orange)
+                            }
+                            if !workflow.historyHasLoaded && workflow.historyMessage == nil && !workflow.historyLoading {
+                                Text("Load saved operation history to review previous results.")
+                                    .sirsiFont(13).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            } else if workflow.historyVerifiedEmpty && workflow.historyMessage == nil && !workflow.historyLoading {
+                                Text("No recorded Empty Trash operations are available on this page.")
+                                    .sirsiFont(13).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            }
+                            ForEach(workflow.historyItems) { item in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Button {
+                                        Task { await workflow.loadHistoryDetail(item.operation_id) { id in
+                                            await engine.emptyTrashHistoryDetail(operationID: id)
+                                        } }
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(historyStateLabel(item.state))
+                                                .sirsiFont(13, weight: .semibold)
+                                            if item.state == "unknown" {
+                                                Text("Recorded counts unavailable")
+                                                    .sirsiFont(12).foregroundStyle(.orange)
+                                            } else {
+                                                Text("\(item.deleted)/\(item.manifest_entry_count) deleted")
+                                                    .sirsiFont(13)
+                                                Text("\(item.attempted) attempts · \(item.errors_count) errors")
+                                                    .sirsiFont(12).foregroundStyle(.secondary)
+                                            }
+                                            if item.started_at.isEmpty {
+                                                Text("Start time unavailable")
+                                                    .sirsiFont(12).foregroundStyle(.orange)
+                                            } else {
+                                                Text(item.started_at).sirsiFont(12).foregroundStyle(.secondary)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
+                                            Text(item.operation_id).sirsiFont(12).foregroundStyle(.secondary)
+                                                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                                            if item.state == "unknown" || item.state == "review_required" {
+                                                Text("Review the latest Trash contents before any new confirmed action. Never repeat deletion from history.")
+                                                    .sirsiFont(12).foregroundStyle(.orange)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
+                                            ForEach(workflow.historyIssues.filter {
+                                                $0.hasPrefix(item.operation_id + ": ")
+                                            }, id: \.self) { issue in
+                                                Text(issue).sirsiFont(12).foregroundStyle(.orange)
+                                                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                                            }
+                                        }.frame(maxWidth: .infinity, alignment: .leading)
+                                    }.buttonStyle(.plain)
+                                    if workflow.historySelectedID == item.operation_id,
+                                       let detail = workflow.historyDetail {
+                                        historyDetail(detail)
+                                    }
+                                }
+                                .padding(9)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+                            }
+                            ForEach(workflow.historyIssues.filter { issue in
+                                !workflow.historyItems.contains { issue.hasPrefix($0.operation_id + ": ") }
+                            }, id: \.self) { issue in
+                                Text(issue).sirsiFont(12).foregroundStyle(.orange)
+                                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            }
+                            if workflow.historyCursor != nil {
+                                Button("Load older operations") {
+                                    Task { await workflow.loadMoreHistory { limit, cursor in
+                                        await engine.emptyTrashHistory(limit: limit, cursor: cursor)
+                                    } }
+                                }.disabled(workflow.historyLoading)
+                            }
+                        }
+                        .padding(.top, 8)
+                    }
                     if let execution = workflow.execution {
                         DisclosureGroup("Retained operation receipt") {
                             Text(execution.displayText).sirsiFont(12)
@@ -2935,7 +3107,7 @@ struct AnubisView: View {
             await workflow.loadInitial { await engine.trashList(browser: workflow.browser) }
         }
         .onAppear { workflow.activateBrowse() }
-        .onDisappear { workflow.cancelBrowse() }
+        .onDisappear { workflow.cancelBrowse(); workflow.cancelHistoryRead() }
         .navigationTitle("Empty Trash")
     }
 
@@ -2943,6 +3115,102 @@ struct AnubisView: View {
         let parent = page.directory.split(separator: "/").dropLast().joined(separator: "/")
         let request = TrashBrowseRequest(directory: parent.isEmpty ? "." : parent, root: page.root)
         Task { await workflow.loadPage { await engine.trashList(request, browser: workflow.browser) } }
+    }
+
+    private func historyStateLabel(_ state: String) -> String {
+        switch state {
+        case "not_finalized": return "Result not finalized"
+        case "completed": return "Completed"
+        case "partial": return "Partially completed"
+        case "failed", "review_required": return "Needs attention"
+        default: return "Record could not be verified"
+        }
+    }
+
+    @ViewBuilder private func historyDetail(_ detail: TrashHistoryDetail) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text("Reviewed inventory · \(historyStateLabel(detail.state))").sirsiFont(13, weight: .bold)
+                Spacer()
+                Button("Retry read") {
+                    Task { await workflow.loadHistoryDetail(detail.operation_id) { id in
+                        await engine.emptyTrashHistoryDetail(operationID: id)
+                    } }
+                }.sirsiFont(13).disabled(workflow.historyLoading)
+            }
+            if detail.started_at.isEmpty {
+                Text("Start time is unavailable because this record could not be verified.")
+                    .sirsiFont(12).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Started \(detail.started_at)")
+                    .sirsiFont(12).foregroundStyle(.secondary).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let manifest = detail.reviewed_manifest, manifest.validWireShape {
+                Text("Trash root device/inode \(manifest.root.device):\(manifest.root.inode)")
+                    .sirsiFont(12).foregroundStyle(.secondary).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !manifest.containers.isEmpty {
+                    Text("Retained containers:").sirsiFont(12, weight: .semibold)
+                    ForEach(manifest.containers, id: \.path) { container in
+                        Text(container.path).sirsiFont(12).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } else {
+                Text("The reviewed inventory is unavailable because this record could not be verified.")
+                    .sirsiFont(12).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(detail.attempts) { attempt in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(attempt.path).sirsiFont(12).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(attemptStateLabel(attempt.state))
+                        .sirsiFont(12).foregroundStyle(attempt.state == "unlink_failed" || attempt.state == "outcome_unknown" ? .orange : .secondary)
+                    if let error = attempt.error {
+                        Text(error).sirsiFont(12).foregroundStyle(.orange).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            if let report = detail.terminal_report {
+                Text("Terminal receipt: \(historyStateLabel(report.status)) · \(report.deleted.count) deleted · \(SirsiEngine.human(report.logical_bytes)) advisory logical bytes")
+                    .sirsiFont(12).fixedSize(horizontal: false, vertical: true)
+                ForEach(Array(report.errors.enumerated()), id: \.offset) { _, error in
+                    Text(error).sirsiFont(12).foregroundStyle(.orange).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let integrityError = detail.integrity_error {
+                Label("This record could not be verified: \(integrityError)", systemImage: "exclamationmark.triangle")
+                    .sirsiFont(12).foregroundStyle(.orange).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if detail.state == "not_finalized" {
+                Text("No valid terminal receipt is recorded. Items without a durable result have an unknown outcome; this does not establish whether the command is still running or stopped.")
+                    .sirsiFont(12).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text("Refresh history and review the latest Trash contents before any new confirmed action. Never repeat deletion from history.")
+                    .sirsiFont(12).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else if detail.state == "unknown" {
+                Text("The record could not be verified. Refresh history and review the latest Trash contents before any new confirmed action. Never repeat deletion from history.")
+                    .sirsiFont(12).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            } else if detail.state == "review_required" {
+                Text("Deletion was not confirmed for this operation. Review the latest Trash contents before any new confirmed action. Never repeat deletion from history.")
+                    .sirsiFont(12).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.035)))
+    }
+
+    private func attemptStateLabel(_ state: String) -> String {
+        switch state {
+        case "not_attempted": return "Not attempted"
+        case "outcome_unknown": return "Outcome unknown; the result was not durably recorded"
+        case "unlink_succeeded": return "Deleted"
+        case "unlink_failed": return "Deletion failed"
+        default: return "Outcome could not be verified"
+        }
     }
 }
 
@@ -3464,23 +3732,25 @@ struct RiskView: View {
                 }
                 .listStyle(.inset)
             } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    Label("Choose a project to resolve checkpoint status", systemImage: "folder.badge.questionmark")
-                        .sirsiFont(.callout, weight: .semibold)
-                        .foregroundStyle(gold)
-                    Text(rawFallback?.isEmpty == false
-                         ? rawFallback!
-                         : "Pantheon could not read checkpoint risk yet.")
-                        .sirsiFont(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Use the project selector above to choose the Git project you want Pantheon to protect. It will recheck automatically and offer an in-app checkpoint when there is work at risk.")
-                        .sirsiFont(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                MaybeScroll {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Choose a project to resolve checkpoint status", systemImage: "folder.badge.questionmark")
+                            .sirsiFont(.callout, weight: .semibold)
+                            .foregroundStyle(gold)
+                        Text(rawFallback?.isEmpty == false
+                             ? rawFallback!
+                             : "Pantheon could not read checkpoint risk yet.")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Use the project selector above to choose the Git project you want Pantheon to protect. It will recheck automatically and offer an in-app checkpoint when there is work at risk.")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
             }
             Divider()
             HStack {
@@ -3915,6 +4185,8 @@ struct ProjectBar: View {
 // that shape fall back to clean text. Every path is navigable; nothing dead-ends.
 struct ResultView: View {
     @ObservedObject var engine: SirsiEngine
+    @Environment(\.isPresented) private var isPresented
+    @Environment(\.dismiss) private var dismiss
     let title: String
     let args: [String]
     let directory: URL
@@ -3981,7 +4253,17 @@ struct ResultView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            BackBar(title: title)
+            if isPresented {
+                HStack {
+                    Text(title).sirsiFont(.headline)
+                    Spacer()
+                    Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
+                        .disabled(applying)
+                }.padding(16)
+                Divider()
+            } else {
+                BackBar(title: title)
+            }
             if isRepoScoped {
                 ProjectBar(engine: engine) { Task { await load() } }
             }
@@ -4022,20 +4304,17 @@ struct ResultView: View {
             }.padding(.horizontal, 14).padding(.vertical, 10)
         }
         .task { if result == nil && raw.isEmpty { await load() } }   // preloaded → already have it
-        .confirmationDialog(
-            "Apply this fix?",
-            isPresented: Binding(get: { pendingApply != nil }, set: { if !$0 { pendingApply = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Apply", role: .destructive) {
-                if let a = pendingApply, let frozen = actionApproval { Task { await apply(a, approval: frozen) } }
-                pendingApply = nil
-            }
-            Button("Cancel", role: .cancel) { pendingApply = nil }
-        } message: {
-            if let a = pendingApply {
-                Text("Runs the frozen command `\(actionApproval?.args.joined(separator: " ") ?? a.command)` for the current result and project. Review its scope; a changed result requires new confirmation.")
-                Text("Project: \(actionApproval?.directory.path ?? "unavailable")")
+        .sheet(isPresented: Binding(get: { pendingApply != nil }, set: { if !$0 { pendingApply = nil } })) {
+            if let action = pendingApply, let frozen = actionApproval {
+                ActionReviewSheet(title: "Review: " + action.label,
+                    detail: (action.description ?? "Review the exact scope before running this action.") + "\n\nPantheon will run only the command below. Any macOS administrator authorization appears separately. Cancel leaves this preview unchanged.",
+                    scope: actionReviewScope(arguments: frozen.args, directory: frozen.directory),
+                    confirmLabel: action.label,
+                    cancel: { pendingApply = nil; actionApproval = nil },
+                    confirm: {
+                        pendingApply = nil
+                        Task { await apply(action, approval: frozen) }
+                    })
             }
         }
     }
@@ -4065,6 +4344,10 @@ struct ResultView: View {
                 }
                 Text(r.summary).sirsiFont(14, weight: .semibold)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if !r.errors.isEmpty {
+                    ResultErrorDetails(errors: r.errors)
+                }
 
                 if !r.evidence.isEmpty {
                     VStack(spacing: 0) {
@@ -4098,6 +4381,25 @@ struct ResultView: View {
             }.padding(16)
     }
 
+    struct ResultErrorDetails: View {
+        let errors: [String]
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("ERROR DETAILS").sirsiFont(.caption2, weight: .semibold)
+                    .foregroundStyle(.orange)
+                ForEach(Array(errors.enumerated()), id: \.offset) { _, error in
+                    Text(error).sirsiFont(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.10)))
+                }
+            }
+        }
+    }
+
     @ViewBuilder private func actionButton(_ a: CRAction) -> some View {
         if a.isApply {
             Button {
@@ -4106,30 +4408,18 @@ struct ResultView: View {
                     producingDirectory: executionDirectory, command: a.command,
                     currentDirectory: SirsiEngine.workingDirectory(for: actual))
                 if actionApproval != nil { pendingApply = a }
+                else { explainChangedAction() }
             } label: { actionLabel(a, prominent: true) }
-                .buttonStyle(.borderedProminent).tint(gold).disabled(applying)
+                .buttonStyle(ResultActionButtonStyle(prominent: true)).disabled(applying)
         } else {
             Button { Task { await runFollow(a) } } label: { actionLabel(a, prominent: false) }
-                .buttonStyle(.bordered).disabled(applying)
+                .buttonStyle(ResultActionButtonStyle(prominent: false)).disabled(applying)
         }
     }
 
     @ViewBuilder private func actionLabel(_ a: CRAction, prominent: Bool) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: a.isApply ? "bolt.fill" : "arrow.right.circle")
-            VStack(alignment: .leading, spacing: 1) {
-                Text(a.label).sirsiFont(12, weight: .semibold)
-                if let d = a.description, !d.isEmpty {
-                    // Wrap, never clip mid-sentence — a half-shown consequence is
-                    // worse than a taller button.
-                    Text(d).sirsiFont(.caption2)
-                        .foregroundStyle(prominent ? Color.white.opacity(0.85) : Color.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-            Spacer()
-        }.frame(maxWidth: .infinity).padding(.vertical, 2)
+        ResultActionLabel(title: a.label, detail: a.description, prominent: prominent,
+                          systemImage: a.isApply ? "bolt.fill" : "arrow.right.circle")
     }
 
     @ViewBuilder private var rawScroll: some View {
@@ -4220,8 +4510,17 @@ struct ResultView: View {
             directory: SirsiEngine.workingDirectory(for: approval.args)) && authorizeExecution()
     }
 
+    private func explainChangedAction() {
+        toastOK = false
+        toast = "The finding, result, or project changed during review. No action ran. Close this result, read the current finding, and open a fresh preview before confirming again."
+    }
+
     private func apply(_ action: CRAction, approval: ResultActionApproval) async {
-        guard !applying, action.command == approval.command, actionStillAuthorized(approval) else { return }
+        guard !applying else { return }
+        guard action.command == approval.command, actionStillAuthorized(approval) else {
+            explainChangedAction()
+            return
+        }
         applying = true // Before await; repeated confirmation delivery cannot replay.
         _ = verification.begin()
         actionApproval = nil
@@ -4233,15 +4532,16 @@ struct ResultView: View {
     }
 
     private func retain(_ receipt: CommandExecution, action: CRAction, directory: URL) {
+        let captured = capturedRepairActivity(receipt)
         execution = receipt
         executionDirectory = directory
         result = receipt.result
         raw = result == nil ? receipt.displayText : ""
-        toastOK = receipt.complete && receipt.exitCode == 0 && receipt.result?.ok == true
+        toastOK = captured.resolution == .resolved
         toast = toastOK ? "Command returned a complete report; check fresh evidence below."
             : "Outcome needs review — the command will not be replayed automatically."
         engine.recordActivity(title: action.label, command: action.command,
-            result: receipt.displayText)
+            result: receipt.displayText, capturedRepair: captured)
     }
 
     // applyHeadline pulls the human result line ("Cleaned 8 items. Reclaimed
@@ -4729,7 +5029,11 @@ private struct ActivityDetailView: View {
                                     .foregroundStyle(result.ok ? .green : .orange)
                                     .fixedSize(horizontal: false, vertical: true)
                                 if result.ok {
-                                    NavLink { MaatCasebookView(engine: engine) } label: {
+                                    NavLink {
+                                        MaatCasebookView(engine: engine,
+                                            caseSelection: MaatCaseSelection.recorded(from: result),
+                                            selectionFallbackMessage: MaatCaseSelection.fallbackMessage(for: result))
+                                    } label: {
                                         Label("Open Ma'at Casebook", systemImage: "book.closed")
                                     }
                                     .buttonStyle(.bordered)

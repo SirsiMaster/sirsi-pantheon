@@ -32,6 +32,32 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertTrue(StackLabReadFailure.message(for: empty).contains("exit 1"))
     }
 
+    func testStackLabMissingGitHubCLIDiagnosticStaysUnknownWithStaticGuidance() {
+        let raw = #"{"diagnostic":{"code":"missing_gh"}}"#
+        let read = SirsiEngine.JSONCommandRead(data: Data(raw.utf8), exitStatus: 1, timedOut: false, launchError: nil)
+
+        XCTAssertNil(StackLabReport.decode(read.data))
+        let guidance = StackLabReadFailure.message(for: read)
+        XCTAssertTrue(guidance.contains("brew install gh"))
+        XCTAssertTrue(guidance.contains("No registry result was inferred"))
+    }
+
+    func testStackLabUnknownAndMalformedDiagnosticsNeverDecodeAsCleanReports() {
+        let payloads = [
+            #"{"diagnostic":{"code":"future_error"},"roster":[]}"#,
+            #"{"diagnostic":{"code":null}}"#,
+            #"{"diagnostic":null,"roster":[]}"#,
+            #"{"diagnostic":{"detail":"bad"}}"#,
+        ]
+
+        for raw in payloads {
+            let data = Data(raw.utf8)
+            XCTAssertNil(StackLabReport.decode(data), "diagnostic payload became a report: \(raw)")
+            let read = SirsiEngine.JSONCommandRead(data: data, exitStatus: 1, timedOut: false, launchError: nil)
+            XCTAssertTrue(StackLabReadFailure.message(for: read).contains("did not infer a registry result"))
+        }
+    }
+
     func testFleetWorkspaceMetadataDescribesWorkerLanesNotMachineInventory() {
         let fleet = PantheonWorkspace.fleet
         XCTAssertEqual(fleet.detail, "Worker lanes, task progress, and supervision states")
@@ -82,7 +108,8 @@ final class CoreContractsTests: XCTestCase {
           "cause":"an ambient checkout is incomplete",
           "status":"proposed",
           "created_at_utc":"2026-10-05T20:00:00Z",
-          "catalog_sha256":"abc123"
+          "catalog_sha256":"e8a1b1a1e295f3ff02eef4342d4bd315555960d561458687c8ee1be034b2b178",
+          "catalog_relation":"historical"
         }]
         """#
 
@@ -91,6 +118,25 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(proposals?.count, 1)
         XCTAssertEqual(proposals?.first?.id, "catalog-root-missing")
         XCTAssertEqual(proposals?.first?.titleOrID, "Catalog root missing")
+        XCTAssertEqual(proposals?.first?.catalogRelationLabel,
+                       "Recorded against a prior catalog · review against current catalog")
+    }
+
+    func testKnownFailureProposalWithoutCatalogProjectionIsNotLabeledCurrent() throws {
+        let raw = #"[{"schema":"sirsi.maat.known-failure-proposal.v1","id":"legacy","signature":"x","cause":"y","status":"proposed","created_at_utc":"2026-10-05T20:00:00Z","catalog_sha256":"e8a1b1a1e295f3ff02eef4342d4bd315555960d561458687c8ee1be034b2b178"}]"#
+
+        let proposal = try XCTUnwrap(MaatKnownFailureProposalsView.decode(raw)?.first)
+
+        XCTAssertNil(proposal.catalogRelation)
+        XCTAssertEqual(proposal.catalogRelationLabel, "Catalog generation unavailable")
+    }
+
+    func testKnownFailureProposalCurrentProjectionLabelsCurrent() throws {
+        let raw = #"[{"schema":"sirsi.maat.known-failure-proposal.v1","id":"current","signature":"x","cause":"y","status":"proposed","created_at_utc":"2026-10-30T12:00:00Z","catalog_sha256":"80145ab40c50d156607fc3155e7840f194398f7674d42f7bdc39b553586473d8","catalog_relation":"current"}]"#
+
+        let proposal = try XCTUnwrap(MaatKnownFailureProposalsView.decode(raw)?.first)
+
+        XCTAssertEqual(proposal.catalogRelationLabel, "Recorded against the current known-failure catalog")
     }
 
     func testActivityResolutionAlwaysClosesAnAmbiguousOrFailedOutcome() {
@@ -98,6 +144,122 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(activityResolution(for: "The command exited successfully, but returned no readable structured result. No repair is claimed."), .evidenceOnly)
         XCTAssertEqual(activityResolution(for: "registry-police: exit status 1"), .maatReview)
         XCTAssertEqual(activityResolution(for: "Error: evidence unavailable"), .maatReview)
+    }
+
+    func testLegacyActivityUnknownReceiptHeadersAndInterruptedOutcomesNeedEvidenceReview() {
+        for result in [
+            "STDOUT:",
+            "STDERR:",
+            "STDOUT:\n\nSTDERR:\n\nExit status: 0",
+            "Capture deadline expired; execution outcome is not confirmed.",
+            "Cancelled; execution outcome is not confirmed.",
+            "Output exceeded the shared 4 MiB capture budget; execution outcome is not confirmed.",
+            "Owned child exit is unknown.",
+            "The command exited successfully, but returned no readable structured result. No repair is claimed.",
+        ] {
+            XCTAssertEqual(activityResolution(for: result), .evidenceOnly, result)
+        }
+        XCTAssertEqual(activityResolution(for: "Flushed inactive caches."), .resolved)
+    }
+
+    func testCapturedRepairActivityRequiresClosedTypedCompletion() {
+        func receipt(_ stdout: String, exitCode: Int32? = 0, complete: Bool = true,
+                     statusFlags: (timedOut: Bool, cancelled: Bool, overflow: Bool) = (false, false, false),
+                     childState: OwnedCommandState = .exitConfirmed) -> CommandExecution {
+            CommandExecution(stdout: Data(stdout.utf8), exitCode: exitCode,
+                timedOut: statusFlags.timedOut, cancelled: statusFlags.cancelled,
+                overflow: statusFlags.overflow,
+                childState: complete ? childState : .exitUnknown)
+        }
+        func report(status: String?, summary: String = "Flushed caches successfully.", errors: [String] = []) -> String {
+            let encodedStatus = status.map { "\"status\":\"\($0)\"," } ?? ""
+            let encodedErrors = errors.map { "\"\($0)\"" }.joined(separator: ",")
+            return "{\"summary\":\"\(summary)\",\"evidence\":[],\"next_actions\":[],\(encodedStatus)\"errors\":[\(encodedErrors)]}"
+        }
+        let cases: [(String, CommandExecution, ActivityResolution)] = [
+            ("structured ok", receipt(report(status: "ok")), .resolved),
+            ("producer success", receipt(report(status: "success")), .resolved),
+            ("typed error", receipt(report(status: "error", errors: ["admin authorization failed"])), .maatReview),
+            ("typed skipped", receipt(report(status: "skipped")), .maatReview),
+            ("preview is not completion", receipt(report(status: "preview")), .evidenceOnly),
+            ("future status with success prose", receipt(report(status: "future-status")), .evidenceOnly),
+            ("no structured status with success prose", receipt(report(status: nil)), .evidenceOnly),
+            ("cancelled", receipt(report(status: nil), exitCode: nil,
+                statusFlags: (false, true, false), childState: .exitUnknown), .evidenceOnly),
+            ("timed out", receipt(report(status: nil), exitCode: nil,
+                statusFlags: (true, false, false), childState: .exitUnknown), .evidenceOnly),
+            ("unknown child exit", receipt(report(status: nil), exitCode: nil,
+                childState: .exitUnknown), .evidenceOnly),
+            ("nonzero exit", receipt(report(status: "ok"), exitCode: 7), .maatReview),
+            ("empty output", receipt(""), .evidenceOnly),
+            ("incomplete success-looking capture", receipt(report(status: "success"), complete: false,
+                statusFlags: (false, false, true)), .evidenceOnly),
+        ]
+
+        for (name, command, expected) in cases {
+            let captured = capturedRepairActivity(command)
+            XCTAssertEqual(captured.resolution, expected, name)
+        }
+    }
+
+    func testCapturedRepairRetainsSummaryExitAndBoundedUTF8Receipt() {
+        let json = #"{"summary":"Flushed inactive caches; pressure now normal.","evidence":[],"next_actions":[],"status":"ok","errors":[]}"#
+        let complete = capturedRepairActivity(CommandExecution(stdout: Data(json.utf8), exitCode: 0,
+            childState: .exitConfirmed))
+        XCTAssertTrue(complete.evidence.contains("Flushed inactive caches; pressure now normal."))
+        XCTAssertTrue(complete.evidence.contains("Exit status: 0"))
+        XCTAssertNotEqual(complete.evidence, "STDOUT:")
+        XCTAssertEqual(activityResolution(for: complete.evidence, executionOutcome: complete.outcome), .resolved)
+
+        let largeJSON = #"{"summary":"Readable summary: caches flushed.","evidence":[],"next_actions":[],"status":"success","errors":[],"padding":"\#(String(repeating: "🧾", count: 40_000))"}"#
+        let truncated = capturedRepairActivity(CommandExecution(stdout: Data(largeJSON.utf8), stderr: Data("final stderr evidence".utf8),
+            exitCode: 0, childState: .exitConfirmed))
+        XCTAssertLessThanOrEqual(truncated.evidence.utf8.count, activityEvidenceLimitBytes)
+        XCTAssertNotNil(String(data: Data(truncated.evidence.utf8), encoding: .utf8))
+        XCTAssertTrue(truncated.evidence.contains("Readable summary: caches flushed."))
+        XCTAssertTrue(truncated.evidence.contains("[Activity receipt truncated at 64 KiB"))
+        XCTAssertTrue(truncated.evidence.contains("final stderr evidence"))
+        XCTAssertTrue(truncated.evidence.contains("Exit status: 0"))
+        XCTAssertTrue(truncated.outcome.truncated)
+        XCTAssertEqual(truncated.outcome.structuredStatus, "success")
+        XCTAssertEqual(truncated.resolution, .evidenceOnly)
+    }
+
+    func testGenericBoundedActivityOutputCannotResolveTruncatedSuccessLookingText() {
+        let large = "Operation completed successfully.\n" + String(repeating: "Readable diagnostic evidence. ", count: 3_000)
+        let bounded = boundedActivityEvidence(large)
+
+        XCTAssertTrue(bounded.truncated)
+        XCTAssertTrue(bounded.text.contains("Operation completed successfully."))
+        XCTAssertTrue(bounded.text.contains("[Activity receipt truncated at 64 KiB"))
+        XCTAssertEqual(activityResolution(for: bounded.text), .evidenceOnly)
+
+        let nonreceipt = nonreceiptActivityEvidence("Human summary first.\nRaw diagnostic detail that should not be retained.")
+        XCTAssertEqual(nonreceipt, "Human summary first.")
+
+        let longHeadline = nonreceiptActivityEvidence(
+            "Completed successfully. " + String(repeating: "private-looking detail ", count: 4_000))
+        XCTAssertLessThanOrEqual(longHeadline.utf8.count, activityEvidenceLimitBytes)
+        XCTAssertTrue(longHeadline.contains("[Activity receipt truncated at 64 KiB"))
+        XCTAssertEqual(activityResolution(for: longHeadline), .evidenceOnly)
+    }
+
+    func testActivityEntryCodableKeepsLegacyAndUnknownStatusEvidence() throws {
+        let legacyData = Data(#"[{"title":"Flush caches now","command":"relieve --memory --confirm","when":"Oct 31, 4:43 PM","result":"STDOUT:"}]"#.utf8)
+        let legacy = try XCTUnwrap(JSONDecoder().decode([ActivityEntry].self, from: legacyData).first)
+        XCTAssertNil(legacy.executionOutcome)
+        XCTAssertEqual(legacy.resolution, .evidenceOnly)
+        let reviewArgs = activityMaatReviewArgs(for: legacy)
+        XCTAssertTrue(reviewArgs.contains("STDOUT:"))
+        XCTAssertTrue(reviewArgs.contains("Retained Pantheon activity command: sirsi relieve --memory --confirm"))
+
+        let unknown = ActivityEntry(title: "Flush caches now", command: "relieve --memory --confirm",
+            when: "Oct 31, 4:43 PM", result: "Flushed caches successfully.",
+            executionOutcome: ActivityExecutionOutcome(complete: true, exitCode: 0,
+                structuredStatus: "future-attestation", hasStructuredErrors: false, truncated: false))
+        let roundTrip = try JSONDecoder().decode([ActivityEntry].self, from: JSONEncoder().encode([unknown]))
+        XCTAssertEqual(roundTrip.first?.executionOutcome?.structuredStatus, "future-attestation")
+        XCTAssertEqual(roundTrip.first?.resolution, .evidenceOnly)
     }
 
     func testActivityMaatReviewCarriesEvidenceButNeverReplaysTheActivityCommand() {
@@ -495,6 +657,25 @@ final class CoreContractsTests: XCTestCase {
              "--preview-binding", binding, "--confirm", "--json"]
         )
         XCTAssertNil(maatCasebookRepairArguments(actionID: "brew upgrade sirsi-pantheon"))
+    }
+
+    func testMaatInactiveBinaryDriftDispositionIsDistinctFromUpdaterAndRepair() throws {
+        let evidence = "maat-system-one:sha256:fixture"
+        XCTAssertEqual(
+            maatCasebookBinaryDriftInactiveArguments(caseEvidence: evidence),
+            ["maat", "repair", "binary-drift", "--record-inactive", "--case-evidence", evidence, "--confirm", "--json"]
+        )
+        let raw = #"{"schema":"sirsi.maat.binary-drift-inactive-disposition-receipt.v1","case_evidence":"maat-system-one:sha256:fixture","disposition_evidence":"maat-binary-drift-inactive:sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","host":"fixture","observed_from_utc":"2026-10-31T12:00:00Z","observed_through_utc":"2026-10-31T12:00:01Z","finding_state":"no longer active","repair_performed":false}"#.data(using: .utf8)!
+        let receipt = try JSONDecoder().decode(MaatBinaryDriftInactiveDispositionReceipt.self, from: raw)
+        XCTAssertTrue(receipt.isValid(for: evidence))
+        XCTAssertFalse(receipt.isValid(for: evidence + "stale"))
+
+        let live = diagnosticFixExpectation(kind: "relief", check: "Top Memory Consumers") ?? ""
+        let historical = diagnosticFixExpectation(kind: "relief", check: "Jetsam Events (7d)") ?? ""
+        XCTAssertTrue(live.contains("current reading"))
+        XCTAssertTrue(live.contains("does not guarantee"))
+        XCTAssertFalse(live.contains("7-day"))
+        XCTAssertTrue(historical.contains("7-day record"))
     }
 
     func testMaatBinaryDriftRecoveryReviewsDispatchOnlyToTheirTypedNativeCommands() {

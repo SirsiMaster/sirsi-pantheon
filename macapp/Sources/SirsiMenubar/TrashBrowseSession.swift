@@ -259,7 +259,6 @@ actor TrashBrowseIO {
     init(syscalls: TrashBrowseSyscalls = .live, beforeRead: @escaping @Sendable () -> Void = {}) {
         self.syscalls = syscalls; self.beforeRead = beforeRead
     }
-    deinit { session?.close() }
     func close() { session?.close(); session = nil }
 
     // No await inside directory use: actor reentrancy cannot interleave DIR reads

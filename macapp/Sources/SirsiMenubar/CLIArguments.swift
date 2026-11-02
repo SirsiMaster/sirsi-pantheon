@@ -8,12 +8,14 @@ enum SnapshotAppearance: Equatable {
 enum MenubarCommand: Equatable {
     case launch
     case help
+    case versionJSON
     case snapshot(directory: String, width: Double, appearance: SnapshotAppearance)
 }
 
 enum MenubarCommandError: Error, Equatable {
     case unknownFlag(String)
     case duplicateFlag(String)
+    case versionRequiresJSON
     case snapshotRequiresDirectory
     case widthRequiresPositiveFiniteNumber
     case appearanceRequiresValue
@@ -23,6 +25,7 @@ enum MenubarCommandError: Error, Equatable {
         switch self {
         case let .unknownFlag(flag): return "unknown flag \(flag)"
         case let .duplicateFlag(flag): return "duplicate flag \(flag)"
+        case .versionRequiresJSON: return "version requires --json"
         case .snapshotRequiresDirectory: return "--snapshot requires a directory"
         case .widthRequiresPositiveFiniteNumber: return "--width requires a positive finite number"
         case .appearanceRequiresValue: return "--appearance requires light or dark"
@@ -34,17 +37,25 @@ enum MenubarCommandError: Error, Equatable {
 enum MenubarCommandParser {
     static let usage = """
     Usage: SirsiMenubar [--snapshot <dir> [--width <pt>] [--appearance light|dark]]
+           SirsiMenubar version --json
 
     With no arguments, opens the Pantheon desktop workspace and its menu-bar companion.
 
       --snapshot <dir>          render the popover's key screens to PNGs and exit
       --width <pt>              snapshot width in points (default 380)
       --appearance light|dark   snapshot appearance (default dark)
+      version --json            print this app's stamped identity without launching
       -h, --help                print this message and exit
     """
 
     static func parse(_ argv: [String]) throws -> MenubarCommand {
         let arguments = Array(argv.dropFirst())
+        if arguments.first == "version" {
+            guard arguments == ["version", "--json"] else {
+                throw MenubarCommandError.versionRequiresJSON
+            }
+            return .versionJSON
+        }
         let knownFlags: Set<String> = ["--snapshot", "--width", "--appearance"]
         let flags = arguments.filter { $0.hasPrefix("-") }
 

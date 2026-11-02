@@ -128,8 +128,20 @@ func TestTrashReceiptCobraOwnedSelectionFlow(t *testing.T) {
 	completed, err := runReport(newTrashReceiptCommand(true), manifest, "--confirm")
 	if err != nil || completed.Status != "completed" || completed.Attempted != 1 ||
 		!reflect.DeepEqual(completed.Deleted, []string{"reviewed"}) || len(completed.Errors) != 0 ||
-		completed.LogicalBytes != int64(len(contents["reviewed"])) {
+		completed.LogicalBytes != int64(len(contents["reviewed"])) || completed.OperationID == "" {
 		t.Fatalf("Cobra confirmed selected-only apply: %+v %v", completed, err)
+	}
+	raw, err := execute(newTrashHistoryCommand(), nil, "--limit", "1")
+	var history trashreceipt.HistoryPage
+	decode(raw, &history)
+	if err != nil || history.Schema != trashreceipt.HistoryPageSchema || history.Incomplete || len(history.Items) != 1 || history.Items[0].OperationID != completed.OperationID {
+		t.Fatalf("Cobra history page: %+v %v", history, err)
+	}
+	raw, err = execute(newTrashHistoryCommand(), nil, "--operation-id", completed.OperationID)
+	var detail trashreceipt.HistoryDetail
+	decode(raw, &detail)
+	if err != nil || detail.Schema != trashreceipt.HistoryDetailSchema || detail.State != "completed" || detail.TerminalReport == nil || detail.TerminalReport.OperationID != completed.OperationID {
+		t.Fatalf("Cobra history detail: %+v %v", detail, err)
 	}
 	if _, err := os.Lstat(filepath.Join(root, "reviewed")); !os.IsNotExist(err) {
 		t.Fatalf("reviewed owned leaf was not deleted: %v", err)
@@ -141,7 +153,7 @@ func TestTrashReceiptCobraOwnedSelectionFlow(t *testing.T) {
 	if !browse.Hidden {
 		t.Fatal("unsupported stateless compatibility route is visible")
 	}
-	raw, err := execute(browse, encode(trashreceipt.BrowseRequest{Schema: trashreceipt.BrowseSchema, Directory: "."}))
+	raw, err = execute(browse, encode(trashreceipt.BrowseRequest{Schema: trashreceipt.BrowseSchema, Directory: "."}))
 	var page trashreceipt.Page
 	decode(raw, &page)
 	if err == nil || page.Status != "failed" || len(page.Entries) != 0 || page.Next != nil || len(page.Errors) == 0 {

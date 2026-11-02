@@ -73,6 +73,42 @@ func TestSpoolOutboxHealth_MissingSpoolRootErrors(t *testing.T) {
 	}
 }
 
+func TestCollectRelayOutboxHealthUsesReaderPolicyAndCollectsInertRoot(t *testing.T) {
+	r := relayObservationTestRoot(t)
+	relayObservationTestLane(t, r, "codex-pantheon")
+	before := r.stat
+	called, seenReaderRole := false, false
+	seenPath, seenGroup := "", ""
+	result := collectRelayOutboxHealthWith(r.path, "", func(path, group string, allowDeclaredServiceGroup bool) (*relayObservationRoot, error) {
+		called, seenReaderRole = true, allowDeclaredServiceGroup
+		seenPath, seenGroup = path, group
+		return r, nil
+	})
+	// collectRelayOutboxHealthWith owns and closes the returned root.
+	if called {
+		r.fd, r.parent = -1, -1
+	}
+	if !called {
+		t.Fatal("collector bypassed the injected reader root opener")
+	}
+	if seenPath != r.path || seenGroup != "" || !seenReaderRole {
+		t.Fatalf("reader open policy path=%q group=%q allowDeclaredServiceGroup=%v", seenPath, seenGroup, seenReaderRole)
+	}
+	if !result.Coverage.Complete || result.Coverage.Source != "direct-metadata" || len(result.Outbox) != 1 || result.Outbox[0].Agent != "codex-pantheon" || result.Outbox[0].QueuedForRetry != 0 {
+		t.Fatalf("unexpected inert collection result: %+v", result)
+	}
+	if result.Outbox[0].Scope == nil || result.Outbox[0].Scope.RootDevice != uint64(before.Dev) || result.Outbox[0].Scope.RootInode != uint64(before.Ino) {
+		t.Fatalf("collection lost opened-root identity: %+v", result.Outbox[0])
+	}
+	if _, err := os.Lstat(filepath.Join(r.path, relayObservationName)); !os.IsNotExist(err) {
+		t.Fatalf("read-only collection created/replaced summary: %v", err)
+	}
+	st, err := os.Stat(r.path)
+	if err != nil || st.Mode().Perm() != 0o700 {
+		t.Fatalf("read-only collection changed private root: stat=%v err=%v", st, err)
+	}
+}
+
 // TestSpoolOutboxHealth_UnreadableOutboxIsNotSilentlyEmpty: codex-pantheon
 // review of PR #931 (item 20261001-010622) reproduced filepath.Glob silently
 // swallowing a permission-denied outbox directory as zero held items — an

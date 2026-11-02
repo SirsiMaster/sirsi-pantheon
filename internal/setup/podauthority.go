@@ -4,7 +4,6 @@ package setup
 
 import (
 	"bytes"
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -15,23 +14,20 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/packagedengine"
 )
 
 const (
 	maatPodServiceLabelPrefix = "ai.sirsi.maat.pod."
 	maatPodServiceStatus      = "installed_activation_unobserved"
 	maxPodTLSFileBytes        = 1 << 20
-	maxCodesignOutputBytes    = 16 << 10
 )
 
 // MaatPodServiceSpec contains explicit existing inputs for a dormant launchd
@@ -315,93 +311,20 @@ func validClientCABundle(data []byte, now time.Time) bool {
 }
 
 func isKnownMaatPodEngine(path string) bool {
-	clean, err := filepath.Abs(path)
-	if err != nil || clean != path || filepath.Clean(path) != path {
-		return false
-	}
-	return path == "/Applications/Pantheon.app/Contents/MacOS/sirsi" || path == "/usr/local/libexec/sirsi-pantheon/sirsi"
+	return packagedengine.IsCanonical(path)
 }
 
 // CurrentPackagedMaatEngine returns the running executable only when its
 // resolved path is one of the two canonical package locations. It deliberately
 // has no PATH, symlink-to-dev-build, or loose binary fallback.
 func CurrentPackagedMaatEngine() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", errors.New("maat pod service: current executable path unavailable")
-	}
-	resolved, err := filepath.EvalSymlinks(exe)
-	if err != nil || !isKnownMaatPodEngine(resolved) {
-		return "", errors.New("maat pod service: run prepare from the installed Pantheon app or canonical libexec sirsi")
-	}
-	if err := validateInstalledPodEngine(resolved); err != nil {
-		return "", err
-	}
-	return resolved, nil
+	return packagedengine.Current()
 }
 
 // VerifyPackagedMaatEngine checks the installed package signature without
 // executing the candidate payload. Output and runtime are bounded.
 func VerifyPackagedMaatEngine(path string) error {
-	if !isKnownMaatPodEngine(path) {
-		return errors.New("maat pod service: executable is not an accepted installed sirsi engine")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := maatPodCodesignCommand(ctx, path)
-	output := &boundedPodOutput{limit: maxCodesignOutputBytes}
-	cmd.Stdout, cmd.Stderr = output, output
-	if err := cmd.Run(); err != nil || output.overflow {
-		return errors.New("maat pod service: installed engine signature did not meet the Sirsi requirement")
-	}
-	return nil
-}
-
-func maatPodCodesignCommand(ctx context.Context, path string) *exec.Cmd {
-	// codesign treats a bare requirement as a filename. '=' selects an inline
-	// expression; the exact argv is covered without executing a candidate.
-	requirement := `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "sirsi"`
-	return exec.CommandContext(ctx, "/usr/bin/codesign", "--verify", "--strict", "-R", requirement, path)
-}
-
-type boundedPodOutput struct {
-	bytes.Buffer
-	limit    int
-	overflow bool
-}
-
-func (b *boundedPodOutput) Write(p []byte) (int, error) {
-	n := len(p)
-	remaining := b.limit - b.Len()
-	if remaining > 0 {
-		if len(p) > remaining {
-			_, _ = b.Buffer.Write(p[:remaining])
-			b.overflow = true
-		} else {
-			_, _ = b.Buffer.Write(p)
-		}
-	} else if n > 0 {
-		b.overflow = true
-	}
-	return n, nil
-}
-
-func validateInstalledPodEngine(path string) error {
-	if !isKnownMaatPodEngine(path) {
-		return errors.New("maat pod service: current executable is not an accepted installed sirsi engine")
-	}
-	f, info, err := openCanonicalPath(path, false, false)
-	if f != nil {
-		defer f.Close()
-	}
-	if err != nil || info == nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
-		return errors.New("maat pod service: accepted installed sirsi engine is unavailable or not executable")
-	}
-	nameInfo, err := os.Lstat(path)
-	if err != nil || !os.SameFile(info, nameInfo) || !nameInfo.Mode().IsRegular() {
-		return errors.New("maat pod service: accepted installed sirsi engine path changed during inspection")
-	}
-	return nil
+	return packagedengine.Verify(path)
 }
 
 func validateCanonicalDirectory(path string) error {
@@ -503,38 +426,7 @@ func readCanonicalRegular(path string, allowMissing, private bool) ([]byte, os.F
 }
 
 func openCanonicalPath(path string, directory, allowMissing bool) (*os.File, os.FileInfo, error) {
-	if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == "/" {
-		return nil, nil, errors.New("path must be canonical and absolute")
-	}
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	parent, err := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return nil, nil, err
-	}
-	for i, component := range parts {
-		leaf := i == len(parts)-1
-		flags := unix.O_RDONLY | unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_NONBLOCK
-		if !leaf || directory {
-			flags |= unix.O_DIRECTORY
-		}
-		fd, openErr := unix.Openat(parent, component, flags, 0)
-		if openErr != nil {
-			unix.Close(parent)
-			if leaf && allowMissing && errors.Is(openErr, unix.ENOENT) {
-				return nil, nil, nil
-			}
-			return nil, nil, openErr
-		}
-		unix.Close(parent)
-		parent = fd
-	}
-	file := os.NewFile(uintptr(parent), path)
-	info, err := file.Stat()
-	if err != nil {
-		file.Close()
-		return nil, nil, err
-	}
-	return file, info, nil
+	return packagedengine.OpenCanonicalPath(path, directory, allowMissing)
 }
 
 func ownedByCurrentUser(info os.FileInfo) bool {

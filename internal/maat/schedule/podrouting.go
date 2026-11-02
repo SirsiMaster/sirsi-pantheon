@@ -3,6 +3,7 @@ package schedule
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,9 @@ func (s *PodRoutingStore) MaatMutate(action, id, value string) (*Reservation, er
 	return s.Client.Mutate(ctx, action, id, value)
 }
 func (s *PodRoutingStore) MaatRead(kind, resource string) ([]Reservation, error) {
+	if kind == "reservation" && strings.HasPrefix(resource, "pod:") {
+		return nil, fmt.Errorf("maat: exact delegated reservation read not supported by pod transport; canonical fallback refused")
+	}
 	if kind == "status" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

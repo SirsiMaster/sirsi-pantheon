@@ -67,7 +67,15 @@ type RelayOutboxHealth struct {
 // Incomplete coverage never acquires an aggregate; individually observed lanes
 // remain useful. Merely sharing the root's gid never authenticates a producer.
 func CollectRelayOutboxHealth(spoolRoot, trustGroup string) RelayOutboxHealth {
-	r, err := openRelayObservationRoot(spoolRoot, trustGroup)
+	return collectRelayOutboxHealthWith(spoolRoot, trustGroup, openRelayObservationRootWithPolicy)
+}
+
+// Per-call opener injection keeps reader-role selection testable without a
+// package-global provider or filesystem-wide test framework.
+func collectRelayOutboxHealthWith(spoolRoot, trustGroup string,
+	openRoot func(string, string, bool) (*relayObservationRoot, error),
+) RelayOutboxHealth {
+	r, err := openRoot(spoolRoot, trustGroup, true)
 	if err != nil {
 		return RelayOutboxHealth{ErrorCode: err.Error(), Coverage: RelayOutboxCoverage{Source: "unavailable"}}
 	}

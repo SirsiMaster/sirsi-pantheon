@@ -187,12 +187,13 @@ func TestRootRelaySpoolActualCanonicalPublisherThenMockRefresh(t *testing.T) {
 	f, b := newRelayNativeFixture(t) // real/effective root and every privileged operation are inert seams.
 	b.relay.spoolClear = func(ctx context.Context) error {
 		f.spoolReads++
+		f.events = append(f.events, "spool")
 		return rootRelaySpoolQuiescentAt(ctx, root, nil)
 	}
 	if err := b.Refresh(context.Background(), relayInstanceFixture()); err != nil {
 		t.Fatalf("actual publisher summary blocked mock refresh before bootout: %v (bootouts=%d)", err, f.bootouts)
 	}
-	if f.bootouts != 1 || f.bootstraps != 1 || f.spoolReads != 2 || f.childReads != 2 {
+	if f.bootouts != 1 || f.bootstraps != 1 || f.spoolReads != 2 || f.childReads != 3 {
 		t.Fatal("mock refresh lost its exact double-probe/once-only path")
 	}
 	assertRelayMetadataUntouched(t, root, before, raw)

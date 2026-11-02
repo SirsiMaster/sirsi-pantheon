@@ -23,7 +23,7 @@ import Security
         end try
     end run
     """
-    typealias Invoke = @MainActor ([String], @escaping @MainActor () -> Bool) async -> CommandExecution
+    typealias Invoke = @MainActor ([String], @escaping ProcessLaunchAuthorization) async -> CommandExecution
     struct Capability: Decodable, Equatable {
         let schema: Int; let proto: String; let release: String; let implementation: String;let native:Bool
         enum CodingKeys:String,CodingKey {case schema,release,implementation,native;case proto="protocol"}
@@ -53,7 +53,7 @@ import Security
         }
     }
 
-    func capture(args: [String], stdin: String?, authorize: @escaping @MainActor () -> Bool) async -> CommandExecution {
+    func capture(args: [String], stdin: String?, authorize: @escaping ProcessLaunchAuthorization) async -> CommandExecution {
         let deadline=ProcessInfo.processInfo.systemUptime+preflightTimeout
         guard preflightTimeout.isFinite,preflightTimeout>0,preflightTimeout<=30 else{return CommandExecution(launchError:"Invalid preflight bound")}
         guard !Task.isCancelled, authorize() else { return CommandExecution(launchError: "Approval changed before authorization.", cancelled: Task.isCancelled) }

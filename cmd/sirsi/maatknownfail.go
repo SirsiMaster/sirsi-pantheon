@@ -105,7 +105,7 @@ var maatKnownFailuresProposalsCmd = &cobra.Command{
 			return err
 		}
 		if JsonOutput || maatJSON {
-			return emitJSON(proposals)
+			return emitJSON(knownfail.ProjectProposals(proposals))
 		}
 		if len(proposals) == 0 {
 			fmt.Println("no local Ma'at known-failure proposals")

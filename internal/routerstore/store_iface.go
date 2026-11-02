@@ -62,6 +62,9 @@ type Store interface {
 	Complete(id, token, result string) error
 	CompleteTaskLease(agent, taskID, token, resultRef string) error
 	Counters() (DispatchCounters, error)
+	// DeleteThreadCAS retires the exact ordinary row to a retained pruned key
+	// with empty user payload. Existing fences remain unchanged. True means
+	// this CAS retired one row; stale predicates and repeat retirement are no-ops.
 	DeleteThreadCAS(threadID, status, lastSeenAt, host string) (bool, error)
 	ExportItem(dir, id string) (string, error)
 	ExportMarkdown(dir string) (int, error)
@@ -74,8 +77,9 @@ type Store interface {
 	GetSession(id string) (Session, error)
 	GetState(key string) (string, bool, error)
 	GetTask(agent, taskID string) (Task, error)
-	// GetThreadRecord is the bounded own-thread read: one row by thread_id,
-	// including its payload. ErrThreadUnknown when absent. See threads.go.
+	// GetThreadRecord is the bounded own-thread read: one visible row by
+	// thread_id, including its payload. ErrThreadUnknown when absent or pruned.
+	// See threads.go.
 	GetThreadRecord(threadID string) (ThreadRecord, error)
 	Heartbeat(id string) error
 	// HostIdentity resolves an identity string to its canonical machine id via
@@ -102,6 +106,8 @@ type Store interface {
 	ListIdentifiers(namespace string) ([]Identifier, error)
 	ListRequirements(owner string) ([]Requirement, error)
 	ListTasks(agent string) ([]Task, error)
+	// ListThreads omits internal pruned rows; ThreadBinding and raw migration
+	// retain their ID/agent/host/status fence visibility.
 	ListThreads() ([]ThreadRecord, error)
 	ListWakeEvents(agent string) ([]WakeEvent, error)
 	ListenNotify(ctx context.Context, agent string) (<-chan struct{}, error)

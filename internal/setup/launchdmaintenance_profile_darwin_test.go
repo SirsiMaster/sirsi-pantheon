@@ -24,6 +24,7 @@ func TestMaintenanceLegacySourceProfilesAndDigestBinding(t *testing.T) {
 		maintenanceLegacySource121,
 		maintenanceLegacySource129,
 		maintenanceLegacySource137,
+		maintenanceLegacySource147,
 	}
 	for _, revision := range profiles {
 		t.Run(revision, func(t *testing.T) {
@@ -34,7 +35,7 @@ func TestMaintenanceLegacySourceProfilesAndDigestBinding(t *testing.T) {
 		})
 	}
 
-	for _, revision := range []string{maintenanceLegacySource129, maintenanceLegacySource137} {
+	for _, revision := range []string{maintenanceLegacySource129, maintenanceLegacySource137, maintenanceLegacySource147} {
 		for _, tc := range []struct {
 			name     string
 			modified string
@@ -76,13 +77,16 @@ func TestMaintenanceLegacySourceProfilesAndDigestBinding(t *testing.T) {
 		{name: "wrong main module", info: maintenanceProfileBuildInfo("22944b2458f377a9f3e5e10c63c3442cb3ea83c3", "false", "example.invalid/other")},
 		{name: "wrong main module 129", info: maintenanceProfileBuildInfo(maintenanceLegacySource129, "false", "example.invalid/other")},
 		{name: "wrong main module 137", info: maintenanceProfileBuildInfo(maintenanceLegacySource137, "false", "example.invalid/other")},
+		{name: "wrong main module 147", info: maintenanceProfileBuildInfo(maintenanceLegacySource147, "false", "example.invalid/other")},
 		{name: "unknown revision", info: maintenanceProfileBuildInfo("unknown-revision", "false", "github.com/SirsiMaster/sirsi-pantheon")},
 		{name: "clean unknown revision with valid commit shape", info: maintenanceProfileBuildInfo("7f17065c0cd934009eb271526efc0405f346190d", "false", "github.com/SirsiMaster/sirsi-pantheon")},
 		{name: "version label 129", info: maintenanceProfileBuildInfo("v0.24.129", "false", "github.com/SirsiMaster/sirsi-pantheon")},
 		{name: "version label 137", info: maintenanceProfileBuildInfo("v0.24.137", "false", "github.com/SirsiMaster/sirsi-pantheon")},
+		{name: "version label 147", info: maintenanceProfileBuildInfo("v0.24.147", "false", "github.com/SirsiMaster/sirsi-pantheon")},
 		{name: "nearby 129 revision", info: maintenanceProfileBuildInfo("0fd8463011ee2ebae12494895669b0e7b20b9dde", "false", "github.com/SirsiMaster/sirsi-pantheon")},
 		{name: "nearby 137 revision", info: maintenanceProfileBuildInfo("cb59d56f849235eb80f5e4b10514fc89467fb8ae", "false", "github.com/SirsiMaster/sirsi-pantheon")},
-		{name: "dirty source", info: maintenanceProfileBuildInfo("22944b2458f377a9f3e5e10c63c3442cb3ea83c3", "true", "github.com/SirsiMaster/sirsi-pantheon")},
+		{name: "nearby 147 revision", info: maintenanceProfileBuildInfo("63fbba661b6c7c2b487979ef4ce58d28ea2d611d", "false", "github.com/SirsiMaster/sirsi-pantheon")},
+		{name: "dirty source", info: maintenanceProfileBuildInfo(maintenanceLegacySource147, "true", "github.com/SirsiMaster/sirsi-pantheon")},
 		{name: "missing revision", info: maintenanceProfileBuildInfo("<absent>", "false", "github.com/SirsiMaster/sirsi-pantheon")},
 		{name: "missing modified setting", info: maintenanceProfileBuildInfo("22944b2458f377a9f3e5e10c63c3442cb3ea83c3", "<absent>", "github.com/SirsiMaster/sirsi-pantheon")},
 		{name: "duplicate revision settings", info: &debug.BuildInfo{Main: debug.Module{Path: "github.com/SirsiMaster/sirsi-pantheon"}, Settings: []debug.BuildSetting{

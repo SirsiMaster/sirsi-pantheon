@@ -154,12 +154,15 @@ func TestResolveSubmitRequester(t *testing.T) {
 		}
 	})
 
-	t.Run("conflicting Codex aliases refuse even with a marker", func(t *testing.T) {
+	t.Run("current Codex thread resolves independently of shared root marker", func(t *testing.T) {
 		t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-		t.Setenv("CODEX_SESSION_ID", "codex-registered")
-		t.Setenv("CODEX_THREAD_ID", "other-conversation")
-		if _, err := resolveSubmitRequester(); err == nil {
-			t.Fatal("conflicting aliases must not pick a marker arbitrarily")
+		t.Setenv("CODEX_SESSION_ID", "codex-parent-root")
+		t.Setenv("CODEX_THREAD_ID", "codex-current-thread")
+		writeMarker(t, "codex-parent-root", "codex-parent")
+		writeMarker(t, "codex-current-thread", "codex-apollo")
+		got, err := resolveSubmitRequester()
+		if err != nil || got != "codex-apollo" {
+			t.Fatalf("Codex requester = %q, %v; want current-thread marker codex-apollo", got, err)
 		}
 	})
 

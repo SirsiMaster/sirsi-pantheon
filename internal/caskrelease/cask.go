@@ -9,10 +9,11 @@ package caskrelease
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 var (
-	versionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$`)
+	versionPattern = regexp.MustCompile(`^([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9A-Za-z][0-9A-Za-z.-]*))?$`)
 	shaPattern     = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
@@ -43,11 +44,21 @@ func Render(in Input) ([]byte, error) {
 	if err := in.Validate(); err != nil {
 		return nil, err
 	}
+	version := versionPattern.FindStringSubmatch(in.Version)
+	if version == nil {
+		return nil, fmt.Errorf("cask version must be a numeric x.y.z release version, optionally followed by one prerelease suffix")
+	}
+	eligibility := ""
+	// The guarded template begins with the 0.24.154 release train, including
+	// its prereleases. Published 0.24.152/153 bytes remain canonical as-is.
+	if releaseAtOrAfter(version[1:4], []string{"0", "24", "154"}) {
+		eligibility = "  depends_on arch: :arm64\n  depends_on macos: :ventura\n\n"
+	}
 	return []byte(fmt.Sprintf(`cask "sirsi-pantheon" do
   version "%s"
   sha256 "%s"
 
-  url "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v#{version}/SirsiPantheon-#{version}-arm64.dmg"
+%s  url "https://github.com/SirsiMaster/sirsi-pantheon/releases/download/v#{version}/SirsiPantheon-#{version}-arm64.dmg"
   name "Sirsi Pantheon"
   desc "DevOps intelligence platform — menu bar monitor + CLI"
   homepage "https://github.com/SirsiMaster/sirsi-pantheon"
@@ -76,7 +87,32 @@ func Render(in Input) ([]byte, error) {
       sirsi ghosts     Find remnants of uninstalled apps
   EOS
 end
-`, in.Version, in.DMGSHA256)), nil
+`, in.Version, in.DMGSHA256, eligibility)), nil
+}
+
+// releaseAtOrAfter compares the three numeric components captured by the
+// existing release-version validator. Prerelease suffixes deliberately do not
+// change release-train eligibility: 0.24.154-rc.1 uses the 154 template.
+func releaseAtOrAfter(version, minimum []string) bool {
+	for i := range minimum {
+		actual := normalizeDecimal(version[i])
+		threshold := normalizeDecimal(minimum[i])
+		if len(actual) != len(threshold) {
+			return len(actual) > len(threshold)
+		}
+		if actual != threshold {
+			return actual > threshold
+		}
+	}
+	return true
+}
+
+func normalizeDecimal(value string) string {
+	value = strings.TrimLeft(value, "0")
+	if value == "" {
+		return "0"
+	}
+	return value
 }
 
 // Verify requires an existing cask to be the exact canonical rendering of the

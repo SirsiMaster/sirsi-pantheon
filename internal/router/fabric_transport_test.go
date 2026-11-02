@@ -37,7 +37,7 @@ func TestCodexConsumersKeepClosedNativeProxy(t *testing.T) {
 				`permissions.sirsi-router.network.allow_local_binding=false`,
 				`permissions.sirsi-router.network.allow_upstream_proxy=false`,
 				`permissions.sirsi-router.network.enable_socks5_udp=false`,
-				`permissions.sirsi-router.network.domains={"100.88.242.95"="allow","100.92.193.26"="allow","100.87.95.88"="allow","192.168.1.185"="allow","10.96.127.2"="allow"}`,
+				`permissions.sirsi-router.network.domains={` + consumerTailnetPlaceholder + `,"192.168.1.185"="allow","10.96.127.2"="allow"}`,
 			} {
 				if !strings.Contains(joined, "-c\n"+required) {
 					t.Errorf("missing bounded setting %s", required)

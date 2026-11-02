@@ -39,6 +39,8 @@ row's qualification, release or certification state.
 | No public partial release or published-asset overwrite | `scripts/publish-release-assets.py`, `RELEASE_PUBLICATION.md`, release-artifact recipe | authored fake-gh partial/idempotent/mismatch/unknown-outcome controls; paired size/SHA256 remote readback | Corrective source only; tests unrun, no successor publication claim. Existing signed132 custody is independent. |
 | Release-source preflight follows the current delegated route without diagnosing owner credentials | `internal/maat/releasepreflight.go`, release-artifact recipe | released130 signing-input pins plus corrective workflow pin; mode/identity/delegation/notary/verification removal fixtures; actual Casebook NextAction projection | Corrective source only until qualified. Literal source indicators are not shell execution/semantic proof. Public local certificate readiness and actual signing/notary/publication receipts remain independent. |
 | Install/upgrade/rollback/uninstall | cask lifecycle plan | installed-host evidence | OPEN |
+| Structured command failures remain readable in the immediate native result | `macapp/Sources/SirsiMenubar/Views.swift`; `ResultPresentationTests.swift` | The e0 native blobs are unchanged from the reviewed 9eb correction; its 45 selected native tests and PR1328 CI retain their prior scope. v159 installed observation separately recorded bounded case/review and memory-preview use, not this later e0 source | Source correction accepted and previously qualified at its own source; no v160 release/install claim |
+| Memory-relief preview separates system pressure from the largest sampled process | `cmd/sirsi/relieve.go`, `cmd/sirsi/relieve_purge_test.go`, `docs/user-guides/relieve.md` | Pure preview fixture covers normal/warn/unknown pressure, contextual process sampling, exact explicit confirm command and no workload termination; Huygens source review accepted e0. Main M1 focused normal/race each passed 3 top-level tests plus 9 subtests (12 pass events; zero fail/skip), with retained source-bound logs and canonical terminal | Focused Go qualification passed for this slice; broader CI, publication and installed workflow remain separate. No purge, process termination, v160 release or installed-runtime claim |
 
 ## Diagram-linked process coverage
 
@@ -94,8 +96,8 @@ implicitly DONE or waived by a diagram.
 | PT-REQ-11 Canon certification | All84 groups, especially P52,P83,P84 | C01–03,C11–13: semantic review, exact origin/pin, reading homes, billing crosswalk |
 
 Pnn means PT-Pnn. Cnn means PT-Cnn in [CERTIFICATION.md](CERTIFICATION.md).
-The101-package/target inventory was regenerated from committed composed candidate
-`958db55b58ddbd6560ce5d0da8f0a6f56488f225`:858 source,860 test and226 supporting files.
+The104-package/target inventory is refreshed from private source candidate
+`e0f89788e6d6c8be4028b3ec680084910f305f18`:1,027 source/data,905 test and232 supporting files.
 Final-head digest equality and final-source qualification remain explicit; retained
 component evidence above keeps its original source/environment scope.
 

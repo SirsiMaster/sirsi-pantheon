@@ -90,6 +90,7 @@ type fabricOperation struct {
 	cancel                context.CancelFunc
 	done                  chan struct{}
 	waiters               map[*fabricWaiter]struct{}
+	trace                 *fabricStageTrace
 	unfiltered, abandoned bool
 	generation            *FabricGeneration
 	err                   error
@@ -191,7 +192,9 @@ func (p *FabricGenerationProducer) readGeneration(ctx context.Context, validate 
 		w := &fabricWaiter{ctx: ctx}
 		if op == nil {
 			acquisition, cancel := context.WithTimeout(p.parent, fabricAcquisitionCeiling)
-			op = &fabricOperation{ctx: acquisition, cancel: cancel, done: make(chan struct{}), waiters: map[*fabricWaiter]struct{}{}, unfiltered: validate == nil}
+			trace := &fabricStageTrace{}
+			acquisition = context.WithValue(acquisition, fabricStageTraceKey{}, trace)
+			op = &fabricOperation{ctx: acquisition, cancel: cancel, done: make(chan struct{}), waiters: map[*fabricWaiter]struct{}{}, trace: trace, unfiltered: validate == nil}
 			p.active = op
 			op.waiters[w] = struct{}{}
 			go p.runFabricOperation(op, validate)
@@ -202,22 +205,22 @@ func (p *FabricGenerationProducer) readGeneration(ctx context.Context, validate 
 		select {
 		case <-ctx.Done():
 			p.leaveFabricWaiter(op, w)
-			return nil, ctx.Err()
+			return nil, op.trace.wrap(ctx.Err())
 		case <-op.ctx.Done():
 			// Prefer the sealed result when completion released this context.
 			select {
 			case <-op.done:
 				if err := ctx.Err(); err != nil {
-					return nil, err
+					return nil, op.trace.wrap(err)
 				}
 				return op.generation, op.err
 			default:
 			}
 			p.leaveFabricWaiter(op, w)
-			return nil, op.ctx.Err()
+			return nil, op.trace.wrap(op.ctx.Err())
 		case <-op.done:
 			if err := ctx.Err(); err != nil {
-				return nil, err
+				return nil, op.trace.wrap(err)
 			}
 			return op.generation, op.err
 		}
@@ -242,12 +245,13 @@ func (p *FabricGenerationProducer) runFabricOperation(op *fabricOperation, valid
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// Cancellation and successful commit are linearized at this lock boundary.
-	if e := op.ctx.Err(); e != nil {
-		err = e
-	}
+	contextErr := op.ctx.Err()
 	if p.active != op || op.abandoned || liveFabricWaiters(op) == 0 {
-		err = context.Canceled
+		if contextErr == nil {
+			contextErr = context.Canceled
+		}
 	}
+	err = op.trace.finalize(err, contextErr)
 	if err == nil {
 		p.previous, p.events, p.completed, p.seeded = candidate.previous, candidate.events, candidate.completed, true
 		p.instance = candidate.instance
@@ -263,23 +267,31 @@ func (p *FabricGenerationProducer) runFabricOperation(op *fabricOperation, valid
 // The sole active operation reads the last committed baseline. It stages every
 // change locally; only runFabricOperation publishes after validation/live demand.
 func (p *FabricGenerationProducer) buildFabricCandidate(ctx context.Context, validate func(FabricRead) error) (*fabricCandidate, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if p.read == nil {
-		return nil, errors.New("fabric reader unavailable")
-	}
-	input, err := p.read(ctx)
+	var input FabricRead
+	err := FabricReadStage(ctx, FabricStageSnapshot, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if p.read == nil {
+			return errors.New("fabric reader unavailable")
+		}
+		var err error
+		input, err = p.read(ctx)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
 	// Detach all maps/slices/pointers before adapters or history see the input.
-	raw, err := json.Marshal(input)
-	if err != nil {
-		return nil, err
-	}
 	var read FabricRead
-	if err = json.Unmarshal(raw, &read); err != nil {
+	err = FabricReadStage(ctx, FabricStageProjection, func() error {
+		raw, err := json.Marshal(input)
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(raw, &read)
+	})
+	if err != nil {
 		return nil, err
 	}
 	// Preserve the old registry/ledger union once, before every projection.

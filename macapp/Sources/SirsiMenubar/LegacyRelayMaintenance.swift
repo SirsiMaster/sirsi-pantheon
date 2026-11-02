@@ -103,7 +103,7 @@ enum LegacyRelayAppHost {
 }
 
 @MainActor final class LegacyRelayMaintenanceModel: ObservableObject {
-    typealias Capture = @MainActor ([String], String?, URL, @escaping @MainActor () -> Bool) async -> CommandExecution
+    typealias Capture = @MainActor ([String], String?, URL, @escaping ProcessLaunchAuthorization) async -> CommandExecution
     struct Approval: Equatable { let plan: LegacyRelayPlan; let bytes: Data; let file: URL; let directory: URL; let generation: UUID;let ticketJSON:String }
     struct RestoreApproval: Equatable {
         let transaction: LegacyRelayTransaction
@@ -520,7 +520,7 @@ enum LegacyRelayAppHost {
         let maintenanceSHA256: String; let sha256: String
         enum CodingKeys: String, CodingKey { case transaction, revision, artifact, sha256; case maintenanceSHA256 = "maintenance_sha256" }
     }
-    private func observe(_ args:[String],_ scope:URL,_ authorize:@escaping @MainActor()->Bool,using override:Capture? = nil,stdin:String? = nil) async -> CommandExecution {
+    private func observe(_ args:[String],_ scope:URL,_ authorize:@escaping ProcessLaunchAuthorization,using override:Capture? = nil,stdin:String? = nil) async -> CommandExecution {
         let execute=override ?? capture
         let request=Task { @MainActor in await execute(args,stdin,scope,authorize) }
         observationTask=request

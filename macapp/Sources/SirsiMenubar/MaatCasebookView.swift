@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import AppKit
 
 // MaatWorkspaceView joins decision quality and retained local knowledge under
 // one operator authority. Seshat's ingestion compatibility commands are not a
@@ -16,13 +17,17 @@ import UniformTypeIdentifiers
     let opensReleasePreflight: Bool
     let apolloContext: ApolloPlan?
     let relayOutboxContext: RelayOutboxResolutionContext?
+    // Passed only to the root System One primary pane; recovery and pushed
+    // detail scroll views keep their own unretained native positions.
+    let primaryRootScrollPosition: Binding<CGFloat>?
 
     init(engine: SirsiEngine, preloadedCasebook: MaatCasebookProjection? = nil,
          preloadedKnowledge: MaatKnowledgeProjection? = nil,
          opensReleasePreflight: Bool = false, apolloContext: ApolloPlan? = nil,
          relayOutboxContext: RelayOutboxResolutionContext? = nil,
          systemOneHistory: MaatHistoryRefreshStore? = nil,
-         decisionHistory: MaatHistoryRefreshStore? = nil) {
+         decisionHistory: MaatHistoryRefreshStore? = nil,
+         primaryRootScrollPosition: Binding<CGFloat>? = nil) {
         self.engine = engine
         _systemOneHistory = StateObject(wrappedValue: systemOneHistory ?? MaatHistoryRefreshStore(projection: preloadedCasebook))
         _decisionHistory = StateObject(wrappedValue: decisionHistory ?? MaatHistoryRefreshStore(projection: preloadedCasebook))
@@ -31,6 +36,7 @@ import UniformTypeIdentifiers
         self.opensReleasePreflight = opensReleasePreflight
         self.apolloContext = apolloContext
         self.relayOutboxContext = relayOutboxContext
+        self.primaryRootScrollPosition = primaryRootScrollPosition
     }
 
     var body: some View {
@@ -105,7 +111,8 @@ import UniformTypeIdentifiers
                 case .systemOne:
                     MaatSystemOneView(engine: engine, section: $section, preloaded: preloadedCasebook,
                                       opensReleasePreflight: opensReleasePreflight,
-                                      historyStore: systemOneHistory, diagnosticRefresh: refreshDiagnosticHistory)
+                                      historyStore: systemOneHistory, diagnosticRefresh: refreshDiagnosticHistory,
+                                      primaryRootScrollPosition: primaryRootScrollPosition)
                 case .decisions:
                     MaatCasebookView(engine: engine, preloaded: preloadedCasebook, showsBackBar: false, historyStore: decisionHistory)
                 case .knowledge:
@@ -140,6 +147,224 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
     }
 }
 
+struct MaatRootScrollRestoration {
+    private let savedOffset: CGFloat
+    private(set) var resolved = false
+    private var lastObservedOffset: CGFloat?
+
+    init(savedOffset: CGFloat) {
+        self.savedOffset = savedOffset.isFinite ? max(0, savedOffset) : 0
+    }
+
+    mutating func layoutChanged(maximumOffset: CGFloat, ready: Bool) -> CGFloat? {
+        guard !resolved, ready, maximumOffset.isFinite else { return nil }
+        resolved = true
+        return min(savedOffset, max(0, maximumOffset))
+    }
+
+    mutating func userMoved(to offset: CGFloat) -> CGFloat {
+        resolved = true
+        return offset.isFinite ? max(0, offset) : 0
+    }
+
+    mutating func boundsChanged(to offset: CGFloat) -> CGFloat? {
+        guard offset.isFinite else { return nil }
+        let current = max(0, offset)
+        guard let lastObservedOffset else {
+            self.lastObservedOffset = current
+            return nil
+        }
+        guard current != lastObservedOffset else { return nil }
+        self.lastObservedOffset = current
+        return userMoved(to: current)
+    }
+
+    mutating func recordOffset(_ offset: CGFloat) {
+        guard offset.isFinite else { return }
+        lastObservedOffset = max(0, offset)
+    }
+}
+
+private struct MaatPrimaryScrollView<Content: View>: View {
+    @Environment(\.snapshotMode) private var snapshotMode
+    let position: Binding<CGFloat>?
+    let layoutReady: Bool
+    @ViewBuilder let content: Content
+
+    init(position: Binding<CGFloat>?, layoutReady: Bool, @ViewBuilder content: () -> Content) {
+        self.position = position
+        self.layoutReady = layoutReady
+        self.content = content()
+    }
+
+    var body: some View {
+        if snapshotMode {
+            content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            ScrollView {
+                if let position {
+                    content.background(alignment: .topLeading) {
+                        MaatPrimaryScrollOffsetProbe(position: position, layoutReady: layoutReady)
+                            .frame(width: 0, height: 0)
+                    }
+                } else {
+                    content
+                }
+            }
+        }
+    }
+}
+
+final class MaatPrimaryScrollProbeView: NSView {
+    var viewportObservationReady = false
+}
+
+private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
+    @Binding var position: CGFloat
+    let layoutReady: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(position: $position, layoutReady: layoutReady)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = MaatPrimaryScrollProbeView(frame: .zero)
+        view.identifier = NSUserInterfaceItemIdentifier("maat.system-one.primary-root-scroll-probe")
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.update(position: $position, layoutReady: layoutReady)
+        context.coordinator.connect(to: view)
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.disconnect()
+    }
+
+    @MainActor final class Coordinator {
+        private var position: Binding<CGFloat>
+        private var layoutReady: Bool
+        private var restoration: MaatRootScrollRestoration
+        private weak var scrollView: NSScrollView?
+        private weak var probeView: MaatPrimaryScrollProbeView?
+        private weak var observedClip: NSClipView?
+        private weak var observedDocument: NSView?
+        private var clipWasPostingBoundsChanges = false
+        private var documentWasPostingFrameChanges = false
+        private var observers: [NSObjectProtocol] = []
+        private var connectionScheduled = false
+        private var active = false
+
+        init(position: Binding<CGFloat>, layoutReady: Bool) {
+            self.position = position
+            self.layoutReady = layoutReady
+            restoration = MaatRootScrollRestoration(savedOffset: position.wrappedValue)
+        }
+
+        func update(position: Binding<CGFloat>, layoutReady: Bool) {
+            self.position = position
+            self.layoutReady = layoutReady
+        }
+
+        func connect(to probe: NSView) {
+            active = true
+            guard !connectionScheduled else { return }
+            connectionScheduled = true
+            DispatchQueue.main.async { [weak self, weak probe] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.connectionScheduled = false
+                    guard self.active, let scrollView = probe?.enclosingScrollView else { return }
+                    self.probeView = probe as? MaatPrimaryScrollProbeView
+                    if self.scrollView !== scrollView {
+                        self.probeView?.viewportObservationReady = false
+                        self.removeObservers()
+                        self.scrollView = scrollView
+                        self.observe(scrollView)
+                    }
+                    self.restoration.recordOffset(scrollView.contentView.bounds.origin.y)
+                    self.restoreFromReadyLayout()
+                }
+            }
+        }
+
+        func disconnect() {
+            active = false
+            probeView?.viewportObservationReady = false
+            removeObservers()
+            scrollView = nil
+            probeView = nil
+        }
+
+        private func removeObservers() {
+            observers.forEach { NotificationCenter.default.removeObserver($0) }
+            observers.removeAll()
+            observedClip?.postsBoundsChangedNotifications = clipWasPostingBoundsChanges
+            observedDocument?.postsFrameChangedNotifications = documentWasPostingFrameChanges
+            observedClip = nil
+            observedDocument = nil
+        }
+
+        private func observe(_ scrollView: NSScrollView) {
+            let clip = scrollView.contentView
+            observedClip = clip
+            clipWasPostingBoundsChanges = clip.postsBoundsChangedNotifications
+            clip.postsBoundsChangedNotifications = true
+            observers.append(NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification, object: clip, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.boundsChanged() }
+            })
+            if let document = scrollView.documentView {
+                observedDocument = document
+                documentWasPostingFrameChanges = document.postsFrameChangedNotifications
+                document.postsFrameChangedNotifications = true
+                observers.append(NotificationCenter.default.addObserver(
+                    forName: NSView.frameDidChangeNotification, object: document, queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.restoreFromReadyLayout() }
+                })
+            }
+        }
+
+        private func boundsChanged() {
+            guard let scrollView else { return }
+            let offset = max(0, scrollView.contentView.bounds.origin.y)
+            if let captured = restoration.boundsChanged(to: offset) {
+                position.wrappedValue = captured
+            }
+            markViewportReadyIfRestored()
+        }
+
+        private func restoreFromReadyLayout() {
+            guard let scrollView, let document = scrollView.documentView else { return }
+            let clip = scrollView.contentView
+            guard document.frame.height > 0, clip.bounds.height > 0 else { return }
+            if let target = restoration.layoutChanged(
+                maximumOffset: document.frame.height - clip.bounds.height,
+                ready: layoutReady
+            ) {
+                restoration.recordOffset(target)
+                clip.scroll(to: CGPoint(x: clip.bounds.origin.x, y: target))
+                scrollView.reflectScrolledClipView(clip)
+                position.wrappedValue = target
+            }
+            markViewportReadyIfRestored()
+        }
+
+        private func markViewportReadyIfRestored() {
+            guard layoutReady, restoration.resolved,
+                  let scrollView, let probeView,
+                  probeView.enclosingScrollView === scrollView,
+                  observedClip === scrollView.contentView,
+                  (scrollView.documentView?.frame.height ?? 0) > 0,
+                  scrollView.contentView.bounds.height > 0 else { return }
+            probeView.viewportObservationReady = true
+        }
+    }
+}
+
 // MaatSystemOneView makes the local JEV-like system visible as an operational
 // surface, not a hidden field in an individual case. It projects only the
 // canonical Casebook: no ambient state is classified here and no local screen
@@ -168,15 +393,18 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
     @State private var didOpenReleasePreflight = false
     let opensReleasePreflight: Bool
     let diagnosticRefresh: (() async -> Void)?
+    let primaryRootScrollPosition: Binding<CGFloat>?
 
     init(engine: SirsiEngine, section: Binding<MaatWorkspaceSection>, preloaded: MaatCasebookProjection? = nil,
          opensReleasePreflight: Bool = false, historyStore: MaatHistoryRefreshStore? = nil,
-         diagnosticRefresh: (() async -> Void)? = nil) {
+         diagnosticRefresh: (() async -> Void)? = nil,
+         primaryRootScrollPosition: Binding<CGFloat>? = nil) {
         self.engine = engine
         _section = section
         _historyRefresh = StateObject(wrappedValue: historyStore ?? MaatHistoryRefreshStore(projection: preloaded))
         self.opensReleasePreflight = opensReleasePreflight
         self.diagnosticRefresh = diagnosticRefresh
+        self.primaryRootScrollPosition = primaryRootScrollPosition
     }
 
     var body: some View {
@@ -194,9 +422,19 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
-                VStack { unavailableState(loadError); screenImportControl; LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),appUpdate:engine.maatCaseOperations.appUpdate) }
+                MaybeScroll {
+                    VStack(spacing: 12) {
+                        unavailableState(loadError)
+                        screenImportControl
+                        MaatLifecycleControl(engine: engine)
+                        LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),appUpdate:engine.maatCaseOperations.appUpdate)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             } else {
-                unavailableState("Pantheon did not receive a Ma'at Casebook projection. No System One result was inferred.")
+                MaybeScroll {
+                    unavailableState("Pantheon did not receive a Ma'at Casebook projection. No System One result was inferred.")
+                }
             }
         }
         .task {
@@ -266,7 +504,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
             }
             .buttonStyle(.bordered)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
     }
 
@@ -275,7 +513,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         let calibrations = casebook.cases.filter { $0.systemOneCalibration != nil }
         return ScrollViewReader { proxy in
             VStack(spacing: 0) {
-                MaybeScroll {
+                MaatPrimaryScrollView(position: primaryRootScrollPosition, layoutReady: !loading) {
                     VStack(alignment: .leading, spacing: 16) {
                         summary(screens: screens, calibrations: calibrations, history: casebook.history)
                         if loading {
@@ -308,6 +546,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                         releasePreflightControl
                             .id("maat-release-preflight")
                         screenImportControl
+                        MaatLifecycleControl(engine: engine)
                         LegacyRelayMaintenancePanel(directory: URL(fileURLWithPath: NSHomeDirectory()),appUpdate:engine.maatCaseOperations.appUpdate)
                         if screens.isEmpty && calibrations.isEmpty {
                             historyEmptyState(casebook)
@@ -409,7 +648,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         VStack(alignment: .leading, spacing: 8) {
             Text("Ma'at System One")
                 .sirsiFont(.title3, weight: .bold)
-            Text("Local deterministic screens are retained, evidence-bound, and calibrated only against distinct independent review outcomes.")
+            Text("Local deterministic screens remain model-free. Legacy comparison rows are declared history, not verified source-profile qualification.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -446,7 +685,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
         let changesMetric = systemMetric("Changes", screens.filter { $0.systemOne?.gate == "changes" }.count, .orange)
         let blockedMetric = systemMetric("Blocked", screens.filter { $0.systemOne?.gate == "block" }.count, .red)
         let escalatedMetric = systemMetric("Escalated", screens.filter { $0.systemOne?.gate == "escalate" }.count, gold)
-        let calibratedMetric = systemMetric("Calibrated", calibrations.count, .green)
+        let legacyComparisonsMetric = systemMetric("Legacy comparisons", calibrations.count, .secondary)
 
         // A single metric row becomes unreadable at accessibility text sizes.
         // Keep the same facts, but let SwiftUI select a two-line layout when
@@ -457,7 +696,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 changesMetric
                 blockedMetric
                 escalatedMetric
-                calibratedMetric
+                legacyComparisonsMetric
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
@@ -467,7 +706,7 @@ private enum MaatWorkspaceSection: String, CaseIterable, Identifiable {
                 }
                 HStack(spacing: 8) {
                     escalatedMetric
-                    calibratedMetric
+                    legacyComparisonsMetric
                 }
             }
         }
@@ -1211,6 +1450,9 @@ struct MaatKnownFailureProposalsView: View {
             Text("Recorded \(proposal.createdAtUTC)")
                 .sirsiFont(.caption2)
                 .foregroundStyle(.tertiary)
+            Text(proposal.catalogRelationLabel)
+                .sirsiFont(.caption2)
+                .foregroundStyle(.secondary)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1351,6 +1593,8 @@ struct MaatKnownFailureProposalsView: View {
     private var loadError: String? { historyRefresh.state.error }
     private var activeQuery: String { historyRefresh.state.query }
     @State private var query = ""
+    @State private var activeCaseSelection: MaatCaseSelection?
+    @State private var selectionFallbackMessage: String?
     @State private var showWithheld = false
     @State private var confirmKnowledgeRefresh = false
     @State private var knowledgeRefreshInFlight = false
@@ -1358,10 +1602,13 @@ struct MaatKnownFailureProposalsView: View {
     @State private var knowledgeRefreshError: String?
 
     init(engine: SirsiEngine, preloaded: MaatCasebookProjection? = nil, showsBackBar: Bool = true,
-         historyStore: MaatHistoryRefreshStore? = nil) {
+         historyStore: MaatHistoryRefreshStore? = nil, caseSelection: MaatCaseSelection? = nil,
+         selectionFallbackMessage: String? = nil) {
         self.engine = engine
         self.showsBackBar = showsBackBar
         _query = State(initialValue: historyStore?.state.query ?? "")
+        _activeCaseSelection = State(initialValue: caseSelection)
+        _selectionFallbackMessage = State(initialValue: selectionFallbackMessage)
         _historyRefresh = StateObject(wrappedValue: historyStore ?? MaatHistoryRefreshStore(projection: preloaded))
     }
 
@@ -1381,6 +1628,11 @@ struct MaatKnownFailureProposalsView: View {
         .task {
             guard casebook == nil else { return }
             await load()
+        }
+        .onChange(of: query) { newQuery in
+            activeCaseSelection = nil
+            selectionFallbackMessage = nil
+            historyRefresh.queryChanged(newQuery)
         }
         .onDisappear { historyRefresh.cancel() }
     }
@@ -1408,6 +1660,7 @@ struct MaatKnownFailureProposalsView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            MaatLifecycleControl(engine: engine)
             Button("Try again") { Task { await load() } }
                 .buttonStyle(.borderedProminent)
                 .tint(gold)
@@ -1435,6 +1688,7 @@ struct MaatKnownFailureProposalsView: View {
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            MaatLifecycleControl(engine: engine)
             NavLink { ResultView(engine: engine, title: "Ma'at — Quality", args: ["maat", "audit"]) } label: {
                 Label("Run Ma'at audit", systemImage: "checkmark.seal")
                     .padding(.horizontal, 12)
@@ -1452,6 +1706,7 @@ struct MaatKnownFailureProposalsView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 16) {
                     summary(casebook.summary, history: casebook.history)
+                    MaatLifecycleControl(engine: engine)
                     if loading {
                         HStack {
                             Label("Searching retained history…", systemImage: "arrow.clockwise")
@@ -1466,6 +1721,28 @@ struct MaatKnownFailureProposalsView: View {
                         MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
                     }
                     searchField
+                    if let selectionFallbackMessage {
+                        Label(selectionFallbackMessage, systemImage: "info.circle")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if activeCaseSelection != nil, casebook.history?.coverage == "complete",
+                       activeCaseSelection?.uniqueCompletedCase(in: casebook) == nil {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("The exact recorded case is not confirmed in this completed snapshot. No case was selected.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button("Browse the casebook") {
+                                activeCaseSelection = nil
+                                selectionFallbackMessage = nil
+                                query = ""
+                                Task { await load(query: "") }
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
                     if let loadError {
                         VStack(alignment: .leading, spacing: 8) {
                             Label(loadError, systemImage: "exclamationmark.triangle.fill")
@@ -1478,15 +1755,20 @@ struct MaatKnownFailureProposalsView: View {
                             }
                         }
                     }
-                    let visible = casebook.cases
-                    if visible.isEmpty, casebook.historyEmptyState == .incomplete, let cursor = casebook.history?.nextCursor {
+                    let visible = activeCaseSelection.flatMap { $0.uniqueCompletedCase(in: casebook).map { [$0] } } ??
+                        (activeCaseSelection == nil ? casebook.cases : [])
+                    if activeCaseSelection != nil, visible.isEmpty, casebook.history?.coverage != "partial" {
+                        Text("Confirm the exact case selection or browse the full casebook.")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else if visible.isEmpty, casebook.historyEmptyState == .incomplete, let cursor = casebook.history?.nextCursor {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("This bounded history scan is incomplete; no empty result is available yet.")
                                 .sirsiFont(.subheadline)
                                 .foregroundStyle(.secondary)
                             Button("Continue history search") { Task { await load(cursor: cursor) } }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(loading || historyRefresh.state.restartRequired)
+                                .disabled(loading || historyRefresh.state.restartRequired || query.trimmingCharacters(in: .whitespacesAndNewlines) != historyRefresh.state.query)
                         }
                     } else if visible.isEmpty, casebook.historyEmptyState == .olderPage, let cursor = casebook.history?.nextCursor {
                         VStack(alignment: .leading, spacing: 8) {
@@ -1495,7 +1777,7 @@ struct MaatKnownFailureProposalsView: View {
                                 .foregroundStyle(.secondary)
                             Button("Load older decisions") { Task { await load(cursor: cursor) } }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(loading || historyRefresh.state.restartRequired)
+                                .disabled(loading || historyRefresh.state.restartRequired || query.trimmingCharacters(in: .whitespacesAndNewlines) != historyRefresh.state.query)
                         }
                     } else if visible.isEmpty, casebook.historyEmptyState == .invalidHistory {
                         Text("No valid decision matched this page. Invalid journal rows prevent a complete absence conclusion.")
@@ -1535,7 +1817,7 @@ struct MaatKnownFailureProposalsView: View {
                         Label(history.coverage == "partial" ? "Continue history search" : "Load older", systemImage: "clock.arrow.circlepath")
                     }
                     .buttonStyle(.borderless)
-                    .disabled(loading || historyRefresh.state.restartRequired)
+                    .disabled(loading || historyRefresh.state.restartRequired || query.trimmingCharacters(in: .whitespacesAndNewlines) != historyRefresh.state.query)
                 }
             }
             .padding(.horizontal, 16)
@@ -1652,7 +1934,9 @@ struct MaatKnownFailureProposalsView: View {
     }
 
     @MainActor private func load(query requestedQuery: String? = nil, cursor: String? = nil) async {
-        await historyRefresh.load(scope: "all", query: requestedQuery, cursor: cursor) { args in
+        let effectiveQuery = requestedQuery ?? historyRefresh.state.refreshQuery
+        await historyRefresh.load(scope: "all", query: effectiveQuery, cursor: cursor,
+                                  selection: activeCaseSelection) { args in
             await SirsiEngine.runJSONRead(args: args)
         }
     }
@@ -2440,24 +2724,128 @@ func maatCasebookFailureMemoryArguments(_ action: MaatFailureMemoryAction) -> [S
     }
 }
 
+struct MaatCaseSelection: Equatable, Sendable {
+    let caseID: String
+    let evidence: String
+
+    init?(caseID: String, evidence: String) {
+        guard Self.isCanonicalCaseID(caseID), Self.isCanonicalEvidence(evidence) else { return nil }
+        self.caseID = caseID
+        self.evidence = evidence
+    }
+
+    static func recorded(from result: CommandResult?) -> MaatCaseSelection? {
+        guard let result, result.status == "ok", result.errors.isEmpty else { return nil }
+        let ids = result.evidence.filter { $0.label == "Case ID" }
+        let evidences = result.evidence.filter { $0.label == "Evidence" }
+        guard ids.count == 1, evidences.count == 1 else { return nil }
+        return MaatCaseSelection(caseID: ids[0].value, evidence: evidences[0].value)
+    }
+
+    static func fallbackMessage(for result: CommandResult?) -> String? {
+        recorded(from: result) == nil
+            ? "The result did not provide one canonical case ID and evidence pair. Casebook is open for browsing; no exact case was opened."
+            : nil
+    }
+
+    func uniqueCompletedCase(in projection: MaatCasebookProjection) -> MaatCase? {
+        guard projection.journalIntegrity.invalidCount == 0,
+              let history = projection.history,
+              history.scope == "all", history.countScope == "query",
+              !history.queryID.isEmpty, !history.snapshot.isEmpty,
+              history.coverage == "complete", history.hasMoreKnown, !history.hasMore,
+              history.candidateMatchesComplete, history.candidateMatches == 1,
+              history.evidenceMatchesComplete == true, let evidenceMatches = history.evidenceMatches, evidenceMatches > 0,
+              history.totalComplete, history.total == 1, history.nextCursor == nil,
+              history.returned == 1, projection.cases.count == 1,
+              let entry = projection.cases.first,
+              entry.id == caseID, entry.evidence == evidence else { return nil }
+        return entry
+    }
+
+    static func isCanonicalCaseID(_ value: String) -> Bool {
+        value.hasPrefix("maat-case-") && isLowerHex(String(value.dropFirst("maat-case-".count)), count: 16)
+    }
+
+    static func isCanonicalEvidence(_ value: String) -> Bool {
+        ["diagnostic-finding:sha256=", "maat-system-one:sha256="].contains { prefix in
+            value.hasPrefix(prefix) && isLowerHex(String(value.dropFirst(prefix.count)), count: 64)
+        }
+    }
+
+    private static func isLowerHex(_ value: String, count: Int) -> Bool {
+        value.utf8.count == count && value.utf8.allSatisfy {
+            (48...57).contains($0) || (97...102).contains($0)
+        }
+    }
+}
+
 func maatExactCasebookReadArguments(evidence: String, cursor: String? = nil) -> [String] {
-	var arguments = ["maat", "casebook", "--json", "--scope", "all", "--evidence", evidence, "--limit", "2"]
+	maatCasebookEvidenceReadArguments(scope: "all", evidence: evidence, cursor: cursor)
+}
+
+func maatCasebookEvidenceReadArguments(scope: String, evidence: String, cursor: String? = nil) -> [String] {
+	var arguments = ["maat", "casebook", "--json", "--scope", scope, "--evidence", evidence, "--limit", "2"]
 	if let cursor, !cursor.isEmpty { arguments += ["--cursor", cursor] }
 	return arguments
 }
 
+func maatExactCasebookSelectionReadArguments(_ selection: MaatCaseSelection, cursor: String? = nil) -> [String] {
+    var arguments = maatExactCasebookReadArguments(evidence: selection.evidence, cursor: cursor)
+    arguments.append(selection.caseID)
+    return arguments
+}
+
 func maatCasebookHistoryArguments(scope: String, query: String = "", cursor: String? = nil) -> [String] {
+    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let evidence = maatCanonicalFullCasebookEvidence(normalizedQuery) {
+        return maatCasebookEvidenceReadArguments(scope: scope, evidence: evidence, cursor: cursor)
+    }
     var arguments = ["maat", "casebook", "--json", "--scope", scope, "--limit", "50"]
     if let cursor, !cursor.isEmpty { arguments += ["--cursor", cursor] }
-    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     if !normalizedQuery.isEmpty { arguments.append(normalizedQuery) }
     return arguments
+}
+
+private func maatCanonicalFullCasebookEvidence(_ value: String) -> String? {
+    MaatCaseSelection.isCanonicalEvidence(value) ? value : nil
+}
+
+enum MaatInactiveDispositionFailurePresentation {
+    static func summary(_ capture: CommandExecution) -> String {
+        let reason: String
+        if !capture.complete {
+            reason = "The command did not return a complete receipt; the disposition outcome is unverified."
+        } else if capture.exitCode != 0 {
+            reason = "The command exited with status \(capture.exitCode.map(String.init) ?? "unavailable"); the disposition outcome is unverified."
+        } else {
+            reason = "The returned disposition receipt was invalid or did not match this case; the outcome is unverified."
+        }
+
+        let diagnostic = capture.issue ?? capture.stderr
+        let detail = diagnostic.isEmpty
+            ? "No diagnostic details were returned."
+            : String(SirsiEngine.stripANSI(diagnostic).prefix(1200))
+        return "Ma'at could not confirm the exact no-longer-active disposition. \(reason) \(detail) No repair was performed. Inspect this exact case's retained record and refresh Casebook before any retry."
+    }
+}
+
+struct MaatCaseAssessmentPresentation: Equatable {
+    let assessment: String
+    let why: String?
+}
+
+func maatCaseAssessmentPresentation(assessed: String, why: String) -> MaatCaseAssessmentPresentation {
+    MaatCaseAssessmentPresentation(
+        assessment: assessed.isEmpty ? why : assessed,
+        why: assessed.isEmpty || why.isEmpty ? nil : why
+    )
 }
 
 private struct MaatCaseDetailView: View {
     @ObservedObject var engine: SirsiEngine
     @ObservedObject var operations: MaatCaseOperationStore
-    let entry: MaatCase
+    @State private var entry: MaatCase
     @State private var conclusion = ""
     @State private var confirmAction = false
     @State private var evidenceCopied = false
@@ -2470,10 +2858,20 @@ private struct MaatCaseDetailView: View {
     @State private var binaryDriftPreview: MaatBinaryDriftPreview?
     @State private var binaryDriftPreviewLoading = false
     @State private var binaryDriftPreviewError: String?
+    @State private var recordBinaryDriftInactive = false
+    @State private var binaryDriftInactiveReceipt: MaatBinaryDriftInactiveDispositionReceipt?
     @State private var failureMemoryHistory: MaatExactHistoryContinuation?
     @State private var failureMemoryHistoryKey: MaatOperationKey?
     @State private var failureMemoryHistoryAction: MaatFailureMemoryAction?
     @State private var retryReviewBusy = false
+    @State private var retryReviewTask: Task<Void, Never>?
+    @State private var invalidJournalIntegrity: MaatJournalIntegrity?
+
+    init(engine: SirsiEngine, operations: MaatCaseOperationStore, entry: MaatCase) {
+        _engine = ObservedObject(wrappedValue: engine)
+        _operations = ObservedObject(wrappedValue: operations)
+        _entry = State(initialValue: entry)
+    }
 
     private var operationKey: MaatOperationKey { MaatOperationKey(case: entry) }
     private var operationRecord: MaatOperationRecord? { operations.record(for: operationKey) }
@@ -2497,7 +2895,14 @@ private struct MaatCaseDetailView: View {
                             .sirsiFont(.caption, weight: .semibold)
                             .foregroundStyle(entry.status == "resolved" ? .green : .orange)
                     }
-                    detailSection("Assessment", entry.assessed.isEmpty ? entry.why : entry.assessed)
+                    if let invalidJournalIntegrity {
+                        MaatJournalIntegrityCard(engine: engine, integrity: invalidJournalIntegrity) {
+                            await refreshAfterIntegrityRepair()
+                        }
+                    }
+                    let assessment = maatCaseAssessmentPresentation(assessed: entry.assessed, why: entry.why)
+                    detailSection("Assessment", assessment.assessment)
+                    if let why = assessment.why { detailSection("Why", why, selectable: true) }
                     detailSection("Determination", entry.determination)
                     if !entry.resource.isEmpty { detailSection("Resource", entry.resource) }
                     if !entry.affected.isEmpty { detailSection("Affected", entry.affected) }
@@ -2545,10 +2950,15 @@ private struct MaatCaseDetailView: View {
                         }
                     }
                     if !entry.resolution.isEmpty {
-                        detailSection("Owner acceptance", entry.resolution)
-                        Text("This records an owner conclusion. It does not claim that Pantheon repaired the diagnosed system.")
-                            .sirsiFont(.caption)
-                            .foregroundStyle(.secondary)
+                        detailSection(entry.binaryDriftInactiveDisposition == nil ? "Owner acceptance" : "Owner disposition", entry.resolution)
+                        if let inactive = entry.binaryDriftInactiveDisposition {
+                            detailSection("Fresh binary-drift observation", "No longer active · not repaired · \(inactive.host) · \(inactive.observedFromUTC) through \(inactive.observedThroughUTC)")
+                            detailSection("Observation digest", inactive.observationSHA256)
+                        } else {
+                            Text("This records an owner conclusion. It does not claim that Pantheon repaired the diagnosed system.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     if entry.kind == "failure memory preflight" {
                         MaatRetainedPreflightDetail(model: operations.failureMemoryReceipts, entry: entry)
@@ -2582,22 +2992,26 @@ private struct MaatCaseDetailView: View {
             guard entry.nextAction?.actionID == "liveness-watch" else { return }
             await refreshFailureMemoryStatus()
         }
-        .confirmationDialog(confirmationTitle, isPresented: $confirmAction, titleVisibility: .visible) {
-            Button(confirmationButton) {
-                let confirmedNote = conclusion.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let action = pendingFailureMemoryAction {
-                    Task { await performFailureMemoryAction(action) }
-                } else {
-                    Task { await performResolution(confirmedNote: confirmedNote) }
-                }
-            }
-            Button("Cancel", role: .cancel) { pendingFailureMemoryAction = nil }
-        } message: {
-            Text(confirmationMessage)
+        .sheet(isPresented: $confirmAction) {
+            ActionReviewSheet(title: confirmationTitle,
+                detail: confirmationMessage,
+                scope: "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)",
+                confirmLabel: confirmationButton,
+                cancel: { confirmAction = false; pendingFailureMemoryAction = nil; recordBinaryDriftInactive = false },
+                confirm: {
+                    let confirmedNote = conclusion.trimmingCharacters(in: .whitespacesAndNewlines)
+                    confirmAction = false
+                    if let action = pendingFailureMemoryAction {
+                        Task { await performFailureMemoryAction(action) }
+                    } else {
+                        Task { await performResolution(confirmedNote: confirmedNote) }
+                    }
+                })
         }
     }
 
     private var confirmationTitle: String {
+        if recordBinaryDriftInactive { return "Recheck and record this finding as no longer active?" }
         if let pendingFailureMemoryAction {
             return pendingFailureMemoryAction == .initialize ? "Initialize local failure memory?" : "Re-observe and reconcile the retained outcome?"
         }
@@ -2613,6 +3027,7 @@ private struct MaatCaseDetailView: View {
     }
 
     private var confirmationButton: String {
+        if recordBinaryDriftInactive { return "Recheck and record no longer active" }
         if let pendingFailureMemoryAction {
             return pendingFailureMemoryAction == .initialize ? "Initialize local failure memory" : "Inspect and re-observe"
         }
@@ -2629,6 +3044,9 @@ private struct MaatCaseDetailView: View {
     }
 
     private var confirmationMessage: String {
+        if recordBinaryDriftInactive {
+            return "Ma'at will re-read the exact original single-finding case and confirm this Mac, then make a fresh binary-drift observation. If that finding is still active, unavailable, stale, or belongs to another host, it will refuse. This records an owner disposition only; no repair or updater action is performed."
+        }
         if let pendingFailureMemoryAction {
             return pendingFailureMemoryAction == .initialize
                 ? "Create Ma'at's private per-user failure-memory store for genuine first use. No prior incidents are imported, and no liveness-watch repair runs until you review and confirm it separately."
@@ -2784,13 +3202,22 @@ private struct MaatCaseDetailView: View {
             return
         }
         let projection = MaatOperationPreflight.decodeProjection(from: read.data)
-        guard case .ready = MaatOperationPreflight.evaluate(
+        let preflight = MaatOperationPreflight.evaluate(
             original: entry,
             exitStatus: read.exitStatus,
             timedOut: read.timedOut,
             launchError: read.launchError,
             projection: projection
-        ) else {
+        )
+        switch preflight {
+        case .ready:
+            invalidJournalIntegrity = nil
+        case .invalidIntegrity(let integrity):
+            invalidJournalIntegrity = integrity
+            failureMemoryMessage = "The decision journal contains invalid records. Review and preserve the original before continuing."
+            return
+        case .rejected:
+            invalidJournalIntegrity = nil
             failureMemoryMessage = "The reviewed Ma'at case changed or could not be re-read. Refresh this case before continuing."
             return
         }
@@ -2850,10 +3277,10 @@ private struct MaatCaseDetailView: View {
                     .sirsiFont(.caption)
                     .foregroundStyle(receipt.succeeded ? .green : .orange)
             }
-            if action.kind == "maat_repair", action.actionID == "binary-drift", operationInFlight {
-                ProgressView("Applying the reviewed updater…")
+            if let progress = operationRecord?.progress {
+                ProgressView(progress.title)
                     .sirsiFont(.caption)
-                Text("This operation stays locked until the owned updater exits and Ma’at records a fresh verification or an explicit failure. The updater is bounded to two minutes before verification.")
+                Text(progress.detail)
                     .sirsiFont(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2864,17 +3291,26 @@ private struct MaatCaseDetailView: View {
                     .foregroundStyle(.orange)
             }
             if operationRecord != nil && !operationInFlight {
+                if retryReviewBusy {
+                    ProgressView("Reading this case's retained history…").sirsiFont(.callout)
+                    Text("No approval or repair is being submitted. Your review progress is retained between bounded reads.")
+                        .sirsiFont(.callout).fixedSize(horizontal: false, vertical: true)
+                    if retryReviewTask != nil {
+                        Button("Cancel history read") { retryReviewTask?.cancel() }.buttonStyle(.bordered)
+                    }
+                }
                 Button {
-                    Task { await reviewRetry() }
+                    guard retryReviewTask == nil else { return }
+                    retryReviewTask = Task { await reviewRetry(); retryReviewTask = nil }
                 } label: {
                     Label(operations.hasHistoryContinuation(for: operationKey) ? "Continue exact history review" : operationRecord?.phase == .retryReady ? "Review again" : "Refresh and review retry", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
-                .disabled(operationInFlight || retryReviewBusy)
+                .disabled(operationInFlight || retryReviewBusy || retryReviewTask != nil)
                 if operations.hasHistoryContinuation(for: operationKey) {
                     Button("Start fresh history review") { operations.restartHistory(operationKey) }
                         .buttonStyle(.bordered)
-                        .disabled(operationInFlight || retryReviewBusy)
+                        .disabled(operationInFlight || retryReviewBusy || retryReviewTask != nil)
                 }
             }
         }
@@ -2883,6 +3319,17 @@ private struct MaatCaseDetailView: View {
     }
 
     @ViewBuilder private func binaryDriftRecoveryControls(_ action: MaatCaseNextAction) -> some View {
+        Button {
+            recordBinaryDriftInactive = true
+            confirmAction = true
+        } label: {
+            Label("Record as no longer active", systemImage: "checkmark.circle")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .disabled(operationInFlight || !canBeginOperation)
+        .accessibilityHint("Rechecks this exact single binary-drift finding on this Mac, then records an owner disposition. It never runs the updater.")
+
         Button {
             Task { await loadBinaryDriftPreview(action) }
         } label: {
@@ -2914,7 +3361,7 @@ private struct MaatCaseDetailView: View {
                 Button {
                     confirmAction = true
                 } label: {
-                    Label("Confirm this exact update", systemImage: "wrench.and.screwdriver.fill")
+                    Label(operationRecord?.phase == .retryReady ? "Confirm reviewed update" : "Confirm this exact update", systemImage: "wrench.and.screwdriver.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -2930,6 +3377,13 @@ private struct MaatCaseDetailView: View {
                 .sirsiFont(.caption)
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+        if let receipt = binaryDriftInactiveReceipt, receipt.caseEvidence == action.evidence {
+            Text("Recorded: no longer active · no repair performed · \(receipt.host) · \(receipt.observedFromUTC) through \(receipt.observedThroughUTC). Refresh Casebook to see the source finding resolved.")
+                .sirsiFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
         }
     }
 
@@ -2951,11 +3405,13 @@ private struct MaatCaseDetailView: View {
               preview.binding.count == 64 else {
             binaryDriftPreview = nil
             if capture.complete {
-                binaryDriftPreviewError = capture.result?.summary ?? (capture.stderr.isEmpty
+                let message = capture.result?.summary ?? (capture.stderr.isEmpty
                     ? "Ma'at could not produce a valid Homebrew-only preview. No updater was run."
                     : capture.stderr)
+                binaryDriftPreviewError = SirsiEngine.stripANSI(message)
             } else {
-                binaryDriftPreviewError = capture.issue ?? "Ma'at's updater preview was incomplete. No updater was run."
+                let message = capture.issue ?? "Ma'at's updater preview was incomplete. No updater was run."
+                binaryDriftPreviewError = SirsiEngine.stripANSI(message)
             }
             return
         }
@@ -3001,15 +3457,21 @@ private struct MaatCaseDetailView: View {
         guard let action = entry.nextAction else { return }
         guard action.kind != "owner_acceptance" || !confirmedNote.isEmpty else { return }
         let key = operationKey
-        guard operations.begin(key) else { return }
-        guard let generation = operations.record(for: key)?.generation else { return }
+        let selection = MaatConfirmedResolutionSelection(
+            inactiveDisposition: recordBinaryDriftInactive,
+            actionKind: action.kind,
+            actionID: action.actionID
+        )
+        guard operations.begin(key, intent: selection.operationIntent) else { recordBinaryDriftInactive = false; return }
+        guard let generation = operations.record(for: key)?.generation else { recordBinaryDriftInactive = false; return }
 
         let read = await MaatOperationPreflight.readCompleteExactHistory(evidence: entry.evidence,
             continuing: operations.historyContinuation(for: key, generation: generation)) { args, timeout in
             await SirsiEngine.runJSONRead(args: args, timeoutSeconds: timeout)
         }
-        guard operations.record(for: key)?.generation == generation else { return }
+        guard operations.record(for: key)?.generation == generation else { recordBinaryDriftInactive = false; return }
         guard !Task.isCancelled else {
+            recordBinaryDriftInactive = false
             operations.rejectPreflight(key, guidance: "The exact history read was cancelled. No Ma'at action ran; review again before retrying.")
             return
         }
@@ -3025,15 +3487,42 @@ private struct MaatCaseDetailView: View {
             launchError: read.launchError,
             projection: projection
         ) {
+        case .invalidIntegrity(let integrity):
+            invalidJournalIntegrity = integrity
+            recordBinaryDriftInactive = false
+            operations.rejectPreflight(key, guidance: "The decision journal contains invalid records. Review and preserve the original before continuing.")
+            return
         case .rejected(let guidance):
+            invalidJournalIntegrity = nil
+            recordBinaryDriftInactive = false
             operations.rejectPreflight(key, guidance: guidance)
             return
         case .ready:
+            invalidJournalIntegrity = nil
             break
         }
 
         operations.markRunning(key)
         let result: CommandResult?
+        if selection == .inactiveDisposition {
+            recordBinaryDriftInactive = false
+            guard !Task.isCancelled else {
+                operations.rejectPreflight(key, guidance: "The exact history read was cancelled. No Ma'at action ran; review again before retrying.")
+                return
+            }
+            let capture = await SirsiEngine.runCaptured(args: maatCasebookBinaryDriftInactiveArguments(caseEvidence: action.evidence), timeout: 30)
+            guard capture.complete, capture.exitCode == 0,
+                  let receipt = try? JSONDecoder().decode(MaatBinaryDriftInactiveDispositionReceipt.self, from: capture.stdoutData),
+                  receipt.isValid(for: action.evidence) else {
+                operations.complete(key, receipt: MaatOperationReceipt(
+                    summary: MaatInactiveDispositionFailurePresentation.summary(capture), succeeded: false
+                ))
+                return
+            }
+            binaryDriftInactiveReceipt = receipt
+            operations.complete(key, receipt: MaatOperationReceipt(summary: "Recorded for this exact case: no longer active. No repair was performed. Refresh Casebook to review the resolved source finding.", succeeded: true))
+            return
+        }
         if let args = maatCasebookSystemOneReviewArguments(kind: action.kind, actionID: action.actionID, evidence: action.evidence) {
             result = await SirsiEngine.runResult(args: args)
             let succeeded = result?.ok == true
@@ -3045,6 +3534,10 @@ private struct MaatCaseDetailView: View {
         }
         if action.kind == "maat_repair" {
             if action.actionID == "binary-drift" {
+                guard selection == .binaryDriftUpdater else {
+                    operations.rejectPreflight(key, guidance: "Choose and confirm the current binary-drift action again before continuing.")
+                    return
+                }
                 guard let preview = binaryDriftPreview, preview.caseEvidence == action.evidence else {
                     operations.rejectPreflight(key, guidance: "The updater preview is missing or belongs to another case. Refresh and review a new preview before confirming.")
                     return
@@ -3118,20 +3611,81 @@ private struct MaatCaseDetailView: View {
             projection: projection
         ) {
         case .ready:
-            operations.authorizeReviewedRetry(key, reviewedGeneration: prior.generation)
+            guard let projection,
+                  let selected = projection.cases.first(where: { $0.id == entry.id && $0.evidence == entry.evidence }) else {
+                invalidJournalIntegrity = nil
+                operations.rejectRetryReview(key, reviewedGeneration: prior.generation,
+                    guidance: "The exact selected case could not be refreshed. Review the casebook before confirming an action.")
+                return
+            }
+            entry = selected
+            invalidJournalIntegrity = nil
+            guard operations.authorizeReviewedRetry(key, reviewedGeneration: prior.generation,
+                continuation: prior.intent == .inactiveDisposition ? read.retryReadCursor : nil) else {
+                operations.rejectRetryReview(key, reviewedGeneration: prior.generation,
+                    guidance: "The completed history cursor did not match this exact case. Review the casebook again before confirming an action.")
+                return
+            }
+        case .invalidIntegrity(let integrity):
+            invalidJournalIntegrity = integrity
+            operations.rejectRetryReview(key, reviewedGeneration: prior.generation,
+                guidance: "The decision journal still contains invalid records. Review and preserve the original before continuing.")
         case .rejected(let guidance):
+            invalidJournalIntegrity = nil
             operations.rejectRetryReview(key, reviewedGeneration: prior.generation, guidance: guidance)
         }
     }
 
-    private func detailSection(_ title: String, _ value: String) -> some View {
+    @MainActor private func refreshAfterIntegrityRepair() async {
+        let key = operationKey
+        if let record = operations.record(for: key) {
+            guard !record.phase.isInFlight else { return }
+            await reviewRetry()
+            return
+        }
+
+        let read = await MaatOperationPreflight.readCompleteExactHistory(evidence: entry.evidence) { args, timeout in
+            await SirsiEngine.runJSONRead(args: args, timeoutSeconds: timeout)
+        }
+        guard !Task.isCancelled, read.continuation == nil else {
+            failureMemoryMessage = "The exact case history remains incomplete. Review it again before confirming the named action."
+            return
+        }
+        let projection = MaatOperationPreflight.decodeProjection(from: read.data)
+        switch MaatOperationPreflight.evaluate(original: entry, exitStatus: read.exitStatus,
+            timedOut: read.timedOut, launchError: read.launchError, projection: projection) {
+        case .ready:
+            guard let selected = projection?.cases.first(where: { $0.id == entry.id && $0.evidence == entry.evidence }) else {
+                failureMemoryMessage = "The exact selected case could not be refreshed. Review it before confirming the named action."
+                return
+            }
+            entry = selected
+            invalidJournalIntegrity = nil
+            failureMemoryMessage = "The casebook was repaired and this exact case was refreshed. Confirm its named action again before continuing."
+        case .invalidIntegrity(let integrity):
+            invalidJournalIntegrity = integrity
+            failureMemoryMessage = "The decision journal still contains invalid records. Review and preserve the original before continuing."
+        case .rejected(let guidance):
+            invalidJournalIntegrity = nil
+            failureMemoryMessage = guidance
+        }
+    }
+
+    @ViewBuilder private func detailSection(_ title: String, _ value: String, selectable: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .sirsiFont(.caption, weight: .bold)
                 .foregroundStyle(.secondary)
-            Text(value)
-                .sirsiFont(.body)
-                .fixedSize(horizontal: false, vertical: true)
+            if selectable {
+                Text(value)
+                    .sirsiFont(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            } else {
+                Text(value)
+                    .sirsiFont(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -3273,6 +3827,10 @@ func maatCasebookBinaryDriftRepairArguments(caseEvidence: String, previewBinding
      "--preview-binding", previewBinding, "--confirm", "--json"]
 }
 
+func maatCasebookBinaryDriftInactiveArguments(caseEvidence: String) -> [String] {
+    ["maat", "repair", "binary-drift", "--record-inactive", "--case-evidence", caseEvidence, "--confirm", "--json"]
+}
+
 func maatCasebookInspectBinaryDriftAttemptArguments(caseEvidence: String) -> [String] {
     ["maat", "repair", "binary-drift", "--inspect-attempt", "--case-evidence", caseEvidence, "--json"]
 }
@@ -3341,6 +3899,65 @@ struct MaatBinaryDriftPreview: Decodable, Equatable {
     static func decode(_ raw: String) -> MaatBinaryDriftPreview? {
         guard let start = raw.firstIndex(of: "{") else { return nil }
         return try? JSONDecoder().decode(MaatBinaryDriftPreview.self, from: Data(raw[start...].utf8))
+    }
+}
+
+struct MaatBinaryDriftInactiveDisposition: Decodable, Equatable {
+    let schema: String
+    let originEvidence: String
+    let host: String
+    let observedFromUTC: String
+    let observedThroughUTC: String
+    let findingCheck: String
+    let findingSeverity: String
+    let findingResolution: String
+    let observationSHA256: String
+
+    enum CodingKeys: String, CodingKey {
+        case schema, host
+        case originEvidence = "origin_evidence"
+        case observedFromUTC = "observed_from_utc"
+        case observedThroughUTC = "observed_through_utc"
+        case findingCheck = "finding_check"
+        case findingSeverity = "finding_severity"
+        case findingResolution = "finding_resolution"
+        case observationSHA256 = "observation_sha256"
+    }
+}
+
+struct MaatBinaryDriftInactiveDispositionReceipt: Decodable {
+    let schema: String
+    let caseEvidence: String
+    let dispositionEvidence: String
+    let host: String
+    let observedFromUTC: String
+    let observedThroughUTC: String
+    let findingState: String
+    let repairPerformed: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case schema, host
+        case caseEvidence = "case_evidence"
+        case dispositionEvidence = "disposition_evidence"
+        case observedFromUTC = "observed_from_utc"
+        case observedThroughUTC = "observed_through_utc"
+        case findingState = "finding_state"
+        case repairPerformed = "repair_performed"
+    }
+
+    func isValid(for evidence: String) -> Bool {
+        let prefix = "maat-binary-drift-inactive:sha256="
+        guard schema == "sirsi.maat.binary-drift-inactive-disposition-receipt.v1",
+              caseEvidence == evidence, dispositionEvidence.hasPrefix(prefix),
+              String(dispositionEvidence.dropFirst(prefix.count)).count == 64,
+              String(dispositionEvidence.dropFirst(prefix.count)).allSatisfy({ ("0"..."9").contains($0) || ("a"..."f").contains($0) }),
+              !host.isEmpty, findingState == "no longer active", !repairPerformed else { return false }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let from = fractional.date(from: observedFromUTC) ?? ISO8601DateFormatter().date(from: observedFromUTC)
+        let through = fractional.date(from: observedThroughUTC) ?? ISO8601DateFormatter().date(from: observedThroughUTC)
+        guard let from, let through else { return false }
+        return through >= from
     }
 }
 
@@ -3671,6 +4288,8 @@ struct MaatHistoryRefreshState {
     private(set) var error: String?
     private(set) var failure: MaatHistoryRefreshFailure?
     private(set) var query: String
+    private(set) var selection: MaatCaseSelection?
+    private var requestedQuery: String
     private(set) var loading: Bool
     private(set) var continuationPaused: Bool
     private(set) var restartRequired: Bool
@@ -3679,6 +4298,8 @@ struct MaatHistoryRefreshState {
     init(projection: MaatCasebookProjection?, error: String? = nil, query: String = "") {
         self.projection = projection
         self.error = error
+        selection = nil
+        requestedQuery = query
         failure = nil
         self.query = query
         loading = projection == nil
@@ -3688,14 +4309,21 @@ struct MaatHistoryRefreshState {
 
     // A write refresh must not replace an in-flight newly selected filter with
     // the older committed query. Cursor reuse still requires a fresh snapshot.
-    var refreshQuery: String { pending?.query ?? query }
+    var refreshQuery: String { pending?.query ?? requestedQuery }
+    var refreshSelection: MaatCaseSelection? {
+        if let pending { return pending.selection }
+        return selection
+    }
 
-    mutating func begin(scope: String, query requestedQuery: String? = nil, cursor: String? = nil) -> MaatHistoryRefreshRequest? {
+    mutating func begin(scope: String, query requestedQuery: String? = nil, cursor: String? = nil,
+                        selection requestedSelection: MaatCaseSelection? = nil) -> MaatHistoryRefreshRequest? {
         let nextQuery = (requestedQuery ?? query).trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextSelection = requestedSelection
         let nextCursor = cursor.flatMap { $0.isEmpty ? nil : $0 }
         let history = projection?.history
         if let nextCursor {
             guard !restartRequired, history?.scope == scope, history?.nextCursor == nextCursor, nextQuery == query,
+                  nextSelection == selection,
                   history?.queryID.isEmpty == false, history?.snapshot.isEmpty == false else {
                 pending = nil
                 loading = false
@@ -3710,7 +4338,11 @@ struct MaatHistoryRefreshState {
             error = nil
         }
         continuationPaused = false
-        let request = MaatHistoryRefreshRequest(scope: scope, query: nextQuery, cursor: nextCursor,
+        if nextCursor == nil {
+            self.requestedQuery = nextQuery
+            selection = nextSelection
+        }
+        let request = MaatHistoryRefreshRequest(scope: scope, query: nextQuery, selection: nextSelection, cursor: nextCursor,
             queryID: nextCursor == nil ? nil : history?.queryID, snapshot: nextCursor == nil ? nil : history?.snapshot)
         pending = request
         loading = true
@@ -3773,6 +4405,8 @@ struct MaatHistoryRefreshState {
         }
         projection = next
         query = request.query
+        requestedQuery = request.query
+        selection = request.selection
         error = nil
         failure = nil
         restartRequired = false
@@ -3805,6 +4439,17 @@ struct MaatHistoryRefreshState {
         setFailure(.invalidResponse)
     }
 
+    mutating func updateQueryIntent(_ query: String, selection: MaatCaseSelection?) {
+        pending = nil
+        loading = false
+        continuationPaused = false
+        restartRequired = false
+        error = nil
+        failure = nil
+        requestedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.selection = selection
+    }
+
     func isCurrent(_ request: MaatHistoryRefreshRequest) -> Bool { pending == request }
 
     private mutating func setFailure(_ failure: MaatHistoryRefreshFailure) {
@@ -3829,19 +4474,24 @@ struct MaatHistoryRefreshRequest: Equatable, Sendable {
     private let generation = UUID()
     let scope: String
     let query: String
+    let selection: MaatCaseSelection?
     let cursor: String?
     let queryID: String?
     let snapshot: String?
 
-    fileprivate init(scope: String, query: String, cursor: String?, queryID: String?, snapshot: String?) {
+    fileprivate init(scope: String, query: String, selection: MaatCaseSelection?, cursor: String?, queryID: String?, snapshot: String?) {
         self.scope = scope
         self.query = query
+        self.selection = selection
         self.cursor = cursor
         self.queryID = queryID
         self.snapshot = snapshot
     }
 
-    var arguments: [String] { maatCasebookHistoryArguments(scope: scope, query: query, cursor: cursor) }
+    var arguments: [String] {
+        if let selection { return maatExactCasebookSelectionReadArguments(selection, cursor: cursor) }
+        return maatCasebookHistoryArguments(scope: scope, query: query, cursor: cursor)
+    }
 }
 
 struct MaatKnownFailureProposal: Decodable, Identifiable {
@@ -3853,20 +4503,30 @@ struct MaatKnownFailureProposal: Decodable, Identifiable {
     let status: String
     let createdAtUTC: String
     let catalogSHA256: String
+    let catalogRelation: String?
 
     enum CodingKeys: String, CodingKey {
         case schema, id, title, signature, cause, status
         case createdAtUTC = "created_at_utc"
         case catalogSHA256 = "catalog_sha256"
+        case catalogRelation = "catalog_relation"
     }
 
     var titleOrID: String {
         let normalized = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return normalized.isEmpty ? id : normalized
     }
+
+    var catalogRelationLabel: String {
+        switch catalogRelation {
+        case .some("current"): "Recorded against the current known-failure catalog"
+        case .some("historical"): "Recorded against a prior catalog · review against current catalog"
+        default: "Catalog generation unavailable"
+        }
+    }
 }
 
-struct MaatJournalIntegrity: Decodable {
+struct MaatJournalIntegrity: Decodable, Equatable {
     let invalidCount: Int
     let countIsLowerBound:Bool
     let issues: [MaatJournalIssue]
@@ -3895,7 +4555,7 @@ struct MaatJournalIntegrity: Decodable {
     }
 }
 
-struct MaatJournalIssue: Decodable, Identifiable {
+struct MaatJournalIssue: Decodable, Identifiable, Equatable {
     let line: Int
     let digest: String
     let reason: String
@@ -3934,11 +4594,12 @@ struct MaatCase: Decodable, Identifiable {
 	let systemOneCalibration: MaatSystemOneCalibration?
     let failureMemoryReceipt: MaatPreflightReceiptReference?
     let failureMemoryIncidentKeys: [String]
+    let binaryDriftInactiveDisposition: MaatBinaryDriftInactiveDisposition?
 
     init(id: String, time: String, kind: String, category: String, status: String,
          priority: MaatCasePriority, requester: String, resource: String,
          affected: String, determination: String, assessed: String, why: String,
-         evidence: String, resolution: String = "", verifiedRepairEvidence: String = "", repairOutcomeEvidence: String = "", pendingRepairAttemptEvidence: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil, failureMemoryReceipt: MaatPreflightReceiptReference? = nil, failureMemoryIncidentKeys: [String] = []) {
+         evidence: String, resolution: String = "", verifiedRepairEvidence: String = "", repairOutcomeEvidence: String = "", pendingRepairAttemptEvidence: String = "", nextAction: MaatCaseNextAction? = nil, systemOne: MaatSystemOneVerdict? = nil, systemOneCalibration: MaatSystemOneCalibration? = nil, failureMemoryReceipt: MaatPreflightReceiptReference? = nil, failureMemoryIncidentKeys: [String] = [], binaryDriftInactiveDisposition: MaatBinaryDriftInactiveDisposition? = nil) {
         self.id = id
         self.time = time
         self.kind = kind
@@ -3961,6 +4622,7 @@ struct MaatCase: Decodable, Identifiable {
 		self.systemOneCalibration = systemOneCalibration
         self.failureMemoryReceipt = failureMemoryReceipt
         self.failureMemoryIncidentKeys = failureMemoryIncidentKeys
+        self.binaryDriftInactiveDisposition = binaryDriftInactiveDisposition
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3974,6 +4636,7 @@ struct MaatCase: Decodable, Identifiable {
 		case systemOneCalibration = "system_one_calibration"
         case failureMemoryReceipt = "failure_memory_receipt"
         case failureMemoryIncidentKeys = "failure_memory_incident_keys"
+        case binaryDriftInactiveDisposition = "binary_drift_inactive_disposition"
     }
 
     init(from decoder: Decoder) throws {
@@ -4000,11 +4663,12 @@ struct MaatCase: Decodable, Identifiable {
 		systemOneCalibration = try values.decodeIfPresent(MaatSystemOneCalibration.self, forKey: .systemOneCalibration)
         failureMemoryReceipt = try values.decodeIfPresent(MaatPreflightReceiptReference.self, forKey: .failureMemoryReceipt)
         failureMemoryIncidentKeys = try values.decodeIfPresent([String].self, forKey: .failureMemoryIncidentKeys) ?? []
+        binaryDriftInactiveDisposition = try values.decodeIfPresent(MaatBinaryDriftInactiveDisposition.self, forKey: .binaryDriftInactiveDisposition)
     }
 
     var searchText: String {
         let caseFields = [
-            time, kind, category, status, requester, resource, affected,
+            id, time, kind, category, status, requester, resource, affected,
             determination, assessed, why, evidence, resolution, verifiedRepairEvidence, repairOutcomeEvidence, pendingRepairAttemptEvidence,
         ]
         let nextActionFields = [

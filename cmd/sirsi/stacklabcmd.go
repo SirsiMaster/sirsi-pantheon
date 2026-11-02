@@ -9,6 +9,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -52,6 +53,17 @@ unpinned, undeclared, invalid. Clean only when every peer clears all five.`,
 		// tree — origin is truth (A35/A37), same as every peer record below.
 		raw, exists, err := reader.ReadFile(pantheonRepo, routerWingPath, "main")
 		if err != nil {
+			if stacklabDoctorJSON && stacklabDoctorDiagnosticCode(err) != "" {
+				payload := struct {
+					Diagnostic struct {
+						Code string `json:"code"`
+					} `json:"diagnostic"`
+				}{}
+				payload.Diagnostic.Code = stacklabDoctorDiagnosticCode(err)
+				if encodeErr := json.NewEncoder(cmd.OutOrStdout()).Encode(payload); encodeErr != nil {
+					return encodeErr
+				}
+			}
 			return fmt.Errorf("read router wing %s from origin/main of %s: %w", routerWingPath, pantheonRepo, err)
 		}
 		if !exists {
@@ -81,6 +93,14 @@ unpinned, undeclared, invalid. Clean only when every peer clears all five.`,
 		}
 		return nil
 	},
+}
+
+func stacklabDoctorDiagnosticCode(err error) string {
+	var missing stacklab.MissingGitHubCLIError
+	if errors.As(err, &missing) {
+		return "missing_gh"
+	}
+	return ""
 }
 
 var stacklabCatalogCmd = &cobra.Command{

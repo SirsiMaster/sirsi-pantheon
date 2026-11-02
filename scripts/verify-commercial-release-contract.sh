@@ -18,6 +18,7 @@ cask_package="$root/internal/caskrelease/cask.go"
 package_inventory="$root/internal/packageinventory/inventory.go"
 package_inventory_cmd="$root/cmd/sirsi/packageinventorycmd.go"
 package_inventory_adapter="$root/internal/packageinventorycmd/verify.go"
+apollo_receipt_selector="$root/scripts/new-apollo-digest-receipt.sh"
 bootstrap="$root/scripts/install.sh"
 bootstrap_test="$root/scripts/install.test.sh"
 notary_helper="$root/scripts/notarize-release-artifact.sh"
@@ -25,9 +26,31 @@ notary_helper_test="$root/scripts/notarize-release-artifact.test.sh"
 publisher="$root/scripts/publish-release-assets.py"
 publisher_test="$root/scripts/test_release_publication.py"
 
-for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package" "$package_inventory" "$package_inventory_cmd" "$package_inventory_adapter" "$bootstrap" "$bootstrap_test" "$notary_helper" "$notary_helper_test" "$publisher" "$publisher_test"; do
+for file in "$dmg" "$pkg" "$workflow" "$makefile" "$recipe" "$cask_cmd" "$cask_package" "$package_inventory" "$package_inventory_cmd" "$package_inventory_adapter" "$apollo_receipt_selector" "$bootstrap" "$bootstrap_test" "$notary_helper" "$notary_helper_test" "$publisher" "$publisher_test"; do
     [[ -f "$file" ]] || { echo "missing release-contract source: $file" >&2; exit 1; }
 done
+for required in 'new-apollo-digest-receipt.sh' 'PANTHEON_APOLLO_DIGEST_RECEIPT="$$receipt"'; do
+    /usr/bin/grep -Fq -- "$required" "$makefile" || {
+        echo "Make targets do not select and share a fresh Apollo digest receipt: $required" >&2
+        exit 1
+    }
+done
+/usr/bin/grep -Fq 'PANTHEON_APOLLO_DIGEST_RECEIPT="$(bash scripts/new-apollo-digest-receipt.sh "$RUNNER_TEMP")"' "$workflow" || {
+    echo "release workflow does not select one fresh Apollo digest receipt for its paired builders" >&2
+    exit 1
+}
+/usr/bin/grep -Fq 'export PANTHEON_APOLLO_DIGEST_RECEIPT' "$workflow" || {
+    echo "release workflow does not pass the selected Apollo receipt to both builders" >&2
+    exit 1
+}
+/usr/bin/grep -Fq 'PKG requires an existing regular pre-sign digest receipt' "$pkg" || {
+    echo "PKG builder does not refuse a missing selected pre-sign receipt" >&2
+    exit 1
+}
+if /usr/bin/grep -Fq -- '--write-frozen-digests' "$pkg"; then
+    echo "PKG builder must not recapture a built candidate as its pre-sign receipt" >&2
+    exit 1
+fi
 
 # Casks are owned by the release workflow's remote-tap transaction. A tracked
 # local mirror becomes an unreviewed second publication source and can mislead
@@ -80,6 +103,10 @@ done
 
 /usr/bin/grep -Fq 'scripts/build-dmg.sh --release' "$workflow" || { echo "release workflow does not request release DMG mode" >&2; exit 1; }
 /usr/bin/grep -Fq 'scripts/build-pkg.sh --release' "$workflow" || { echo "release workflow does not request release PKG mode" >&2; exit 1; }
+/usr/bin/grep -Fq 'PANTHEON_APOLLO_CAPABILITY: disabled' "$workflow" || {
+    echo "release workflow does not explicitly declare the published native-disabled Apollo capability" >&2
+    exit 1
+}
 /usr/bin/grep -Fq 'DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG' "$workflow" || {
     echo "release workflow does not fail closed when installer signing is unavailable" >&2
     exit 1
@@ -133,7 +160,60 @@ for file in "$dmg" "$pkg"; do
         echo "package builder does not invoke canonical payload inventory: $file" >&2
         exit 1
     }
+    /usr/bin/grep -Fq 'release requires PANTHEON_APOLLO_CAPABILITY=enabled|disabled' "$file" || {
+        echo "release builder does not require an explicit Apollo capability: $file" >&2
+        exit 1
+    }
+    /usr/bin/grep -Fq -- '--apollo-capability' "$file" || {
+        echo "release builder does not pass an independent Apollo capability expectation: $file" >&2
+        exit 1
+    }
+    /usr/bin/grep -Fq 'FROZEN_APOLLO_ARGS+=(--require-frozen-digests)' "$file" || {
+        echo "release builder does not enable explicit frozen-digest verification: $file" >&2
+        exit 1
+    }
 done
+inventory_start_for() {
+	/usr/bin/awk -v first="$2" -v second="${3:-}" -v third="${4:-}" '
+	function continued(line) { return substr(line, length(line), 1) == "\\" }
+	index($0, "package-inventory") && continued($0) { start=NR; block=$0; active=1; next }
+	active {
+		block=block "\n" $0
+		if (!continued($0)) {
+			if (index(block, first) && (second == "" || index(block, second)) && (third == "" || index(block, third))) {
+				print start
+				exit
+			}
+			active=0
+			block=""
+		}
+	}
+	' "$1"
+}
+pre_sign_inventory="$(inventory_start_for "$dmg" '--write-frozen-digests')"
+post_sign_inventory="$(inventory_start_for "$dmg" '--require-code-signature' '"${FROZEN_APOLLO_ARGS[@]}"')"
+pre_pkg_inventory="$(inventory_start_for "$pkg" '--app "$APP_PATH"' '--require-code-signature' '"${FROZEN_APOLLO_ARGS[@]}"')"
+expanded_pkg_inventory="$(inventory_start_for "$pkg" '--app "$EXPANDED_ROOT/Payload/Applications/Pantheon.app"' '--require-code-signature' '"${FROZEN_APOLLO_ARGS[@]}"')"
+app_signing="$(/usr/bin/grep -n '^# --- Code signing ---' "$dmg" | /usr/bin/head -1 | /usr/bin/cut -d: -f1)"
+app_packaging="$(/usr/bin/grep -n '^# --- Stage + create the DMG ---' "$dmg" | /usr/bin/head -1 | /usr/bin/cut -d: -f1)"
+pkg_signing="$(/usr/bin/grep -n 'COPYFILE_DISABLE=1 /usr/bin/pkgbuild' "$pkg" | /usr/bin/head -1 | /usr/bin/cut -d: -f1)"
+pkg_expansion="$(/usr/bin/grep -n '/usr/sbin/pkgutil --expand-full' "$pkg" | /usr/bin/head -1 | /usr/bin/cut -d: -f1)"
+[[ -n "$pre_sign_inventory" && -n "$app_signing" && "$pre_sign_inventory" -lt "$app_signing" ]] || {
+    echo "DMG builder does not inventory Apollo capability before signing" >&2
+    exit 1
+}
+[[ -n "$post_sign_inventory" && -n "$app_packaging" && "$post_sign_inventory" -gt "$app_signing" && "$post_sign_inventory" -lt "$app_packaging" ]] || {
+    echo "DMG builder does not inventory the signed Apollo payload before DMG assembly" >&2
+    exit 1
+}
+[[ -n "$pre_pkg_inventory" && -n "$pkg_signing" && "$pre_pkg_inventory" -lt "$pkg_signing" ]] || {
+    echo "PKG builder does not inventory Apollo capability before package signing" >&2
+    exit 1
+}
+[[ -n "$expanded_pkg_inventory" && -n "$pkg_expansion" && "$expanded_pkg_inventory" -gt "$pkg_expansion" ]] || {
+    echo "PKG builder does not inventory Apollo capability in the expanded installer payload" >&2
+    exit 1
+}
 for target in dmg-dev pkg-dev release-dmg release-pkg; do
     /usr/bin/grep -Eq "^${target}:" "$makefile" || { echo "Makefile target missing: $target" >&2; exit 1; }
 done

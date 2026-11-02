@@ -2,14 +2,91 @@ package casebook
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 )
+
+func TestSearchHistoryValidatesInactiveDispositionAcrossPagedLinks(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		mixed          bool
+		resolutionHost string
+		duplicate      bool
+		wantResolved   bool
+	}{
+		{name: "exact source with linked acceptance beyond candidate window", resolutionHost: "fixture-host", wantResolved: true},
+		{name: "wrong host", resolutionHost: "other-host"},
+		{name: "mixed source", mixed: true, resolutionHost: "fixture-host"},
+		{name: "duplicate origin outside one-row window", resolutionHost: "fixture-host", duplicate: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			journal := &maat.FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
+			host := "fixture-host"
+			hostDigest := sha256.Sum256([]byte(host))
+			statuses := []maat.DiagnosticStatus{{Check: "binary-drift", Severity: 3}}
+			if test.mixed {
+				statuses = append(statuses, maat.DiagnosticStatus{Check: "RAM Pressure", Severity: 2})
+			}
+			observation := maat.DiagnosticObservation{
+				Schema: maat.DiagnosticObservationSchema, SourceSHA256: strings.Repeat("a", 64),
+				HostSHA256: hex.EncodeToString(hostDigest[:]), ObservedAtUTC: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC),
+				Score: 90, Statuses: statuses,
+			}
+			verdict, err := observation.Verdict()
+			if err != nil {
+				t.Fatal(err)
+			}
+			written, err := maat.RecordSystemOne(journal, "fixture", verdict)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows, _, err := journal.RecentTolerant(10)
+			if err != nil || len(rows) != 1 || rows[0].Evidence != written.Evidence {
+				t.Fatalf("normalized source readback failed: rows=%d err=%v", len(rows), err)
+			}
+			source := rows[0]
+			if test.duplicate {
+				if err := journal.Append(source); err != nil {
+					t.Fatal(err)
+				}
+			}
+			disposition, err := maat.BuildBinaryDriftInactiveDisposition("fixture owner", maat.BinaryDriftInactiveDisposition{
+				OriginEvidence: source.Evidence, Host: test.resolutionHost,
+				ObservedFromUTC: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC), ObservedThroughUTC: time.Date(2026, 10, 31, 12, 0, 1, 0, time.UTC),
+				ObservationSHA256: strings.Repeat("b", 64),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := journal.Append(disposition); err != nil {
+				t.Fatal(err)
+			}
+
+			query := HistoryQuery{Query: Query{Kind: "system one screen", Status: StatusResolved, Limit: 1}, Evidence: source.Evidence}
+			resolved := completeRepairHistorySearch(t, journal, query)
+			if test.wantResolved {
+				if len(resolved.View.Cases) != 1 || resolved.View.Cases[0].Evidence != source.Evidence || resolved.View.Cases[0].Status != StatusResolved || resolved.View.Cases[0].BinaryDriftInactiveDisposition == nil {
+					t.Fatalf("linked exact source did not resolve through paged history: %+v", resolved.View.Cases)
+				}
+				return
+			}
+			if len(resolved.View.Cases) != 0 {
+				t.Fatalf("invalid typed acceptance passed the resolved filter: %+v", resolved.View.Cases)
+			}
+			open := completeRepairHistorySearch(t, journal, HistoryQuery{Query: Query{Kind: "system one screen", Limit: 1}, Evidence: source.Evidence})
+			if len(open.View.Cases) != 1 || open.View.Cases[0].Status != StatusOpen {
+				t.Fatalf("invalid typed acceptance closed the source in paged output: %+v", open.View.Cases)
+			}
+		})
+	}
+}
 
 func completeRepairHistorySearch(t *testing.T, journal *maat.FileDecisionJournal, query HistoryQuery) HistorySearchResult {
 	t.Helper()

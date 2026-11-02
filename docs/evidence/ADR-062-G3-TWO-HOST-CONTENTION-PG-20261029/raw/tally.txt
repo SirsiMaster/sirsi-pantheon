@@ -1,0 +1,4 @@
+G3 shared ledger (want exactly 1): rounds=1000 missing=0 winners-per-round={1: 1000} wins m1=274 m5=726 non-claim-errors=0 latency p50=272ms p99=303ms
+   rounds != 1 winner(s): 0 []
+negative control (separate ledgers): rounds=50 rounds with 2 winners=50 (want > 0, ideally all)
+VERDICT: PASS

@@ -132,7 +132,14 @@ private struct MaatSourceImportPreview: Decodable {
     }
 
     private func failure(_ captured: CommandExecution, prefix: String) -> String {
-        let detail = captured.issue ?? (captured.stderr.isEmpty ? "No complete matching v2 response." : String(captured.stderr.prefix(1200)))
+        let detail: String
+        if let issue = captured.issue {
+            detail = issue
+        } else if captured.stderr.isEmpty {
+            detail = "No complete matching v2 response."
+        } else {
+            detail = String(SirsiEngine.stripANSI(captured.stderr).prefix(1200))
+        }
         return prefix + " " + detail
     }
 }

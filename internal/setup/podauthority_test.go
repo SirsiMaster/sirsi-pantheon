@@ -3,7 +3,6 @@
 package setup
 
 import (
-	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -21,15 +20,6 @@ import (
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
-
-func TestMaatPodCodesignUsesInlineTeamRequirement(t *testing.T) {
-	path := "/usr/local/libexec/sirsi-pantheon/sirsi"
-	cmd := maatPodCodesignCommand(context.Background(), path)
-	want := []string{"/usr/bin/codesign", "--verify", "--strict", "-R", `=anchor apple generic and certificate leaf[subject.OU] = "9D382WV988" and identifier "sirsi"`, path}
-	if cmd.Path != "/usr/bin/codesign" || !equalStrings(cmd.Args, want) {
-		t.Fatalf("verification argv = %q, want %q", cmd.Args, want)
-	}
-}
 
 func TestBuildMaatPodServicePlanIsDryAndUsesDirectPackagedEngineArgs(t *testing.T) {
 	spec, temp := podServiceFixture(t)

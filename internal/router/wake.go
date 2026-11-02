@@ -212,6 +212,10 @@ func ProbeWakeReadiness(cfg AgentConfig) AgentWakeHealth {
 		// "ready" here while the invoker always fails is dishonest readiness
 		// (codex SME #89, finding 3). Wire an adapter before flipping this.
 		h.Detail = "mcp-notification wake is not yet wired in the pull-model CLI — use launchagent or api-call"
+	case WakeSessionMessage:
+		// Reached only when no live session armed the lane (ADR-079 D4): a closed
+		// interactive session cannot be resurrected locally. Say so, not "unsupported".
+		h.Detail = "needs-owner: no live attended session for this session-message lane; a closed interactive session cannot be resurrected locally"
 	case WakeLaunchAgent:
 		label := WakeLaunchAgentLabel(cfg.ID)
 		if !launchAgentInstalled(label) {
@@ -905,6 +909,16 @@ func setAttendedLiveFn(fn func(routerRoot, agentID string) bool) {
 	attendedLiveFn = fn
 }
 
+// wakeLoopConsumerCapable is the capability a wake-loop publishes on its own
+// thread. A declared-attended lane's loop always holds dispatch
+// (attendedSessionOwnsInbox), so it can never consume: claiming capability there
+// made WakePass report the lane armed after its interactive session closed,
+// where ADR-079 D4 requires needs-owner. Only the attended session arms it.
+// Both publication paths (loop start and the post-exit consumer refresh) use it.
+func wakeLoopConsumerCapable(consumer *ResolvedConsumer, attended bool) bool {
+	return consumer != nil && !consumer.Resident && !attended
+}
+
 // declaredAttendedLane reports whether the registry marks agentID attended. Unlike
 // AttendedSessionLive it does not depend on a fresh heartbeat. An unreadable registry
 // reads as not declared (same fail direction as AttendedSessionLive).
@@ -1226,7 +1240,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	// The real fix is the inverse: a resident must PUBLISH AND HEARTBEAT ITS OWN
 	// consumer-capable thread. Liveness you did not observe is not liveness you
 	// can borrow. That is the immediate follow-up, not this PR.
-	capable := consumer != nil && !consumer.Resident
+	capable := wakeLoopConsumerCapable(consumer, declaredAttendedLane(routerRoot, agentID))
 	if thr.ConsumerCapable != capable {
 		thr.ConsumerCapable = capable
 		if err := setThreadConsumerCapable(routerRoot, thr.ThreadID, capable); err != nil {
@@ -1289,6 +1303,9 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			// zero value would make madeProgress(0, depth) false and march a
 			// healthy lane toward quarantine after ten restarts.
 			run.depthAtDispatch = -1
+			// Its exit must be scored and refreshed like any dispatched run's,
+			// never replaced in the same tick under the loaded configuration.
+			scored = false
 			log.Printf("wake-loop %s: adopted already-running consumer pid %d from durable marker (loop restarted)",
 				agentID, adopted.pid)
 		}
@@ -1492,7 +1509,7 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 		// Refreshing does not clear fruitless/backoff/quota or spawn-ceiling holds.
 		if !run.running() && scored {
 			consumer, answerRole, configErr = loadWakeConsumer(routerRoot, agentID, thr.ThreadID)
-			capable = consumer != nil && !consumer.Resident
+			capable = wakeLoopConsumerCapable(consumer, declaredAttendedLane(routerRoot, agentID))
 			if configErr != nil {
 				lastError = "consumer configuration unavailable: " + configErr.Error()
 				log.Printf("wake-loop %s: WATCH-ONLY: %s", agentID, lastError)
@@ -1544,6 +1561,10 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 				})
 			}
 		} else if !quotaBlocked && consumer != nil && !consumer.Resident && lerr == nil && depth > 0 && !run.running() &&
+			// An exit seen only here (after the scoring check above) is next
+			// tick's to score and refresh; replacing it now would skip the
+			// #636 progress backoff and dispatch under a stale configuration.
+			(run == nil || scored) &&
 			time.Now().After(nextDispatchAllowed) &&
 			!fabricDispatchQuarantined(agentID, depth) && !fabricDispatchOverloaded(agentID, depth) &&
 			!measurementWindowOpen(agentID, depth) && !attendedSessionOwnsInbox(routerRoot, agentID, depth) &&

@@ -21,6 +21,47 @@ var (
 // gib is 1 GiB, for byte→GB display math.
 const gib = float64(1 << 30)
 
+func relieveMemoryTopUser(p guard.MemProc) string {
+	name := p.Name
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:] // basename — "codex", not the full bundle path
+	}
+	return fmt.Sprintf("%s (%.1f GB)", name, float64(p.Size())/gib)
+}
+
+func buildRelieveMemoryPreview(before guard.NodeCapacity, largestProcess string) *output.CommandResult {
+	res := &output.CommandResult{Command: "sirsi relieve --memory", Status: "preview"}
+	if largestProcess != "" {
+		res.Evidence = append(res.Evidence, output.Evidence{Label: "Largest sampled process", Value: largestProcess})
+	}
+	res.Evidence = append(res.Evidence,
+		output.Evidence{Label: "Free memory", Value: fmt.Sprintf("%.1f GB", float64(before.FreeRAM)/gib)},
+		output.Evidence{Label: "Pressure", Value: before.Pressure.String()},
+	)
+
+	var pressureContext string
+	switch before.Pressure {
+	case guard.PressureNormal:
+		pressureContext = "Memory pressure is normal; this sample identifies no active pressure cause."
+	case guard.PressureWarn:
+		pressureContext = "Memory pressure is elevated (warn)."
+	case guard.PressureCritical:
+		pressureContext = "Memory pressure is critical."
+	default:
+		pressureContext = "Memory pressure is unknown; this sample cannot identify an active pressure cause."
+	}
+	res.Summary = pressureContext + " Flushing inactive caches with `purge` (macOS admin authorization if needed) returns cached pages to the free pool; it does not release memory actively held by apps."
+	if largestProcess != "" {
+		res.Summary += " The largest sampled process is shown for context, not as a recommendation to stop it."
+	}
+	res.NextActions = []output.NextAction{{
+		Label:       "Flush inactive caches",
+		Command:     "relieve --memory --confirm",
+		Description: "runs `purge` via the macOS admin prompt — frees inactive cache pages only; no app is stopped or active memory released",
+	}}
+	return res
+}
+
 // `sirsi relieve` is the on-demand "Relieve the live cause" action: it finds the
 // process currently hogging the CPU and lowers its priority so the foreground app
 // regains responsiveness. Dry-run by default (Rule A1); --confirm to apply. Routes
@@ -176,38 +217,15 @@ func runRelieveMemory() error {
 	before := guard.SampleNodeCapacity()
 	freeBefore := float64(before.FreeRAM) / gib
 
-	// Name the actual cause — the top memory consumer — so the user knows WHAT is
-	// using the RAM, not just that it's tight. This is the "identify" half the app
-	// was skipping.
+	// Keep the largest sampled process as context. Its footprint/RSS is not, by
+	// itself, evidence that the process caused current system memory pressure.
 	hog := ""
 	if s, err := guard.SampleMemory(); err == nil && len(s.Top) > 0 {
-		name := s.Top[0].Name
-		if i := strings.LastIndex(name, "/"); i >= 0 {
-			name = name[i+1:] // basename — "codex", not the full bundle path
-		}
-		hog = fmt.Sprintf("%s (%.1f GB)", name, float64(s.Top[0].RSS)/gib)
+		hog = relieveMemoryTopUser(s.Top[0])
 	}
 
 	if !relieveConfirm {
-		res.Status = "preview"
-		if hog != "" {
-			res.Evidence = append(res.Evidence, output.Evidence{Label: "Top memory user", Value: hog})
-		}
-		res.Evidence = append(res.Evidence,
-			output.Evidence{Label: "Free memory", Value: fmt.Sprintf("%.1f GB", freeBefore)},
-			output.Evidence{Label: "Pressure", Value: before.Pressure.String()},
-		)
-		guidance := ""
-		if hog != "" {
-			guidance = fmt.Sprintf(" To free more, quit %s.", hog)
-		}
-		res.Summary = fmt.Sprintf("Flush inactive caches to relieve memory pressure. This runs `purge` (it asks for your admin password once) — it returns cached pages to the free pool WITHOUT touching any app, and macOS re-caches as it needs to.%s", guidance)
-		res.NextActions = []output.NextAction{{
-			Label:       "Flush caches now",
-			Command:     "relieve --memory --confirm",
-			Description: "runs `purge` via the macOS admin prompt — frees inactive memory, nothing killed",
-		}}
-		res.Render()
+		buildRelieveMemoryPreview(before, hog).Render()
 		return nil
 	}
 

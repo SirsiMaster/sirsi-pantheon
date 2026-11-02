@@ -12,6 +12,7 @@ missing or duplicate VCS settings, and dirty builds do not select a profile.
 | 0.24.129 | `0fd8463011ee2ebae12494895669b0e7b20b9ddf` |
 | 0.24.134 | `ba2a07bb464bbfd68808254a7d489769f122149b` |
 | 0.24.137 | `cb59d56f849235eb80f5e4b10514fc89467fb8af` |
+| 0.24.147 | `63fbba661b6c7c2b487979ef4ce58d28ea2d611c` |
 
 The audited 129 and 134 relay transport and publication-lock blobs are identical
 (`a9d00bd181fb74358c3293eb3b0b546d1fb764e9` and
@@ -27,6 +28,12 @@ publication-exclusion, retirement and custody checks remain mandatory. These
 profiles preserve **unknown old outcomes**, not certified drain: neither signal
 cancellation nor a publication lock joins old forwarding work. Source support
 does not activate maintenance, replay old requests or certify host adoption.
+The 0.24.147 source entry selects only the existing endpoint-absent legacy
+interruption path. The exact current PID/start and source are previewed afresh;
+an occupied endpoint remains refused by this path, and a completed older
+transaction cannot be reused for a different process instance. Retained queue
+envelopes keep their per-envelope `outcome_unknown_never_replay` custody record;
+this does not resolve unrecorded or remote outcomes.
 
 This is the source contract for the existing legacy maintenance fallback, not
 a new service, actor permission, router store, or Studio producer-route gate.

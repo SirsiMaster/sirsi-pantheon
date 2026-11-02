@@ -48,6 +48,16 @@ pause/resume Ma'at makes is recorded to `~/.sirsi/maat/decisions.jsonl` (one
 host's file — see `internal/maat/decision/README.md` for the cross-host
 follow-up). `sirsi maat reserve|release|conflict-check` write here natively.
 
+### Reservation conflict check
+
+`sirsi maat conflict-check <resource> [--json]` keeps its existing admission
+policy: `clean` means no observed actor triggered invalidation. Successful
+checks now include a `measurement_observation` in JSON and the decision
+explanation. It identifies a completed point sample, observed admitted floor
+shares, and other admitted foreign activity. A point sample never qualifies a
+quiet interval; no-holder and build-regime early returns remain unverified.
+Floor-share activity remains policy clean and keeps its reservation active.
+
 ### GitHub submission attribution (Phase 1)
 ```bash
 sirsi maat submit --kind release --repo OWNER/REPO --ref v1.2.3

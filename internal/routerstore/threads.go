@@ -68,8 +68,22 @@ type ThreadBinding struct {
 // ErrThreadUnknown: no registered thread with that id.
 var ErrThreadUnknown = errors.New("routerstore: thread not registered")
 
+// threadStatusPruned is the reserved store-internal retirement fence. Pruning
+// retains this key; ordinary writers cannot create, revive or collect it.
+const threadStatusPruned = "pruned"
+
+func rejectPrunedThreadInput(records ...ThreadRecord) error {
+	for _, record := range records {
+		if record.Status == threadStatusPruned {
+			return fmt.Errorf("routerstore: thread %q uses reserved pruned status", record.ThreadID)
+		}
+	}
+	return nil
+}
+
 // ThreadBinding returns the gate view of one thread; ErrThreadUnknown when
-// there is no such row.
+// there is no such row. It deliberately keeps reserved fences visible to the
+// authorization check with their original identity and non-live status.
 func (s *SQLiteStore) ThreadBinding(threadID string) (ThreadBinding, error) {
 	var b ThreadBinding
 	err := s.db.QueryRow(`SELECT thread_id,agent,host,status,last_seen_at FROM threads WHERE thread_id=?`, threadID).
@@ -86,11 +100,15 @@ func (s *SQLiteStore) ThreadBinding(threadID string) (ThreadBinding, error) {
 // ImportThreadsIfEmpty atomically seeds the store at cutover. A non-empty
 // table is already authoritative and is never blended with a stale JSON file.
 func (s *SQLiteStore) ImportThreadsIfEmpty(records []ThreadRecord) error {
+	if err := rejectPrunedThreadInput(records...); err != nil {
+		return err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("routerstore: begin thread import: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	// Count raw rows so an all-fenced store is not mistaken for first use.
 	var count int
 	if err := tx.QueryRow(`SELECT count(*) FROM threads`).Scan(&count); err != nil {
 		return fmt.Errorf("routerstore: count threads: %w", err)
@@ -115,6 +133,9 @@ func (s *SQLiteStore) ImportThreadsIfEmpty(records []ThreadRecord) error {
 // stale active/idle/blocked heartbeat, preventing late liveness from reviving
 // an explicitly closed, reaped, or parked session.
 func (s *SQLiteStore) UpsertThreads(records []ThreadRecord) error {
+	if err := rejectPrunedThreadInput(records...); err != nil {
+		return err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("routerstore: begin thread upsert: %w", err)
@@ -126,7 +147,7 @@ INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?
 ON CONFLICT(thread_id) DO UPDATE SET
  agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload,
  host=CASE WHEN excluded.host='' THEN threads.host ELSE excluded.host END
-WHERE threads.status NOT IN ('closed','reaped','suspended')
+WHERE threads.status NOT IN ('closed','reaped','suspended','pruned')
   AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
@@ -146,6 +167,9 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
 // UpsertThreads, where an unrelated stale row is an expected no-op; lifecycle
 // verbs use this method so losing their own target fence fails loudly.
 func (s *SQLiteStore) UpsertThreadCAS(r ThreadRecord) (bool, error) {
+	if err := rejectPrunedThreadInput(r); err != nil {
+		return false, err
+	}
 	if r.CreateOnly {
 		result, err := s.db.Exec(`INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?,?,?,?,?) ON CONFLICT(thread_id) DO NOTHING`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload, r.Host)
 		if err != nil {
@@ -159,7 +183,7 @@ INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?
 ON CONFLICT(thread_id) DO UPDATE SET
  agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload,
  host=CASE WHEN excluded.host='' THEN threads.host ELSE excluded.host END
-WHERE threads.status NOT IN ('closed','reaped','suspended')
+WHERE threads.status NOT IN ('closed','reaped','suspended','pruned')
   AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
@@ -180,6 +204,9 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
 // exact suspended row observed by the caller prevents a heartbeat that loaded
 // before a concurrent suspend from implicitly resuming the thread.
 func (s *SQLiteStore) ResumeThreadCAS(record ThreadRecord, suspendedAt string) error {
+	if err := rejectPrunedThreadInput(record); err != nil {
+		return err
+	}
 	result, err := s.db.Exec(`UPDATE threads
 SET agent=?,status=?,last_seen_at=?,payload=?,host=CASE WHEN ?='' THEN host ELSE ? END
 WHERE thread_id=? AND status='suspended' AND last_seen_at=? AND (host='' OR ?='' OR host=?)`,
@@ -242,6 +269,9 @@ func scopeViolation(q interface {
 
 // UpsertThreadsScoped is UpsertThreads with the scope check folded into the write's own predicate (see above).
 func (s *SQLiteStore) UpsertThreadsScoped(records []ThreadRecord, scope []string) error {
+	if err := rejectPrunedThreadInput(records...); err != nil {
+		return err
+	}
 	if len(scope) == 0 {
 		return fmt.Errorf("%w: scoped write with an empty scope", ErrLaneScope)
 	}
@@ -262,7 +292,7 @@ INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?
 ON CONFLICT(thread_id) DO UPDATE SET
  agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload,
  host=CASE WHEN excluded.host='' THEN threads.host ELSE excluded.host END
-WHERE threads.status NOT IN ('closed','reaped','suspended')
+WHERE threads.status NOT IN ('closed','reaped','suspended','pruned')
   AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
@@ -286,6 +316,9 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
 
 // UpsertThreadCASScoped is UpsertThreadCAS with the scope check folded into the write's own predicate.
 func (s *SQLiteStore) UpsertThreadCASScoped(r ThreadRecord, scope []string) (bool, error) {
+	if err := rejectPrunedThreadInput(r); err != nil {
+		return false, err
+	}
 	if len(scope) == 0 {
 		return false, fmt.Errorf("%w: scoped write with an empty scope", ErrLaneScope)
 	}
@@ -312,7 +345,7 @@ INSERT INTO threads(thread_id,agent,status,last_seen_at,payload,host) VALUES(?,?
 ON CONFLICT(thread_id) DO UPDATE SET
  agent=excluded.agent,status=excluded.status,last_seen_at=excluded.last_seen_at,payload=excluded.payload,
  host=CASE WHEN excluded.host='' THEN threads.host ELSE excluded.host END
-WHERE threads.status NOT IN ('closed','reaped','suspended')
+WHERE threads.status NOT IN ('closed','reaped','suspended','pruned')
   AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
@@ -340,6 +373,9 @@ WHERE threads.status NOT IN ('closed','reaped','suspended')
 
 // ResumeThreadCASScoped is ResumeThreadCAS with the scope check folded into the write's own predicate.
 func (s *SQLiteStore) ResumeThreadCASScoped(record ThreadRecord, suspendedAt string, scope []string) error {
+	if err := rejectPrunedThreadInput(record); err != nil {
+		return err
+	}
 	if len(scope) == 0 {
 		return fmt.Errorf("%w: scoped write with an empty scope", ErrLaneScope)
 	}
@@ -386,12 +422,15 @@ WHERE thread_id=? AND status='suspended' AND last_seen_at=? AND (host='' OR ?=''
 // with no host identity; the service always stamps the session host) passes
 // through unchanged.
 
-// DeleteThreadCAS removes only the exact row observed by the pruning read,
-// and only when that row is on the caller's host.
-// A concurrent heartbeat/status transition changes last_seen/status and makes
-// this a safe no-op rather than deleting live truth.
+const retireThreadSQL = `UPDATE threads SET status='pruned',payload=? WHERE thread_id=? AND status=? AND last_seen_at=? AND (host='' OR ?='' OR host=?) AND status<>'pruned'`
+
+// DeleteThreadCAS retires only the exact ordinary row observed by the pruning
+// read on the caller's host. It clears user payload while retaining the primary
+// key and authority identity, so a stale INSERT cannot recreate the thread.
+// A concurrent heartbeat/status transition makes retirement a safe no-op.
+// The existing API name and affected-row contract remain unchanged.
 func (s *SQLiteStore) DeleteThreadCAS(threadID, status, lastSeenAt, host string) (bool, error) {
-	result, err := s.db.Exec(`DELETE FROM threads WHERE thread_id=? AND status=? AND last_seen_at=? AND (host='' OR ?='' OR host=?)`, threadID, status, lastSeenAt, host, host)
+	result, err := s.db.Exec(retireThreadSQL, []byte("{}"), threadID, status, lastSeenAt, host, host)
 	if err != nil {
 		return false, fmt.Errorf("routerstore: delete thread %q: %w", threadID, err)
 	}
@@ -403,7 +442,7 @@ func (s *SQLiteStore) DeleteThreadCAS(threadID, status, lastSeenAt, host string)
 }
 
 // DeleteThreadCASScoped binds both lane ownership and the observed row identity
-// to the delete statement; an agent reassignment cannot race a preflight check.
+// to the retirement statement; an agent reassignment cannot race a preflight check.
 func (s *SQLiteStore) DeleteThreadCASScoped(threadID, status, lastSeenAt, host string, scope []string) (bool, error) {
 	if len(scope) == 0 {
 		return false, ErrLaneScope
@@ -414,8 +453,8 @@ func (s *SQLiteStore) DeleteThreadCASScoped(threadID, status, lastSeenAt, host s
 	}
 	defer func() { _ = tx.Rollback() }()
 	ph, scopeArgs := scopeInClause(scope)
-	args := append([]any{threadID, status, lastSeenAt, host, host}, scopeArgs...)
-	result, err := tx.Exec(`DELETE FROM threads WHERE thread_id=? AND status=? AND last_seen_at=? AND (host='' OR ?='' OR host=?) AND agent IN (`+ph+`)`, args...)
+	args := append([]any{[]byte("{}"), threadID, status, lastSeenAt, host, host}, scopeArgs...)
+	result, err := tx.Exec(retireThreadSQL+` AND agent IN (`+ph+`)`, args...)
 	if err != nil {
 		return false, err
 	}
@@ -447,7 +486,7 @@ func (s *SQLiteStore) DeleteThreadCASScoped(threadID, status, lastSeenAt, host s
 // which large enough to hit relay body-size/timeout ceilings under load.
 func (s *SQLiteStore) GetThreadRecord(threadID string) (ThreadRecord, error) {
 	var r ThreadRecord
-	err := s.db.QueryRow(`SELECT thread_id,agent,status,last_seen_at,payload,host FROM threads WHERE thread_id=?`, threadID).
+	err := s.db.QueryRow(`SELECT thread_id,agent,status,last_seen_at,payload,host FROM threads WHERE thread_id=? AND status<>'pruned'`, threadID).
 		Scan(&r.ThreadID, &r.Agent, &r.Status, &r.LastSeenAt, &r.Payload, &r.Host)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ThreadRecord{}, ErrThreadUnknown
@@ -458,9 +497,10 @@ func (s *SQLiteStore) GetThreadRecord(threadID string) (ThreadRecord, error) {
 	return r, nil
 }
 
-// ListThreads returns every durable thread payload.
+// ListThreads returns every non-pruned thread payload. ThreadBinding and raw
+// migration intentionally retain reserved fence identity.
 func (s *SQLiteStore) ListThreads() ([]ThreadRecord, error) {
-	rows, err := s.db.Query(`SELECT thread_id,agent,status,last_seen_at,payload,host FROM threads ORDER BY thread_id`)
+	rows, err := s.db.Query(`SELECT thread_id,agent,status,last_seen_at,payload,host FROM threads WHERE status<>'pruned' ORDER BY thread_id`)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: list threads: %w", err)
 	}

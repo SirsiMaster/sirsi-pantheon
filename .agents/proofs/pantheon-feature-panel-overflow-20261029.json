@@ -1,0 +1,138 @@
+{
+  "work_item_id": "pantheon-feature-panel-overflow-20261029",
+  "agent_id": "codex-pantheon",
+  "repo": "/Users/thekryptodragon/.codex/worktrees/pantheon-panel-overflow-audit/sirsi-pantheon",
+  "status": "ready_for_review",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "governance",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/COMMERCIALIZATION_GATE.md",
+      "role": "scope",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/ARCHITECTURE_DESIGN.md",
+      "role": "architecture",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/SAFETY_DESIGN.md",
+      "role": "security",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "portfolio-canon",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/stacklab/pantheon-pt/canon/DESIGN.md",
+      "role": "stacklab-canon",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/stacklab/maat/canon/NATIVE_REMEDIATION_EXECUTION.md",
+      "role": "architecture",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/stacklab/pantheon-pt/canon/NATIVE_PANEL_VIEWPORTS.md",
+      "role": "stacklab-canon",
+      "read_at": "2026-10-29",
+      "notes": "Authored and reviewed this source-composition and explicit partial-qualification record in this corrective batch."
+    },
+    {
+      "path": "contracts/stacklab/pantheon-native-workspace-v1.json",
+      "role": "stacklab-recipe",
+      "read_at": "2026-10-29",
+      "notes": "Read existing native workspace and Ma\u2019at recovery component boundaries; added the actual viewport fixture path without changing source/effect/upgrade authority."
+    },
+    {
+      "path": "contracts/stacklab/maat-system-one-recipe-v1.json",
+      "role": "stacklab-recipe",
+      "read_at": "2026-10-29",
+      "notes": "Read existing native workspace and Ma\u2019at recovery component boundaries; added the actual viewport fixture path without changing source/effect/upgrade authority."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "docs/stacklab/pantheon-pt/canon/NATIVE_PANEL_VIEWPORTS.md",
+      "section": "Composition",
+      "claim": "Six native presentation files preserve scroll paths and natural action sizes; catalog opens Doctor; command/approval owners unchanged.",
+      "files_changed": [
+        "macapp/Sources/SirsiMenubar/Views.swift",
+        "macapp/Sources/SirsiMenubar/MaatWorkspaceRecoveryFrame.swift",
+        "macapp/Sources/SirsiMenubar/MaatCasebookView.swift",
+        "macapp/Sources/SirsiMenubar/ApolloRunPlannerView.swift",
+        "macapp/Sources/SirsiMenubar/StackLabCatalogView.swift",
+        "macapp/Sources/SirsiMenubar/StackLabView.swift"
+      ],
+      "evidence": [
+        "Astra source review closed three scoped NavLink styling findings; native production compilation passed. Native86dbffc5: two geometry tests passed, one AX-dependent test skipped only after independent Text/Button oracle unavailable."
+      ]
+    },
+    {
+      "doc": "contracts/stacklab/pantheon-native-workspace-v1.json",
+      "section": "native-workspace-shell.tests",
+      "claim": "Native and Ma\u2019at recipe test indexes name the shipped viewport regression fixture.",
+      "files_changed": [
+        "contracts/stacklab/pantheon-native-workspace-v1.json",
+        "contracts/stacklab/maat-system-one-recipe-v1.json"
+      ],
+      "evidence": [
+        "JSON decode readback; application and native fixture source bytes unchanged from85eb5257."
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Source correction for owner-requested opening/clipping audit; signed release and installed composition remain open.",
+    "design": "Native panel viewport canon documents each surface, wrapping, bounded Ma\u2019at recovery and correct Doctor navigation.",
+    "technical": "Native9411 production compilation96.72s and font966/0. Native86dbffc5 terminal0: 3tests,2passed,1skip,0failures; final FDA control visibility explicitly UNVERIFIED because independent public Text/Button AX oracle unavailable. Prior failures retained.",
+    "operational": "No actual repair, purge, permission, inference, credential, signing or installation action. SSA owns commercial release.",
+    "narrative": "Canon viewport record, Design/Catalog pointer and changelog fragment included; baseline opening observations are not certification."
+  },
+  "verification": [
+    {
+      "name": "diff-check",
+      "command": "git diff --check",
+      "status": "passed",
+      "evidence": "No whitespace defects."
+    },
+    {
+      "name": "native-production-compile-and-geometry",
+      "command": "swift test --package-path macapp --scratch-path OWNED_EVIDENCE/swift-scratch --jobs 1 --filter FeaturePanelViewportTests",
+      "status": "passed",
+      "evidence": "Native86dbffc5e0b34ee89ad20374df010015 success0: 2geometry tests passed; separate AX-dependent test skipped after independent oracle unavailable. This is NOT final-control visibility or installed certification."
+    }
+  ],
+  "working_status": {
+    "environment": "Isolated owned worktree; inert live AppKit fixtures, snapshotMode=false; 150 percent and560x460pt.",
+    "how_verified": "Actual Swift compilation, native scroll/document and selected-section geometry; independent source review; sanitized installed145 opening baseline.",
+    "observed_result": "Source and geometry qualified. FDA final-control accessibility/installed visibility remain unverified. Source normal PR and SSA release pending.",
+    "verified_at": "2026-10-30T02:25:12.305867+00:00"
+  },
+  "handoffs": [],
+  "blockers": [],
+  "plan": {
+    "goal": "All native feature panels open and retain readable, reachable content without changing side-effect authority.",
+    "steps": [
+      "Audit source and installed baseline",
+      "Correct six scoped native presentation files",
+      "Qualify inert native geometry and independent accessibility oracle",
+      "Independent exact-object review, normal protected PR, SSA release and installed readback"
+    ],
+    "estimated_duration": "Source correction in this session; commercial publication through the existing single release train."
+  }
+}

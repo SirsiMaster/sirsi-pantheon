@@ -121,6 +121,48 @@ func TestClassifyLaneHeartbeatAndMalformedSuccessDoNotResolve(t *testing.T) {
 	}
 }
 
+func TestClassifyLanePaddedPlaceholderIsNotCompletionEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name, result string
+		unresolved   int
+	}{
+		{"spaces", " (completed without result) ", 1},
+		{"tabs-and-newline", "\t(completed without result)\n", 1},
+		{"ascii-controls", "\v\f\r(completed without result)\r", 1},
+		{"unicode-space", "\u00a0(completed without result)\u00a0", 1},
+		{"unicode-separators", "\u0085\u1680\u2000\u200a\u2028\u2029\u202f\u205f\u3000(completed without result)\u3000", 1},
+		{"whitespace-only", "\t\u00a0\n", 1},
+		{"real-result", " actual completed work ", 0},
+		{"marker-inside-result", "evidence: (completed without result)", 0},
+		{"zero-width-is-not-space", "\u200b(completed without result)\u200b", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestStore(t)
+			now := time.Now().UTC().Truncate(time.Second)
+			s.now = func() time.Time { return now }
+			insertLaneFailure(t, s, "failure", now.Add(-time.Minute).Format(time.RFC3339))
+			if _, err := s.Send("owner", "codex-home", "work", "review", "do work"); err != nil {
+				t.Fatal(err)
+			}
+			lease, err := s.ClaimNext("codex-home", time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Complete(lease.ItemID, lease.Token, "real result"); err != nil {
+				t.Fatal(err)
+			}
+			// Model a malformed or imported legacy record; Complete itself trims.
+			if _, err := s.db.Exec(`UPDATE items SET result=?, attempts=1 WHERE id=?`, tc.result, lease.ItemID); err != nil {
+				t.Fatal(err)
+			}
+			state, err := s.ClassifyLane("codex-home", true, time.Minute)
+			if err != nil || state.TerminalWakeFailures != 1 || state.UnresolvedWakeFailures != tc.unresolved {
+				t.Fatalf("unexpected wake resolution: %+v %v", state, err)
+			}
+		})
+	}
+}
+
 func TestClassifyLaneIntegrityFailureStillBlocksRunnableLane(t *testing.T) {
 	s := newTestStore(t)
 	if err := s.MarkRequirementAudit("codex-home", "audit://current"); err != nil {

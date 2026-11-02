@@ -34,20 +34,21 @@ var errUpdaterExecutionUnknown = errors.New("supported updater terminal state is
 var updaterDirectWait = 2 * time.Second
 
 var (
-	maatRepairBinaryDriftCaseEvidence string
-	maatRepairBinaryDriftBinding      string
-	maatRepairBinaryDriftInspect      bool
-	maatRepairBinaryDriftReconcile    bool
-	maatRepairScanDrift               = selfupdate.ScanHost
-	maatRepairScanDriftContext        = selfupdate.ScanHostContext
-	maatRepairReadBinaryFinding       = readMaatBinaryDriftFinding
-	maatRepairHashFile                = selfupdate.FileHash
-	maatRepairDetectMethod            = selfupdate.DetectMethod
-	maatRepairFindHomebrew            = func() (string, error) { return exec.LookPath("brew") }
-	maatRepairRunHomebrewUpdate       = runSirsiHomebrewUpgradePathContext
-	maatRepairOpenBinaryDriftStore    = func() (maatBinaryDriftStore, error) { return maat.OpenDefaultStore() }
-	maatRepairBinarySchemaObservation = observeBinaryDriftSchemaCompatibility
-	maatRepairRunningBinaryInfo       = currentMaatRunningBinaryInfo
+	maatRepairBinaryDriftCaseEvidence   string
+	maatRepairBinaryDriftBinding        string
+	maatRepairBinaryDriftInspect        bool
+	maatRepairBinaryDriftReconcile      bool
+	maatRepairBinaryDriftRecordInactive bool
+	maatRepairScanDrift                 = selfupdate.ScanHost
+	maatRepairScanDriftContext          = selfupdate.ScanHostContext
+	maatRepairReadBinaryFinding         = readMaatBinaryDriftFinding
+	maatRepairHashFile                  = selfupdate.FileHash
+	maatRepairDetectMethod              = selfupdate.DetectMethod
+	maatRepairFindHomebrew              = func() (string, error) { return exec.LookPath("brew") }
+	maatRepairRunHomebrewUpdate         = runSirsiHomebrewUpgradePathContext
+	maatRepairOpenBinaryDriftStore      = func() (maatBinaryDriftStore, error) { return maat.OpenDefaultStore() }
+	maatRepairBinarySchemaObservation   = observeBinaryDriftSchemaCompatibility
+	maatRepairRunningBinaryInfo         = currentMaatRunningBinaryInfo
 )
 
 type maatBinaryDriftStore interface {
@@ -221,11 +222,54 @@ type maatBinaryDriftBinding struct {
 	Targets       []maatBinaryDriftTarget `json:"targets"`
 }
 
+type maatBinaryDriftInactiveDispositionReceipt struct {
+	Schema              string    `json:"schema"`
+	CaseEvidence        string    `json:"case_evidence"`
+	DispositionEvidence string    `json:"disposition_evidence"`
+	Host                string    `json:"host"`
+	ObservedFromUTC     time.Time `json:"observed_from_utc"`
+	ObservedThroughUTC  time.Time `json:"observed_through_utc"`
+	FindingState        string    `json:"finding_state"`
+	RepairPerformed     bool      `json:"repair_performed"`
+}
+
 var maatRepairBinaryDriftCmd = &cobra.Command{
 	Use:   "binary-drift",
 	Short: "Preview or apply the supported Homebrew binary-drift update",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		if maatRepairBinaryDriftRecordInactive {
+			if !maatRepairConfirm {
+				return errors.New("recording a no-longer-active finding requires explicit confirmation")
+			}
+			if maatRepairBinaryDriftInspect || maatRepairBinaryDriftReconcile || maatRepairBinaryDriftBinding != "" {
+				return errors.New("inactive-finding disposition cannot be combined with updater or attempt options")
+			}
+			if maatRepairBinaryDriftCaseEvidence == "" {
+				return errors.New("inactive-finding disposition requires the exact System One case evidence")
+			}
+			decisionJournal, err := newMaatDecisionJournal()
+			if err != nil {
+				return fmt.Errorf("Ma'at inactive-finding disposition: open Casebook: %w", err)
+			}
+			journal, ok := decisionJournal.(*maat.FileDecisionJournal)
+			if !ok || journal == nil {
+				return errors.New("Ma'at inactive-finding disposition requires the canonical file journal")
+			}
+			observationCtx, observationCancel := context.WithTimeout(cmd.Context(), maatBinaryDriftObservationTimeout)
+			defer observationCancel()
+			receipt, err := recordMaatBinaryDriftInactiveDispositionWith(
+				observationCtx, journal, maatRepairBinaryDriftCaseEvidence, maatTriageHostname, time.Now, maatRepairScanDriftContext,
+			)
+			if err != nil {
+				return err
+			}
+			if JsonOutput || maatJSON {
+				return emitJSON(receipt)
+			}
+			fmt.Printf("Owner disposition recorded: binary-drift was inactive on %s during %s through %s. No repair was performed.\n", receipt.Host, receipt.ObservedFromUTC.Format(time.RFC3339Nano), receipt.ObservedThroughUTC.Format(time.RFC3339Nano))
+			return nil
+		}
 		if maatRepairBinaryDriftReconcile {
 			journal, err := newMaatDecisionJournal()
 			if err != nil {
@@ -914,24 +958,23 @@ func validateMaatBinaryDriftCase(journal maat.DecisionJournal, evidence string) 
 	if !strings.HasPrefix(evidence, "maat-system-one:sha256=") || !isSHA256Hex(strings.TrimPrefix(evidence, "maat-system-one:sha256=")) {
 		return errors.New("Ma'at binary-drift recovery: invalid System One evidence reference")
 	}
-	decisions, err := journal.Recent(100)
+	reader, ok := journal.(interface {
+		FindUniqueByEvidence(string) (maat.Decision, int, error)
+	})
+	if !ok {
+		return errors.New("Ma'at binary-drift recovery: strict retained case lookup is unavailable; no updater was run")
+	}
+	row, matches, err := reader.FindUniqueByEvidence(evidence)
 	if err != nil {
 		return fmt.Errorf("Ma'at binary-drift recovery: read retained System One case: %w", err)
 	}
-	var selected *maat.Decision
-	for i := range decisions {
-		if decisions[i].Evidence != evidence {
-			continue
-		}
-		if selected != nil {
-			return errors.New("Ma'at binary-drift recovery: evidence resolves to multiple journal rows; no updater was run")
-		}
-		selected = &decisions[i]
+	if matches > 1 {
+		return errors.New("Ma'at binary-drift recovery: evidence resolves to multiple journal rows; no updater was run")
 	}
-	if selected == nil || selected.Kind != "system one screen" || selected.SystemOne == nil {
+	if matches == 0 || row.Kind != "system one screen" || row.SystemOne == nil {
 		return errors.New("Ma'at binary-drift recovery: exact retained System One case is unavailable; refresh Casebook")
 	}
-	verdict := selected.SystemOne
+	verdict := row.SystemOne
 	if err := maat.ValidateMaatVerdict(*verdict); err != nil {
 		return fmt.Errorf("Ma'at binary-drift recovery: retained System One case is invalid: %w", err)
 	}
@@ -982,6 +1025,13 @@ func validateMaatBinaryDriftCase(journal maat.DecisionJournal, evidence string) 
 			}
 		}
 	} else {
+		// Non-file journal adapters retain their established test/transport
+		// behavior. Production FileDecisionJournal uses strict full-history
+		// lookups above for both the selected case and its linked history.
+		decisions, err := journal.Recent(100)
+		if err != nil {
+			return fmt.Errorf("Ma'at binary-drift recovery: read retained repair history: %w", err)
+		}
 		for _, decision := range decisions {
 			if (decision.Kind == "diagnostic verified repair" || decision.Kind == "diagnostic repair attempt") && decision.OriginEvidence == evidence {
 				return errors.New("Ma'at binary-drift recovery: this exact screen already has a durable repair attempt or receipt; inspect the retained attempt and create a fresh System One observation before another action")
@@ -1037,5 +1087,6 @@ func init() {
 	maatRepairBinaryDriftCmd.Flags().BoolVar(&maatRepairConfirm, "confirm", false, "confirm the exact Homebrew updater preview")
 	maatRepairBinaryDriftCmd.Flags().BoolVar(&maatRepairBinaryDriftInspect, "inspect-attempt", false, "read-only inspection of an unresolved updater attempt and current binary observation")
 	maatRepairBinaryDriftCmd.Flags().BoolVar(&maatRepairBinaryDriftReconcile, "reconcile", false, "reconcile retained binary-update facts and Casebook projection without running the updater")
+	maatRepairBinaryDriftCmd.Flags().BoolVar(&maatRepairBinaryDriftRecordInactive, "record-inactive", false, "freshly recheck and record a confirmed no-longer-active owner disposition; never runs the updater")
 	maatRepairCmd.AddCommand(maatRepairBinaryDriftCmd)
 }

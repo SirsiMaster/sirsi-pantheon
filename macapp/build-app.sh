@@ -43,6 +43,7 @@ cp "$BRAND_LOGO" "$APP/Contents/Resources/sirsi-logo-white.png"
 cp -R "$PROJECT_ROOT/contracts/stacklab" "$APP/Contents/Resources/StackLab"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :SirsiApolloNativeCapability disabled" "$APP/Contents/Info.plist"
 
 # AppleDouble sidecars are transport metadata, never product resources.
 /usr/bin/find "$APP" -type f -name '._*' -delete
@@ -77,6 +78,7 @@ echo "▸ verifying complete app payload with the bundled canonical engine…"
     --pkg-info "$PKG_INFO" \
     --launch-agent "$LAUNCH_AGENT" \
     --brand-logo "$BRAND_LOGO" \
+    --apollo-capability disabled \
     --require-code-signature
 
 echo "✓ complete Pantheon developer app built: $APP"

@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
@@ -83,7 +84,6 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	if first != 1 {
 		t.Fatalf("first Run routed %d items to codex-pantheon, want exactly 1\n%s", first, buf.String())
 	}
-
 	buf.Reset()
 	if err := Run(root, &buf); err != nil {
 		t.Fatalf("second Run: %v", err)
@@ -93,6 +93,81 @@ func TestRun_RoutesOnceAndDedups(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "skip") {
 		t.Errorf("second Run should report a dedup skip, got:\n%s", buf.String())
+	}
+}
+
+func fixedObservationClock(started, finished time.Time) func() time.Time {
+	calls := 0
+	return func() time.Time {
+		calls++
+		if calls == 1 {
+			return started
+		}
+		return finished
+	}
+}
+
+func TestRun_RoutesMeasuredObservationWithInjectedProviders(t *testing.T) {
+	started := time.Date(2026, 10, 31, 7, 4, 5, 123456789, time.UTC)
+	finished := time.Date(2026, 10, 31, 7, 4, 6, 987654321, time.UTC)
+	finding := Finding{
+		Check:   "gemma-broker",
+		Detail:  "fixture connection refused after 2s",
+		Fixable: true,
+		Title:   "fixture measured liveness finding",
+		Body:    "Keep this existing generic remediation guidance.",
+	}
+
+	tests := []struct {
+		name     string
+		host     string
+		hostErr  error
+		wantHost string
+	}{
+		{name: "resolved host", host: "horus-fixture", wantHost: "Host: horus-fixture"},
+		{name: "hostname error", hostErr: os.ErrPermission, wantHost: "Host: unavailable"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeLivenessTestAgents(t, root)
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("SIRSI_ROUTER_DB", filepath.Join(t.TempDir(), "router.db"))
+
+			hostname := func() (string, error) { return tc.host, tc.hostErr }
+			probeFindings := func(home string) []Finding { return []Finding{finding} }
+			var buf bytes.Buffer
+			if err := runWithObservationProviders(root, &buf, hostname, fixedObservationClock(started, finished), probeFindings); err != nil {
+				t.Fatalf("first run: %v", err)
+			}
+			items, err := work.ListInbox(root, "codex-pantheon")
+			if err != nil {
+				t.Fatalf("ListInbox: %v", err)
+			}
+			if len(items) != 1 {
+				t.Fatalf("first run routed %d findings, want 1", len(items))
+			}
+			for _, want := range []string{
+				finding.Body + "\n\n",
+				tc.wantHost,
+				"Observation bracket UTC: 2026-10-31T07:04:05.123456789Z through 2026-10-31T07:04:06.987654321Z",
+				"Finding detail: " + finding.Detail,
+				"not current action authority",
+				"Recheck the current state and exact target before acting.",
+			} {
+				if !strings.Contains(items[0].Instructions, want) {
+					t.Errorf("routed finding missing %q: %q", want, items[0].Instructions)
+				}
+			}
+
+			buf.Reset()
+			if err := runWithObservationProviders(root, &buf, hostname, fixedObservationClock(started, finished), probeFindings); err != nil {
+				t.Fatalf("second run: %v", err)
+			}
+			if count := openCount(t, root, "codex-pantheon"); count != 1 || !strings.Contains(buf.String(), "skip") {
+				t.Errorf("second run did not preserve dispatch dedup: open count=%d output=%q", count, buf.String())
+			}
+		})
 	}
 }
 
@@ -177,6 +252,59 @@ func TestPickWorst_SeverityOrder(t *testing.T) {
 	nonFixable := Finding{Check: "menubar", OK: false, Fixable: false}
 	if w := pickWorst([]Finding{okFinding, nonFixable}); w != nil {
 		t.Errorf("no fixable non-OK finding → nil, got %+v", w)
+	}
+}
+
+func TestRoutedObservationBodyPreservesGuidanceAndAddsMeasuredProvenance(t *testing.T) {
+	started := time.Date(2026, 10, 31, 7, 4, 5, 123456789, time.UTC)
+	finished := time.Date(2026, 10, 31, 7, 4, 6, 987654321, time.UTC)
+	finding := Finding{
+		Body:   "Keep the existing generic remediation guidance unchanged.",
+		Detail: "connection failed in 2s (refused)",
+	}
+	got := routedObservationBody(finding, "horus-m1", started, finished)
+	for _, want := range []string{
+		finding.Body + "\n\n",
+		"Measured observation (not current action authority):",
+		"Host: horus-m1",
+		"Observation bracket UTC: 2026-10-31T07:04:05.123456789Z through 2026-10-31T07:04:06.987654321Z",
+		"Finding detail: " + finding.Detail,
+		"Recheck the current state and exact target before acting.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("routed observation body missing %q: %q", want, got)
+		}
+	}
+}
+
+func TestRoutedObservationBodyBoundsDetailAndLabelsUnavailableHost(t *testing.T) {
+	started := time.Date(2026, 10, 31, 7, 0, 0, 0, time.UTC)
+	finished := started.Add(time.Second)
+	longDetail := strings.Repeat("x", maxRoutedFindingDetailContentBytes+100)
+	got := routedObservationBody(Finding{Detail: longDetail}, " ", started, finished)
+	if !strings.Contains(got, "Host: unavailable") {
+		t.Fatalf("missing unavailable-host label: %q", got)
+	}
+	if !strings.Contains(got, strings.Repeat("x", maxRoutedFindingDetailContentBytes)+"… [truncated]") {
+		t.Fatalf("detail was not bounded with an explicit truncation marker: %q", got)
+	}
+	if strings.Contains(got, strings.Repeat("x", maxRoutedFindingDetailContentBytes+1)) {
+		t.Fatal("routed detail content exceeded its byte bound")
+	}
+	bounded := boundedRoutedFindingDetail(longDetail)
+	content := strings.TrimSuffix(bounded, "… [truncated]")
+	if len(content) > maxRoutedFindingDetailContentBytes {
+		t.Fatalf("detail content is %d bytes, bound is %d", len(content), maxRoutedFindingDetailContentBytes)
+	}
+
+	multibyte := strings.Repeat("é", maxRoutedFindingDetailContentBytes/2+1)
+	bounded = boundedRoutedFindingDetail(multibyte)
+	if !utf8.ValidString(bounded) {
+		t.Fatal("truncated measured detail is not valid UTF-8")
+	}
+	content = strings.TrimSuffix(bounded, "… [truncated]")
+	if len(content) != maxRoutedFindingDetailContentBytes || content != strings.Repeat("é", maxRoutedFindingDetailContentBytes/2) {
+		t.Fatalf("multibyte detail content was not rune-truncated at %d bytes: %d bytes", maxRoutedFindingDetailContentBytes, len(content))
 	}
 }
 

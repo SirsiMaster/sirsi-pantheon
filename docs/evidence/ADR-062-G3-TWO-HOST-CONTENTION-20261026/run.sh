@@ -87,6 +87,8 @@ m1run http://$IP:18762 c 50 $T0 $PER "$R/ctl-m1.tsv"
 wait $M5P
 kill $SL $SR; wait $SL $SR 2>/dev/null
 scp -q -o BatchMode=yes $M5:/tmp/g3-ctl-m5.tsv "$R/ctl-m5.tsv"
+# serve logs print the absolute store path; keep the host's scratch layout out of committed evidence
+sed -i '' "s|$R|<run>|g" "$R"/*.serve.log
 
 echo "== tally"
 python3 "$S/tally.py" "$R"

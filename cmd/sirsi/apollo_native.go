@@ -21,6 +21,7 @@ import (
 
 	"github.com/SirsiMaster/sirsi-inference/apollo/fleetservice"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/apollo"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/packageinventory"
 )
 
 const apolloNativeProfileSchema = "sirsi.apollo.native-profile.v2"
@@ -51,21 +52,6 @@ type apolloNativeProfile struct {
 	CoordinatorTokenizerSHA256 string             `json:"coordinator_tokenizer_sha256"`
 }
 
-// The default is inside the signed application bundle. Tests replace this
-// function with a temporary fixture; users cannot redirect native execution to
-// an arbitrary profile.
-var installedApolloNativeProfilePath = func() (string, error) {
-	executable, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("locate installed sirsi executable: %w", err)
-	}
-	executable, err = filepath.EvalSymlinks(executable)
-	if err != nil {
-		return "", fmt.Errorf("canonicalize installed sirsi executable: %w", err)
-	}
-	return filepath.Clean(filepath.Join(filepath.Dir(executable), "..", "Resources", "Apollo", "native-profile.json")), nil
-}
-
 // apolloNativeMetricsRoot is deliberately outside the signed profile: it is
 // runtime evidence owned by the current macOS account, never input that can
 // redirect a run. Tests replace it with a temporary directory.
@@ -93,14 +79,17 @@ type apolloNativeRunMetrics struct {
 }
 
 func loadInstalledApolloNativeProfile() (apolloNativeProfile, error) {
-	path, err := installedApolloNativeProfilePath()
+	bundle, err := currentApolloBundle()
 	if err != nil {
 		return apolloNativeProfile{}, err
 	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return apolloNativeProfile{}, fmt.Errorf("installed Apollo native profile unavailable at %s: %w", path, err)
+	if bundle.Capability != packageinventory.ApolloCapabilityEnabled {
+		return apolloNativeProfile{}, errors.New("installed Pantheon package declares native Apollo capability disabled")
 	}
+	return decodeInstalledApolloNativeProfile(bundle.ProfileBytes)
+}
+
+func decodeInstalledApolloNativeProfile(raw []byte) (apolloNativeProfile, error) {
 	var profile apolloNativeProfile
 	decoder := json.NewDecoder(strings.NewReader(string(raw)))
 	decoder.DisallowUnknownFields()

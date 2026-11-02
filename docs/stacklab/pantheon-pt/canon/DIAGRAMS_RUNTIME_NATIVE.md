@@ -258,21 +258,25 @@ replays repair or silently selects a new machine.
 
 ```mermaid
 flowchart TD
-  START[App starts] --> LOAD[Read selection-only persisted section]
+  START[App starts] --> LOAD[Read persisted selected section]
   LOAD --> VALID{Known section?}
   VALID -->|yes| SEL[Select section]
   VALID -->|no| DEF[Use default section]
-  SEL --> STACK[Maintain independent in-memory stack per section]
+  SEL --> STACK[Maintain independent in-memory stack; retain only Ma'at root primary-pane offset]
   DEF --> STACK
-  STACK --> NAV[User navigates within section]
-  NAV --> HEAD[Publish current section header and destination]
+  STACK --> NAV[User navigates or scrolls within section]
+  NAV --> OWNER{Ma'at root primary pane still selected and at root?}
+  OWNER -->|yes| SAVE[Retain native viewport offset in this window session]
+  OWNER -->|no| IGNORE[Ignore stale callback from an unmounted section or detail]
+  SAVE --> HEAD[Publish current section header and destination]
+  IGNORE --> HEAD
 ```
 
 ```mermaid
 flowchart LR
   PREF[(Persisted selected section)] -->|identifier only| SESSION[WorkspaceSession]
-  SESSION -->|in-memory stacks| SECTIONS[Section navigation state]
-  SECTIONS -->|header/destination| VIEW[Native views]
+  SESSION -->|in-memory stacks and Ma'at root primary offset| SECTIONS[Section navigation state]
+  SECTIONS -->|header, destination and root offset| VIEW[Native views]
   SESSION -. no operation consent or evidence persistence .-> X[Authority remains in engine]
 ```
 
@@ -284,11 +288,18 @@ stateDiagram-v2
   Selected --> StackA: section A active
   StackA --> StackB: select section B, preserve A stack
   StackB --> StackA: return to A, restore A stack
+  StackA --> StackB: late Ma'at native offset callback is rejected after selection changes
   Defaulted --> StackA: default section selected
 ```
 
-Recovery: invalid selection defaults; section stacks are session-local and do
-not imply durable restoration of an operation.
+Recovery: invalid selection defaults; stacks and the Ma'at root primary-pane
+offset are window-session-local. Native offset writes are accepted only while
+Ma'at remains selected at its root, so a final bounds callback from a subtree
+being unmounted cannot replace the retained position. Section or Ma'at stack
+changes rotate that viewport owner's identity, so a delayed callback remains
+stale even if the user returns before it arrives. Recovery and detail panes
+have separate unbound scroll ownership. Only the selected section persists,
+and no operation or confirmation is restored.
 
 <a id="pt-p17"></a>
 ## PT-P17 — Native observation freshness
@@ -586,14 +597,16 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant App as Pantheon app
-  participant Pref as selection preference
+  participant Pref as selected-workspace preference
   participant Session as WorkspaceSession
   participant View as section view
-  App->>Pref: read selected section only
+  App->>Pref: read selected section
   Pref-->>Session: valid identifier or missing/invalid value
   Session->>Session: select known section or documented default
-  Session-->>View: independent in-memory destination stack
-  View-->>Session: navigation event
+  Session-->>View: independent in-memory destination stack; Ma'at root primary offset at depth zero
+  View->>Session: native scroll offset callback
+  Session->>Session: accept only for selected Ma'at root navigation
+  Session-->>View: retain offset for same-window remount
   Session-->>View: updated destination/header
 ```
 

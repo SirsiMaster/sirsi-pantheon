@@ -55,6 +55,12 @@ jobs:
       - name: router service image context (stage.sh)
         run: bash scripts/ci-private-sdk.sh bash scripts/router-service/stage.test.sh
 
+      - name: router staged rollback traffic selection
+        run: bash scripts/router-service/traffic-target.test.sh
+
+      - name: router staged tag and traffic shift binding
+        run: bash scripts/router-service/staged-tag.test.sh
+
       - name: ADR number uniqueness
         run: bash scripts/check-adr-numbers.sh
 
@@ -92,6 +98,9 @@ jobs:
         run: |
           bash scripts/verify-maat-native-resolution-contract.sh
           bash scripts/verify-maat-native-resolution-contract.test.sh
+
+      - name: native release M1 runner-binding source fixtures (model-free)
+        run: bash scripts/verify-menubar-release-contract.test.sh
 
       # Gemma resolver guards run on the HOSTED runner (bash + python3 only, no
       # Xcode/MLX): extracted ranking/conf checks plus a whole-program inert
@@ -151,7 +160,7 @@ jobs:
           /usr/bin/python3 -B scripts/maat/fabric-endpoints.test.py -v
           /usr/bin/python3 -B scripts/maat/fabric-run.test.py -v
 
-      - name: Public artifact modes and native replacement metadata (model-free)
+      - name: Public artifact modes, native replacement, and Bash 3.2 package argv (model-free)
         run: |
           python3 -B -m unittest discover -s scripts -p 'test_artifact_modes.py' -v
           python3 -B -m unittest discover -s scripts -p 'test_package_info_contract.py' -v

@@ -177,25 +177,28 @@ struct ApolloRunPlannerView: View {
     }
 
     @ViewBuilder private func recovery(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: "antenna.radiowaves.left.and.right.slash")
-                .sirsiFont(24, weight: .semibold).foregroundStyle(.orange)
-            Text("Apollo needs a measured capacity read")
-                .sirsiFont(.headline)
-            Text(message)
-                .sirsiFont(.subheadline).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Read capacity again") { Task { await load() } }
-                .buttonStyle(.borderedProminent).tint(gold)
-            Button("Choose a new plan") { nav.push(ApolloRunPlannerView(engine: engine)) }
-                .buttonStyle(.bordered)
-            NavLink { MaatWorkspaceView(engine: engine) } label: {
-                Label("Open Ma'at evidence", systemImage: "checkmark.seal")
+        MaybeScroll {
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                    .sirsiFont(24, weight: .semibold).foregroundStyle(.orange)
+                Text("Apollo needs a measured capacity read")
+                    .sirsiFont(.headline)
+                Text(message)
+                    .sirsiFont(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Read capacity again") { Task { await load() } }
+                    .buttonStyle(ResultActionButtonStyle(prominent: true))
+                Button("Choose a new plan") { nav.push(ApolloRunPlannerView(engine: engine)) }
+                    .buttonStyle(ResultActionButtonStyle(prominent: false))
+                Button { nav.push(MaatWorkspaceView(engine: engine)) } label: {
+                    Label("Open Ma'at evidence", systemImage: "checkmark.seal")
+                }
+                .buttonStyle(ResultActionButtonStyle(prominent: false))
             }
-            .buttonStyle(.bordered)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func planner(_ catalog: ApolloCatalog) -> some View {
@@ -941,15 +944,26 @@ struct ApolloTelemetryView: View {
                     .sirsiFont(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack(alignment: .top, spacing: 8) {
-                    resolutionStep("1", text: "Recheck live evidence") {
-                        Task { await refresh() }
+                let recheck = resolutionStep("1", text: "Recheck live evidence") {
+                    Task { await refresh() }
+                }
+                let revise = resolutionStep("2", text: resolution.planActionTitle) {
+                    nav.push(reviewDestination())
+                }
+                let guidance = resolutionStep("3", text: "Open Ma'at guidance") {
+                    nav.push(MaatWorkspaceView(engine: engine, apolloContext: plan))
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 8) {
+                        recheck
+                        revise
+                        guidance
                     }
-                    resolutionStep("2", text: resolution.planActionTitle) {
-                        nav.push(reviewDestination())
-                    }
-                    resolutionStep("3", text: "Open Ma'at guidance") {
-                        nav.push(MaatWorkspaceView(engine: engine, apolloContext: plan))
+                    .fixedSize(horizontal: true, vertical: false)
+                    VStack(alignment: .leading, spacing: 8) {
+                        recheck
+                        revise
+                        guidance
                     }
                 }
                 Text("Recheck the measured session, revise this same recipe, or review its selected machine and resource envelope in Ma’at. Ma’at opens with this plan as context; evaluating a case remains a separate action.")
@@ -965,15 +979,15 @@ struct ApolloTelemetryView: View {
 
     private func resolutionStep(_ step: String, text: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 8) {
                 Text(step).sirsiFont(.caption, weight: .bold).foregroundStyle(gold)
-                Text(text).sirsiFont(.caption, weight: .semibold).multilineTextAlignment(.leading)
+                Text(text).sirsiFont(.caption, weight: .semibold)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
-            .padding(9)
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(ResultActionButtonStyle(prominent: false))
         .disabled(step == "1" && isRefreshing)
     }
 

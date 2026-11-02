@@ -26,6 +26,7 @@ const (
 	maintenanceLegacySource129     = "0fd8463011ee2ebae12494895669b0e7b20b9ddf"
 	maintenanceLegacySource121     = "22944b2458f377a9f3e5e10c63c3442cb3ea83c3"
 	maintenanceLegacySource137     = "cb59d56f849235eb80f5e4b10514fc89467fb8af"
+	maintenanceLegacySource147     = "63fbba661b6c7c2b487979ef4ce58d28ea2d611c"
 )
 
 func maintenanceLegacySourceProfile(info *debug.BuildInfo) (string, error) {
@@ -52,7 +53,7 @@ func maintenanceLegacySourceProfile(info *debug.BuildInfo) (string, error) {
 		return "", errors.New("clean VCS source settings unavailable")
 	}
 	switch revision {
-	case maintenanceLegacySourceCurrent, maintenanceLegacySource121, maintenanceLegacySource129, maintenanceLegacySource137:
+	case maintenanceLegacySourceCurrent, maintenanceLegacySource121, maintenanceLegacySource129, maintenanceLegacySource137, maintenanceLegacySource147:
 		return revision, nil
 	default:
 		return "", errors.New("source revision is not an inspected maintenance profile")

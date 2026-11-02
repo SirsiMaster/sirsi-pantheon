@@ -110,6 +110,14 @@ var threadRegisterCmd = &cobra.Command{
 	Use:   "register",
 	Short: "Register the current thread/session with CTR",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		sessionID := router.CurrentSessionID()
+		if threadRegSurface == "codex" {
+			var sessionErr error
+			sessionID, sessionErr = router.CheckedCurrentSessionID()
+			if sessionErr != nil {
+				return fmt.Errorf("thread registration: %w", sessionErr)
+			}
+		}
 		// repo is registered metadata only (thr.Repo below) — it is NOT where the
 		// router filesystem lives. A registering surface's --repo may correctly be
 		// a portfolio repo (FinalWishes, sirsi-io, ...) that has no .agents/idea-router
@@ -218,7 +226,7 @@ var threadRegisterCmd = &cobra.Command{
 			// so re-registrations from subsequent hook fires renew the same record
 			// instead of minting fresh ones (claude-home mint-churn fix). No-op
 			// for process-backed surfaces (non-Claude) where this env var is unset.
-			SessionID: router.CurrentSessionID(),
+			SessionID: sessionID,
 		}
 		// Fill wake mechanism from registry if not provided.
 		if thr.WakeMechanism == "" {

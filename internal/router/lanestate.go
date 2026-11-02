@@ -148,7 +148,11 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 			}
 		}
 		switch {
-		case !worker.ConsumerCapable || (l != nil && !l.ConsumerDeclared):
+		// A declared-attended lane publishes no consumer ON PURPOSE (its loop never
+		// stands in for the session), so its truth is the attended hold below, not
+		// "no working consumer" — that misread sent SSA's reviews chasing a broken
+		// consumer that was never the problem.
+		case (!worker.ConsumerCapable || (l != nil && !l.ConsumerDeclared)) && (l == nil || l.Hold != HoldAttended):
 			res.Verdict = VerdictWatchOnly
 			res.Detail = "a wake loop is running but declares no working consumer, so it will watch the inbox and never work it"
 		case l != nil && l.LastOutcome == OutcomeProviderQuota:
@@ -163,7 +167,13 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 			if !l.HoldUntil.IsZero() {
 				res.Detail += " until " + l.HoldUntil.Local().Format("15:04:05")
 			}
-			if l.Hold == HoldQuarantine {
+			switch l.Hold {
+			case HoldNoGrant, HoldAttended:
+				// Both holds defer to a lead/attended session, and none is fresh here, so the
+				// worker waits on a reader that does not exist. Not a hold that will clear.
+				res.Workable = false
+				res.Detail += " (no live consumer: the worker defers to a session that is not registered — needs-owner until that session resumes and `sirsi thread register`s)"
+			case HoldQuarantine:
 				// This branch is reached only when no attended session is heartbeat-fresh,
 				// so the hold describes the background loop, not the lane. An attended
 				// session whose thread was reaped (e.g. a resumed session with a new PID)

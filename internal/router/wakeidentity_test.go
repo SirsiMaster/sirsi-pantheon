@@ -56,6 +56,28 @@ func waitForObserver(t *testing.T, root string) *Thread {
 	return nil
 }
 
+type wakeLoopHeartbeatBarrier struct {
+	agentID     string
+	reached     chan struct{}
+	release     chan struct{}
+	reachedOnce sync.Once
+	releaseOnce sync.Once
+}
+
+func (b *wakeLoopHeartbeatBarrier) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), "wake-loop "+b.agentID+": inbox depth ") {
+		b.reachedOnce.Do(func() {
+			close(b.reached)
+			<-b.release
+		})
+	}
+	return len(p), nil
+}
+
+func (b *wakeLoopHeartbeatBarrier) Release() {
+	b.releaseOnce.Do(func() { close(b.release) })
+}
+
 func TestWakeLoopTerminalObserverStopsWithoutRevival(t *testing.T) {
 	useCanonicalRouterStore(t)
 	oldLoad := getLoadAvgFn()
@@ -70,11 +92,16 @@ func TestWakeLoopTerminalObserverStopsWithoutRevival(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	done := make(chan error, 1)
 	exited := make(chan struct{})
+	barrier := &wakeLoopHeartbeatBarrier{agentID: "observer", reached: make(chan struct{}), release: make(chan struct{})}
+	previousOutput := log.Writer()
+	log.SetOutput(barrier)
+	defer log.SetOutput(previousOutput)
 	go func() {
 		defer close(exited)
 		done <- RunWakeLoop(ctx, root, "observer", 5*time.Millisecond)
 	}()
 	defer func() {
+		barrier.Release()
 		cancel()
 		select {
 		case <-exited:
@@ -83,23 +110,35 @@ func TestWakeLoopTerminalObserverStopsWithoutRevival(t *testing.T) {
 		}
 	}()
 	row := waitForObserver(t, root)
-	// Simulate an authoritative terminal transition, not a child claiming the
-	// observer's shutdown rights. The loop must exit and never rewrite it live.
-	err := retryOnLostFenceErr(func() error {
-		reg, err := LoadThreadRegistry(root)
-		if err != nil {
-			return err
-		}
-		thread := reg.Threads[row.ThreadID]
-		if thread == nil {
-			return errors.New("observer registration disappeared before terminal transition")
-		}
-		thread.Status = ThreadStatusReaped
-		return SaveThreadRegistry(root, reg)
-	})
+	select {
+	case <-barrier.reached:
+	case err := <-done:
+		t.Fatalf("observer exited before its first post-heartbeat boundary: %v", err)
+	case <-ctx.Done():
+		t.Fatal("observer did not reach the post-heartbeat log barrier")
+	}
+	reg, err := LoadThreadRegistry(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+	threadID := row.ThreadID
+	current := reg.Threads[threadID]
+	if current == nil || current.AgentID != "observer" || current.Surface != surfaceWorker || current.Status.IsTerminal() || current.Status == ThreadStatusSuspended ||
+		current.WakeMechanism != WakeLaunchAgent || current.PID != os.Getpid() || current.StartTime != PIDStartTimeOf(os.Getpid()) || current.Lane == nil {
+		t.Fatalf("expected a live native registration before the terminal transition: %+v", current)
+	}
+	// Simulate an authoritative terminal transition, not a child claiming the
+	// observer's shutdown rights. The existing post-heartbeat log is held here,
+	// so this authoritative write cannot collide with the loop's next CAS.
+	current.Status = ThreadStatusReaped
+	if err := SaveThreadRegistry(root, reg); err != nil {
+		t.Fatalf("commit authoritative terminal transition: %v", err)
+	}
+	reg, err = LoadThreadRegistry(root)
+	if err != nil || reg.Threads[threadID] == nil || reg.Threads[threadID].Status != ThreadStatusReaped {
+		t.Fatalf("authoritative terminal transition did not read back: %+v err=%v", reg, err)
+	}
+	barrier.Release()
 	select {
 	case err := <-done:
 		if !errors.Is(err, ErrHeartbeatThreadUnavailable) {
@@ -108,8 +147,8 @@ func TestWakeLoopTerminalObserverStopsWithoutRevival(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("terminal observer kept running")
 	}
-	reg, err := LoadThreadRegistry(root)
-	if err != nil || reg.Threads[row.ThreadID].Status != ThreadStatusReaped {
+	reg, err = LoadThreadRegistry(root)
+	if err != nil || reg.Threads[threadID] == nil || reg.Threads[threadID].Status != ThreadStatusReaped {
 		t.Fatalf("terminal evidence changed: %+v %v", reg, err)
 	}
 }

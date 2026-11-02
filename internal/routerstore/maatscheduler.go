@@ -111,6 +111,8 @@ func (s *SQLiteStore) MaatRead(kind, resource string) ([]schedule.Reservation, e
 			}
 		case "live-holders":
 			out, err = l.LiveHolders(resource)
+		case "reservation":
+			out, err = l.ExactReservation(resource)
 		case "status":
 			out, err = l.Status(resource)
 		default:

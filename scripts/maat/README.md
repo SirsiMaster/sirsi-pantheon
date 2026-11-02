@@ -383,10 +383,14 @@ existing workers to manufacture this proof. Installed acceptance remains open.
 
 ### Bounded heartbeat transport recovery
 
-The supervisor reads the exact existing ID through `maat status <resource>`;
-reads never refresh a lease. Only a confirmed reserve/heartbeat response advances
-a monotonic deadline anchored before that request, discounted by the returned
-heartbeat age and bounded by the actual accepted TTL. Each renewal requires
+The supervisor reads an owned existing ID through `maat status --id <full-id>`;
+it supplies no resource positional and accepts only the one returned row with
+that exact ID. An older installed CLI without `status --id` support cannot run
+this recovery path; update through the normal signed rollout before use. There
+is no history-query fallback. Reads never refresh a lease. Only a confirmed
+reserve/heartbeat response advances a monotonic deadline anchored before that
+request, discounted by the returned heartbeat age and bounded by the actual
+accepted TTL. Each renewal requires
 fresh matching active ID/resource/holder/work/executor/share/capacity readback
 and unchanged kernel executor ancestry. A failed mutation is never blindly
 replayed and never triggers reserve, a new ID, or a share promotion.

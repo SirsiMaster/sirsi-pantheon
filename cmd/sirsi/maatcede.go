@@ -8,14 +8,13 @@ package main
 // its own reservation, and the requester then reserves normally.
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/spf13/cobra"
 )
@@ -79,12 +78,16 @@ func shortHostname() string {
 }
 
 // logCedeDecision appends one JSON line to the decision ledger and returns
-// the append error (mkdir/open/write) to the caller instead of swallowing
+// the journal error (path creation/open/append/sync) instead of swallowing
 // it. The scheduler transition this projects has already committed by the
 // time this runs, so a failure here is reported, never silently dropped —
 // the CLI must not claim a durable cede success when the ledger record
 // never landed.
 func logCedeDecision(kind, determination, requester, resource, assessed, affected, why, evidence string) error {
+	why, err := cedeDecisionWhy(kind, requester, resource, evidence, why, "")
+	if err != nil {
+		return err
+	}
 	return appendCedeDecision(cedeDecisionRecord{
 		Time: time.Now().Format(time.RFC3339), Host: shortHostname(),
 		Kind: kind, Determination: determination, Requester: requester, Resource: resource,
@@ -92,44 +95,42 @@ func logCedeDecision(kind, determination, requester, resource, assessed, affecte
 	})
 }
 
-// cedeDecisionFileOpener opens the decision ledger file for append.
-// Injectable (A16) so a close-time failure — which a bare *os.File cannot be
-// made to produce deterministically (e.g. a deferred NFS/network flush
-// surfacing only on Close) — can be exercised in tests.
-var cedeDecisionFileOpener = func(path string) (io.WriteCloser, error) {
-	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+// cedeDecisionWhy preserves supplied explanations and supplies a factual
+// event description when an optional reason is omitted. It never attributes
+// an unrecorded motive to the actor.
+func cedeDecisionWhy(kind, actor, resource, evidence, reason, counter string) (string, error) {
+	reason = strings.TrimSpace(reason)
+	if kind == "cede-withdraw" && reason != "" {
+		reason = fmt.Sprintf("Requester withdrew cede request %s. No withdrawal reason was supplied. Original request reason: %s.", evidence, reason)
+	}
+	if reason == "" {
+		switch kind {
+		case "cede-request":
+			reason = fmt.Sprintf("No nonblank reason was supplied; this records the cede request by %s for %s.", actor, resource)
+		case "cede-grant", "cede-counter", "cede-decline":
+			reason = fmt.Sprintf("No nonblank reason was supplied; this records the %s response by %s to cede request %s.", strings.TrimPrefix(kind, "cede-"), actor, evidence)
+		case "cede-withdraw":
+			reason = fmt.Sprintf("No nonblank reason was supplied; this records the withdrawal of cede request %s by %s.", evidence, actor)
+		default:
+			return "", fmt.Errorf("unsupported cede decision kind %q", kind)
+		}
+	}
+	if counter = strings.TrimSpace(counter); counter != "" {
+		reason += " Counter offer recorded: " + counter + "."
+	}
+	return reason, nil
 }
 
-// appendCedeDecision does the actual marshal/mkdir/open/write/close; injected
-// as a variable per A16 so tests can force each failure mode deterministically.
-// A write error takes priority over a close error (the write error is the
-// more informative, closer-to-cause failure); a close-only failure — the data
-// may or may not actually be durable — is still reported, never swallowed via
-// a bare `defer f.Close()` (codex-pantheon review of PR #929, item
-// 20261001-001503: that pattern can report success on a close-time I/O
-// failure).
+// appendCedeDecision projects through the canonical strict journal owner,
+// which validates the record, serializes mutation under its lock, and uses
+// private journal permissions. The scheduler transition has already
+// committed before this projection is attempted.
 var appendCedeDecision = func(rec cedeDecisionRecord) (err error) {
-	b, err := json.Marshal(rec)
-	if err != nil {
-		return fmt.Errorf("decision ledger marshal failed: %w", err)
-	}
-	path := decisionsPath()
-	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o755); mkdirErr != nil {
-		return fmt.Errorf("decision ledger mkdir failed: %w", mkdirErr)
-	}
-	f, err := cedeDecisionFileOpener(path)
-	if err != nil {
-		return fmt.Errorf("decision ledger open failed: %w", err)
-	}
-	defer func() {
-		if closeErr := f.Close(); closeErr != nil && err == nil {
-			err = fmt.Errorf("decision ledger close failed: %w", closeErr)
-		}
-	}()
-	if _, writeErr := f.Write(append(b, '\n')); writeErr != nil {
-		err = fmt.Errorf("decision ledger write failed: %w", writeErr)
-	}
-	return err
+	return (&maat.FileDecisionJournal{Path: decisionsPath()}).Append(maat.Decision{
+		Time: rec.Time, Host: rec.Host, Kind: rec.Kind, Requester: rec.Requester,
+		Resource: rec.Resource, Assessed: rec.Assessed, Affected: rec.Affected,
+		Determination: rec.Determination, Why: rec.Why, Evidence: rec.Evidence,
+	})
 }
 
 // cedeProjectionErr wraps a logCedeDecision failure with the fact that the
@@ -209,11 +210,16 @@ func respondCedeCmd(use, short string, status schedule.CedeStatus) *cobra.Comman
 			}
 			info := cedeKindByStatus[status]
 			why := ""
+			counter := ""
 			if c.Decision != nil {
 				why = c.Decision.Reason
-				if status == schedule.CedeStatusCountered && c.Decision.Counter != "" {
-					why = fmt.Sprintf("%s — counter: %s", why, c.Decision.Counter)
+				if status == schedule.CedeStatusCountered {
+					counter = c.Decision.Counter
 				}
+			}
+			why, err = cedeDecisionWhy(info.Kind, by, c.Resource, c.ID, why, counter)
+			if err != nil {
+				return err
 			}
 			if err := logCedeDecision(info.Kind, info.Determination, by, c.Resource, cedeAssessed(c), c.Requester, why, c.ID); err != nil {
 				return cedeProjectionErr(info.Determination, c.ID, err)

@@ -3,8 +3,12 @@ package stacklab
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -23,27 +27,30 @@ type RemoteReader interface {
 	ListBranches(repo string) ([]string, error)
 }
 
-// GHRemoteReader reads via the `gh` CLI (assumed authenticated — matches the
-// existing cmd/sirsi/routerresolved.go pattern of shelling out to `gh api`).
-//
-// GitHub returns 404 for a path that genuinely doesn't exist at a ref AND
-// for a repo the caller cannot see at all (private + missing/insufficient
-// auth, or a wrong LaneRepoMap entry) — the two are indistinguishable from
-// the contents-endpoint response alone. Reporting the second case as a
-// clean "not found" would make an unauthenticated run confidently claim
-// every mapped wing is stranded/unbuilt: a false finding, the exact A35
-// failure this doctor exists to prevent. So on any 404, repoReadable probes
-// the repo itself once (cached per repo for the run) to tell "real
-// path-404" from "repo unreadable"; the latter is surfaced as an error so
-// the caller records it as Unknown, never as a finding.
+// MissingGitHubCLIError identifies the one local dependency Stack Lab needs
+// before it can read canonical origin and registry records.
+type MissingGitHubCLIError struct{}
+
+func (MissingGitHubCLIError) Error() string {
+	return "GitHub CLI (gh) is unavailable; install it with Homebrew (brew install gh) or add it to PATH"
+}
+
+// GHRemoteReader reads through the installed `gh` CLI. Executable lookup is
+// per reader invocation and does not modify the process PATH.
 type GHRemoteReader struct {
-	mu     sync.Mutex
-	probed map[string]bool // repo -> readable, memoized per run
+	mu      sync.Mutex
+	probed  map[string]bool // repo -> readable, memoized per run
+	resolve func() (string, error)
+	run     func(binary string, args ...string) ([]byte, []byte, error)
 }
 
 // NewGHRemoteReader returns a ready-to-use GHRemoteReader.
 func NewGHRemoteReader() *GHRemoteReader {
-	return &GHRemoteReader{probed: map[string]bool{}}
+	return newGHRemoteReader(resolveGitHubCLI, runGitHubCommand)
+}
+
+func newGHRemoteReader(resolve func() (string, error), run func(string, ...string) ([]byte, []byte, error)) *GHRemoteReader {
+	return &GHRemoteReader{probed: map[string]bool{}, resolve: resolve, run: run}
 }
 
 // repoReadable reports whether repo itself is readable via `gh api
@@ -56,31 +63,37 @@ func (g *GHRemoteReader) repoReadable(repo string) (bool, error) {
 	}
 	g.mu.Unlock()
 
-	var stderr bytes.Buffer
-	cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s", repo))
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	_, err := g.execute("api", fmt.Sprintf("repos/%s", repo))
 	ok := err == nil
 
 	g.mu.Lock()
 	g.probed[repo] = ok
 	g.mu.Unlock()
 
-	if !ok {
-		return false, fmt.Errorf("repo %s: %w (%s)", repo, err, strings.TrimSpace(stderr.String()))
+	if err != nil {
+		return false, fmt.Errorf("repo %s: %w", repo, err)
 	}
 	return true, nil
 }
 
+func (g *GHRemoteReader) execute(args ...string) ([]byte, error) {
+	binary, err := g.resolve()
+	if err != nil {
+		return nil, err
+	}
+	stdout, stderr, err := g.run(binary, args...)
+	if err != nil {
+		return stdout, &ghCommandError{cause: err, stderr: string(stderr)}
+	}
+	return stdout, nil
+}
+
 func (g *GHRemoteReader) ReadFile(repo, path, ref string) ([]byte, bool, error) {
-	cmd := exec.Command("gh", "api",
+	out, err := g.execute("api",
 		"-H", "Accept: application/vnd.github.raw",
 		fmt.Sprintf("repos/%s/contents/%s?ref=%s", repo, path, ref))
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if strings.Contains(stderr.String(), "404") {
+	if err != nil {
+		if isGHNotFound(err) {
 			if readable, rerr := g.repoReadable(repo); rerr != nil || !readable {
 				if rerr == nil {
 					rerr = fmt.Errorf("repo %s: not readable", repo)
@@ -89,18 +102,15 @@ func (g *GHRemoteReader) ReadFile(repo, path, ref string) ([]byte, bool, error) 
 			}
 			return nil, false, nil
 		}
-		return nil, false, fmt.Errorf("gh api read %s@%s:%s: %w (%s)", repo, ref, path, err, strings.TrimSpace(stderr.String()))
+		return nil, false, fmt.Errorf("gh api read %s@%s:%s: %w", repo, ref, path, err)
 	}
-	return stdout.Bytes(), true, nil
+	return out, true, nil
 }
 
 func (g *GHRemoteReader) ListDir(repo, path, ref string) ([]string, bool, error) {
-	cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/contents/%s?ref=%s", repo, path, ref))
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if strings.Contains(stderr.String(), "404") {
+	out, err := g.execute("api", fmt.Sprintf("repos/%s/contents/%s?ref=%s", repo, path, ref))
+	if err != nil {
+		if isGHNotFound(err) {
 			if readable, rerr := g.repoReadable(repo); rerr != nil || !readable {
 				if rerr == nil {
 					rerr = fmt.Errorf("repo %s: not readable", repo)
@@ -109,13 +119,13 @@ func (g *GHRemoteReader) ListDir(repo, path, ref string) ([]string, bool, error)
 			}
 			return nil, false, nil
 		}
-		return nil, false, fmt.Errorf("gh api list %s@%s:%s: %w (%s)", repo, ref, path, err, strings.TrimSpace(stderr.String()))
+		return nil, false, fmt.Errorf("gh api list %s@%s:%s: %w", repo, ref, path, err)
 	}
 	var rows []struct {
 		Name string `json:"name"`
 		Type string `json:"type"`
 	}
-	if err := json.Unmarshal(stdout.Bytes(), &rows); err != nil {
+	if err := json.Unmarshal(out, &rows); err != nil {
 		return nil, false, fmt.Errorf("parse dir listing %s@%s:%s: %w", repo, ref, path, err)
 	}
 	var names []string
@@ -128,7 +138,7 @@ func (g *GHRemoteReader) ListDir(repo, path, ref string) ([]string, bool, error)
 }
 
 func (g *GHRemoteReader) ListBranches(repo string) ([]string, error) {
-	out, err := exec.Command("gh", "api", "--paginate", fmt.Sprintf("repos/%s/branches", repo), "--jq", ".[].name").Output()
+	out, err := g.execute("api", "--paginate", fmt.Sprintf("repos/%s/branches", repo), "--jq", ".[].name")
 	if err != nil {
 		return nil, fmt.Errorf("gh api list branches %s: %w", repo, err)
 	}
@@ -139,4 +149,74 @@ func (g *GHRemoteReader) ListBranches(repo string) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+type ghCommandError struct {
+	cause  error
+	stderr string
+}
+
+func (e *ghCommandError) Error() string { return e.cause.Error() }
+func (e *ghCommandError) Unwrap() error { return e.cause }
+
+func isGHNotFound(err error) bool {
+	var commandErr *ghCommandError
+	return errors.As(err, &commandErr) && strings.Contains(commandErr.stderr, "404")
+}
+
+func runGitHubCommand(binary string, args ...string) ([]byte, []byte, error) {
+	cmd := exec.Command(binary, args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return stdout.Bytes(), stderr.Bytes(), err
+}
+
+func resolveGitHubCLI() (string, error) {
+	fallbacks := []string(nil)
+	if runtime.GOOS == "darwin" {
+		fallbacks = []string{"/opt/homebrew/bin/gh", "/usr/local/bin/gh"}
+	}
+	return resolveGitHubCLIFrom(os.Getenv("PATH"), runtime.GOOS, fallbacks)
+}
+
+func resolveGitHubCLIFrom(pathEnv, goos string, macOSFallbacks []string) (string, error) {
+	candidates := filepath.SplitList(pathEnv)
+	absoluteCandidates := make([]string, 0, len(candidates)+len(macOSFallbacks))
+	for _, dir := range candidates {
+		if dir == "" || !filepath.IsAbs(dir) {
+			continue
+		}
+		absoluteCandidates = append(absoluteCandidates, filepath.Join(dir, "gh"))
+	}
+	if goos == "darwin" {
+		absoluteCandidates = append(absoluteCandidates, macOSFallbacks...)
+	}
+	for _, candidate := range absoluteCandidates {
+		resolved, err := canonicalExecutable(candidate)
+		if err == nil {
+			return resolved, nil
+		}
+	}
+	return "", MissingGitHubCLIError{}
+}
+
+func canonicalExecutable(candidate string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return "", err
+	}
+	resolved, err = filepath.Abs(resolved)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return "", fmt.Errorf("not an executable regular file")
+	}
+	return resolved, nil
 }

@@ -59,29 +59,31 @@ type ResolutionStep struct {
 // Case is a stable, operator-readable projection of exactly one recorded
 // Ma'at decision. It has no independent lifecycle or write authority.
 type Case struct {
-	ID                           string                          `json:"id"`
-	Time                         string                          `json:"time"`
-	Host                         string                          `json:"host"`
-	Kind                         string                          `json:"kind"`
-	Category                     string                          `json:"category"`
-	Status                       Status                          `json:"status"`
-	Priority                     Priority                        `json:"priority"`
-	Requester                    string                          `json:"requester"`
-	Resource                     string                          `json:"resource,omitempty"`
-	Affected                     string                          `json:"affected,omitempty"`
-	Determination                string                          `json:"determination"`
-	Assessed                     string                          `json:"assessed"`
-	Why                          string                          `json:"why"`
-	Evidence                     string                          `json:"evidence,omitempty"`
-	Resolution                   string                          `json:"resolution,omitempty"`
-	VerifiedRepairEvidence       string                          `json:"verified_repair_evidence,omitempty"`
-	RepairOutcomeEvidence        string                          `json:"repair_outcome_evidence,omitempty"`
-	PendingRepairAttemptEvidence string                          `json:"pending_repair_attempt_evidence,omitempty"`
-	NextAction                   *ResolutionPath                 `json:"next_action,omitempty"`
-	SystemOne                    *maat.MaatVerdict               `json:"system_one,omitempty"`
-	SystemOneCalibration         *maat.CalibrationRecord         `json:"system_one_calibration,omitempty"`
-	FailureMemoryReceipt         *maat.PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
-	FailureMemoryIncidentKeys    *[]string                       `json:"failure_memory_incident_keys,omitempty"`
+	ID                             string                               `json:"id"`
+	Time                           string                               `json:"time"`
+	Host                           string                               `json:"host"`
+	Kind                           string                               `json:"kind"`
+	Category                       string                               `json:"category"`
+	Status                         Status                               `json:"status"`
+	Priority                       Priority                             `json:"priority"`
+	Requester                      string                               `json:"requester"`
+	Resource                       string                               `json:"resource,omitempty"`
+	Affected                       string                               `json:"affected,omitempty"`
+	Determination                  string                               `json:"determination"`
+	Assessed                       string                               `json:"assessed"`
+	Why                            string                               `json:"why"`
+	Evidence                       string                               `json:"evidence,omitempty"`
+	Resolution                     string                               `json:"resolution,omitempty"`
+	VerifiedRepairEvidence         string                               `json:"verified_repair_evidence,omitempty"`
+	RepairOutcomeEvidence          string                               `json:"repair_outcome_evidence,omitempty"`
+	PendingRepairAttemptEvidence   string                               `json:"pending_repair_attempt_evidence,omitempty"`
+	NextAction                     *ResolutionPath                      `json:"next_action,omitempty"`
+	SystemOne                      *maat.MaatVerdict                    `json:"system_one,omitempty"`
+	SystemOneCalibration           *maat.CalibrationRecord              `json:"system_one_calibration,omitempty"`
+	FailureMemoryReceipt           *maat.PreflightReceiptReference      `json:"failure_memory_receipt,omitempty"`
+	FailureMemoryIncidentKeys      *[]string                            `json:"failure_memory_incident_keys,omitempty"`
+	SourceQualification            *maat.QualificationEvent             `json:"source_qualification,omitempty"`
+	BinaryDriftInactiveDisposition *maat.BinaryDriftInactiveDisposition `json:"binary_drift_inactive_disposition,omitempty"`
 }
 
 // Node and Edge form a deliberately small evidence graph. The dashboard can
@@ -166,9 +168,12 @@ type HistorySearchResult struct {
 // Build faithfully projects decisions; classification is descriptive and is
 // never used to change the source decision's determination.
 func Build(decisions []maat.Decision) View {
-	states := linkedCaseStates(decisions)
+	states := linkedCaseStates(decisions, nil, nil)
 	cases := make([]Case, 0, len(decisions))
 	for _, decision := range decisions {
+		if isBinaryDriftDispositionArtifact(decision, states) {
+			continue
+		}
 		if decision.Kind == "diagnostic owner acceptance" && decision.ResolutionFor != "" {
 			if hasOwnerReview(decisions, decision.ResolutionFor) {
 				continue
@@ -185,9 +190,17 @@ func Build(decisions []maat.Decision) View {
 // projection. An updater receipt is narrower than an owner acceptance.
 func projectLinkedCase(decision maat.Decision, linked maat.HistoryMatchState) Case {
 	c := project(decision)
-	if linked.Resolution != nil {
+	resolution := linked.Resolution
+	if resolution != nil && resolution.BinaryDriftInactiveDisposition != nil &&
+		(decision.Kind != "system one screen" || linked.SystemOneSourceCount != 1 || linked.EvidenceMatchCount != 1 ||
+			resolution.OriginEvidence != decision.Evidence || resolution.ResolutionFor != decision.Evidence ||
+			maat.ValidateBinaryDriftInactiveSource(decision, decision.Evidence, resolution.Host) != nil) {
+		resolution = nil
+	}
+	if resolution != nil {
 		c.Status = StatusResolved
-		c.Resolution = linked.Resolution.Why
+		c.Resolution = resolution.Why
+		c.BinaryDriftInactiveDisposition = resolution.BinaryDriftInactiveDisposition
 	} else if repair := linked.RepairOutcome; repair != nil {
 		c.RepairOutcomeEvidence = repair.Evidence
 		if repair.Determination == "resolved" {
@@ -203,16 +216,49 @@ func projectLinkedCase(decision maat.Decision, linked maat.HistoryMatchState) Ca
 	return c
 }
 
-func linkedCaseStates(decisions []maat.Decision) map[string]maat.HistoryMatchState {
+func linkedCaseStates(decisions []maat.Decision, exactSourceCounts, exactEvidenceCounts map[string]int) map[string]maat.HistoryMatchState {
 	states := make(map[string]maat.HistoryMatchState)
+	screens := make(map[string]maat.Decision)
+	screenCounts := make(map[string]int)
+	evidenceCounts := make(map[string]int)
+	for _, row := range decisions {
+		if row.Evidence != "" {
+			evidenceCounts[row.Evidence]++
+		}
+		if row.Kind == "system one screen" && row.SystemOne != nil {
+			screens[row.Evidence] = row
+			screenCounts[row.Evidence]++
+		}
+	}
+	for evidence, count := range exactSourceCounts {
+		if count > screenCounts[evidence] {
+			screenCounts[evidence] = count
+		}
+	}
+	for evidence, count := range exactEvidenceCounts {
+		if count > evidenceCounts[evidence] {
+			evidenceCounts[evidence] = count
+		}
+	}
 	for _, decision := range decisions {
 		row := decision
 		if row.Kind == "diagnostic owner acceptance" && row.ResolutionFor != "" {
-			state := states[row.ResolutionFor]
-			if state.Resolution == nil || row.Time > state.Resolution.Time {
-				state.Resolved, state.Resolution = true, &row
+			if row.BinaryDriftInactiveDisposition != nil {
+				source, ok := screens[row.ResolutionFor]
+				if ok && screenCounts[row.ResolutionFor] == 1 && evidenceCounts[row.ResolutionFor] == 1 && row.OriginEvidence == row.ResolutionFor && maat.ValidateBinaryDriftInactiveSource(source, row.ResolutionFor, row.Host) == nil {
+					state := states[row.ResolutionFor]
+					if state.Resolution == nil || row.Time > state.Resolution.Time {
+						state.Resolved, state.Resolution = true, &row
+					}
+					states[row.ResolutionFor] = state
+				}
+			} else {
+				state := states[row.ResolutionFor]
+				if state.Resolution == nil || row.Time > state.Resolution.Time {
+					state.Resolved, state.Resolution = true, &row
+				}
+				states[row.ResolutionFor] = state
 			}
-			states[row.ResolutionFor] = state
 		}
 		if row.Resource != "binary-drift" || row.OriginEvidence == "" {
 			continue
@@ -230,7 +276,26 @@ func linkedCaseStates(decisions []maat.Decision) map[string]maat.HistoryMatchSta
 		}
 		states[row.OriginEvidence] = state
 	}
+	for evidence, count := range screenCounts {
+		state := states[evidence]
+		state.SystemOneSourceCount = count
+		state.EvidenceMatchCount = evidenceCounts[evidence]
+		states[evidence] = state
+	}
+	for evidence, count := range evidenceCounts {
+		state := states[evidence]
+		state.EvidenceMatchCount = count
+		states[evidence] = state
+	}
 	return states
+}
+
+func isBinaryDriftDispositionArtifact(decision maat.Decision, states map[string]maat.HistoryMatchState) bool {
+	if decision.BinaryDriftInactiveDisposition == nil || decision.ResolutionFor == "" || decision.OriginEvidence != decision.ResolutionFor {
+		return false
+	}
+	resolution := states[decision.ResolutionFor].Resolution
+	return resolution != nil && resolution.Evidence == decision.Evidence
 }
 
 func hasOwnerReview(decisions []maat.Decision, evidence string) bool {
@@ -279,13 +344,17 @@ func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (Histo
 	}
 	kind := strings.ToLower(strings.TrimSpace(query.Kind))
 	text := strings.ToLower(strings.TrimSpace(query.Text))
+	exactCaseID := ""
+	if isCanonicalCaseID(text) {
+		exactCaseID = text
+	}
 	status := Status(strings.ToLower(strings.TrimSpace(string(query.Status))))
 	// Bind continuation to the projection/filter semantics as well as operands.
-	// Older cursors cannot silently omit newly searchable incident links.
+	// Older cursors cannot silently retain the old case-ID search semantics.
 	keyBytes, err := json.Marshal(struct {
 		ProjectionVersion, Scope, Evidence, Kind, Text, Status string
 		Limit                                                  int
-	}{"casebook-local-prevention-v1", query.Scope, query.Evidence, kind, text, string(status), query.Limit})
+	}{"casebook-local-prevention-v4", query.Scope, query.Evidence, kind, text, string(status), query.Limit})
 	if err != nil {
 		return HistorySearchResult{}, err
 	}
@@ -296,11 +365,11 @@ func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (Histo
 		QueryKey: queryID, Limit: query.Limit,
 		Cursor: query.Cursor, Context: query.Context,
 		Match: func(decision maat.Decision) bool {
-			if kind == "" {
-				return true
-			}
 			projected := project(decision)
-			return strings.EqualFold(projected.Kind, kind) || strings.EqualFold(projected.Category, kind)
+			if kind != "" && !strings.EqualFold(projected.Kind, kind) && !strings.EqualFold(projected.Category, kind) {
+				return false
+			}
+			return exactCaseID == "" || projected.ID == exactCaseID
 		},
 		NeedsState: func(decision maat.Decision) bool {
 			return status != "" || text != "" || decision.Kind == "diagnostic owner acceptance"
@@ -312,6 +381,9 @@ func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (Histo
 			projected := projectLinkedCase(decision, linked)
 			if status != "" && projected.Status != status {
 				return false
+			}
+			if exactCaseID != "" {
+				return true
 			}
 			return text == "" || matches(projected, text)
 		},
@@ -350,7 +422,15 @@ func SearchHistory(journal *maat.FileDecisionJournal, query HistoryQuery) (Histo
 	window.CandidateMatches = int(page.MatchCount)
 	window.CandidateMatchesComplete = page.Coverage == maat.HistoryCoverageComplete && page.Integrity.InvalidCount == 0 && !page.AfterCursor
 	related := append(append(append([]maat.Decision{}, page.Links.Acceptances...), page.Links.RepairOutcomes...), page.Links.RepairAttempts...)
-	view := BuildPage(historyDecisions(page.Candidates), related, page.Links.ReviewedResolutionFor)
+	exactSourceCounts := make(map[string]int)
+	exactEvidenceCounts := make(map[string]int)
+	for _, candidate := range page.Candidates {
+		if candidate.Decision.Kind == "system one screen" {
+			exactSourceCounts[candidate.Decision.Evidence] = candidate.SystemOneSourceCount
+			exactEvidenceCounts[candidate.Decision.Evidence] = candidate.EvidenceMatchCount
+		}
+	}
+	view := buildPage(historyDecisions(page.Candidates), related, page.Links.ReviewedResolutionFor, exactSourceCounts, exactEvidenceCounts)
 	view = viewFor(append([]Case{}, view.Cases...))
 	window.Returned = len(view.Cases)
 	window.TotalComplete = page.Coverage == maat.HistoryCoverageComplete && page.Integrity.InvalidCount == 0 && !page.AfterCursor
@@ -372,13 +452,21 @@ func historyDecisions(candidates []maat.HistoryCandidate) []maat.Decision {
 // BuildPage projects only the selected cases while using related outcomes to
 // compute their status. Related records never become extra rows in the page.
 func BuildPage(decisions, related []maat.Decision, reviewedResolutionFor []string) View {
-	states := linkedCaseStates(append(append([]maat.Decision(nil), decisions...), related...))
+	return buildPage(decisions, related, reviewedResolutionFor, nil, nil)
+}
+
+func buildPage(decisions, related []maat.Decision, reviewedResolutionFor []string, exactSourceCounts, exactEvidenceCounts map[string]int) View {
+	allDecisions := append(append([]maat.Decision(nil), decisions...), related...)
+	states := linkedCaseStates(allDecisions, exactSourceCounts, exactEvidenceCounts)
 	reviewed := make(map[string]bool, len(reviewedResolutionFor))
 	for _, evidence := range reviewedResolutionFor {
 		reviewed[evidence] = true
 	}
 	cases := make([]Case, 0, len(decisions))
 	for _, decision := range decisions {
+		if isBinaryDriftDispositionArtifact(decision, states) {
+			continue
+		}
 		if decision.Kind == "diagnostic owner acceptance" && reviewed[decision.ResolutionFor] {
 			continue
 		}
@@ -396,7 +484,8 @@ func project(d maat.Decision) Case {
 		Requester: d.Requester, Resource: d.Resource, Affected: d.Affected,
 		Determination: d.Determination, Assessed: d.Assessed, Why: d.Why, Evidence: d.Evidence,
 		SystemOne: d.SystemOne, SystemOneCalibration: d.SystemOneCalibration, FailureMemoryReceipt: d.FailureMemoryReceipt, FailureMemoryIncidentKeys: d.FailureMemoryIncidentKeys,
-		Status: statusFor(determination), Priority: priorityFor(determination),
+		SourceQualification: d.SourceQualification,
+		Status:              statusFor(determination), Priority: priorityFor(determination),
 	}
 	// A calibration is a completed historical comparison between an existing
 	// auto-pass and an independent outcome. A block can be urgent in the
@@ -411,12 +500,21 @@ func project(d maat.Decision) Case {
 		c.Status = StatusResolved
 		c.Priority = PriorityNormal
 	}
+	if d.SourceQualification != nil {
+		c.Determination = "unqualified"
+		c.Status = StatusOpen
+		c.Priority = PriorityNormal
+		c.Why = "Retained lifecycle observation, not current verified acceptance. Preview the exact receipt/repository/head to replay current state. Recorded reason: " + d.Why
+	}
 	sum := sha256.Sum256([]byte(strings.Join([]string{d.Time, d.Host, d.Kind, d.Requester, d.Resource, d.Determination, d.Evidence}, "\x00")))
 	c.ID = "maat-case-" + hex.EncodeToString(sum[:8])
 	return c
 }
 
 func classify(d maat.Decision) string {
+	if d.SourceQualification != nil {
+		return "governance"
+	}
 	kind := strings.ToLower(d.Kind)
 	switch {
 	case strings.Contains(kind, "system one"):
@@ -653,11 +751,20 @@ func failedFloorRecovery(c Case) *ResolutionPath {
 
 func matches(c Case, needle string) bool {
 	return strings.Contains(strings.ToLower(strings.Join([]string{
-		c.Time, c.Host, c.Kind, c.Category, c.Requester, c.Resource,
+		c.ID, c.Time, c.Host, c.Kind, c.Category, c.Requester, c.Resource,
 		c.Affected, c.Determination, c.Assessed, c.Why, c.Evidence, c.Resolution,
 		c.VerifiedRepairEvidence, c.RepairOutcomeEvidence, c.PendingRepairAttemptEvidence, resolutionText(c.NextAction),
 		calibrationText(c.SystemOneCalibration), failureMemoryIncidentText(c.FailureMemoryIncidentKeys),
 	}, "\n")), needle)
+}
+
+func isCanonicalCaseID(value string) bool {
+	const prefix = "maat-case-"
+	if len(value) != len(prefix)+16 || !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	_, err := hex.DecodeString(strings.TrimPrefix(value, prefix))
+	return err == nil && value == strings.ToLower(value)
 }
 
 func failureMemoryIncidentText(keys *[]string) string {

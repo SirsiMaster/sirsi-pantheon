@@ -15,7 +15,7 @@ func TestCurrentSessionIDProviderBindings(t *testing.T) {
 		{"codex session", "", "codex-native", "", "codex-native"},
 		{"codex thread", "", "", "codex-native", "codex-native"},
 		{"matching codex aliases", "", "codex-native", "codex-native", "codex-native"},
-		{"conflicting codex aliases refuse", "", "one-session", "another-session", ""},
+		{"current codex thread preferred to shared root", "", "parent-root", "current-thread", "current-thread"},
 		{"trimmed matching aliases", " ", " native-session ", "native-session", "native-session"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -26,6 +26,66 @@ func TestCurrentSessionIDProviderBindings(t *testing.T) {
 				t.Fatalf("CurrentSessionID() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCheckedCurrentSessionIDPrefersThreadAndFallsBackToRoot(t *testing.T) {
+	t.Setenv(SessionIDEnv, "")
+	t.Setenv("CODEX_SESSION_ID", "parent-session")
+	t.Setenv("CODEX_THREAD_ID", "current-thread")
+	if sid, err := CheckedCurrentSessionID(); err != nil || sid != "current-thread" {
+		t.Fatalf("current Codex thread = %q, %v; want current-thread", sid, err)
+	}
+	if CurrentSessionID() != "current-thread" {
+		t.Fatal("compatibility resolver must use the current thread")
+	}
+	t.Setenv("CODEX_THREAD_ID", "")
+	if sid, err := CheckedCurrentSessionID(); err != nil || sid != "parent-session" {
+		t.Fatalf("legacy root-session fallback = %q, %v", sid, err)
+	}
+	t.Setenv(SessionIDEnv, "explicit-claude-session")
+	t.Setenv("CODEX_THREAD_ID", "current-thread")
+	if sid, err := CheckedCurrentSessionID(); err != nil || sid != "explicit-claude-session" {
+		t.Fatalf("existing explicit Claude binding changed: %q %v", sid, err)
+	}
+}
+
+func TestCodexCurrentThreadDoesNotAdoptRootOrSiblingMarkers(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(SessionIDEnv, "")
+	t.Setenv("CODEX_SESSION_ID", "parent-root")
+	t.Setenv("CODEX_THREAD_ID", "current-thread")
+	for _, marker := range []struct{ id, agent, thread string }{
+		{"parent-root", "codex-parent", "parent-thread"},
+		{"sibling-thread", "codex-sibling", "sibling-thread-record"},
+	} {
+		if err := WriteSessionAgentMarker(marker.id, marker.agent); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteSessionThreadMarker(marker.id, marker.thread); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := CurrentSessionID(); got != "current-thread" {
+		t.Fatalf("current marker key = %q, want current-thread", got)
+	}
+	if got := ReadSessionAgentMarker(CurrentSessionID()); got != "" {
+		t.Fatalf("current thread adopted foreign agent marker %q", got)
+	}
+	if got := ReadSessionThreadMarker(CurrentSessionID()); got != "" {
+		t.Fatalf("current thread adopted foreign thread marker %q", got)
+	}
+	if err := WriteSessionAgentMarker(CurrentSessionID(), "codex-current"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSessionThreadMarker(CurrentSessionID(), "registered-current-thread"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadSessionAgentMarker(CurrentSessionID()); got != "codex-current" {
+		t.Fatalf("current agent marker = %q", got)
+	}
+	if got := ReadSessionThreadMarker(CurrentSessionID()); got != "registered-current-thread" {
+		t.Fatalf("current thread marker = %q", got)
 	}
 }
 
@@ -161,5 +221,49 @@ func TestSessionThreadMarkerRoundTrip(t *testing.T) {
 	_ = WriteSessionThreadMarker("sess-3", "thr-3")
 	if ReadSessionAgentMarker("sess-3") != "ra" || ReadSessionThreadMarker("sess-3") != "thr-3" {
 		t.Fatal("agent and thread markers must not collide")
+	}
+}
+
+func TestSessionMarkerReadersTreatAbsentUnreadableAndEmptyAsUnavailable(t *testing.T) {
+	root := t.TempDir()
+	previous := sessionMarkerDirOverride
+	sessionMarkerDirOverride = root
+	t.Cleanup(func() { sessionMarkerDirOverride = previous })
+
+	readers := []struct {
+		name string
+		path func(string) string
+		read func(string) string
+	}{
+		{"agent", func(sid string) string { return filepath.Join(root, sid) }, ReadSessionAgentMarker},
+		{"thread", func(sid string) string { return filepath.Join(root, "thread-by-session", sid) }, ReadSessionThreadMarker},
+	}
+	cases := []struct {
+		name  string
+		setup func(string) error
+	}{
+		{name: "absent"},
+		{name: "empty", setup: func(path string) error { return os.WriteFile(path, nil, 0o600) }},
+		{name: "whitespace", setup: func(path string) error { return os.WriteFile(path, []byte(" \t\r\n"), 0o600) }},
+		{name: "read-error", setup: func(path string) error { return os.Mkdir(path, 0o700) }},
+	}
+	for _, reader := range readers {
+		for _, tc := range cases {
+			t.Run(reader.name+"/"+tc.name, func(t *testing.T) {
+				sid := reader.name + "-" + tc.name
+				path := reader.path(sid)
+				if tc.setup != nil {
+					if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := tc.setup(path); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if got := reader.read(sid); got != "" {
+					t.Fatalf("unavailable marker read = %q, want empty", got)
+				}
+			})
+		}
 	}
 }

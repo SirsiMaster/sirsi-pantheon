@@ -112,3 +112,23 @@ registered threads with SQL-fault injection, not a mocked successful bind.
 - `ListenNotify` over HTTP is a polling goroutine, not a FIFO.
 - The migration tool is designed for SQLite → Postgres; other directions use
   the same code but are untested at scale.
+
+## Exact thread retirement (ADR-057 N2)
+
+`DeleteThreadCAS` and its scoped variant keep their API names and boolean CAS
+result, but retire the exact observed row to reserved `pruned` rather than
+physically deleting its primary key. Agent, host and observed timestamp remain;
+the user payload becomes `{}`. Ordinary list/get hide the fence, while the
+authority binding retains its non-live identity. New unrelated IDs still work;
+normal registration, resume and imports cannot create or revive a pruned ID.
+There is no fence garbage collection or new store/schema/RPC.
+
+Both backends use the same production retirement statement. The two-handle
+fixtures call the real scoped/unscoped methods; PostgreSQL contention holds that
+statement uncommitted while actual peer mutations wait. A separate raw physical
+delete demonstrates the legacy resurrection defect, not a production path.
+
+Before deploying a G2 writer to canonical storage, Ra/SSA must establish the
+compatible G1 server/direct-writer and rollback floor, including in-flight and
+rejoining writers. A new app or a successful disposable-store test does not
+prove that deployment condition. Do not prune live sessions to qualify this fix.

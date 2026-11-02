@@ -235,6 +235,76 @@ func TestSearchHistoryExactEvidenceCountsHiddenDuplicateIdentity(t *testing.T) {
 	}
 }
 
+func TestSearchHistoryExactCaseIDFiltersBeforeLinkedQualification(t *testing.T) {
+	journal := &maat.FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
+	review, err := maat.RecordDiagnosticOwnerReview(journal, "fixture", maat.DiagnosticOwnerReview{
+		Check: "retained finding", Message: "owner review remains linked",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := Build([]maat.Decision{review}).Cases
+	if len(cases) != 1 {
+		t.Fatalf("review projection = %+v", cases)
+	}
+	for index := 0; index < 150; index++ {
+		if err := journal.Append(maat.Decision{
+			Time: time.Date(2027, 1, 1, 0, index, 0, 0, time.UTC).Format(time.RFC3339Nano),
+			Host: "fixture", Kind: "reservation", Requester: "fixture", Assessed: "unrelated reservation",
+			Determination: "grant", Why: "unrelated linked-state candidate", Evidence: "reservation:" + strconv.Itoa(index),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := maat.AcceptDiagnosticOwnerReview(journal, "fixture", maat.DiagnosticOwnerAcceptance{
+		Evidence: review.Evidence, Conclusion: "recorded owner conclusion",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := SearchHistory(journal, HistoryQuery{
+		Query: Query{Text: cases[0].ID, Status: StatusResolved, Limit: 2}, Scope: maat.HistoryScopeAll,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Window.Coverage != maat.HistoryCoverageComplete || result.Window.Returned != 1 ||
+		len(result.View.Cases) != 1 || result.View.Cases[0].ID != cases[0].ID ||
+		result.View.Cases[0].Evidence != review.Evidence || result.View.Cases[0].Status != StatusResolved {
+		t.Fatalf("exact ID did not return the linked, currently resolved case: %+v", result)
+	}
+	rows, _, err := journal.RecentTolerant(1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Window.ScannedRecords > 4*len(rows) {
+		t.Fatalf("exact ID qualified unrelated rows in repeated whole-journal passes: scanned=%d rows=%d", result.Window.ScannedRecords, len(rows))
+	}
+}
+
+func TestSearchHistoryExactCaseIDRetainsDuplicateRowsForAmbiguity(t *testing.T) {
+	journal := &maat.FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
+	duplicate := maat.Decision{
+		Time: "2026-10-30T00:00:00Z", Host: "fixture", Kind: "diagnostic owner review",
+		Requester: "fixture", Resource: "same finding", Assessed: "diagnostic finding",
+		Determination: "owner_review_required", Why: "duplicate identity fixture",
+		Evidence: "diagnostic-finding:sha256=" + strings.Repeat("a", 64),
+	}
+	for index := 0; index < 2; index++ {
+		if err := journal.Append(duplicate); err != nil {
+			t.Fatal(err)
+		}
+	}
+	identity := Build([]maat.Decision{duplicate}).Cases[0].ID
+	result, err := SearchHistory(journal, HistoryQuery{Query: Query{Text: identity, Limit: 2}, Scope: maat.HistoryScopeAll})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Window.CandidateMatches != 2 || result.Window.Returned != 2 || len(result.View.Cases) != 2 ||
+		result.View.Cases[0].ID != identity || result.View.Cases[1].ID != identity {
+		t.Fatalf("duplicate case identity was collapsed or reported unique: %+v", result)
+	}
+}
+
 func TestSearchHistoryUsesCanonicalReviewAcceptanceBeforeTextStatusLimit(t *testing.T) {
 	journal := &maat.FileDecisionJournal{Path: filepath.Join(t.TempDir(), "decisions.jsonl")}
 	input := maat.SystemOneScreen{

@@ -10,6 +10,23 @@ casebook is read-only: it never grants a reservation, changes a determination,
 or starts work. That boundary lets operators inspect why work is queued,
 refused, released, or still open without creating a parallel policy engine.
 
+## Source lifecycle evidence
+
+The Casebook includes an informational lifecycle control for an existing
+structured canonical receipt. Preview with an exact receipt ID, repository,
+and independently selected full head before recording an observation:
+
+```sh
+sirsi maat lifecycle --receipt-id ID --expect-repo REPO --expect-head FULLSHA --preview --json
+```
+
+Only an explicit confirmation with the previewed receipt digest retains the
+observation. Owner adoption is a separate preview/confirm flow for an exact
+review and originating evaluation. Router receipt custody and `From` are not
+authenticated reviewer identity. Lifecycle observations do not qualify a
+model or enable a gate; absent installed pins remain unqualified and the
+deterministic host checks remain independent.
+
 ## Use it
 
 ```sh

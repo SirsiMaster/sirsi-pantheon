@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @objc func searchWorkspaces(_ sender: Any?) { menuBridge.perform(PantheonMenuAction.search) }
     @objc func goBack(_ sender: Any?) { menuBridge.perform(PantheonMenuAction.back) }
+    @objc func goForward(_ sender: Any?) { menuBridge.perform(PantheonMenuAction.forward) }
     @objc func goHome(_ sender: Any?) { menuBridge.perform(PantheonMenuAction.home) }
     @objc func openHelp(_ sender: Any?) { menuBridge.perform(PantheonMenuAction.help) }
 
@@ -50,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             action: action,
             textSizePercent: PantheonTextSizePreference.current(),
             canGoBack: menuBridge.canGoBack,
+            canGoForward: menuBridge.canGoForward,
             canChooseProject: menuBridge.canChooseProject
         ) ?? true
     }

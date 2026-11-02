@@ -64,6 +64,42 @@ func relayObservationPolicyForRoot(path string, root, parent unix.Stat_t, self i
 	return policy, nil
 }
 
+// relayObservationReadPolicy accepts a root-declared group only through the
+// existing independently checked service-root profile, and only for readers.
+// A supplied group remains an exact declaration; it never falls back.
+func relayObservationReadPolicy(path, group string, root, parent unix.Stat_t, self int,
+	lookupUser func(string) (*user.User, error), lookupGroup func(string) (*user.Group, error),
+) (RelayObservationFilePolicy, error) {
+	if root.Mode&unix.S_IFMT != unix.S_IFDIR || parent.Mode&unix.S_IFMT != unix.S_IFDIR || parent.Mode&0o022 != 0 {
+		return RelayObservationFilePolicy{}, relayObservationError("root_policy")
+	}
+	uid, err := expectedRelayObservationUID(path, root, parent, self, lookupUser)
+	if err != nil {
+		return RelayObservationFilePolicy{}, err
+	}
+	if group != "" {
+		g, err := lookupGroup(group)
+		if err != nil {
+			return RelayObservationFilePolicy{}, relayObservationError("group_policy")
+		}
+		gid, err := strconv.Atoi(g.Gid)
+		if err != nil || int(root.Gid) != gid || root.Mode&0o777 != 0o770 || root.Mode&0o5000 != 0 {
+			return RelayObservationFilePolicy{}, relayObservationError("group_policy")
+		}
+		return RelayObservationFilePolicy{UID: uid, GID: uint32(gid), Mode: 0o640}, nil
+	}
+	if path == "/private/var/sirsipantheon/relay" && root.Mode&0o7777 == 0o770 {
+		policy, err := relayObservationPolicyForRoot(path, root, parent, self, lookupUser)
+		if err == nil && policy.Mode == 0o640 {
+			return policy, nil
+		}
+	}
+	if int(uid) != self || root.Mode&0o7777 != 0o700 {
+		return RelayObservationFilePolicy{}, relayObservationError("private_policy")
+	}
+	return RelayObservationFilePolicy{UID: uid, GID: root.Gid, Mode: 0o600}, nil
+}
+
 func (p RelayObservationFilePolicy) validateStat(st unix.Stat_t) error {
 	if (p.Mode != 0600 && p.Mode != 0640) || st.Mode&unix.S_IFMT != unix.S_IFREG || st.Nlink != 1 || st.Uid != p.UID || st.Gid != p.GID || uint32(st.Mode&07777) != p.Mode || st.Size < 0 || st.Size > relayObservationBytes {
 		return relayObservationError("artifact_policy")
@@ -103,6 +139,10 @@ func expectedRelayObservationUID(path string, root, parent unix.Stat_t, self int
 
 // Read-only: never call bootstrap CheckSpoolDir here (it can chmod/create).
 func openRelayObservationRoot(path, group string) (*relayObservationRoot, error) {
+	return openRelayObservationRootWithPolicy(path, group, false)
+}
+
+func openRelayObservationRootWithPolicy(path, group string, allowDeclaredServiceGroup bool) (*relayObservationRoot, error) {
 	canon, err := filepath.EvalSymlinks(path)
 	if err != nil || !filepath.IsAbs(canon) {
 		return nil, relayObservationError("root_unavailable")
@@ -127,25 +167,33 @@ func openRelayObservationRoot(path, group string) (*relayObservationRoot, error)
 	if err != nil || unix.Fstat(r.fd, &r.stat) != nil {
 		return nil, relayObservationError("root_unavailable")
 	}
-	r.uid, err = expectedRelayObservationUID(canon, r.stat, pst, os.Geteuid(), user.Lookup)
-	if err != nil {
-		return nil, err
-	}
-	if group != "" {
-		g, err := user.LookupGroup(group)
+	if allowDeclaredServiceGroup {
+		policy, err := relayObservationReadPolicy(canon, group, r.stat, pst, os.Geteuid(), user.Lookup, user.LookupGroup)
 		if err != nil {
-			return nil, relayObservationError("group_policy")
+			return nil, err
 		}
-		r.gid, err = strconv.Atoi(g.Gid)
-		if err != nil || int(r.stat.Gid) != r.gid || r.stat.Mode&0o777 != 0o770 || r.stat.Mode&0o5000 != 0 {
-			return nil, relayObservationError("group_policy")
-		}
-		r.mode = 0o640
+		r.uid, r.gid, r.mode = policy.UID, int(policy.GID), policy.Mode
 	} else {
-		if int(r.uid) != os.Geteuid() || r.stat.Mode&0o7777 != 0o700 {
-			return nil, relayObservationError("private_policy")
+		r.uid, err = expectedRelayObservationUID(canon, r.stat, pst, os.Geteuid(), user.Lookup)
+		if err != nil {
+			return nil, err
 		}
-		r.gid, r.mode = int(r.stat.Gid), 0o600
+		if group != "" {
+			g, err := user.LookupGroup(group)
+			if err != nil {
+				return nil, relayObservationError("group_policy")
+			}
+			r.gid, err = strconv.Atoi(g.Gid)
+			if err != nil || int(r.stat.Gid) != r.gid || r.stat.Mode&0o777 != 0o770 || r.stat.Mode&0o5000 != 0 {
+				return nil, relayObservationError("group_policy")
+			}
+			r.mode = 0o640
+		} else {
+			if int(r.uid) != os.Geteuid() || r.stat.Mode&0o7777 != 0o700 {
+				return nil, relayObservationError("private_policy")
+			}
+			r.gid, r.mode = int(r.stat.Gid), 0o600
+		}
 	}
 	if err := r.continuity(); err != nil {
 		return nil, err

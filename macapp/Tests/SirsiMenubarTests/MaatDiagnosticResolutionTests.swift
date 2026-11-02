@@ -6,6 +6,24 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
     private let head = String(repeating: "a", count: 64)
     private let host = "fixture-mac"
 
+    func testCaseDetailKeepsFullLongWhySeparateFromNonemptyAssessment() {
+        let why = "First paragraph: the diagnostic needs owner review.\n\n" +
+            String(repeating: "This evidence explains the observed condition and the decision boundary. ", count: 8)
+        let detail = maatCaseAssessmentPresentation(assessed: "diagnostic finding", why: why)
+
+        XCTAssertEqual(detail.assessment, "diagnostic finding")
+        XCTAssertEqual(detail.why, why)
+        XCTAssertGreaterThan(detail.why?.count ?? 0, 2 * 80)
+    }
+
+    func testCaseDetailUsesWhyAsAssessmentWhenAssessedIsAbsent() {
+        let why = "The complete retained explanation remains visible."
+        let detail = maatCaseAssessmentPresentation(assessed: "", why: why)
+
+        XCTAssertEqual(detail.assessment, why)
+        XCTAssertNil(detail.why)
+    }
+
     private func screenObject() -> [String: Any] {
         ["schema_version": 1, "feather_weight": 60, "confidence": 1, "gate": "changes",
          "subject": ["kind": "host", "repo": host, "ref": "diagnostic", "head_sha": head],
@@ -26,6 +44,29 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
                                      "detail": "Current bounded operands", "fix": "sirsi clean --include-caution", "fixKind": "instant", "resolution": "repair"]]
         return .init(data: try JSONSerialization.data(withJSONObject: ["status": status, "findings": findings]),
                      exitStatus: exit, timedOut: timeout, launchError: error)
+    }
+
+    @MainActor
+    func testExplicitReviewRefreshesChangedOperandsInsteadOfDisablingTheRoute() async throws {
+        let v = try verdict()
+        let model = MaatDiagnosticResolutionModel()
+        let fresh = try read()
+        var calls = 0
+        var snapshot = FindingObservationSnapshot(current: false, finding: nil)
+        let reviewed = await model.refreshForReview(verdict: v, finding: v.findings[0], localHost: host,
+            snapshot: { snapshot }, read: {
+                calls += 1
+                let report = try! JSONDecoder().decode(DiagReport.self, from: fresh.data)
+                snapshot = FindingObservationSnapshot(current: true, finding: report.findings[0])
+                return fresh
+            })
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(reviewed?.message, "Fresh disk condition")
+        // An unavailable current snapshot must still fail closed after the read.
+        let refused = await model.refreshForReview(verdict: v, finding: v.findings[0], localHost: host,
+            snapshot: { FindingObservationSnapshot(current: false, finding: nil) }, read: { fresh })
+        XCTAssertNil(refused)
+        XCTAssertTrue(model.message.contains("changed"))
     }
 
     func testDecodedCanonicalIdentityUsesFreshOperandsAndNeverHintText() throws {
@@ -76,14 +117,14 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
         let prepared = MaatDiagnosticCorrelationFixture.reply(try XCTUnwrap(object["prepared"]))
         let recorded = MaatDiagnosticCorrelationFixture.reply(try XCTUnwrap(object["recorded"]))
         let lookup = MaatDiagnosticCorrelationFixture.reply(try XCTUnwrap(object["lookup"]))
-        let correlation = MaatDiagnosticRecordModel(localHost:{ "fixture-mac" },newRequestID:{ uuid }) { args in
+        let correlation = MaatDiagnosticRecordModel(localHost:{ "fixture-mac" },newRequestID:{ uuid },reader:{ args in
             if args == MaatDiagnosticRecordModel.inspectArguments { return MaatDiagnosticCorrelationFixture.reply(["state":"ready","store_uuid":store]) }
             if args == MaatDiagnosticRecordModel.pendingArguments { return empty }
             if args == MaatDiagnosticRecordModel.requestArguments("prepare",id:key) { return prepared }
             if args == MaatDiagnosticRecordModel.requestArguments("record",id:key,confirm:true) { submissions += 1; return recorded }
             XCTAssertEqual(args,MaatDiagnosticRecordModel.requestArguments("read",id:key))
             return lookup
-        }
+        })
         let model = MaatDiagnosticResolutionModel()
         await model.recordFreshScreen(localHost:"fixture-mac",using:correlation)
         XCTAssertEqual(submissions,1); XCTAssertNotNil(model.screenResult)
@@ -101,14 +142,14 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
         let localHost = "fixture-mac"
         XCTAssertEqual(result.verdict.subject.hostBinding,"sirsi.maat.local-host-sha256.v1")
         XCTAssertNotEqual(result.verdict.subject.repo,localHost)
-        let foreignCorrelation = MaatDiagnosticRecordModel(localHost:{ "foreign-mac" },newRequestID:{ uuid }) { args in
+        let foreignCorrelation = MaatDiagnosticRecordModel(localHost:{ "foreign-mac" },newRequestID:{ uuid },reader:{ args in
             if args == MaatDiagnosticRecordModel.inspectArguments { return MaatDiagnosticCorrelationFixture.reply(["state":"ready","store_uuid":store]) }
             if args == MaatDiagnosticRecordModel.pendingArguments { return empty }
             if args == MaatDiagnosticRecordModel.requestArguments("prepare",id:key) { return prepared }
             if args == MaatDiagnosticRecordModel.requestArguments("record",id:key,confirm:true) { return recorded }
             XCTAssertEqual(args,MaatDiagnosticRecordModel.requestArguments("read",id:key))
             return lookup
-        }
+        })
         let foreign = MaatDiagnosticResolutionModel()
         await foreign.recordFreshScreen(localHost:"foreign-mac",using:foreignCorrelation)
         XCTAssertNil(foreign.screenResult)
@@ -329,7 +370,8 @@ final class MaatDiagnosticResolutionTests: XCTestCase {
         let correlation = fixture.model(), v = try verdict(), nav = Nav()
         let engine = SirsiEngine(maatCaseOperations:MaatCaseOperationStore(diagnosticRecord:correlation))
         var bridge: MaatDiagnosticResolutionView? = MaatDiagnosticResolutionView(engine:engine,origin:originCase(v),finding:v.findings[0])
-        weak var owned = bridge?.model
+        weak var owned: MaatDiagnosticResolutionModel?
+        owned = bridge?.model
         let identity = ObjectIdentifier(try XCTUnwrap(owned))
         nav.push(try XCTUnwrap(bridge)); bridge = nil
         let bridgeID = nav.stack.last?.id

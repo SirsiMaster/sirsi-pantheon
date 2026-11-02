@@ -263,6 +263,9 @@ func TestCheckConflicts_ForeignIntruderDuringQuiet(t *testing.T) {
 	if rep.Clean {
 		t.Fatal("a foreign bench during a quiet reservation must be a conflict")
 	}
+	if rep.MeasurementObservation.Status != SampleForeignActorObserved || rep.MeasurementObservation.Coverage != ObservationCoveragePointSample {
+		t.Fatalf("intruder must be disclosed in the point-sample observation, got %+v", rep.MeasurementObservation)
+	}
 	if len(rep.Intruders) != 1 || rep.Intruders[0].Detail != "tbraw-bench sr-A-fwd" {
 		t.Fatalf("must name exactly the foreign intruder, got %+v", rep.Intruders)
 	}
@@ -300,9 +303,11 @@ func TestReserve_TwoLanesOnM5_FirstFullSecondFloor(t *testing.T) {
 }
 
 func TestCheckConflicts_FloorHolderIsSharedNotInvalidated(t *testing.T) {
-	l := fixedLedger("2026-09-26T10:00:00Z")
+	setNormalPressureFixture(t)
+	clock := at("2026-09-26T10:00:00Z")
+	l := NewLedger(newFakeStore()).WithClock(func() time.Time { return clock })
 	full, _ := l.Reserve(mkReq("m5", "mercury", "2026-09-26T09:30:00Z", "2026-09-26T11:00:00Z", RegimeQuiet), false)
-	floor, _ := l.Reserve(mkReq("m5", "sne", "2026-09-26T09:30:00Z", "2026-09-26T11:00:00Z", RegimeQuiet), false)
+	floor, _ := l.Reserve(mkReq("m5", "sne", "2026-09-26T09:30:00Z", "2026-09-26T11:00:00Z", RegimeBuild), false)
 	if full.Reservation.Share != ShareFull || floor.Reservation.Share != ShareFloor {
 		t.Fatalf("setup: want full+floor, got %+v %+v", full.Reservation, floor.Reservation)
 	}
@@ -310,7 +315,7 @@ func TestCheckConflicts_FloorHolderIsSharedNotInvalidated(t *testing.T) {
 	SetActivityProbe(func(string) ([]Actor, error) {
 		return []Actor{
 			{Kind: "bench", Detail: "mercury H6", Owner: "mercury"}, // the primary holder's own work
-			{Kind: "model", Detail: "sne-runner", Owner: "sne"},     // a lane holding a GRANTED floor share
+			{Kind: "build", Detail: "sne-builder", Owner: "sne"},    // a build lane holding a GRANTED floor share
 		}, nil
 	})
 	defer SetActivityProbe(probeProcesses)
@@ -328,11 +333,29 @@ func TestCheckConflicts_FloorHolderIsSharedNotInvalidated(t *testing.T) {
 	if len(rep.Shared) != 1 || rep.Shared[0] != "shared: sne floor 4 cores" {
 		t.Fatalf("want the floor lane recorded as shared, got %+v", rep.Shared)
 	}
+	obs := rep.MeasurementObservation
+	if obs.Status != SampleSharedFloorObserved || obs.Coverage != ObservationCoveragePointSample || obs.ObservedAt == nil || len(obs.FloorShares) != 1 {
+		t.Fatalf("want typed floor activity in one point sample, got %+v", obs)
+	}
+	if got := obs.FloorShares[0]; got.ReservationID != floor.Reservation.ID || got.Holder != "sne" || got.Cores != floor.Reservation.Cores {
+		t.Fatalf("typed floor row must identify the admitted reservation, got %+v", got)
+	}
 
 	// Invalidate must never be triggered for a clean report (mirrors the CLI's
 	// own gate: it only calls Invalidate when !rep.Clean).
 	if rep.Reservation != full.Reservation.ID {
 		t.Fatalf("primary holder in the report should be the full-share lane, got %s", rep.Reservation)
+	}
+
+	clock = clock.Add(30 * time.Second)
+	for _, admitted := range []*Reservation{full.Reservation, floor.Reservation} {
+		live, err := l.Heartbeat(admitted.ID)
+		if err != nil {
+			t.Fatalf("admitted reservation %s must remain heartbeatable: %v", admitted.ID, err)
+		}
+		if live.ID != admitted.ID || live.Status != StatusActive || live.HeartbeatAt != clock.Format(time.RFC3339) {
+			t.Fatalf("heartbeat must renew the same active reservation, got %+v", live)
+		}
 	}
 }
 

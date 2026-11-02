@@ -6,10 +6,93 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func fixtureMarker() MaintenanceMarker {
 	return MaintenanceMarker{1, strings.Repeat("1", 32), strings.Repeat("a2", 32), 3, 4}
+}
+
+func TestActiveRelayDrainIsBoundedExactAndResumable(t *testing.T) {
+	var paused bool
+	hold := true
+	release := make(chan struct{})
+	drainResult := error(nil)
+	drain := func(ctx context.Context) error {
+		if !paused {
+			t.Fatal("drain callback ran before the same-process pause")
+		}
+		if hold {
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		if drainResult != nil {
+			return drainResult
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return nil
+		}
+	}
+	resume := func() { paused = false }
+	g, err := NewActiveMaintenance(123, "active-start", 3, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := g.SetDrainHandlers(func(ctx context.Context) error {
+		paused = true
+		return drain(ctx)
+	}, resume, func(expected MaintenanceReady) error {
+		if expected.State != "relay_active" || expected.PID != 123 || expected.Started != "active-start" {
+			return errors.New("active producer generation changed")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	active := g.Status()
+	if active.State != "relay_active" || active.PID != 123 || active.Started != "active-start" {
+		t.Fatalf("active control lost producer binding: %+v", active)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := g.PrepareDrain(ctx, active); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("timed-out duty was acknowledged: %v", err)
+	}
+	if g.Status().State != "relay_active" || paused {
+		t.Fatal("bounded refusal did not reopen the live producer")
+	}
+	hold = false
+	drainResult = errors.New("local outcome custody unsettled")
+	settlementCtx, settle := context.WithTimeout(context.Background(), time.Second)
+	defer settle()
+	if _, err := g.PrepareDrain(settlementCtx, g.Status()); err == nil {
+		t.Fatal("local settlement debt acknowledged")
+	}
+	if paused || g.Status().State != "relay_active" {
+		t.Fatal("settlement debt did not resume the producer")
+	}
+	drainResult = nil
+	ctx2, stop := context.WithTimeout(context.Background(), time.Second)
+	defer stop()
+	ack, err := g.PrepareDrain(ctx2, g.Status())
+	if err != nil || ack.State != "relay_drain_acknowledged" || !paused {
+		t.Fatalf("exact settled drain was not acknowledged: %+v %v", ack, err)
+	}
+	wrong := ack
+	wrong.Generation = strings.Repeat("f", 32)
+	if _, err := g.ResumeDrain(wrong); err == nil || !paused {
+		t.Fatal("foreign generation resumed the selected relay")
+	}
+	activeAgain, err := g.ResumeDrain(ack)
+	if err != nil || activeAgain.State != "relay_active" || paused {
+		t.Fatalf("exact acknowledgment did not resume: %+v %v", activeAgain, err)
+	}
 }
 
 func TestStartupMaintenanceRequiresExactExplicitActivation(t *testing.T) {

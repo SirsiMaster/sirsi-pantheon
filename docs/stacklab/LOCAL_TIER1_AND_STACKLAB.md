@@ -116,8 +116,12 @@ catalog` and explicit canonical fabric `doctor` keep their existing contracts.
 The native Stack Lab root inspects only local preferences on opening and offers
 enable/disable, provider selection and installed-recipe inspection without a
 project. Fabric wing checks are a deliberate separate navigation. Missing
-installed payload offers the existing release workspace and retry. A failed
-read labels prior state/catalogue as retained; disabled/unknown is never green.
+installed payload offers the existing release workspace and retry. The
+read-only fabric check resolves the existing `gh` executable from inherited
+`PATH`, then checks the standard macOS Homebrew locations without changing the
+app's `PATH`. A missing executable is an explicit unknown diagnostic with
+install guidance; it cannot become a clean or empty roster. A failed read
+labels prior state/catalogue as retained; disabled/unknown is never green.
 
 ## Proof boundaries
 

@@ -43,9 +43,12 @@ type Decision struct {
 	SystemOne *MaatVerdict `json:"system_one,omitempty"`
 	// SystemOneCalibration binds one recorded local auto-pass to a distinct
 	// independent outcome. It is audit evidence only, never a local grant.
-	SystemOneCalibration      *CalibrationRecord         `json:"system_one_calibration,omitempty"`
-	FailureMemoryReceipt      *PreflightReceiptReference `json:"failure_memory_receipt,omitempty"`
-	FailureMemoryIncidentKeys *[]string                  `json:"failure_memory_incident_keys,omitempty"`
+	SystemOneCalibration           *CalibrationRecord              `json:"system_one_calibration,omitempty"`
+	FailureMemoryReceipt           *PreflightReceiptReference      `json:"failure_memory_receipt,omitempty"`
+	FailureMemoryIncidentKeys      *[]string                       `json:"failure_memory_incident_keys,omitempty"`
+	SourceQualification            *QualificationEvent             `json:"source_qualification,omitempty"`
+	LifecycleAdoption              *LifecycleOwnerAdoption         `json:"lifecycle_owner_adoption,omitempty"`
+	BinaryDriftInactiveDisposition *BinaryDriftInactiveDisposition `json:"binary_drift_inactive_disposition,omitempty"`
 }
 
 // A pointer preserves Decision's existing comparability while the optional
@@ -457,12 +460,35 @@ func (j *FileDecisionJournal) appendLocked(decision Decision) error {
 	if err != nil {
 		return fmt.Errorf("maat decision journal: open: %w", err)
 	}
-	defer f.Close()
-	if _, err := f.Write(append(encoded, '\n')); err != nil {
-		return fmt.Errorf("maat decision journal: append: %w", err)
+	return appendDecisionRecord(f, append(encoded, '\n'))
+}
+
+type decisionAppendFile interface {
+	io.Writer
+	Sync() error
+	Close() error
+}
+
+// appendDecisionRecord reports incomplete writes and every durability/close
+// failure. The earliest write or sync failure takes precedence over a later
+// close failure, but Close is always attempted exactly once.
+func appendDecisionRecord(file decisionAppendFile, record []byte) error {
+	n, writeErr := file.Write(record)
+	if writeErr == nil && n != len(record) {
+		writeErr = io.ErrShortWrite
 	}
-	if err := f.Sync(); err != nil {
-		return fmt.Errorf("maat decision journal: sync: %w", err)
+	var appendErr error
+	if writeErr != nil {
+		appendErr = fmt.Errorf("maat decision journal: append: %w", writeErr)
+	} else if syncErr := file.Sync(); syncErr != nil {
+		appendErr = fmt.Errorf("maat decision journal: sync: %w", syncErr)
+	}
+	closeErr := file.Close()
+	if appendErr != nil {
+		return appendErr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("maat decision journal: close: %w", closeErr)
 	}
 	return nil
 }
@@ -485,6 +511,25 @@ func (j *FileDecisionJournal) FindByEvidence(kind, evidence string) (Decision, b
 		return false
 	})
 	return found, ok, err
+}
+
+// FindUniqueByEvidence strictly scans the complete retained journal and keeps
+// at most one row matching the evidence reference, regardless of kind. The
+// match count lets authorization paths check evidence uniqueness before
+// validating the row's kind and payload without relying on recent history.
+func (j *FileDecisionJournal) FindUniqueByEvidence(evidence string) (Decision, int, error) {
+	var found Decision
+	matches := 0
+	_, err := j.scanStrict(func(d Decision) bool {
+		if d.Evidence == evidence {
+			matches++
+			if matches == 1 {
+				found = d
+			}
+		}
+		return false // scanStrict must validate the entire retained tail.
+	})
+	return found, matches, err
 }
 
 // HasOriginDecision reports whether a strict retained row matches the exact
@@ -679,6 +724,33 @@ func normalizeDecision(decision *Decision) error {
 }
 
 func validateDecision(decision Decision) error {
+	if decision.BinaryDriftInactiveDisposition != nil {
+		if decision.Kind != "diagnostic owner acceptance" || decision.SystemOne != nil || decision.SystemOneCalibration != nil || decision.FailureMemoryReceipt != nil || decision.FailureMemoryIncidentKeys != nil || decision.SourceQualification != nil || decision.LifecycleAdoption != nil {
+			return fmt.Errorf("invalid binary-drift inactive disposition payload combination")
+		}
+		if err := decision.BinaryDriftInactiveDisposition.validate(decision); err != nil {
+			return err
+		}
+	}
+	if decision.Kind == "source qualification observation" && decision.SourceQualification == nil {
+		return fmt.Errorf("lifecycle decision requires its typed event")
+	}
+	if decision.SourceQualification != nil {
+		if decision.Kind != "source qualification observation" || decision.SystemOne != nil || decision.SystemOneCalibration != nil || decision.FailureMemoryReceipt != nil || decision.FailureMemoryIncidentKeys != nil || decision.LifecycleAdoption != nil {
+			return fmt.Errorf("invalid lifecycle decision kind/payload combination")
+		}
+		if err := decision.SourceQualification.validate(); err != nil {
+			return err
+		}
+	}
+	if decision.LifecycleAdoption != nil {
+		if decision.Kind != "source qualification owner adoption" || decision.SystemOne != nil || decision.SystemOneCalibration != nil || decision.FailureMemoryReceipt != nil || decision.FailureMemoryIncidentKeys != nil || decision.SourceQualification != nil {
+			return fmt.Errorf("invalid lifecycle owner-adoption kind/payload combination")
+		}
+		if err := decision.LifecycleAdoption.validate(); err != nil {
+			return err
+		}
+	}
 	for field, value := range map[string]string{
 		"time": decision.Time, "host": decision.Host, "kind": decision.Kind,
 		"requester": decision.Requester, "assessed": decision.Assessed,

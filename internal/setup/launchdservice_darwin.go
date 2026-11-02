@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 	"golang.org/x/sys/unix"
 )
 
@@ -262,13 +263,16 @@ const (
 // Only the relay uses these instance-owned seams. Existing service profiles
 // retain their implementation; tests never replace process-wide dependencies.
 type rootRelayDependencies struct {
-	uid, euid  func() int
-	read       func(context.Context, []byte, string, ...string) ([]byte, error)
-	artifact   func(string, bool) ([]byte, string, error)
-	lock       func(string, func() error) error
-	wait       func(context.Context, time.Duration) error
-	spoolClear func(context.Context) error
-	admission  func(context.Context, func() error) error
+	uid, euid    func() int
+	read         func(context.Context, []byte, string, ...string) ([]byte, error)
+	artifact     func(string, bool) ([]byte, string, error)
+	lock         func(string, func() error) error
+	wait         func(context.Context, time.Duration) error
+	spoolClear   func(context.Context) error
+	admission    func(context.Context, func() error) error
+	prepareDrain func(context.Context, ServiceInstance) (servicedrain.MaintenanceReady, error)
+	resumeDrain  func(context.Context, ServiceInstance, servicedrain.MaintenanceReady) error
+	verifyDrain  func(context.Context, ServiceInstance, servicedrain.MaintenanceReady) error
 }
 
 func (b nativeServiceBackend) relayDependencies() rootRelayDependencies {
@@ -277,6 +281,7 @@ func (b nativeServiceBackend) relayDependencies() rootRelayDependencies {
 	}
 	return rootRelayDependencies{
 		uid: os.Getuid, euid: os.Geteuid, read: rootRelayRead, lock: withServiceLock,
+		prepareDrain: prepareRootRelayDrain, resumeDrain: resumeRootRelayDrain, verifyDrain: verifyRootRelayDrain,
 		admission: func(ctx context.Context, op func() error) error {
 			return routerstore.WithSpoolQuiescence(ctx, rootRelayPhysicalSpool, op)
 		},
@@ -301,6 +306,99 @@ func (b nativeServiceBackend) relayDependencies() rootRelayDependencies {
 			}
 		},
 	}
+}
+
+func prepareRootRelayDrain(ctx context.Context, p ServiceInstance) (servicedrain.MaintenanceReady, error) {
+	var zero servicedrain.MaintenanceReady
+	uid, _, err := maintenanceRelayUser()
+	if err != nil {
+		return zero, err
+	}
+	started, err := servicedrain.MaintenanceStart(p.PID)
+	if err != nil {
+		return zero, err
+	}
+	bounded, cancel := context.WithTimeout(ctx, servicedrain.RelayDrainTimeout+5*time.Second)
+	defer cancel()
+	ready, err := servicedrain.ReadMaintenance(bounded, uid, p.PID, started, nil)
+	if err != nil {
+		return zero, err
+	}
+	root, _, err := maintenanceSpool(ready.Marker.RootDevice, ready.Marker.RootInode)
+	if err != nil {
+		return zero, errors.Join(errors.New("service lifecycle: producer control is not bound to the selected physical spool"), err)
+	}
+	if err := root.Close(); err != nil {
+		return zero, err
+	}
+	if ready.State == "relay_drain_acknowledged" {
+		return ready, nil // Exact current-process prepared state; continue only under this fresh apply.
+	}
+	prepared, err := servicedrain.PrepareRelayDrain(bounded, uid, p.PID, started, ready)
+	if err == nil {
+		return prepared, nil
+	}
+	// The relay can finish the bounded pause just as the controller's reply
+	// deadline expires. Read back the same generation and explicitly resume only
+	// that exact acknowledged state; a pending, changed or unreadable state stays
+	// held for operator recovery and never authorizes retirement.
+	reconcile, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	current, readErr := servicedrain.ReadMaintenance(reconcile, uid, p.PID, started, nil)
+	if readErr == nil && current.State == "relay_drain_acknowledged" && current.Version == ready.Version+2 && sameRootDrainBinding(current, ready) {
+		if _, resumeErr := servicedrain.ResumeRelayAfterDrain(reconcile, uid, p.PID, started, current); resumeErr != nil {
+			return servicedrain.MaintenanceReady{}, errors.Join(err, errors.New("service lifecycle: drain reply was uncertain and exact relay resume failed"), resumeErr)
+		}
+	}
+	return servicedrain.MaintenanceReady{}, errors.Join(err, readErr)
+}
+
+func sameRootDrainBinding(a, b servicedrain.MaintenanceReady) bool {
+	a.State, b.State = "", ""
+	a.Version, b.Version = 0, 0
+	return a == b
+}
+
+func verifyRootRelayDrain(ctx context.Context, p ServiceInstance, expected servicedrain.MaintenanceReady) error {
+	uid, _, err := maintenanceRelayUser()
+	if err != nil {
+		return err
+	}
+	started, err := servicedrain.MaintenanceStart(p.PID)
+	if err != nil {
+		return err
+	}
+	current, err := servicedrain.ReadMaintenance(ctx, uid, p.PID, started, nil)
+	if err != nil || current != expected || expected.State != "relay_drain_acknowledged" {
+		return errors.Join(errors.New("service lifecycle: exact active relay drain acknowledgment changed"), err)
+	}
+	root, _, err := maintenanceSpool(expected.Marker.RootDevice, expected.Marker.RootInode)
+	if err != nil {
+		return errors.Join(errors.New("service lifecycle: producer drain root changed"), err)
+	}
+	return root.Close()
+}
+
+func resumeRootRelayDrain(ctx context.Context, p ServiceInstance, ready servicedrain.MaintenanceReady) error {
+	uid, _, err := maintenanceRelayUser()
+	if err != nil {
+		return err
+	}
+	started, err := servicedrain.MaintenanceStart(p.PID)
+	if err != nil {
+		return err
+	}
+	bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	root, _, err := maintenanceSpool(ready.Marker.RootDevice, ready.Marker.RootInode)
+	if err != nil {
+		return errors.Join(errors.New("service lifecycle: cannot resume against a changed physical spool"), err)
+	}
+	if err := root.Close(); err != nil {
+		return err
+	}
+	_, err = servicedrain.ResumeRelayAfterDrain(bounded, uid, p.PID, started, ready)
+	return err
 }
 
 func rootRelayArtifactPolicy(plist bool, st unix.Stat_t) error {
@@ -514,12 +612,52 @@ func (b nativeServiceBackend) refreshRootRelay(ctx context.Context, p ServiceIns
 		return errors.New("service lifecycle: producer admission unavailable")
 	}
 	return d.lock(rootRelayPlist, func() error {
-		return d.admission(ctx, func() error {
-			// Service lock serializes maintainers; producer admission excludes only
-			// updated spool clients. Legacy producers still require owner quiescence.
-			// Repeated checks catch observed drift/children; the owner --drained
-			// assertion remains essential because a child may spawn after the last
-			// sample. This is not an atomic kernel drain/bootout guarantee.
+		return d.admission(ctx, func() (retErr error) {
+			var drain *servicedrain.MaintenanceReady
+			resumeRequired := true
+			defer func() {
+				if drain == nil || !resumeRequired {
+					return
+				}
+				resumeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				current, inspectErr := b.inspectRootRelay(resumeCtx)
+				if inspectErr != nil || current != p {
+					retErr = errors.Join(retErr, errors.New("service lifecycle: relay drain remains held; selected instance could not be revalidated for resume"), inspectErr)
+					return
+				}
+				if d.resumeDrain == nil {
+					retErr = errors.Join(retErr, errors.New("service lifecycle: exact relay resume control unavailable; drain remains held"))
+					return
+				}
+				if err := d.resumeDrain(resumeCtx, p, *drain); err != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("service lifecycle: relay drain remains held; explicit recovery required: %w", err))
+				}
+			}()
+			// The existing service lock and physical EX remain in force. The owner
+			// flag requests the operation; the selected producer's exact UDS reply
+			// is the drain evidence.
+			current, err := b.inspectRootRelay(ctx)
+			if err != nil || current != p {
+				return errors.Join(errors.New("service lifecycle: relay instance changed before producer control"), err)
+			}
+			processes, err := d.read(ctx, nil, "/bin/ps", "-axo", "pid=,ppid=")
+			if err != nil {
+				return errors.New("service lifecycle: relay child enumeration failed; no retirement performed")
+			}
+			if err := rootRelayChildrenClear(processes, p.PID); err != nil {
+				return err
+			}
+			if d.prepareDrain == nil {
+				return errors.New("service lifecycle: exact producer drain control unavailable")
+			}
+			ready, err := d.prepareDrain(ctx, p)
+			if err != nil {
+				return fmt.Errorf("service lifecycle: selected relay did not acknowledge duty settlement; no retirement performed: %w", err)
+			}
+			drain = &ready
+			// The exact producer acknowledgment is necessary but not sufficient:
+			// retain the existing repeated instance, child and physical queue checks.
 			for pass := 0; pass < 2; pass++ {
 				current, err := b.inspectRootRelay(ctx)
 				if err != nil {
@@ -542,6 +680,12 @@ func (b nativeServiceBackend) refreshRootRelay(ctx context.Context, p ServiceIns
 					return err
 				}
 			}
+			if d.verifyDrain == nil {
+				return errors.New("service lifecycle: exact producer drain readback unavailable")
+			}
+			if err := d.verifyDrain(ctx, p, *drain); err != nil {
+				return err
+			}
 			if err := ctx.Err(); err != nil {
 				return err
 			}
@@ -553,13 +697,16 @@ func (b nativeServiceBackend) refreshRootRelay(ctx context.Context, p ServiceIns
 				defer cancel()
 				current, probeErr := b.inspectRootRelay(probe)
 				if probeErr != nil {
+					resumeRequired = false
 					return fmt.Errorf("service lifecycle: relay retirement OUTCOME UNKNOWN; read-only probe failed; owning application recovery required: %w", errors.Join(bootoutErr, probeErr))
 				}
 				if current != p {
+					resumeRequired = false
 					return fmt.Errorf("service lifecycle: relay changed concurrently after failed bootout; no further mutation performed: %w", bootoutErr)
 				}
 				return fmt.Errorf("service lifecycle: bootout failed; original selected relay instance remains alive; no further mutation performed: %w", bootoutErr)
 			}
+			resumeRequired = false
 			// Once retired, cancellation of the requester must not abandon recovery.
 			// Recovery is still finite, exact-artifact and single-label only.
 			recovery, cancel := context.WithTimeout(context.Background(), 15*time.Second)

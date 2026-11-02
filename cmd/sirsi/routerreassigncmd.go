@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -11,10 +12,8 @@ import (
 )
 
 var (
-	reassignTo    string
-	reassignAgent string
-	drainAgent    string
-	drainDryRun   bool
+	drainAgent  string
+	drainDryRun bool
 )
 
 // openFacadeAs opens the dispatch facade and resolves the acting agent.
@@ -35,10 +34,20 @@ func openFacadeAs(override string) (*dispatch.Facade, string, error) {
 	return f, actor, nil
 }
 
-var routerReassignCmd = &cobra.Command{
-	Use:   "reassign <id> --to <agent>",
-	Short: "Hand an open item to another declared agent, keeping its id and history",
-	Long: `Moves an open, unclaimed item to another declared agent. The id, sender and
+type routerReassignJSON struct {
+	ID     string `json:"id"`
+	To     string `json:"to"`
+	Status string `json:"status"`
+}
+
+type routerReassignOperation func(id, to, agent string) error
+
+func newRouterReassignCmd(reassign routerReassignOperation) *cobra.Command {
+	var to, agent string
+	cmd := &cobra.Command{
+		Use:   "reassign <id> --to <agent>",
+		Short: "Hand an open item to another declared agent, keeping its id and history",
+		Long: `Moves an open, unclaimed item to another declared agent. The id, sender and
 body are kept, so replies still thread; a note records who moved it and when.
 
 Allowed only for the item's current recipient (a hand-off), or when the item
@@ -46,23 +55,37 @@ sits in a retired alias's mailbox and --to is that alias's declared successor
 (see 'router drain-aliases'). ADR-072 C5.
 
   sirsi router reassign 20260930-150958-codex-finalwishes-claude-finalwishes-helper-... --to claude-finalwishes-m5`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if reassignTo == "" {
-			return fmt.Errorf("--to is required")
-		}
-		f, actor, err := openFacadeAs(reassignAgent)
-		if err != nil {
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if to == "" {
+				return fmt.Errorf("--to is required")
+			}
+			if err := reassign(args[0], to, agent); err != nil {
+				return err
+			}
+			if JsonOutput {
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(routerReassignJSON{ID: args[0], To: to, Status: "open"}); err != nil {
+					return fmt.Errorf("router reassign committed item %s but JSON response write failed; reconcile by ID and do not retry: %w", args[0], err)
+				}
+				return nil
+			}
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "  Reassigned %s → %s\n", args[0], to)
 			return err
-		}
-		defer func() { _ = f.Close() }()
-		if err := f.Reassign(actor, args[0], reassignTo); err != nil {
-			return err
-		}
-		fmt.Printf("  Reassigned %s → %s\n", args[0], reassignTo)
-		return nil
-	},
+		},
+	}
+	cmd.Flags().StringVar(&to, "to", "", "Declared agent to receive the item")
+	cmd.Flags().StringVar(&agent, "agent", "", "Acting agent id (otherwise resolved from the current session)")
+	return cmd
 }
+
+var routerReassignCmd = newRouterReassignCmd(func(id, to, override string) error {
+	f, actor, err := openFacadeAs(override)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	return f.Reassign(actor, id, to)
+})
 
 var routerDrainAliasesCmd = &cobra.Command{
 	Use:   "drain-aliases",
@@ -112,8 +135,6 @@ Claimed items are reported and left alone. ADR-072 C5.
 }
 
 func init() {
-	routerReassignCmd.Flags().StringVar(&reassignTo, "to", "", "Declared agent to receive the item")
-	routerReassignCmd.Flags().StringVar(&reassignAgent, "agent", "", "Acting agent id (otherwise resolved from the current session)")
 	routerDrainAliasesCmd.Flags().StringVar(&drainAgent, "agent", "", "Acting agent id (otherwise resolved from the current session)")
 	routerDrainAliasesCmd.Flags().BoolVar(&drainDryRun, "dry-run", false, "Report what would move without moving it")
 	routerCmd.AddCommand(routerReassignCmd, routerDrainAliasesCmd)

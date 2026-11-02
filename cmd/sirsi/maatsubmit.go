@@ -79,7 +79,7 @@ func canonicalRepo(repo string) (string, error) {
 func resolveSubmitRequester() (string, error) {
 	sid := router.CurrentSessionID()
 	if sid == "" {
-		return "", fmt.Errorf("no unambiguous active session id (%s, CODEX_SESSION_ID or CODEX_THREAD_ID); refusing to guess requester identity", router.SessionIDEnv)
+		return "", fmt.Errorf("no active provider session key (%s, CODEX_THREAD_ID or legacy CODEX_SESSION_ID); refusing to guess requester identity", router.SessionIDEnv)
 	}
 	agent := router.ReadSessionAgentMarker(sid)
 	if agent == "" {

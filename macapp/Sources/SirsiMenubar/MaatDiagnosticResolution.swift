@@ -108,6 +108,16 @@ func maatCurrentDiagnosticResolution(verdict: MaatSystemOneVerdict, finding: Maa
         }
     }
 
+    // Re-observe on an explicit review click. Volatile memory operands can
+    // change while a user reads; that must refresh the review, not dead-end it.
+    func refreshForReview(verdict: MaatSystemOneVerdict, finding retained: MaatSystemOneFinding,
+                          localHost: String, snapshot: () -> FindingObservationSnapshot,
+                          read: () async -> SirsiEngine.JSONCommandRead) async -> DiagFinding? {
+        await refresh(verdict: verdict, finding: retained, localHost: localHost, read: read)
+        guard !Task.isCancelled, finding != nil else { return nil }
+        return beginReview(snapshot: snapshot())
+    }
+
     func cancelReview() {
         generation = UUID()
         finding = nil
@@ -199,14 +209,21 @@ func maatCurrentDiagnosticResolution(verdict: MaatSystemOneVerdict, finding: Maa
                         Text("Current: \(current.message)").sirsiFont(.body)
                         if let detail = current.detail { Text(detail).sirsiFont(.callout).textSelection(.enabled) }
                         Button {
-                            if let reviewed = model.beginReview(snapshot: engine.diagnosticSnapshot(check: current.check)) {
-                                nav.push(FindingView(engine: engine, finding: reviewed))
+                            guard let verdict = origin.systemOne, diagnosticTask == nil, screenTask == nil else { return }
+                            diagnosticTask = Task {
+                                if let reviewed = await model.refreshForReview(verdict: verdict, finding: finding,
+                                    localHost: maatLocalDiagnosticHost() ?? "",
+                                    snapshot: { engine.diagnosticSnapshot(check: current.check) },
+                                    read: { await engine.readHealthForVerification() }) {
+                                    nav.push(FindingView(engine: engine, finding: reviewed))
+                                }
+                                diagnosticTask = nil
                             }
                         } label: {
-                            Label("Review controlled resolution", systemImage: "wrench.and.screwdriver.fill")
+                            Label("Refresh and review resolution", systemImage: "wrench.and.screwdriver.fill")
                         }
                         .buttonStyle(.borderedProminent).tint(gold)
-                        .disabled(!model.canOpen(snapshot: engine.diagnosticSnapshot(check: current.check)))
+                        .disabled(model.busy || diagnosticTask != nil || screenTask != nil)
                         Text("Use Back after reviewing the result to return to this exact retained case. A new diagnostic read grants no repair consent.")
                             .sirsiFont(.caption).foregroundStyle(.secondary)
                     }

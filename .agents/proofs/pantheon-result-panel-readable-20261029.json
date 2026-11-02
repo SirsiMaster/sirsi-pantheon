@@ -1,0 +1,123 @@
+{
+  "work_item_id": "pantheon-result-panel-readable-20261029",
+  "agent_id": "codex-pantheon",
+  "repo": "/Users/thekryptodragon/.codex/worktrees/pantheon-result-panel-readable/sirsi-pantheon",
+  "status": "ready_for_review",
+  "classification": "platform-foundation",
+  "canon_read": [
+    {
+      "path": "PANTHEON_RULES.md",
+      "role": "governance",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/COMMERCIALIZATION_GATE.md",
+      "role": "scope",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/ARCHITECTURE_DESIGN.md",
+      "role": "architecture",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/SAFETY_DESIGN.md",
+      "role": "security",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "/Users/thekryptodragon/Development/SIRSI_MANIFESTO.md",
+      "role": "portfolio-canon",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/stacklab/pantheon-pt/canon/DESIGN.md",
+      "role": "stacklab-canon",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    },
+    {
+      "path": "docs/stacklab/maat/canon/NATIVE_REMEDIATION_EXECUTION.md",
+      "role": "architecture",
+      "read_at": "2026-10-29",
+      "notes": "Read applicable existing readability, native projection and confirmation contract; this fix changes layout only."
+    }
+  ],
+  "requirements_trace": [
+    {
+      "doc": "docs/stacklab/pantheon-pt/canon/DESIGN.md",
+      "section": "Native readability and command menus",
+      "claim": "Repair sheet reserves a usable loading viewport; apply and follow actions retain complete wrapped title and consequences at100/150percent.",
+      "files_changed": [
+        "macapp/Sources/SirsiMenubar/Views.swift",
+        "macapp/Sources/SirsiMenubar/ResultPresentation.swift",
+        "macapp/Tests/SirsiMenubarTests/ResultPresentationTests.swift",
+        "macapp/Tests/SirsiMenubarTests/ResultScrollViewportTests.swift"
+      ],
+      "evidence": [
+        "Native0fc9c4f2bdc74cc58d6e2fe9db89ee36 success0: app/testtargetcompiled;6focusedtests0failures;966scaled/0unscaledfontsites; retainedprimary/secondary100/150andnarrowPNGscaptures."
+      ]
+    },
+    {
+      "doc": "docs/stacklab/maat/canon/NATIVE_REMEDIATION_EXECUTION.md",
+      "section": "Approval and invocation",
+      "claim": "Existing frozen evidence/argv/repository confirmation and execution routes unchanged; style only.",
+      "files_changed": [
+        "macapp/Sources/SirsiMenubar/Views.swift"
+      ],
+      "evidence": [
+        "Diff changes only sheet presentation constraints and result action style/label; no execution/approval logic changed."
+      ]
+    }
+  ],
+  "closure_evidence": {
+    "product": "Address the owner screenshots of compressed repair sheets and clipped nested repair actions.",
+    "design": "Loading sheet minimum560x460/preferred680x640; content-sized prominent/secondary actions; realScrollView retained.",
+    "technical": "Native0fc9c4f2bdc74cc58d6e2fe9db89ee36 success0: app/testtargetcompiled;6focusedtests0failures;966scaled/0unscaledfontsites; retainedprimary/secondary100/150andnarrowPNGscaptures. Astra source/testdesignPASS. Installedsheetinitialmeasurement and bottomactionvisibility remain separately observed releasechecks; nativeScrollViewtest provesoverflow+clipmovement only.",
+    "operational": "No actual repair/purge/service/model action. Source is separate from SSA signed release and installed proof.",
+    "narrative": "StackLab design/component/recipe and changelog fragment updated in same candidate."
+  },
+  "verification": [
+    {
+      "name": "diff-check",
+      "command": "git diff --check",
+      "status": "passed",
+      "evidence": "No whitespace defects."
+    },
+    {
+      "name": "native-layout-and-scroll",
+      "command": "bash macapp/check-font-scaling.sh && swift test --package-path macapp --scratch-path OWNED_EVIDENCE/swift-scratch --jobs 1 --filter 'ResultPresentationTests|ResultScrollViewportTests|DiagnosticRepairActionTests'",
+      "status": "passed",
+      "evidence": "Native0fc9c4f2bdc74cc58d6e2fe9db89ee36 success0: app/testtargetcompiled;6focusedtests0failures;966scaled/0unscaledfontsites; retainedprimary/secondary100/150andnarrowPNGscaptures."
+    },
+    {
+      "name": "visual-component-readback",
+      "command": "View retained 300pt150percentlong primary and520pt150percent secondary PNGs",
+      "status": "passed",
+      "evidence": "Complete title/consequence visible with appropriate dark-on-gold primary and light-on-black secondary; componentrenders not installedsheetproof."
+    }
+  ],
+  "working_status": {
+    "environment": "Clean isolated managedworktree origin/main37d49c3f; inert render fixtures and preloaded-only hosted UI planned.",
+    "how_verified": "ActualSwiftcompile;6nativefocusedtests; manualcomponentPNGinspection;Astraindependentsourcereview.",
+    "observed_result": "Sourcequalified;normalCIandSSAinstalledintegrationnext.",
+    "verified_at": "2026-10-30T01:01:21.688607+00:00"
+  },
+  "handoffs": [],
+  "blockers": [],
+  "plan": {
+    "goal": "Repair panels and result actions remain readable and reachable while loading and at enlarged text sizes.",
+    "steps": [
+      "Reserve a usable loading viewport only at the two repair sheet hosts.",
+      "Replace result apply and follow action bezels with content-sized wrapped controls.",
+      "Compile and run inert native layout and real ScrollView regressions.",
+      "Independently review, publish a normal PR, and route signed installed integration to SSA."
+    ],
+    "estimated_duration": "45 minutes for source qualification and protected publication; release integration follows SSA train."
+  }
+}

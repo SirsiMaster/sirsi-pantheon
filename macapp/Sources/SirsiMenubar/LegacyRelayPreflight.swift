@@ -42,7 +42,7 @@ import Foundation
 }
 
 @MainActor struct LegacyRelayInstallerCapture {
-    typealias Invoke = @MainActor (String, [String], TimeInterval, @escaping @MainActor () -> Bool) async -> CommandExecution
+    typealias Invoke = @MainActor (String, [String], TimeInterval, @escaping ProcessLaunchAuthorization) async -> CommandExecution
     private let qualify: @MainActor () async throws -> String
     private let invoke: Invoke
     private let identityTimeout: TimeInterval
@@ -74,7 +74,7 @@ import Foundation
         }
     }
 
-    func capture(args: [String], authorize: @escaping @MainActor () -> Bool) async -> CommandExecution {
+    func capture(args: [String], authorize: @escaping ProcessLaunchAuthorization) async -> CommandExecution {
         let deadline = ProcessInfo.processInfo.systemUptime + overallTimeout
         let prepare = args == ["launchd", "maintenance-installer"]
         let verify = args.count == 4 && Array(args.prefix(3)) == ["launchd", "maintenance-installer", "--verify-selection"] &&

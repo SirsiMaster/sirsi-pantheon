@@ -1,0 +1,22 @@
+{
+  "schema": "sirsi.typed-contract.v1",
+  "wire_schema": "maat.source-lifecycle-receipt.v1",
+  "decoder": "internal/maat.DecodeLifecycleReceipt",
+  "kinds": ["policy", "evaluation", "outcome"],
+  "required_exact_keys": ["schema", "kind", "profile", "repo", "head_sha", "policy_ref", "policy", "dataset_sha256", "results_sha256", "run_id", "samples", "selected_ids", "screen_sha256", "final_gate", "candidate_gate"],
+  "profile_exact_keys": ["producer", "artifact_sha256", "model_version", "prompt_sha256", "recipe_sha256", "policy_sha256"],
+  "policy_exact_keys": ["id", "threshold", "boundary_threshold", "minimum_pass_samples", "minimum_changes_samples"],
+  "sample_exact_keys": ["id", "screen", "outcome_ref"],
+  "sample_screen": "The exact required source-screen schema2, unqualified only; the same strict Go source validator is normative, including nested findings/model/floor keys.",
+  "bounds": {"receipt_bytes": 262144, "samples": 512, "selected_ids": 512, "json_depth": 16, "history_bytes": 67108864, "history_rows": 100000, "history_row_bytes": 262144, "resolved_receipts_per_replay": 512},
+  "hashes": {
+    "raw_receipt": "SHA256 of exact canonical Instructions bytes, including whitespace",
+    "profile": "SHA256 of Go canonical JSON SourceProfileIdentity, in declared field order",
+    "policy": "SHA256 of Go canonical JSON QualificationPolicy, in declared field order",
+    "results": "SHA256 of canonical ordered LifecycleSample array, including unqualified screens and exact independent outcome references",
+    "dataset": "SHA256 of ordered JSON string array id:repo:head for every candidate sample",
+    "outcome_screen": "SHA256 of canonical JSON complete unqualified source screen"
+  },
+  "owner_adoption": {"schema": "maat.source-lifecycle-owner-adoption.v1", "journal_record": "one explicit --owner-adopt-review preview/confirm under the existing journal mutation lock", "required_bindings": ["exact review Instructions bytes and SHA256", "exact originating evaluation Instructions bytes and SHA256", "canonical receipt IDs and From attribution claims", "repository, head, profile, selected sample, screen digest, candidate and final outcome", "owner confirmation preview digest"], "raw_receipt_bytes_combined_max": 98304, "provenance": "From remains an unauthenticated claim; the envelope is local owner adoption, not reviewer authentication"},
+  "semantics": ["all keys required; inapplicable strings/arrays are empty, not absent/null", "unknown/duplicate/case-alias keys reject", "evaluation populations and selection are evidence declarations until independently accepted", "policy parameters are not empirically certified by the decoder or fixture tests", "shadow candidate classification is never production qualification", "canonical Get and From establish custody/attribution only, not authenticated independent acceptance", "installed verifier accepts only exact closed pins embedded in the canonical signed macOS engine; the current policy/evaluation/outcome inventory is empty", "owner adoption binds exact independent-review and originating-evaluation bytes, while preserving From only as an unauthenticated attribution claim", "no actual empirical profile is currently accepted; every model profile remains unqualified", "current CLI/native observation path remains informational and never enables a gate", "public v2 unqualified and deterministic v1 host/preflight contracts unchanged", "no gate activation or model invocation"]
+}
