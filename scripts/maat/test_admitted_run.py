@@ -102,7 +102,7 @@ class RegistryDeadlineTests(unittest.TestCase):
                 self.assertEqual(backend.released, ['fresh-quiet'])
                 self.assertEqual(record['requested_regime'], 'quiet')
                 if reply_regime == 'quiet' and share == 'full':
-                    self.assertEqual(code, 0)
+                    self.assertEqual(code, 0, record)
                     self.assertEqual(record['admission'], 'fresh-quiet')
                     self.assertFalse(record['borrowed'])
                     spawn.assert_called_once()
@@ -131,9 +131,10 @@ class RegistryDeadlineTests(unittest.TestCase):
                        'import os,json; p=os.environ["SIRSI_MAAT_EXECUTION_RECEIPT"]; '
                        'r=json.load(open(p)); assert r["supervisor_pid"]==os.getppid(); '
                        'assert r["work"]=="work"; assert os.stat(p).st_mode & 0o777 == 0o600']
+            record = {}
             with mock.patch.object(runner, 'process_identity', return_value=(1, 'actual-parent-birth')):
-                code = runner.supervise(command, 'm5', 'lane', 'thread', 'work', 10, backend, {})
-            self.assertEqual(code, 0)
+                code = runner.supervise(command, 'm5', 'lane', 'thread', 'work', 10, backend, record)
+            self.assertEqual(code, 0, record)
             files = list(Path(directory).glob('execution-*.json'))
             self.assertEqual(len(files), 1)
             data = json.loads(files[0].read_text())
@@ -509,7 +510,7 @@ class SupervisorTests(unittest.TestCase):
         backend.cpu_cores = 2
         code, record = self.run_case(backend,command=[sys.executable,'-c',
             'import os; assert os.environ["GOMAXPROCS"] == "2"; assert os.environ["OMP_NUM_THREADS"] == "2"'])
-        self.assertEqual(code,0)
+        self.assertEqual(code, 0, record)
         self.assertEqual(record['share'],'floor')
 
     def test_owned_lookup_uses_exact_id_query_without_resource(self):
@@ -530,14 +531,14 @@ class SupervisorTests(unittest.TestCase):
     def test_borrowed_admission_success_does_not_release_others_hold(self):
         backend = Backend(admission())
         code, record = self.run_case(backend)
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 0, record)
         self.assertTrue(record['borrowed'])
         self.assertEqual(backend.released, [])
 
     def test_own_admission_is_acquired_and_released(self):
         backend = Backend(None)
         code, record = self.run_case(backend)
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 0, record)
         self.assertFalse(record['borrowed'])
         self.assertEqual(backend.released, ['fixture-id'])
 
@@ -581,7 +582,7 @@ class SupervisorTests(unittest.TestCase):
     def test_timeout_reaps_only_owned_harmless_child(self):
         code, record = self.run_case(Backend(admission()), [sys.executable, '-c', 'import time;time.sleep(60)'], timeout=.05)
         self.assertEqual(code, 78)
-        with self.assertRaises(ProcessLookupError):
+        with self.assertRaises(ProcessLookupError, msg=f"owned timeout child was not reaped: {record}"):
             os.kill(record['pid'], 0)
 
     def test_admission_loss_is_observed_at_bounded_remote_tick(self):
