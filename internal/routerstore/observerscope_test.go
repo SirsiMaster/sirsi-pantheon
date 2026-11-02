@@ -2,6 +2,7 @@ package routerstore
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -65,6 +66,44 @@ func TestObserverReadsWholeLedgerButMutatesNothing(t *testing.T) {
 	_, err = f.client(ObserverScope).Inbox("ra")
 	wantLaneScope(t, "session as @observer", err)
 	wantLaneScope(t, "thread for @observer", rs.UpsertThreads([]ThreadRecord{{ThreadID: "thr-o", Agent: ObserverScope, Status: "active", Host: f.host}}))
+}
+
+// The observer sees every lane's thread, but only the fields lane verdicts read: never a continuation
+// payload, current item, last error or process identity (SSA PR #1310 review, 20261102-050808). Its own
+// agent's row stays whole so its register/heartbeat CAS still matches.
+func TestObserverListThreadsNeverCarriesContinuationPayload(t *testing.T) {
+	f := newScopedFixture(t, []string{"router-board", ObserverScope})
+	secret := `{"thread_id":"thr-ra","agent_id":"ra","surface":"claude","status":"active","consumer_capable":true,` +
+		`"lane":{"hold":"attended"},"current_item":"item-secret","last_error":"err-secret","pid":4242,"repo":"/Users/x/repo",` +
+		`"session_id":"sess-secret","suspend_payload":{"resume_prompt":"resume-secret","owned_open_items":["owned-secret"]}}`
+	own := `{"thread_id":"thr-board","agent_id":"router-board","current_item":"own-kept"}`
+	if err := f.backend.UpsertThreads([]ThreadRecord{
+		{ThreadID: "thr-ra", Agent: "ra", Status: "active", Host: "m1", Payload: []byte(secret)},
+		{ThreadID: "thr-board", Agent: "router-board", Status: "active", Host: f.host, Payload: []byte(own)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	threads, err := f.client("router-board").ListThreads()
+	if err != nil {
+		t.Fatalf("ListThreads: %v", err)
+	}
+	got := map[string]string{}
+	for _, r := range threads {
+		got[r.ThreadID] = string(r.Payload)
+	}
+	for _, leak := range []string{"item-secret", "err-secret", "4242", "/Users/x/repo", "sess-secret", "resume-secret", "owned-secret", "suspend_payload"} {
+		if strings.Contains(got["thr-ra"], leak) {
+			t.Errorf("observer saw %q in a foreign thread: %s", leak, got["thr-ra"])
+		}
+	}
+	for _, keep := range []string{`"surface":"claude"`, `"consumer_capable":true`, `"hold":"attended"`, `"agent_id":"ra"`} {
+		if !strings.Contains(got["thr-ra"], keep) {
+			t.Errorf("projection dropped %s that lane verdicts read: %s", keep, got["thr-ra"])
+		}
+	}
+	if !strings.Contains(got["thr-board"], "own-kept") {
+		t.Errorf("observer's own thread was projected; its CAS baseline would never match: %s", got["thr-board"])
+	}
 }
 
 // Without the marker a scoped token keeps today's lane confinement exactly.
