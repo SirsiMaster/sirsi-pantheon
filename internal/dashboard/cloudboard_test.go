@@ -27,6 +27,7 @@ func TestCloudBoardServesOnlyTheRouterSurface(t *testing.T) {
 		{"GET", "/scan", http.StatusNotFound},
 		{"POST", "/api/run", http.StatusMethodNotAllowed},
 		{"POST", "/api/router", http.StatusMethodNotAllowed},
+		{"POST", "/healthz", http.StatusMethodNotAllowed},
 	} {
 		rec := httptest.NewRecorder()
 		s.handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))

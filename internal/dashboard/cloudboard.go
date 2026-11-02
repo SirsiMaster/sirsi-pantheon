@@ -15,12 +15,12 @@ var cloudBoardPrefixes = []string{"/assets/", "/api/router/v1/"}
 
 func cloudBoardOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
-			_, _ = w.Write([]byte("ok\n"))
-			return
-		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
 			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if r.URL.Path == "/healthz" {
+			_, _ = w.Write([]byte("ok\n"))
 			return
 		}
 		if cloudBoardAllows(r.URL.Path) {

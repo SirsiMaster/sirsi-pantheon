@@ -5,6 +5,7 @@
 # a read-only @observer token; no Mac builds or serves it.
 #
 #   board.sh provision   one-time: service account, token secret, IAP binding target
+#   JOB_SA=<sa> board.sh provision|mint   (the mint principal is always explicit)
 #   board.sh mint        one-time (and on rotation): mint the @observer token straight
 #                        into Secret Manager from a Cloud Run job on the service VPC;
 #                        the plaintext is never printed or seen by anyone
@@ -21,7 +22,9 @@ ROOT=$(git rev-parse --show-toplevel)
 PROJECT=${PROJECT:-sirsi-nexus-live}; REGION=${REGION:-us-central1}; INSTANCE=${INSTANCE:-sirsi-router}
 SERVICE=sirsi-router-board; ROUTER=${ROUTER:-sirsi-router}; DOMAIN=${DOMAIN:-sirsi.ai}
 SA="$SERVICE@$PROJECT.iam.gserviceaccount.com"; SECRET=sirsi-router-board-token
-JOB_SA=${JOB_SA:-claude-agent@$PROJECT.iam.gserviceaccount.com}
+# The mint job's principal is named by the operator, never defaulted: it must hold
+# secretVersionAdder on exactly this one secret (provision grants it; mint checks it).
+JOB_SA=${JOB_SA:-}
 G="gcloud --project=$PROJECT --quiet"
 run() { echo "+ $*" >&2; [ "${DRY_RUN:-0}" = 1 ] || "$@"; }
 export GOPRIVATE=${GOPRIVATE:-github.com/SirsiMaster/sirsi-inference,github.com/SirsiMaster/sirsi-mercury}
@@ -66,6 +69,11 @@ verify() {
   return "$bad"
 }
 
+need_job_sa() {
+  [[ "$JOB_SA" =~ ^[a-z][a-z0-9-]+@$PROJECT\.iam\.gserviceaccount\.com$ ]] ||
+    { echo "board: set JOB_SA=<name>@$PROJECT.iam.gserviceaccount.com (the mint job's principal)" >&2; exit 2; }
+}
+
 case "${1:-}" in
 verify)
   verify
@@ -77,8 +85,14 @@ provision)
   $G secrets describe "$SECRET" >/dev/null 2>&1 || run $G secrets create "$SECRET" --replication-policy=automatic
   # Exactly one secret, nothing else: no Cloud SQL, no other secret.
   run $G secrets add-iam-policy-binding "$SECRET" --member="serviceAccount:$SA" --role=roles/secretmanager.secretAccessor
+  need_job_sa
+  run $G secrets add-iam-policy-binding "$SECRET" --member="serviceAccount:$JOB_SA" --role=roles/secretmanager.secretVersionAdder
   ;;
 mint)
+  need_job_sa
+  [ "${DRY_RUN:-0}" = 1 ] || $G secrets get-iam-policy "$SECRET" --format=json | jq -e --arg m "serviceAccount:$JOB_SA" \
+    'any(.bindings[]?; .role=="roles/secretmanager.secretVersionAdder" and (.members|index($m)))' >/dev/null ||
+    { echo "board: $JOB_SA lacks secretVersionAdder on $SECRET (run board.sh provision)" >&2; exit 1; }
   # Same shape as migrate-job.sh: only VPC hosts reach the private-IP ledger. The job writes the new
   # token as a secret version itself (publishMintedRouterToken) and prints only its id and scope.
   if [ "${DRY_RUN:-0}" = 1 ]; then IMAGE="<dry-run:router-image>"; else
