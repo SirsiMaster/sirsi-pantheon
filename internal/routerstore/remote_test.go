@@ -216,7 +216,7 @@ func TestRemoteLocalExportHonorsPerCallAndParentCancellation(t *testing.T) {
 				t.Fatalf("projection RPC counts: Get=%d SendGuarded=%d ExportItem=%d", gets.Load(), sends.Load(), exports.Load())
 			}
 			if _, err := os.Stat(filepath.Join(itemsDir, id+".md")); !os.IsNotExist(err) {
-				t.Fatalf("cancelled projection wrote an audit file: stat err=%v", err)
+				t.Fatalf("canceled projection wrote an audit file: stat err=%v", err)
 			}
 			if item, err := backend.Get(id); err != nil || item.ID != id {
 				t.Fatalf("stalled projection changed the canonical row: item=%+v err=%v", item, err)
