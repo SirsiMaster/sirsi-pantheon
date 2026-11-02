@@ -95,16 +95,19 @@ func TestTrashJournalFailuresFenceUnlinksAndPreserveOutcomeDebt(t *testing.T) {
 		{name: "index-fsync", stage: "index-fsync", indexed: true, wantState: "unknown", wantStatus: "review_required"},
 		{name: "intent-fsync", stage: "intent-fsync", indexed: true, wantState: "unknown", wantStatus: "review_required"},
 		{name: "attempt-start-sync", configure: func(j *durableJournal) { j.syncFn = func(int) error { return errors.New("injected fsync failure") } }, wantState: "not_finalized", wantStatus: "review_required"},
-		{name: "attempt-start-short-write", configure: func(j *durableJournal) {
+		{name: "attempt-start-partial-write", configure: func(j *durableJournal) {
 			writes := 0
-			j.writeFn = func(_ int, data []byte) (int, error) {
+			j.writeFn = func(fd int, data []byte) (int, error) {
 				writes++
 				if writes == 1 {
-					return 1, nil
+					return unix.Write(fd, data[:1])
 				}
-				return 0, nil
+				return 0, errors.New("injected failure after partial attempt write")
 			}
 		}, wantState: "unknown", wantStatus: "review_required"},
+		{name: "attempt-start-zero-progress", configure: func(j *durableJournal) {
+			j.writeFn = func(_ int, _ []byte) (int, error) { return 0, nil }
+		}, wantState: "not_finalized", wantStatus: "review_required"},
 		{name: "attempt-result", stage: "attempt-result", deleted: true, wantState: "not_finalized", wantStatus: "partial"},
 		{name: "attempt-result-fsync", configure: func(j *durableJournal) {
 			calls := 0

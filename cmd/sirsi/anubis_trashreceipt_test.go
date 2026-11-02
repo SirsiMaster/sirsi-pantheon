@@ -153,7 +153,7 @@ func TestTrashReceiptCobraOwnedSelectionFlow(t *testing.T) {
 	if !browse.Hidden {
 		t.Fatal("unsupported stateless compatibility route is visible")
 	}
-	raw, err := execute(browse, encode(trashreceipt.BrowseRequest{Schema: trashreceipt.BrowseSchema, Directory: "."}))
+	raw, err = execute(browse, encode(trashreceipt.BrowseRequest{Schema: trashreceipt.BrowseSchema, Directory: "."}))
 	var page trashreceipt.Page
 	decode(raw, &page)
 	if err == nil || page.Status != "failed" || len(page.Entries) != 0 || page.Next != nil || len(page.Errors) == 0 {
