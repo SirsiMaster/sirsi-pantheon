@@ -73,15 +73,16 @@ func sneModel() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("local model selection: %w", err)
 	}
+	// The marker is checked first: an invalid Apollo router marker fails closed even when a model is configured.
+	provided, perr := liveness.CheckApolloGemmaProvider(home)
+	if perr != nil {
+		return "", fmt.Errorf("local model selection: %w", perr)
+	}
 	b, rerr := os.ReadFile(filepath.Join(home, ".sirsi", "gemma-model.conf"))
 	if rerr == nil {
 		if m := strings.TrimSpace(string(b)); m != "" {
 			return m, nil
 		}
-	}
-	provided, perr := liveness.CheckApolloGemmaProvider(home)
-	if perr != nil {
-		return "", fmt.Errorf("local model selection: %w", perr)
 	}
 	if !provided {
 		return "local", nil

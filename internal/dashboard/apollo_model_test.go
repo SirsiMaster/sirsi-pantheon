@@ -33,6 +33,8 @@ func TestApolloDashboardSelectedModel(t *testing.T) {
 		{name: "Apollo, no selection is an error", conf: nil, apollo: 0o755, wantErr: "no model is selected"},
 		{name: "Apollo, blank selection is an error", conf: strPtr("\n"), apollo: 0o755, wantErr: "no model is selected"},
 		{name: "invalid Apollo marker is an error, never local", conf: nil, apollo: 0o644, wantErr: "regular executable"},
+		{name: "invalid Apollo marker beats a configured model", conf: strPtr("mlx-community/gemma-4-12B-it-8bit\n"), apollo: 0o644, wantErr: "regular executable"},
+		{name: "legacy broker keeps a configured model", conf: strPtr("mlx-community/gemma-4-12B-it-8bit\n"), want: "mlx-community/gemma-4-12B-it-8bit"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
