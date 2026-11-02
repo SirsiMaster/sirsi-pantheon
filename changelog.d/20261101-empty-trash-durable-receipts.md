@@ -4,4 +4,6 @@ The review-bound Empty Trash apply path now persists the exact reviewed manifest
 
 History file opens now refuse blocking/special-file substitutions, and index lock contention fails before deletion with retry guidance. A partial crash-left index tail is isolated with a synced newline boundary before a later row is appended; failure to persist that boundary prevents deletion. Corrupt attempt indexes and terminal counts are surfaced as unknown history instead of panicking. Failure fixtures distinguish a partially written attempt (unknown outcome) from zero progress (not finalized).
 
+The native history fixture propagates JSON encoding errors through XCTest's throwing test method.
+
 Refs: `docs/stacklab/pantheon-pt/canon/TRASH_RECEIPT.md`, `contracts/stacklab/anubis-trash-receipt-v1.json`, `docs/ADR-033-REMEDIATION-CATALOG.md`

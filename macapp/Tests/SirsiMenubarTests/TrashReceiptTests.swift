@@ -228,7 +228,7 @@ final class TrashReceiptTests: XCTestCase {
                                         terminal_report: nil, integrity_error: nil)
         XCTAssertTrue(detail.validWireShape)
         let read = TrashHistoryCommandRead(detail: CommandExecution(
-            stdout: JSONEncoder().encode(detail), exitCode: 0, childState: .exitConfirmed))
+            stdout: try JSONEncoder().encode(detail), exitCode: 0, childState: .exitConfirmed))
         XCTAssertEqual(read.detail?.attempts.first?.path, "reviewed")
         XCTAssertEqual(read.detail?.attempts.first?.state, "outcome_unknown")
         XCTAssertNil(read.detail?.terminal_report)
