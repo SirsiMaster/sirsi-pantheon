@@ -163,7 +163,10 @@ func deriveTaskLiveness(t Task, now time.Time) string {
 	return "unknown"
 }
 
-func (s *SQLiteStore) AddTask(t Task) error {
+func (s *SQLiteStore) AddTask(t Task) error { return s.insertTask(s.exec, t) }
+
+// insertTask is AddTask over any executor, so ConvertItemToTask can run it inside its transaction.
+func (s *SQLiteStore) insertTask(exec func(string, ...any) (sql.Result, error), t Task) error {
 	if t.Status == "" {
 		t.Status = "pending"
 	}
@@ -206,7 +209,7 @@ func (s *SQLiteStore) AddTask(t Task) error {
 	if err != nil {
 		return fmt.Errorf("routerstore: encode links: %w", err)
 	}
-	_, err = s.exec(`INSERT INTO tasks(agent,task_id,subject,status,phase,responsible_party,blocked_by,created,updated,charter,commissioned_at,commissioned_by,outline,timeline,links,test_state,stage,tokens_consumed,duration_seconds) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);`,
+	_, err = exec(`INSERT INTO tasks(agent,task_id,subject,status,phase,responsible_party,blocked_by,created,updated,charter,commissioned_at,commissioned_by,outline,timeline,links,test_state,stage,tokens_consumed,duration_seconds) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);`,
 		t.Agent, t.TaskID, strings.TrimSpace(t.Subject), t.Status, strings.TrimSpace(t.Phase), t.ResponsibleParty, strings.TrimSpace(t.BlockedBy), t.Created, t.Updated, t.Charter, t.CommissionedAt, t.CommissionedBy, t.Outline, string(timeline), string(links), t.TestState, t.Stage, t.TokensConsumed, t.DurationSeconds)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {

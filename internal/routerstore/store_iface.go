@@ -55,6 +55,9 @@ type Store interface {
 	ClassifyLane(agent string, wakeRoutable bool, recentWithin time.Duration) (LaneOperationalState, error)
 	Close() error
 	CloseItem(id, result string) error
+	// ConvertItemToTask closes an open item and adds it to agent's ledger in one transaction (convert.go).
+	// actor is overwritten server-side with the authenticated session over the wire.
+	ConvertItemToTask(itemID, agent, taskID, actor string) (Task, error)
 	ReconcileMailboxNotice(ctx context.Context, req MailboxReconcileRequest) (MailboxReconcileResult, error)
 	// RelocateTaskEvidence only relocates exact references on the authenticated
 	// actor's own rows; never a task lifecycle/completion or generic update.

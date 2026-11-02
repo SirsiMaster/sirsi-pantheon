@@ -110,6 +110,9 @@ func (s *SQLiteStore) SetState(key, value string) error {
 	if strings.HasPrefix(key, "mailbox-reconciliation:") {
 		return errors.New("mailbox reconciliation: generic state writes cannot create or replace approvals or audits")
 	}
+	if strings.HasPrefix(key, convertLinkPrefix) {
+		return errors.New("item convert: generic state writes cannot create or replace convert links")
+	}
 	if key == desktopSleepKey {
 		return errors.New("sleep custody: generic state writes cannot create or replace authority")
 	}
@@ -183,6 +186,9 @@ func (s *SQLiteStore) CompareAndSwapState(key, expected string, exists bool, val
 	}
 	if strings.HasPrefix(key, "mailbox-reconciliation:") {
 		return false, errors.New("mailbox reconciliation: generic CAS cannot create or replace approvals or audits")
+	}
+	if strings.HasPrefix(key, convertLinkPrefix) {
+		return false, errors.New("item convert: generic CAS cannot create or replace convert links")
 	}
 	if key == desktopSleepKey {
 		return false, errors.New("sleep custody: generic CAS cannot create or replace authority")
