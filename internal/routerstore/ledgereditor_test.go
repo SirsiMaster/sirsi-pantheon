@@ -61,6 +61,37 @@ func TestLedgerEditorEditsAnyLaneButCannotSendOrAdminister(t *testing.T) {
 	wantLaneScope(t, "session as @ledger-editor", err)
 }
 
+// An editor-only token (no @observer) gets ledger edits and its own thread registration, never the lane
+// API's messaging or work verbs — not even for its own listed agent (coordinator security review, #1339).
+func TestEditorOnlyTokenIsConfinedToLedgerEdits(t *testing.T) {
+	f := newScopedFixture(t, []string{"router-board", LedgerEditorScope})
+	toRa, err := f.backend.Send("mac-lane", "ra", "for ra", "decision", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs := f.client("router-board")
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"editor-only token refused Send", func() error { _, e := rs.Send("router-board", "ra", "x", "proposal", "b"); return e }()},
+		{"editor-only token refused SendGuarded", func() error {
+			_, _, e := rs.SendGuarded(SendReq{From: "router-board", To: "ra", Title: "x", Type: "proposal", Instructions: "b"})
+			return e
+		}()},
+		{"editor-only token refused own Inbox", func() error { _, e := rs.Inbox("router-board"); return e }()},
+		{"editor-only token refused ListActive", func() error { _, e := rs.ListActive(context.Background()); return e }()},
+	} {
+		wantLaneScope(t, tc.name, tc.err)
+	}
+	if err := rs.CloseItem(toRa, "board:owner@sirsi.ai: done"); err != nil {
+		t.Fatalf("editor-only CloseItem refused: %v", err)
+	}
+	if err := rs.UpsertThreads([]ThreadRecord{{ThreadID: "thr-board", Agent: "router-board", Status: "active", Host: f.host, Payload: []byte(`{}`)}}); err != nil {
+		t.Fatalf("editor-only own thread registration refused: %v", err)
+	}
+}
+
 // Negative control: the same calls with only @observer stay refused, so the edits come from the new marker.
 func TestObserverWithoutLedgerEditorStillCannotEdit(t *testing.T) {
 	f := newScopedFixture(t, []string{"router-board", ObserverScope})

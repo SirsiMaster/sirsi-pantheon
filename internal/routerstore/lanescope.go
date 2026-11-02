@@ -197,15 +197,18 @@ func (s *server) laneScope(scope map[string]bool, observer, editor bool, sess Se
 		}
 		return nil
 	}
-	if observer {
+	// A capability token is confined to its capabilities: ledgerEdits (editor), observerReads (observer), and
+	// its own agent's thread registration. It never falls through to the lane API's messaging or work verbs,
+	// so an editor-only token cannot Send even as its own listed agent.
+	if observer || editor {
 		if sess.Agent != "" && !scope[sess.Agent] {
 			return fmt.Errorf("%w: session agent %q is outside the token's scope", ErrLaneScope, sess.Agent)
 		}
-		if observerReads[name] {
+		if observer && observerReads[name] {
 			return nil
 		}
 		if !observerOwnThread[name] {
-			return fmt.Errorf("%w: %s is not permitted for a read-only observer", ErrLaneScope, name)
+			return fmt.Errorf("%w: %s is not permitted for an observer or ledger-editor token", ErrLaneScope, name)
 		}
 	}
 	rule, ok := laneAPI[name]
