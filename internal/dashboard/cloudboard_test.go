@@ -127,22 +127,6 @@ func TestCloudBoardMacSelection(t *testing.T) {
 	}
 }
 
-func TestCloudBoardFollowsMacsJoiningAndLeaving(t *testing.T) {
-	macs := map[string]string{}
-	s := New(Config{CloudBoard: true, MacConsolesFn: func() map[string]string { return macs }})
-	if rec := serve(s, "GET", "/mac/m9", nil); rec.Code != http.StatusNotFound {
-		t.Fatalf("select before m9 joined = %d, want 404", rec.Code)
-	}
-	macs = map[string]string{"m9": "https://m9.example.ts.net"}
-	if rec := serve(s, "GET", "/mac/m9", nil); rec.Code != http.StatusSeeOther {
-		t.Fatalf("select after m9 joined = %d, want 303", rec.Code)
-	}
-	macs = map[string]string{}
-	if rec := serve(s, "GET", "/api/stats", withMac("m9")); rec.Code != http.StatusConflict {
-		t.Fatalf("control on a Mac that left = %d, want 409", rec.Code)
-	}
-}
-
 func TestWorkstationDashboardStillServesEverythingOnLoopback(t *testing.T) {
 	s := New(Config{})
 	if s.srv.Addr != "127.0.0.1:9119" {

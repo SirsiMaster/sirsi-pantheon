@@ -39,12 +39,9 @@ type Config struct {
 	// MacConsoles names the Mac consoles a cloud board forwards workstation
 	// paths to (name → base URL, e.g. https://m1.<tailnet>.ts.net), and
 	// MacTransport is how it reaches them (the board's Tailscale proxy).
-	// MacConsolesFn, when set, replaces MacConsoles and is read per request,
-	// so Macs joining or leaving the tailnet appear without a redeploy.
-	MacConsoles   map[string]string
-	MacConsolesFn func() map[string]string
-	MacTransport  http.RoundTripper
-	NotifyDB      *notify.Store
+	MacConsoles  map[string]string
+	MacTransport http.RoundTripper
+	NotifyDB     *notify.Store
 	// StatsFn returns the current system stats as JSON bytes.
 	// The menubar marshals its own StatsSnapshot; we pass it through.
 	StatsFn func() ([]byte, error)

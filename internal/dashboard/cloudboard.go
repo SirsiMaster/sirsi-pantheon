@@ -29,34 +29,25 @@ const actorHeader = "X-Sirsi-Actor"
 
 const iapEmailHeader = "X-Goog-Authenticated-User-Email"
 
-// macConsoles is the current name → console URL map: discovered live when
-// MacConsolesFn is set, otherwise the static list.
-func (s *Server) macConsoles() map[string]string {
-	if s.cfg.MacConsolesFn != nil {
-		return s.cfg.MacConsolesFn()
-	}
-	return s.cfg.MacConsoles
-}
-
-func (s *Server) macProxy(name string) *httputil.ReverseProxy {
-	target, err := url.Parse(s.macConsoles()[name])
-	if name == "" || err != nil || target.Scheme == "" || target.Host == "" {
-		return nil
-	}
-	return &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(target)
-			// The Mac console has no use for the viewer's board cookies (the IAP session included).
-			pr.Out.Header.Del("Cookie")
-		},
-		Transport: s.cfg.MacTransport,
-		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
-			writeError(w, "Mac console "+name+" unreachable: "+err.Error(), http.StatusBadGateway)
-		},
-	}
-}
-
 func (s *Server) cloudBoardOnly(next http.Handler) http.Handler {
+	proxies := map[string]*httputil.ReverseProxy{}
+	for name, base := range s.cfg.MacConsoles {
+		target, err := url.Parse(base)
+		if err != nil || target.Scheme == "" || target.Host == "" {
+			continue
+		}
+		proxies[name] = &httputil.ReverseProxy{
+			Rewrite: func(pr *httputil.ProxyRequest) {
+				pr.SetURL(target)
+				// The Mac console has no use for the viewer's board cookies (the IAP session included).
+				pr.Out.Header.Del("Cookie")
+			},
+			Transport: s.cfg.MacTransport,
+			ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
+				writeError(w, "Mac console "+name+" unreachable: "+err.Error(), http.StatusBadGateway)
+			},
+		}
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Header.Del(actorHeader)
 		switch {
@@ -78,8 +69,8 @@ func (s *Server) cloudBoardOnly(next http.Handler) http.Handler {
 			return
 		}
 		name := selectedMac(r)
-		p := s.macProxy(name)
-		if p == nil {
+		p, ok := proxies[name]
+		if !ok {
 			writeError(w, "choose a Mac first: this control runs on a Mac, not in the cloud", http.StatusConflict)
 			return
 		}
@@ -102,7 +93,7 @@ func selectedMac(r *http.Request) string {
 // return to its Host view. An unknown name is refused, never stored.
 func (s *Server) selectMac(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/mac/")
-	if _, ok := s.macConsoles()[name]; !ok {
+	if _, ok := s.cfg.MacConsoles[name]; !ok {
 		http.NotFound(w, r)
 		return
 	}
@@ -114,15 +105,14 @@ func (s *Server) selectMac(w http.ResponseWriter, r *http.Request) {
 // viewer has selected. Its presence is also how the page knows it is the
 // hosted board (the local console has no /api/macs).
 func (s *Server) apiMacs(w http.ResponseWriter, r *http.Request) {
-	macs := s.macConsoles()
-	names := make([]string, 0, len(macs))
-	for n := range macs {
+	names := make([]string, 0, len(s.cfg.MacConsoles))
+	for n := range s.cfg.MacConsoles {
 		names = append(names, n)
 	}
 	sort.Strings(names)
 	consoles := make([]map[string]string, 0, len(names))
 	for _, n := range names {
-		consoles = append(consoles, map[string]string{"name": n, "url": macs[n]})
+		consoles = append(consoles, map[string]string{"name": n, "url": s.cfg.MacConsoles[n]})
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")

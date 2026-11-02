@@ -2,19 +2,15 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -61,18 +57,13 @@ hosting platform's job (Cloud Run IAP), not this process's.`,
 		if err != nil {
 			return err
 		}
-		var macsFn func() map[string]string
-		if transport != nil && len(macs) == 0 {
-			macsFn = watchTailnetMacs(ctx)
-		}
 		srv := dashboard.New(dashboard.Config{
-			Port:          port,
-			ListenHost:    "0.0.0.0",
-			CloudBoard:    true,
-			MacConsoles:   macs,
-			MacConsolesFn: macsFn,
-			MacTransport:  transport,
-			RouterFn:      collectDashboardRouter,
+			Port:         port,
+			ListenHost:   "0.0.0.0",
+			CloudBoard:   true,
+			MacConsoles:  macs,
+			MacTransport: transport,
+			RouterFn:     collectDashboardRouter,
 			RoutabilityFn: func() (map[string]bool, error) {
 				repoRoot, err := router.FindRepoRoot()
 				if err != nil {
@@ -93,75 +84,10 @@ hosting platform's job (Cloud Run IAP), not this process's.`,
 	},
 }
 
-// boardMacTag marks a Sirsi Mac on the tailnet. Every online peer carrying it
-// is a console the board can drive; the tailnet policy decides which peers the
-// board sees at all (tag:cloud-board reaches tag:sirsi-mac on 443 only).
-const boardMacTag = "tag:sirsi-mac"
-
-// tailnetMacConsoles reads `tailscale status --json`: each online peer tagged
-// boardMacTag is a console at https://<its MagicDNS name>, named by its first
-// DNS label (m1, m5, m5-studio).
-func tailnetMacConsoles(status []byte) (map[string]string, error) {
-	var st struct {
-		Peer map[string]struct {
-			DNSName string
-			Online  bool
-			Tags    []string
-		}
-	}
-	if err := json.Unmarshal(status, &st); err != nil {
-		return nil, fmt.Errorf("tailscale status: %w", err)
-	}
-	macs := map[string]string{}
-	for _, p := range st.Peer {
-		host := strings.TrimSuffix(p.DNSName, ".")
-		if !p.Online || host == "" || !slices.Contains(p.Tags, boardMacTag) {
-			continue
-		}
-		name, _, _ := strings.Cut(host, ".")
-		macs[name] = "https://" + host
-	}
-	return macs, nil
-}
-
-// watchTailnetMacs re-reads the tailnet every 30 s so a Mac that joins (or
-// drops off) shows up on the board without a redeploy. A failed read keeps
-// the last good list rather than emptying the board.
-func watchTailnetMacs(ctx context.Context) func() map[string]string {
-	var cur atomic.Pointer[map[string]string]
-	cur.Store(&map[string]string{})
-	refresh := func() {
-		out, err := exec.CommandContext(ctx, "tailscale", "status", "--json").Output()
-		if err == nil {
-			var macs map[string]string
-			if macs, err = tailnetMacConsoles(out); err == nil {
-				cur.Store(&macs)
-				return
-			}
-		}
-		fmt.Fprintf(os.Stderr, "board: tailnet discovery: %v\n", err)
-	}
-	refresh()
-	go func() {
-		tick := time.NewTicker(30 * time.Second)
-		defer tick.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-tick.C:
-				refresh()
-			}
-		}
-	}()
-	return func() map[string]string { return *cur.Load() }
-}
-
-// boardMacConsoles reads the Mac consoles the board drives. With
-// SIRSI_BOARD_TS_PROXY (socks5://127.0.0.1:1055) set and no SIRSI_BOARD_MACS,
-// the board discovers every tagged Sirsi Mac on the tailnet itself;
-// SIRSI_BOARD_MACS ("m1=https://m1.<tailnet>.ts.net,…") pins a fixed list
-// instead. No proxy means a read-only board.
+// boardMacConsoles reads the Mac consoles the board drives from
+// SIRSI_BOARD_MACS ("M1=https://m1.<tailnet>.ts.net,M5=…") and reaches them
+// through the board's Tailscale proxy, SIRSI_BOARD_TS_PROXY
+// (socks5://127.0.0.1:1055). No consoles configured means a read-only board.
 func boardMacConsoles() (map[string]string, http.RoundTripper, error) {
 	macs := map[string]string{}
 	for _, pair := range strings.Split(os.Getenv("SIRSI_BOARD_MACS"), ",") {
@@ -175,12 +101,12 @@ func boardMacConsoles() (map[string]string, http.RoundTripper, error) {
 		}
 		macs[strings.TrimSpace(name)] = strings.TrimRight(u.String(), "/")
 	}
+	if len(macs) == 0 {
+		return nil, nil, nil
+	}
 	proxy := strings.TrimSpace(os.Getenv("SIRSI_BOARD_TS_PROXY"))
 	if proxy == "" {
-		if len(macs) > 0 {
-			return nil, nil, fmt.Errorf("SIRSI_BOARD_MACS is set but SIRSI_BOARD_TS_PROXY is empty: Mac consoles are reachable only over the tailnet")
-		}
-		return nil, nil, nil
+		return nil, nil, fmt.Errorf("SIRSI_BOARD_MACS is set but SIRSI_BOARD_TS_PROXY is empty: Mac consoles are reachable only over the tailnet")
 	}
 	pu, err := url.Parse(proxy)
 	if err != nil || pu.Scheme != "socks5" {
