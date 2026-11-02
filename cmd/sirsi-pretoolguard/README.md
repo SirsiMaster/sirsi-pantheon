@@ -8,6 +8,13 @@ hook emitter's maximum. Complete JSON framing is required, and malformed,
 trailing, read-failed, or over-limit envelopes are refused. Valid non-command
 payloads within the bound pass through this narrow command check.
 
+This assumes the emitter supplies command text as string `command` or `cmd`
+members of an object-valued `tool_input`. Other shapes are not inspected as
+commands, and JSON duplicate keys follow Go's last-value behavior. Inputs over
+8 MiB are refused regardless of tool type; larger payloads are not supported by
+this policy. Shell control flow, variable expansion, and other forms outside
+the recognizer's direct-command coverage can evade this narrow check.
+
 The adapter buffers the bounded envelope and JSON decoding may make additional
 bounded copies while checking `command` and `cmd`. The cap therefore bounds the
 input and its parsing work, while peak memory can be several times the envelope
