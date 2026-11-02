@@ -47,7 +47,7 @@ func TestHookInputBound(t *testing.T) {
 
 func TestHarmlessGitHubMCPCreatePayloadSizes(t *testing.T) {
 	for _, operation := range []string{"create_blob", "create_tree"} {
-		for _, size := range []int{65535, 65536, 65537, 1251377, 3510687} {
+		for _, size := range []int{65535, 65536, 65537, 1251377, 3510687, maxHookInputBytes + 1} {
 			t.Run(operation+"/"+strconv.Itoa(size), func(t *testing.T) {
 				payload := githubMCPFixture(t, operation, size)
 				if len(payload) != size {
@@ -66,6 +66,29 @@ func TestHarmlessGitHubMCPCreatePayloadSizes(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestLargeMCPContentDoesNotHideCommandFields(t *testing.T) {
+	for _, field := range []string{"command", "cmd"} {
+		t.Run(field, func(t *testing.T) {
+			input, err := json.Marshal(map[string]string{
+				"owner":   "SirsiMaster",
+				"repo":    "sirsi-pantheon-fixture",
+				"content": strings.Repeat("x", 3510687),
+				field:     "pmset displaysleepnow",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := marshalMCPEnvelope(t, "mcp__github__create_blob", input)
+			if len(payload) <= 1<<20 || len(payload) > maxHookInputBytes {
+				t.Fatalf("fixture size=%d; want >1 MiB and <=%d bytes", len(payload), maxHookInputBytes)
+			}
+			if err := run(bytes.NewReader(payload), io.Discard); err == nil || !strings.Contains(err.Error(), "direct display-power operation denied") {
+				t.Fatalf("large MCP input concealed %s field: %v", field, err)
+			}
+		})
 	}
 }
 

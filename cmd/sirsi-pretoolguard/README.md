@@ -3,8 +3,16 @@
 This source-only adapter reads one bounded hook envelope and checks string
 `command` and `cmd` fields regardless of tool name. It refuses recognized direct
 display-power operations and never executes the supplied payload. Input is
-limited to 64 KiB; malformed or trailing JSON and read failures are refused.
-Valid non-command payloads pass through this narrow command check.
+limited to 8 MiB by a local resource policy; this is not a claim about the
+hook emitter's maximum. Complete JSON framing is required, and malformed,
+trailing, read-failed, or over-limit envelopes are refused. Valid non-command
+payloads within the bound pass through this narrow command check.
+
+The adapter buffers the bounded envelope and JSON decoding may make additional
+bounded copies while checking `command` and `cmd`. The cap therefore bounds the
+input and its parsing work, while peak memory can be several times the envelope
+size. Both command fields are inspected regardless of `tool_name`; large MCP
+payloads do not receive a tool-name exemption.
 
 The matching recognizer handles selected direct commands, common execution
 wrappers, and command substitutions with a shared recursion bound. It is not a

@@ -12,7 +12,10 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/agentguard"
 )
 
-const maxHookInputBytes = 64 << 10
+// This is a local resource bound, not a claimed limit of the hook emitter.
+// Full-envelope decoding can hold bounded copies of the input while inspecting
+// RawMessage fields, so keep a finite cap and reject cap+1 before parsing.
+const maxHookInputBytes = 8 << 20
 
 type hookInput struct {
 	ToolName  string          `json:"tool_name"`
