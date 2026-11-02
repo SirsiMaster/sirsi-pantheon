@@ -705,20 +705,32 @@ class FakeChild:
         self.wait_timeouts = []
         self.poll_calls = 0
         self.terminal_calls = 0
+    def _record_reap(self):
+        self.returncode = self.exit_code
+        identity = getattr(self, '_sirsi_fabric_identity', None)
+        if identity is not None:
+            identity.reaped = True
     def poll(self):
         self.poll_calls += 1
-        return self.exit_code if self.clock.now >= self.finish else None
+        if self.returncode is not None:
+            return self.returncode
+        if self.clock.now >= self.finish:
+            self._record_reap()
+            return self.returncode
+        return None
     def terminal_status(self):
         self.terminal_calls += 1
         return self.exit_code if self.clock.now >= self.finish else None
     def wait(self, timeout=None):
         self.wait_timeouts.append(timeout)
+        if self.returncode is not None:
+            return self.returncode
         if timeout is not None and self.clock.now + timeout < self.finish:
             self.clock.advance(timeout)
             raise subprocess.TimeoutExpired('fixture', timeout)
         self.clock.now = max(self.clock.now, self.finish)
-        self.returncode = self.exit_code
-        return self.exit_code
+        self._record_reap()
+        return self.returncode
 
 
 def bind_fake_fabric_child(child):
@@ -726,6 +738,29 @@ def bind_fake_fabric_child(child):
                                            os.getuid(), child.pid, 'fixture')
     child._sirsi_fabric_identity = identity
     return identity
+
+
+class FakeChildReapModelTests(unittest.TestCase):
+    def test_poll_and_wait_consume_only_when_child_is_terminal(self):
+        clock = Clock()
+        child = FakeChild(clock, finish=2, exit_code=17)
+        identity = bind_fake_fabric_child(child)
+        self.assertIsNone(child.poll())
+        with self.assertRaises(subprocess.TimeoutExpired):
+            child.wait(timeout=1)
+        self.assertIsNone(child.returncode)
+        self.assertFalse(identity.reaped)
+        clock.advance(1)
+        self.assertEqual(child.poll(), 17)
+        self.assertEqual(child.returncode, 17)
+        self.assertTrue(identity.reaped)
+
+        clock = Clock()
+        child = FakeChild(clock, finish=0, exit_code=23)
+        identity = bind_fake_fabric_child(child)
+        self.assertEqual(child.wait(), 23)
+        self.assertEqual(child.returncode, 23)
+        self.assertTrue(identity.reaped)
 
 
 class RecurringTests(unittest.TestCase):
@@ -1038,7 +1073,7 @@ class RecoveryTests(unittest.TestCase):
             self.assertIs(target, child)
             self.assertEqual(events[-1][0:2], ('signal', runner.signal.SIGKILL))
             events.append(('reap',))
-            target.returncode = 17
+            target._record_reap()
             pgid_reassigned = True  # Model immediate reuse after wait() consumes the leader.
             return 17
 
@@ -1083,7 +1118,7 @@ class RecoveryTests(unittest.TestCase):
             self.assertLess(clock.now, 2.001)
             self.assertEqual(events[-1][0:2], ('signal', runner.signal.SIGKILL))
             events.append(('reap', clock.now))
-            target.returncode = 0
+            target._record_reap()
         runner.stop(child, observe=observe, send_group=send_group, reap=reap,
                     monotonic=clock.monotonic,
                     sleep=clock.advance)
