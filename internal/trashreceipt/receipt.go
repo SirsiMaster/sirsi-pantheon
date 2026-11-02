@@ -90,7 +90,6 @@ type HistoryDetail struct {
 	Attempts         []HistoryAttempt `json:"attempts"`
 	TerminalReport   *Report          `json:"terminal_report,omitempty"`
 	IntegrityError   string           `json:"integrity_error,omitempty"`
-	manifestSHA      string           `json:"-"`
 }
 
 type HistoryAttempt struct {

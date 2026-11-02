@@ -535,10 +535,13 @@ func historyPageAtFD(rootFD, limit int, cursor string) HistoryPage {
 			continue
 		}
 		detail := historyDetailAtFD(rootFD, row.OperationID)
-		if detail.manifestSHA != "" && detail.manifestSHA != row.ManifestSHA {
-			detail.State = "unknown"
-			detail.TerminalReport = nil
-			detail.IntegrityError = "history index manifest digest differs from operation record"
+		if detail.ReviewedManifest.Schema == ManifestSchema {
+			digest, digestErr := manifestDigest(detail.ReviewedManifest)
+			if digestErr != nil || digest != row.ManifestSHA {
+				detail.State = "unknown"
+				detail.TerminalReport = nil
+				detail.IntegrityError = "history index manifest digest differs from operation record"
+			}
 		}
 		if detail.StartedAt != "" && detail.StartedAt != row.StartedAt {
 			detail.State = "unknown"
@@ -719,6 +722,7 @@ func parseOperation(data []byte, id string, d *HistoryDetail) {
 	}
 	var active = -1
 	var previous = len(d.ReviewedManifest.Entries)
+	manifestSHA := ""
 	failedAttempt := false
 	for n, line := range lines {
 		if len(line) == 0 {
@@ -743,7 +747,7 @@ func parseOperation(data []byte, id string, d *HistoryDetail) {
 				d.IntegrityError = "reviewed manifest digest does not match its intent"
 				break
 			}
-			d.manifestSHA = digest
+			manifestSHA = digest
 			d.ReviewedManifest = *e.Manifest
 			d.StartedAt = e.At.UTC().Format(time.RFC3339Nano)
 			d.State = "not_finalized"
@@ -754,7 +758,7 @@ func parseOperation(data []byte, id string, d *HistoryDetail) {
 			previous = len(e.Manifest.Entries)
 			continue
 		}
-		if e.ManifestSHA != d.manifestSHA {
+		if e.ManifestSHA != manifestSHA {
 			d.IntegrityError = "operation event manifest digest changed"
 			break
 		}

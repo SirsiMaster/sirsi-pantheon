@@ -3,6 +3,7 @@
 package trashreceipt
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -208,6 +209,38 @@ func TestTrashHistoryCorruptIndexRowsDoNotHideValidNeighbors(t *testing.T) {
 	}
 	if !page.Incomplete || len(page.Issues) == 0 || !containsString(ids, first.OperationID) || !containsString(ids, second.OperationID) {
 		t.Fatalf("valid neighbors remain visible around corrupt row: %+v", page)
+	}
+}
+
+func TestTrashHistoryIndexDigestMatchesOnlyValidatedIntent(t *testing.T) {
+	home, _, receipts := prepareReceiptHome(t, "owned")
+	manifest := mustPreview(t, home)
+	report := applyHomeWithJournal(home, manifest, true, nil, journalFactory(receipts, nil, nil))
+	if report.Status != "completed" || report.OperationID == "" {
+		t.Fatalf("fixture operation: %+v", report)
+	}
+
+	index := filepath.Join(receipts, "history-index.jsonl")
+	data, err := os.ReadFile(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var row historyIndexRow
+	if err := json.Unmarshal(bytes.TrimSpace(data), &row); err != nil {
+		t.Fatal(err)
+	}
+	row.ManifestSHA = strings.Repeat("0", 64)
+	corrupt, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(index, append(corrupt, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	page := historyPageAt(receipts, 20, "")
+	if !page.Incomplete || len(page.Items) != 1 || page.Items[0].OperationID != report.OperationID || page.Items[0].State != "unknown" {
+		t.Fatalf("index digest mismatch must remain visible as unknown: %+v", page)
 	}
 }
 
