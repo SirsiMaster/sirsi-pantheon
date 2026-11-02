@@ -1421,7 +1421,11 @@ func handleRouterSubmit(args map[string]interface{}) (*ToolResult, error) {
 	if res.Deduped {
 		return textResult(fmt.Sprintf("Deduped: an identical %s to %s already exists this window (ID: %s). Nothing was appended.", docType, addressedTo, res.ID), false), nil
 	}
-	return textResult(fmt.Sprintf("Submitted %s %q (ID: %s)\nAdded to %s's inbox (items/). They will see it via router_poll or `sirsi router pull`.", docType, title, res.ID, addressedTo), false), nil
+	msg := fmt.Sprintf("Submitted %s %q (ID: %s)\nAdded to %s's inbox (items/). They will see it via router_poll or `sirsi router pull`.", docType, title, res.ID, addressedTo)
+	if res.Warning != "" {
+		msg += "\nWarning: " + res.Warning
+	}
+	return textResult(msg, false), nil
 }
 
 func handleRouterNotify(args map[string]interface{}) (*ToolResult, error) {

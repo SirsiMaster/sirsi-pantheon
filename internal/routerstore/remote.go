@@ -48,6 +48,7 @@ var sentinelErrors = map[string]error{
 	"ErrNotComplete":          ErrNotComplete,
 	"ErrBreakerOpen":          ErrBreakerOpen,
 	"ErrOverQuota":            ErrOverQuota,
+	"ErrRecipientSaturated":   ErrRecipientSaturated,
 	"ErrIdentifierTaken":      ErrIdentifierTaken,
 	"ErrLanePaused":           ErrLanePaused,
 	"ErrNoWork":               ErrNoWork,

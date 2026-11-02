@@ -55,6 +55,7 @@ var laneAPI = map[string]laneRule{
 	"GetAgent":             {item: noItem},
 	"OperationalAgents":    {item: noItem},
 	"ClassifyLane":         {item: noItem}, // read-only liveness of any lane: needed to see where a send will land
+	"RecipientLoad":        {item: noItem}, // read-only backlog counts of any lane: the sender's warn band
 	"UpsertThreadCAS":      {item: noItem, custom: threadRecordsInScope},
 	"UpsertThreads":        {item: noItem, custom: threadRecordsInScope},
 	"ResumeThreadCAS":      {item: noItem, custom: threadRecordsInScope},
