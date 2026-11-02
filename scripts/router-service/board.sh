@@ -119,10 +119,14 @@ mint)
   # token as a secret version itself (publishMintedRouterToken) and prints only its id and scope.
   if [ "${DRY_RUN:-0}" = 1 ]; then IMAGE="<dry-run:router-image>"; else
     IMAGE=$($G run services describe "$ROUTER" --region="$REGION" --format='value(spec.template.spec.containers[0].image)'); fi
+  # Secret Manager names new versions by project NUMBER; the mint's publish check compares that
+  # name to --secret-resource, so the resource must use the number too or a good write reads as failed.
+  if [ "${DRY_RUN:-0}" = 1 ]; then NUM=000000; else NUM=$($G projects describe "$PROJECT" --format='value(projectNumber)'); fi
+  [[ "$NUM" =~ ^[0-9]+$ ]] || { echo "board: cannot read the project number" >&2; exit 1; }
   run $G run jobs deploy sirsi-router-board-mint --region="$REGION" --image="$IMAGE" --service-account="$JOB_SA" \
     --set-cloudsql-instances="$PROJECT:$REGION:$INSTANCE" --network=default --subnet=default --vpc-egress=private-ranges-only \
     --set-secrets="SIRSI_ROUTER_STORE=sirsi-router-service-dsn:latest" \
-    --command=/sirsi --args="router,token,mint,cloud-board,--label,hosted router board (observer + ledger editor),--agents=router-board,--agents=@observer,--agents=@ledger-editor,--secret-resource,projects/$PROJECT/secrets/$SECRET" \
+    --command=/sirsi --args="router,token,mint,cloud-board,--label,hosted router board (observer + ledger editor),--agents=router-board,--agents=@observer,--agents=@ledger-editor,--secret-resource,projects/$NUM/secrets/$SECRET" \
     --max-retries=0 --task-timeout=5m --labels=workstream=router-board >/dev/null
   run $G run jobs execute sirsi-router-board-mint --region="$REGION" --wait
   ;;
