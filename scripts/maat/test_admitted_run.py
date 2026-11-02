@@ -1050,7 +1050,7 @@ class RecoveryTests(unittest.TestCase):
             stop.assert_called_once()
 
     def test_fabric_stop_signals_before_the_only_reap_and_never_after_pgid_reuse(self):
-        child = FakeChild(Clock(), 0)
+        child = FakeChild(Clock(), 0, exit_code=17)
         child.returncode = None
         identity = bind_fake_fabric_child(child)
         events = []

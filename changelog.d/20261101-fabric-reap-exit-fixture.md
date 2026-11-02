@@ -1,0 +1,1 @@
+Align the PGID-reuse fixture's fake payload exit code with its asserted final reap result; keep the custody assertion unchanged. Refs: `scripts/maat/test_admitted_run.py`, `scripts/maat/admitted-run.py`, `scripts/maat/README.md`
