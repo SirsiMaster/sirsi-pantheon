@@ -122,7 +122,7 @@ mint)
   run $G run jobs deploy sirsi-router-board-mint --region="$REGION" --image="$IMAGE" --service-account="$JOB_SA" \
     --set-cloudsql-instances="$PROJECT:$REGION:$INSTANCE" --network=default --subnet=default --vpc-egress=private-ranges-only \
     --set-secrets="SIRSI_ROUTER_STORE=sirsi-router-service-dsn:latest" \
-    --command=/sirsi --args="router,token,mint,cloud-board,--label,hosted router board (observer + ledger editor),--agents,router-board,--agents,@observer,--agents,@ledger-editor,--secret-resource,projects/$PROJECT/secrets/$SECRET" \
+    --command=/sirsi --args="router,token,mint,cloud-board,--label,hosted router board (observer + ledger editor),--agents=router-board,--agents=@observer,--agents=@ledger-editor,--secret-resource,projects/$PROJECT/secrets/$SECRET" \
     --max-retries=0 --task-timeout=5m --labels=workstream=router-board >/dev/null
   run $G run jobs execute sirsi-router-board-mint --region="$REGION" --wait
   ;;
