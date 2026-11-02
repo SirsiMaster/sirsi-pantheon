@@ -137,6 +137,13 @@ func AnalyzeCommand(command []string) []Finding {
 	}
 
 	var findings []Finding
+	if IsDirectDisplayPowerCommand(command) {
+		findings = append(findings, Finding{
+			Severity: string(VerdictBlock),
+			Check:    "desktop-custody",
+			Message:  "direct display-power commands are denied; use the typed sirsi desktop-sleep workflow for governed sleep",
+		})
+	}
 	name := filepath.Base(command[0])
 	lowerName := strings.ToLower(name)
 	joined := strings.ToLower(strings.Join(command, " "))
@@ -185,6 +192,439 @@ func AnalyzeCommand(command []string) []Finding {
 	return findings
 }
 
+// IsDirectDisplayPowerCommand recognizes the narrow set of macOS display
+// disruption routes that must never run through a generic agent shell. It is
+// intentionally a deny list for managed command surfaces, not a claimed shell
+// sandbox: arbitrary unmanaged processes remain outside agentguard's scope.
+//
+// It recognizes the direct invocation forms used by managed tools (absolute
+// paths, sudo, and sh/zsh -c). It deliberately does not claim to parse an
+// arbitrary shell program; unmanaged shell composition stays outside this
+// narrow command-boundary control. A read-only `pmset -g` is not matched.
+func IsDirectDisplayPowerCommand(command []string) bool {
+	return isDirectDisplayPowerInvocation(command, 0)
+}
+
+// IsDirectDisplayPowerShell applies the same narrow check to the command text
+// received from Codex/Claude shell tools. It keeps quoted text supplied to
+// harmless commands harmless: `printf 'pmset displaysleepnow'` is not an
+// invocation and is therefore permitted as a safe activation canary.
+func IsDirectDisplayPowerShell(command string) bool {
+	return isDirectDisplayPowerShell(command, 0)
+}
+
+// Substitutions and nested shell wrappers share this depth bound. Exhaustion
+// means unknown command safety, so deny rather than silently omitting a child.
+const maxDisplayPowerParseDepth = 32
+
+func isDirectDisplayPowerShell(command string, depth int) bool {
+	invocations, complete := shellInvocations(command, depth)
+	if !complete {
+		return true
+	}
+	for _, invocation := range invocations {
+		if isDirectDisplayPowerInvocation(invocation, depth+1) {
+			return true
+		}
+	}
+	return false
+}
+
+// shellInvocations is deliberately a small, bounded shell lexer rather than a
+// shell evaluator. It identifies executable words separated by the shell
+// operators that can start another command, while preserving quoted literals
+// as arguments. It also recurses into command substitutions, because those do
+// execute commands. The guard does not claim to be a general shell sandbox;
+// malformed or exotic shell syntax remains subject to the shell itself.
+func shellInvocations(command string, depth int) ([][]string, bool) {
+	if depth >= maxDisplayPowerParseDepth {
+		return nil, false
+	}
+	var (
+		invocations [][]string
+		words       []string
+		word        strings.Builder
+		wordStarted bool
+		quote       byte
+		escaped     bool
+	)
+	finishWord := func() {
+		if wordStarted {
+			words = append(words, word.String())
+			word.Reset()
+			wordStarted = false
+		}
+	}
+	finishInvocation := func() {
+		finishWord()
+		if len(words) != 0 {
+			invocations = append(invocations, words)
+			words = nil
+		}
+	}
+	for i := 0; i < len(command); i++ {
+		ch := command[i]
+		if escaped {
+			word.WriteByte(ch)
+			wordStarted = true
+			escaped = false
+			continue
+		}
+		if ch == '\\' && quote != '\'' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+				continue
+			}
+			if quote == '"' && ch == '`' {
+				if end := shellClosingBacktick(command, i+1); end >= 0 {
+					child, complete := shellInvocations(command[i+1:end], depth+1)
+					if !complete {
+						return nil, false
+					}
+					invocations = append(invocations, child...)
+					i = end
+					wordStarted = true
+					continue
+				}
+			}
+			if quote == '"' && ch == '$' && i+1 < len(command) && command[i+1] == '(' {
+				if end := shellClosingParen(command, i+2); end >= 0 {
+					child, complete := shellInvocations(command[i+2:end], depth+1)
+					if !complete {
+						return nil, false
+					}
+					invocations = append(invocations, child...)
+					i = end
+					wordStarted = true
+					continue
+				}
+			}
+			word.WriteByte(ch)
+			wordStarted = true
+			continue
+		}
+		switch ch {
+		case '\'', '"':
+			quote = ch
+			wordStarted = true
+		case '$':
+			if i+1 < len(command) && command[i+1] == '(' {
+				if end := shellClosingParen(command, i+2); end >= 0 {
+					child, complete := shellInvocations(command[i+2:end], depth+1)
+					if !complete {
+						return nil, false
+					}
+					invocations = append(invocations, child...)
+					i = end
+					wordStarted = true
+					continue
+				}
+			}
+			word.WriteByte(ch)
+			wordStarted = true
+		case '`':
+			if end := shellClosingBacktick(command, i+1); end >= 0 {
+				child, complete := shellInvocations(command[i+1:end], depth+1)
+				if !complete {
+					return nil, false
+				}
+				invocations = append(invocations, child...)
+				i = end
+				wordStarted = true
+				continue
+			}
+			word.WriteByte(ch)
+			wordStarted = true
+		case ' ', '\t', '\r':
+			finishWord()
+		case ';', '\n', '|', '&':
+			finishInvocation()
+			if i+1 < len(command) && command[i+1] == ch && (ch == '|' || ch == '&') {
+				i++
+			}
+		default:
+			word.WriteByte(ch)
+			wordStarted = true
+		}
+	}
+	finishInvocation()
+	return invocations, true
+}
+
+// Escaped backticks are literal data, including inside double quotes.
+func shellClosingBacktick(command string, start int) int {
+	escaped := false
+	for i := start; i < len(command); i++ {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if command[i] == '\\' {
+			escaped = true
+			continue
+		}
+		if command[i] == '`' {
+			return i
+		}
+	}
+	return -1
+}
+
+func shellClosingParen(command string, start int) int {
+	depth := 1
+	var quote byte
+	escaped := false
+	for i := start; i < len(command); i++ {
+		ch := command[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' && quote != '\'' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '\'' || ch == '"' {
+			quote = ch
+			continue
+		}
+		switch ch {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func isDirectDisplayPowerInvocation(command []string, depth int) bool {
+	if depth >= maxDisplayPowerParseDepth {
+		return true
+	}
+	for len(command) > 0 {
+		name := filepath.Base(normalizeCommandToken(command[0]))
+		if name == "sh" || name == "bash" || name == "zsh" {
+			if script, ok := shellCommandString(name, command); ok {
+				// Only this operand is shell code. Later operands bind $0,
+				// $1, etc.; joining them invents executable command text.
+				return isDirectDisplayPowerShell(script, depth+1)
+			}
+			return false
+		}
+		// Shell assignment words and ordinary execution prefixes preserve the
+		// command's identity. This does not evaluate variable expansion.
+		if isShellAssignment(command[0]) {
+			command = command[1:]
+			continue
+		}
+		if name == "env" {
+			command = command[1:]
+			for len(command) > 0 {
+				arg := command[0]
+				if arg == "--" {
+					command = command[1:]
+					break
+				}
+				if isShellAssignment(arg) {
+					command = command[1:]
+					continue
+				}
+				if !strings.HasPrefix(arg, "-") {
+					break
+				}
+				command = command[1:]
+				if (arg == "-u" || arg == "--unset" || arg == "-C" || arg == "--chdir") && len(command) > 0 {
+					command = command[1:]
+				}
+			}
+			continue
+		}
+		if name == "command" {
+			command = command[1:]
+			for len(command) > 0 && strings.HasPrefix(command[0], "-") {
+				arg := command[0]
+				// -v/-V query command resolution and do not execute it.
+				if strings.ContainsAny(arg, "vV") {
+					return false
+				}
+				command = command[1:]
+				if arg == "--" {
+					break
+				}
+			}
+			continue
+		}
+		if name == "exec" {
+			command = command[1:]
+			for len(command) > 0 && strings.HasPrefix(command[0], "-") {
+				option := command[0]
+				command = command[1:]
+				if option == "--" {
+					break
+				}
+				// exec -a supplies argv[0], not a command to inspect.
+				// Unlike sudo/doas, exec's -a consumes the following name.
+				if option == "-a" && len(command) > 0 {
+					command = command[1:]
+				}
+			}
+			continue
+		}
+		if name == "sudo" || name == "doas" {
+			command = command[1:]
+			for len(command) > 0 && strings.HasPrefix(normalizeCommandToken(command[0]), "-") {
+				option := normalizeCommandToken(command[0])
+				command = command[1:]
+				if (option == "-u" || option == "-g" || option == "-h" || option == "-p" || option == "-r" || option == "-t") && len(command) > 0 {
+					command = command[1:]
+				}
+			}
+			continue
+		}
+		switch name {
+		case "pmset":
+			for _, arg := range command[1:] {
+				switch normalizeCommandToken(arg) {
+				case "displaysleepnow", "sleepnow", "lock", "displaysleep":
+					return true
+				}
+			}
+		case "cgsession":
+			for _, arg := range command[1:] {
+				if normalizeCommandToken(arg) == "-suspend" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return false
+}
+
+// shellCommandString selects the command operand using the supported shell's
+// option arities. It is an argv selector, not a shell parser.
+func shellCommandString(shell string, command []string) (string, bool) {
+	if len(command) < 2 {
+		return "", false
+	}
+	args := command[1:]
+	for len(args) > 0 {
+		arg := args[0]
+		args = args[1:]
+		if arg == "--" || arg == "-" {
+			return "", false
+		}
+		if strings.HasPrefix(arg, "--") {
+			switch {
+			case shell == "zsh" && arg == "--emulate":
+				if len(args) == 0 {
+					return "", false
+				}
+				// Zsh requires a separate mode argument before its other
+				// invocation options. The selector keeps using Zsh's argv
+				// option arities after the mode has been consumed.
+				args = args[1:]
+			case arg == "--rcfile", arg == "--init-file":
+				if shell != "bash" || len(args) == 0 {
+					return "", false
+				}
+				args = args[1:]
+			default:
+				// Long options are not short-option bundles, even if their name
+				// contains the letter c (for example, --norc).
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") || (strings.HasPrefix(arg, "+") && len(arg) > 1) {
+			prefix := arg[0]
+			options := []rune(arg[1:])
+			for i, option := range options {
+				if option == 'c' && prefix == '-' {
+					if len(args) == 0 {
+						return "", false
+					}
+					return args[0], true
+				}
+				if option == 'o' {
+					if shell == "bash" {
+						args = consumeOptionalShellOptionName(options, i, args)
+					} else {
+						args = consumeRequiredShellOptionName(options, i, args)
+					}
+					break
+				}
+				if option == 'O' {
+					switch shell {
+					case "bash":
+						args = consumeOptionalShellOptionName(options, i, args)
+					case "zsh":
+						// Zsh -O/+O are single-letter flags and take no name.
+						continue
+					default:
+						// Uppercase O is outside the selected sh option contract.
+						continue
+					}
+					break
+				}
+			}
+			continue
+		}
+		// The first non-option is a script operand; later argv entries are
+		// script arguments, not shell options or command text.
+		return "", false
+	}
+	return "", false
+}
+
+func consumeRequiredShellOptionName(options []rune, index int, args []string) []string {
+	if index+1 < len(options) || len(args) == 0 {
+		return args
+	}
+	return args[1:]
+}
+
+func consumeOptionalShellOptionName(options []rune, index int, args []string) []string {
+	if index+1 < len(options) || len(args) == 0 || isShellOption(args[0]) {
+		return args
+	}
+	return args[1:]
+}
+
+func isShellOption(arg string) bool {
+	return arg == "--" || arg == "-" || strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "+")
+}
+
+func isShellAssignment(word string) bool {
+	name, _, ok := strings.Cut(word, "=")
+	if !ok || name == "" {
+		return false
+	}
+	for i, ch := range name {
+		if ch != '_' && (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (i == 0 || ch < '0' || ch > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeCommandToken(value string) string {
+	return strings.ToLower(strings.Trim(value, " \t\n\r'\";()[]{}"))
+}
+
 func SafeRun(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	if len(opts.Command) == 0 {
 		return nil, errors.New("command is required")
@@ -206,7 +646,7 @@ func SafeRun(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		IgnoreChecks:   opts.IgnoreChecks,
 		HealthProvider: opts.HealthProvider,
 	})
-	if report.Verdict == VerdictBlock && !opts.Force {
+	if report.Verdict == VerdictBlock && (!opts.Force || hasNonBypassableBlock(report.Findings)) {
 		return &RunResult{Report: report, ExitCode: 126}, fmt.Errorf("agent safety preflight blocked command")
 	}
 
@@ -258,6 +698,15 @@ func SafeRun(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		FilteredBytes: filtered.FilteredBytes,
 		Truncated:     lim.truncated || filtered.Truncated,
 	}, err
+}
+
+func hasNonBypassableBlock(findings []Finding) bool {
+	for _, finding := range findings {
+		if finding.Severity == string(VerdictBlock) && finding.Check == "desktop-custody" {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Report) add(verdict Verdict, check, message string) {
