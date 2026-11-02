@@ -757,6 +757,10 @@ func parseOperation(data []byte, id string, d *HistoryDetail) {
 			previous = len(e.Manifest.Entries)
 			continue
 		}
+		if e.ManifestSHA != d.manifestSHA {
+			d.IntegrityError = "operation event manifest digest changed"
+			break
+		}
 		switch e.Kind {
 		case "attempt_started":
 			if e.EntryIndex < 0 || e.EntryIndex >= len(d.Attempts) || e.EntryIndex != previous-1 || active >= 0 || failedAttempt || e.Manifest != nil || e.Report != nil || e.State != "" || e.Error != "" {
@@ -767,7 +771,7 @@ func parseOperation(data []byte, id string, d *HistoryDetail) {
 			previous = e.EntryIndex
 			d.Attempts[e.EntryIndex].State = "outcome_unknown"
 		case "attempt_result":
-			if active != e.EntryIndex || (e.State != "unlink_succeeded" && e.State != "unlink_failed") || e.Manifest != nil || e.Report != nil || (e.State == "unlink_succeeded" && e.Error != "") || (e.State == "unlink_failed" && e.Error == "") {
+			if active < 0 || e.EntryIndex < 0 || e.EntryIndex >= len(d.Attempts) || active != e.EntryIndex || (e.State != "unlink_succeeded" && e.State != "unlink_failed") || e.Manifest != nil || e.Report != nil || (e.State == "unlink_succeeded" && e.Error != "") || (e.State == "unlink_failed" && e.Error == "") {
 				d.IntegrityError = "attempt result does not match its durable start"
 				break
 			}
@@ -795,10 +799,6 @@ func parseOperation(data []byte, id string, d *HistoryDetail) {
 			d.IntegrityError = "operation event kind is unknown"
 		}
 		if d.IntegrityError != "" {
-			break
-		}
-		if e.ManifestSHA != d.manifestSHA {
-			d.IntegrityError = "operation event manifest digest changed"
 			break
 		}
 	}

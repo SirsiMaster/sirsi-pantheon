@@ -272,6 +272,69 @@ func TestTrashHistoryPartialIndexWriteThenLaterOperation(t *testing.T) {
 	}
 }
 
+func TestTrashHistoryInvalidAttemptIndexesAndTerminalStayUnknown(t *testing.T) {
+	cases := []struct {
+		name  string
+		build func(string, string, string, int) operationEvent
+	}{
+		{name: "negative result index without start", build: func(id, digest, _ string, _ int) operationEvent {
+			return operationEvent{Schema: operationEventSchema, OperationID: id, Kind: "attempt_result", At: time.Now().UTC(), ManifestSHA: digest, EntryIndex: -1, State: "unlink_succeeded"}
+		}},
+		{name: "out of range result index", build: func(id, digest, _ string, count int) operationEvent {
+			return operationEvent{Schema: operationEventSchema, OperationID: id, Kind: "attempt_result", At: time.Now().UTC(), ManifestSHA: digest, EntryIndex: count, State: "unlink_succeeded"}
+		}},
+		{name: "out of range terminal report", build: func(id, digest, path string, count int) operationEvent {
+			r := report("completed")
+			r.OperationID = id
+			r.Attempted = count + 1
+			r.Deleted = []string{path, "outside-reviewed-manifest"}
+			return operationEvent{Schema: operationEventSchema, OperationID: id, Kind: "terminal", At: time.Now().UTC(), ManifestSHA: digest, Report: &r}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			home, root, receipts := prepareReceiptHome(t, "owned")
+			manifest := mustPreview(t, home)
+			journal, err := newOperationJournalAt(receipts, manifest, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			id, digest := journal.OperationID(), journal.manifestSHA
+			if err := journal.Close(); err != nil {
+				t.Fatal(err)
+			}
+			event := tc.build(id, digest, manifest.Entries[0].Path, len(manifest.Entries))
+			data, err := json.Marshal(event)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, err := os.OpenFile(filepath.Join(receipts, id+".jsonl"), os.O_APPEND|os.O_WRONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.Write(append(data, '\n')); err != nil {
+				_ = f.Close()
+				t.Fatal(err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			detail := openTestHistory(t, receipts, id)
+			if detail.State != "unknown" || detail.IntegrityError == "" || detail.TerminalReport != nil {
+				t.Fatalf("corrupt event must stay visible as unknown: %+v", detail)
+			}
+			page := historyPageAt(receipts, 20, "")
+			if !page.Incomplete || len(page.Items) != 1 || page.Items[0].OperationID != id || page.Items[0].State != "unknown" {
+				t.Fatalf("history page must expose corrupt operation as unknown: %+v", page)
+			}
+			if _, err := os.Lstat(filepath.Join(root, "owned")); err != nil {
+				t.Fatalf("history parsing changed Trash contents: %v", err)
+			}
+		})
+	}
+}
+
 func TestTrashHistoryNonRegularLeavesFailWithoutBlocking(t *testing.T) {
 	for _, kind := range []string{"fifo", "symlink", "hardlink"} {
 		t.Run(kind, func(t *testing.T) {

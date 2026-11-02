@@ -447,7 +447,7 @@ enum TrashPhase: Equatable { case loading, error, empty, browsing, ready, applyi
     var canReviewAccess: Bool { phase == .error && browseFailure?.offersAccessGuide == true }
     var historyVerifiedEmpty: Bool { historyHasLoaded && historyItems.isEmpty && !historyIncomplete }
 
-    func loadHistory(capture: (Int, String?) async -> CommandExecution) async {
+    func loadHistory(capture: @escaping (Int, String?) async -> CommandExecution) async {
         historyReadTask?.cancel()
         let token = UUID(); historyGeneration = token; historyLoading = true
         historyMessage = nil; historyDetail = nil; historySelectedID = nil
@@ -462,7 +462,7 @@ enum TrashPhase: Equatable { case loading, error, empty, browsing, ready, applyi
         historyMessage = read.issue
     }
 
-    func loadMoreHistory(capture: (Int, String?) async -> CommandExecution) async {
+    func loadMoreHistory(capture: @escaping (Int, String?) async -> CommandExecution) async {
         guard !historyLoading, let cursor = historyCursor else { return }
         let token = UUID(); historyGeneration = token; historyLoading = true; historyMessage = nil
         let request = Task { await capture(20, cursor) }; historyReadTask = request
@@ -481,7 +481,7 @@ enum TrashPhase: Equatable { case loading, error, empty, browsing, ready, applyi
     }
 
     func loadHistoryDetail(_ operationID: String,
-                           capture: (String) async -> CommandExecution) async {
+                           capture: @escaping (String) async -> CommandExecution) async {
         guard historyItems.contains(where: { $0.operation_id == operationID }) else { return }
         historyReadTask?.cancel()
         let token = UUID(); historyGeneration = token; historyLoading = true
