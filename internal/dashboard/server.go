@@ -36,7 +36,16 @@ type Config struct {
 	// workstation's run/clean/slay/vault endpoints. It also skips the
 	// single-dashboard host lock, which belongs to a workstation.
 	CloudBoard bool
-	NotifyDB   *notify.Store
+	// TailnetPort, when set, adds a second loopback listener that serves the
+	// same console only to signed-in tailnet users in TailnetDomains (default
+	// sirsi.ai). It is the sole target of `tailscale serve`; the keyboard port
+	// never faces the tailnet.
+	TailnetPort    int
+	TailnetDomains []string
+	// Macs lists the Mac consoles a hosted board links to (name → https URL),
+	// for the Mac picker and the offline fallback. The board never calls them.
+	Macs     map[string]string
+	NotifyDB *notify.Store
 	// StatsFn returns the current system stats as JSON bytes.
 	// The menubar marshals its own StatsSnapshot; we pass it through.
 	StatsFn func() ([]byte, error)
@@ -196,6 +205,20 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/horus", s.handleHorus)
 	mux.HandleFunc("/vault", s.handleVault)
 	mux.HandleFunc("/router", s.handleRouterSurface)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
+	mux.HandleFunc("/api/macs", s.apiMacs)
+	mux.HandleFunc("/offline.html", func(w http.ResponseWriter, _ *http.Request) {
+		s.serveEmbedded(w, "ui/offline.html", "text/html; charset=utf-8")
+	})
+	mux.HandleFunc("/consoleprobe.js", func(w http.ResponseWriter, _ *http.Request) {
+		s.serveEmbedded(w, "ui/consoleprobe.js", "application/javascript; charset=utf-8")
+	})
+	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, _ *http.Request) {
+		s.serveEmbedded(w, "ui/sw.js", "application/javascript; charset=utf-8")
+	})
+	mux.HandleFunc("/manifest.webmanifest", func(w http.ResponseWriter, _ *http.Request) {
+		s.serveEmbedded(w, "ui/manifest.webmanifest", "application/manifest+json")
+	})
 
 	// JSON API endpoints
 	mux.HandleFunc("/api/stats", s.apiStats)
@@ -293,22 +316,29 @@ func (s *Server) Start() error {
 		if p == 0 || p == s.cfg.Port {
 			continue
 		}
-		alt := &http.Server{
-			Addr:         fmt.Sprintf("127.0.0.1:%d", p),
-			Handler:      s.handler,
-			ReadTimeout:  10 * time.Second,
-			WriteTimeout: 0,
-		}
-		s.alt = append(s.alt, alt)
-		go func(a *http.Server) {
-			if err := a.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				fmt.Printf("dashboard: alt listener %s: %v\n", a.Addr, err)
-			}
-		}(alt)
+		s.serveAlt(p, s.handler)
+	}
+	if s.cfg.TailnetPort != 0 && !s.cfg.CloudBoard {
+		s.serveAlt(s.cfg.TailnetPort, tailnetOnly(s.handler, s.cfg.TailnetDomains))
 	}
 
 	s.running = true
 	return nil
+}
+
+func (s *Server) serveAlt(port int, h http.Handler) {
+	alt := &http.Server{
+		Addr:         fmt.Sprintf("127.0.0.1:%d", port),
+		Handler:      h,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 0,
+	}
+	s.alt = append(s.alt, alt)
+	go func(a *http.Server) {
+		if err := a.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("dashboard: alt listener %s: %v\n", a.Addr, err)
+		}
+	}(alt)
 }
 
 // Stop gracefully shuts down the dashboard server.
