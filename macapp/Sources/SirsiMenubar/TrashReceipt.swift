@@ -154,12 +154,20 @@ struct TrashPage: Codable, Equatable {
 
 struct TrashReport: Codable, Equatable {
     let schema: String
+    let operation_id: String?
     let status: String
     let preview: TrashManifest?
     let attempted: Int
     let deleted: [String]
     let logical_bytes: Int64
     let errors: [String]
+
+    init(schema: String, operation_id: String? = nil, status: String, preview: TrashManifest?,
+         attempted: Int, deleted: [String], logical_bytes: Int64, errors: [String]) {
+        self.schema = schema; self.operation_id = operation_id; self.status = status
+        self.preview = preview; self.attempted = attempted; self.deleted = deleted
+        self.logical_bytes = logical_bytes; self.errors = errors
+    }
 
     var validWireShape: Bool {
         guard schema == "pantheon.trash-report.v1", attempted >= 0, attempted <= 1024,
@@ -188,6 +196,180 @@ struct TrashReport: Codable, Equatable {
             guard !sum.overflow else { return false }; bytes = sum.partialValue
         }
         return bytes == logical_bytes
+    }
+}
+
+private func validTrashHistoryTimestamp(_ value: String) -> Bool {
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if fractional.date(from: value) != nil { return true }
+    let wholeSeconds = ISO8601DateFormatter()
+    wholeSeconds.formatOptions = [.withInternetDateTime]
+    return wholeSeconds.date(from: value) != nil
+}
+
+func validTrashOperationID(_ value: String) -> Bool {
+    value.utf8.count == 32 && value.unicodeScalars.allSatisfy {
+        CharacterSet(charactersIn: "0123456789abcdefABCDEF").contains($0)
+    }
+}
+
+struct TrashHistoryItem: Codable, Equatable, Identifiable {
+    let operation_id: String
+    let started_at: String
+    let state: String
+    let manifest_entry_count: Int
+    let attempted: Int
+    let deleted: Int
+    let errors_count: Int
+
+    var id: String { operation_id }
+    var validWireShape: Bool {
+        validTrashOperationID(operation_id) &&
+            ["not_finalized", "completed", "partial", "failed", "review_required", "unknown"].contains(state) &&
+            (started_at.isEmpty ? state == "unknown" : validTrashHistoryTimestamp(started_at)) &&
+            (0...1024).contains(manifest_entry_count) && (0...1024).contains(attempted) &&
+            (0...1024).contains(deleted) && (0...1025).contains(errors_count) &&
+            attempted <= manifest_entry_count && deleted <= attempted
+    }
+}
+
+struct TrashHistoryPage: Codable, Equatable {
+    let schema: String
+    let items: [TrashHistoryItem]
+    let next_cursor: String
+    let incomplete: Bool
+    let issues: [String]
+
+    var validWireShape: Bool {
+        schema == "pantheon.trash-history-page.v1" && items.count <= 20 &&
+            items.allSatisfy(\.validWireShape) && Set(items.map(\.operation_id)).count == items.count &&
+            next_cursor.utf8.count <= 4096 && !next_cursor.contains("\0") &&
+            issues.count <= 50 && issues.allSatisfy { $0.utf8.count <= 4096 && !$0.contains("\0") }
+    }
+}
+
+struct TrashHistoryAttempt: Codable, Equatable, Identifiable {
+    let entry_index: Int
+    let path: String
+    let state: String
+    let error: String?
+
+    var id: Int { entry_index }
+}
+
+private struct TrashHistoryManifestWire: Decodable {
+    let schema: String?
+    let uid: UInt32?
+    let root: TrashIdentity?
+    let containers: [TrashMember]?
+    let entries: [TrashMember]?
+
+    var manifest: TrashManifest? {
+        guard let schema, let uid, let root, let containers, let entries else { return nil }
+        return TrashManifest(schema: schema, uid: uid, root: root, containers: containers, entries: entries)
+    }
+}
+
+struct TrashHistoryDetail: Codable, Equatable {
+    let schema: String
+    let operation_id: String
+    let state: String
+    let started_at: String
+    let reviewed_manifest: TrashManifest?
+    let attempts: [TrashHistoryAttempt]
+    let terminal_report: TrashReport?
+    let integrity_error: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case schema, operation_id, state, started_at, reviewed_manifest, attempts, terminal_report, integrity_error
+    }
+
+    init(schema: String, operation_id: String, state: String, started_at: String,
+         reviewed_manifest: TrashManifest?, attempts: [TrashHistoryAttempt],
+         terminal_report: TrashReport?, integrity_error: String?) {
+        self.schema = schema; self.operation_id = operation_id; self.state = state
+        self.started_at = started_at; self.reviewed_manifest = reviewed_manifest
+        self.attempts = attempts; self.terminal_report = terminal_report; self.integrity_error = integrity_error
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        schema = try values.decode(String.self, forKey: .schema)
+        operation_id = try values.decode(String.self, forKey: .operation_id)
+        state = try values.decode(String.self, forKey: .state)
+        started_at = try values.decode(String.self, forKey: .started_at)
+        reviewed_manifest = try values.decode(TrashHistoryManifestWire.self, forKey: .reviewed_manifest).manifest
+        attempts = try values.decode([TrashHistoryAttempt].self, forKey: .attempts)
+        terminal_report = try values.decodeIfPresent(TrashReport.self, forKey: .terminal_report)
+        integrity_error = try values.decodeIfPresent(String.self, forKey: .integrity_error)
+    }
+
+    var validWireShape: Bool {
+        guard schema == "pantheon.trash-history-detail.v1", validTrashOperationID(operation_id),
+              ["not_finalized", "completed", "partial", "failed", "review_required", "unknown"].contains(state),
+              (integrity_error?.utf8.count ?? 0) <= 4096,
+              !(integrity_error?.contains("\0") ?? false) else { return false }
+        if state == "unknown" {
+            guard let integrity_error, !integrity_error.isEmpty, terminal_report == nil else { return false }
+            guard started_at.isEmpty || validTrashHistoryTimestamp(started_at) else { return false }
+            guard let reviewed_manifest, reviewed_manifest.validWireShape else { return attempts.isEmpty }
+            guard attempts.count == reviewed_manifest.entries.count else { return false }
+            return attempts.enumerated().allSatisfy({ index, attempt in
+                index == attempt.entry_index && attempt.path == reviewed_manifest.entries[index].path &&
+                      ["not_attempted", "outcome_unknown", "unlink_succeeded", "unlink_failed"].contains(attempt.state) &&
+                      (attempt.error?.utf8.count ?? 0) <= 4096 && !(attempt.error?.contains("\0") ?? false)
+            })
+        }
+        guard validTrashHistoryTimestamp(started_at) else { return false }
+        guard let reviewed_manifest, reviewed_manifest.validWireShape,
+              attempts.count == reviewed_manifest.entries.count,
+              attempts.enumerated().allSatisfy({ index, attempt in
+                  index == attempt.entry_index && attempt.path == reviewed_manifest.entries[index].path &&
+                      ["not_attempted", "outcome_unknown", "unlink_succeeded", "unlink_failed"].contains(attempt.state) &&
+                      (attempt.error?.utf8.count ?? 0) <= 4096 && !(attempt.error?.contains("\0") ?? false)
+              }) else { return false }
+        if let terminal_report {
+            guard terminal_report.validWireShape, terminal_report.matches(reviewed_manifest),
+                  terminal_report.operation_id == operation_id,
+                  ["completed", "partial", "failed", "review_required"].contains(state), integrity_error == nil else { return false }
+            let durableStarts = attempts.filter { $0.state != "not_attempted" }
+            let succeededPaths = attempts.filter { $0.state == "unlink_succeeded" }.map(\.path).reversed()
+            return terminal_report.status == state && terminal_report.attempted == durableStarts.count &&
+                terminal_report.deleted == Array(succeededPaths) &&
+                !attempts.contains(where: { $0.state == "outcome_unknown" })
+        }
+        if state == "not_finalized" { return integrity_error == nil }
+        return state == "not_finalized" && integrity_error == nil
+    }
+}
+
+struct TrashHistoryCommandRead {
+    let page: TrashHistoryPage?
+    let detail: TrashHistoryDetail?
+    let issue: String?
+
+    init(page execution: CommandExecution) {
+        guard execution.complete,
+              let decoded = try? JSONDecoder().decode(TrashHistoryPage.self, from: execution.stdoutData),
+              decoded.validWireShape, execution.exitCode == 0 else {
+            page = nil; detail = nil
+            issue = execution.issue ?? "Trash history could not be verified. No deletion was started."
+            return
+        }
+        page = decoded; detail = nil
+        issue = nil
+    }
+
+    init(detail execution: CommandExecution) {
+        guard execution.complete,
+              let decoded = try? JSONDecoder().decode(TrashHistoryDetail.self, from: execution.stdoutData),
+              decoded.validWireShape, execution.exitCode == 0 else {
+            page = nil; detail = nil
+            issue = execution.issue ?? "This Trash history record could not be verified. No deletion was started."
+            return
+        }
+        page = nil; detail = decoded; issue = nil
     }
 }
 
@@ -245,13 +427,85 @@ enum TrashPhase: Equatable { case loading, error, empty, browsing, ready, applyi
     @Published private(set) var execution: CommandExecution?
     @Published private(set) var page: TrashPage?
     @Published private(set) var selected: Set<String> = []
+    @Published private(set) var historyItems: [TrashHistoryItem] = []
+    @Published private(set) var historyCursor: String?
+    @Published private(set) var historyIncomplete = false
+    @Published private(set) var historyIssues: [String] = []
+    @Published private(set) var historyHasLoaded = false
+    @Published private(set) var historyLoading = false
+    @Published private(set) var historyMessage: String?
+    @Published private(set) var historyDetail: TrashHistoryDetail?
+    @Published private(set) var historySelectedID: String?
     private var generation = UUID()
+    private var historyGeneration = UUID()
+    private var historyReadTask: Task<CommandExecution, Never>?
     private var initialReadStarted = false
     private var browseActive = true
     private var activeApproval: UUID?
     private var explicitBrowseRequired = false
 
     var canReviewAccess: Bool { phase == .error && browseFailure?.offersAccessGuide == true }
+    var historyVerifiedEmpty: Bool { historyHasLoaded && historyItems.isEmpty && !historyIncomplete }
+
+    func loadHistory(capture: (Int, String?) async -> CommandExecution) async {
+        historyReadTask?.cancel()
+        let token = UUID(); historyGeneration = token; historyLoading = true
+        historyMessage = nil; historyDetail = nil; historySelectedID = nil
+        let request = Task { await capture(20, nil) }; historyReadTask = request
+        let read = TrashHistoryCommandRead(page: await request.value)
+        guard historyGeneration == token else { return }
+        historyReadTask = nil; historyLoading = false
+        guard let page = read.page else { historyMessage = read.issue; return }
+        historyItems = page.items; historyCursor = page.next_cursor.isEmpty ? nil : page.next_cursor
+        historyIncomplete = page.incomplete; historyIssues = page.issues
+        historyHasLoaded = true
+        historyMessage = read.issue
+    }
+
+    func loadMoreHistory(capture: (Int, String?) async -> CommandExecution) async {
+        guard !historyLoading, let cursor = historyCursor else { return }
+        let token = UUID(); historyGeneration = token; historyLoading = true; historyMessage = nil
+        let request = Task { await capture(20, cursor) }; historyReadTask = request
+        let read = TrashHistoryCommandRead(page: await request.value)
+        guard historyGeneration == token else { return }
+        historyReadTask = nil; historyLoading = false
+        guard let page = read.page else { historyMessage = read.issue; return }
+        var merged = historyItems
+        var known = Set(merged.map(\.operation_id))
+        merged.append(contentsOf: page.items.filter { known.insert($0.operation_id).inserted })
+        historyItems = merged; historyCursor = page.next_cursor.isEmpty ? nil : page.next_cursor
+        historyIncomplete = historyIncomplete || page.incomplete
+        historyIssues.append(contentsOf: page.issues)
+        historyHasLoaded = true
+        historyMessage = read.issue
+    }
+
+    func loadHistoryDetail(_ operationID: String,
+                           capture: (String) async -> CommandExecution) async {
+        guard historyItems.contains(where: { $0.operation_id == operationID }) else { return }
+        historyReadTask?.cancel()
+        let token = UUID(); historyGeneration = token; historyLoading = true
+        historySelectedID = operationID; historyDetail = nil; historyMessage = nil
+        let request = Task { await capture(operationID) }; historyReadTask = request
+        let read = TrashHistoryCommandRead(detail: await request.value)
+        guard historyGeneration == token, historySelectedID == operationID else { return }
+        historyReadTask = nil; historyLoading = false
+        guard let detail = read.detail, detail.operation_id == operationID else {
+            historyMessage = read.issue ?? "The returned record does not match the selected operation."; return
+        }
+        historyDetail = detail; historyMessage = read.issue
+    }
+
+    func cancelHistoryRead() {
+        historyReadTask?.cancel(); historyReadTask = nil
+        historyGeneration = UUID(); historyLoading = false
+        if historySelectedID != nil && historyDetail == nil {
+            historyMessage = "History read cancelled. No deletion was started."
+            historySelectedID = nil
+        } else if historyItems.isEmpty {
+            historyMessage = "History read cancelled. No deletion was started."
+        }
+    }
 
     func beginAccessReview() {
         guard canReviewAccess else { return }

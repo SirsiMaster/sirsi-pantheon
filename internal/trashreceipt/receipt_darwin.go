@@ -265,12 +265,24 @@ func applyHomeWithJournal(home string, m Manifest, confirmed bool, afterPrefligh
 	if err != nil {
 		return refuse(fmt.Errorf("could not durably record reviewed Trash intent; no deletion was attempted: %w", err))
 	}
-	defer journal.Close()
 	r.OperationID = journal.OperationID()
+	closed := false
+	closeJournal := func() {
+		if closed {
+			return
+		}
+		closed = true
+		if err := journal.Close(); err != nil {
+			r.Errors = append(r.Errors, "could not close durable Trash receipt: "+boundedJournalError(err.Error()))
+			setReceiptFailureStatus(&r)
+		}
+	}
 	finish := func() Report {
 		if err := journal.Finish(r); err != nil {
 			r.Errors = append(r.Errors, "could not durably finalize Trash receipt: "+boundedJournalError(err.Error()))
+			setReceiptFailureStatus(&r)
 		}
+		closeJournal()
 		return r
 	}
 	reviewed := map[string]Identity{}
@@ -318,6 +330,8 @@ func applyHomeWithJournal(home string, m Manifest, confirmed bool, afterPrefligh
 			if attemptStarted {
 				if persistErr := journal.AttemptResult(index, "unlink_failed", err.Error()); persistErr != nil {
 					r.Errors = append(r.Errors, e.Path+": unlink result is not durable: "+boundedJournalError(persistErr.Error()))
+					setReceiptFailureStatus(&r)
+					closeJournal()
 					return r
 				}
 			}
@@ -330,9 +344,21 @@ func applyHomeWithJournal(home string, m Manifest, confirmed bool, afterPrefligh
 		if persistErr := journal.AttemptResult(index, "unlink_succeeded", ""); persistErr != nil {
 			r.Status = "partial"
 			r.Errors = append(r.Errors, e.Path+": unlink succeeded but its receipt result is not durable: "+boundedJournalError(persistErr.Error()))
+			closeJournal()
 			return r
 		}
 	}
 	r.Status = "completed"
 	return finish()
+}
+
+func setReceiptFailureStatus(r *Report) {
+	switch {
+	case len(r.Deleted) > 0:
+		r.Status = "partial"
+	case r.Attempted > 0:
+		r.Status = "failed"
+	case r.Status == "completed":
+		r.Status = "review_required"
+	}
 }

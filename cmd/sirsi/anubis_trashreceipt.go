@@ -37,7 +37,7 @@ func newTrashReceiptCommand(apply bool) *cobra.Command {
 		if err := json.NewEncoder(cmd.OutOrStdout()).Encode(result); err != nil {
 			return err
 		}
-		if result.Status != "ready" && result.Status != "empty" && result.Status != "completed" {
+		if (result.Status != "ready" && result.Status != "empty" && result.Status != "completed") || len(result.Errors) > 0 {
 			return fmt.Errorf("Empty Trash %s: %s", name, result.Status)
 		}
 		return nil
@@ -58,6 +58,9 @@ func newTrashHistoryCommand() *cobra.Command {
 		operationID, _ := cmd.Flags().GetString("operation-id")
 		cursor, _ := cmd.Flags().GetString("cursor")
 		limit, _ := cmd.Flags().GetInt("limit")
+		if operationID != "" && (cmd.Flags().Changed("cursor") || cmd.Flags().Changed("limit")) {
+			return fmt.Errorf("--operation-id cannot be combined with --cursor or --limit")
+		}
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		if operationID != "" {
 			return enc.Encode(trashreceipt.ReadHistoryDetail(operationID))

@@ -150,6 +150,42 @@ nonzero partial/failed reports remain evidence. The returned deletion prefix
 must match the frozen selected manifest. Malformed, timeout, cancelled,
 overflowed or unconfirmed output never becomes success/empty.
 
+## Durable operation history
+
+The apply path keeps Report v1 and its reviewed manifest/confirmation contract.
+An apply result may add `operation_id`; preview and failures before durable intent
+creation omit it. Go stores owner-local receipts under `~/.sirsi/trash-receipts`
+using private, no-follow files. Before the first unlink, it writes and fsyncs the
+exact manifest, then fsyncs the receipt directory. Before every unlink it fsyncs
+an attempt-start event; after the syscall it fsyncs the known result before
+starting another member. A terminal Report is written only after the durable
+member events reconcile to its exact reverse-order deleted prefix, counts and
+logical-byte total. A writer persistence failure poisons that writer: it cannot
+append a success-shaped terminal after a torn or unsynced event.
+
+The append-only operation index supports bounded newest-first pages without a
+directory-wide scan. `sirsi anubis empty-trash history --limit N [--cursor TOKEN]`
+returns at most20 summaries, scans at most64KiB and at most1,024 bytes per index
+row, and returns a device/inode-bound byte cursor. Each operation record is
+bounded to1MiB. `sirsi anubis empty-trash history --operation-id ID` returns the
+exact reviewed manifest, one state per manifest entry, and the validated
+terminal Report when present. The index contains only operation identity, start
+time and manifest digest; the per-operation journal contains the reviewed paths
+and results. No history command constructs approval, replays deletion, or
+changes the Trash contents.
+
+If an attempt-start is durable without a durable syscall result, that member is
+`outcome_unknown`. A missing terminal is `not_finalized`; the record does not
+claim whether a process is live or interrupted. Corrupt records remain visible
+as `unknown` with bounded integrity issues, while readable neighboring rows can
+still be paged. There is no automatic pruning or silent record cap. The native
+Empty Trash screen can reopen the read-only history and show the reviewed
+inventory, known per-entry outcomes, exact terminal report and errors. History
+does not restore deleted bytes: Empty Trash remains permanent and has no undo.
+Receipt fsync does not fsync the Trash namespace, prove power-loss durability of
+an unlink, or measure physical bytes reclaimed. Cooperative-owner stat/unlink
+limitations remain unchanged.
+
 The invocation consumes approval before its first await. Double taps, .task,
 page changes, Retry and Refresh do not replay deletion. Read-only page/selection
 changes invalidate old consent. A failed remaining-items read preserves the
