@@ -104,6 +104,7 @@ func TestRemoteLocalExportHonorsPerCallAndParentCancellation(t *testing.T) {
 		cancel     bool
 	}{
 		{name: "per-call ceiling", perCall: 200 * time.Millisecond, parentWait: time.Second},
+		{name: "earlier parent deadline", perCall: time.Second, parentWait: 200 * time.Millisecond},
 		{name: "parent cancellation", perCall: time.Second, cancel: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -206,7 +207,7 @@ func TestRemoteLocalExportHonorsPerCallAndParentCancellation(t *testing.T) {
 				}
 			} else {
 				if !errors.Is(exportErr, context.DeadlineExceeded) {
-					t.Fatalf("per-call timeout error = %v, want context.DeadlineExceeded", exportErr)
+					t.Fatalf("deadline error = %v, want context.DeadlineExceeded", exportErr)
 				}
 				if elapsed := time.Since(started); elapsed >= 800*time.Millisecond {
 					t.Fatalf("per-call budget took %v, want well below the parent deadline", elapsed)

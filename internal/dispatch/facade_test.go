@@ -169,8 +169,14 @@ func TestRemoteSendProjectsAuditLocallyAfterSingleCommit(t *testing.T) {
 		blockWrite bool
 		duplicate  bool
 		warnLoad   bool
+		cancelGet  bool
+		mismatch   bool
+		storeWake  bool
 	}{
 		{name: "canonical local projection"},
+		{name: "parent canceled after commit", cancelGet: true, warnLoad: true},
+		{name: "mismatched canonical item", mismatch: true},
+		{name: "store wake skips remote projection", storeWake: true},
 		{name: "projection failure preserves backlog warning", failGet: true, warnLoad: true},
 		{name: "Get failure preserves committed row", failGet: true},
 		{name: "local write failure preserves committed row", blockWrite: true},
@@ -178,7 +184,13 @@ func TestRemoteSendProjectsAuditLocallyAfterSingleCommit(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("SIRSI_ROUTER_URL", "")
-			t.Setenv(routercfg.StoreWakeEnv, "0")
+			wake := "0"
+			if tc.storeWake {
+				wake = "1"
+			}
+			t.Setenv(routercfg.StoreWakeEnv, wake)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 			root := filepath.Join(t.TempDir(), "idea-router")
 			backend, err := routerstore.OpenPath(filepath.Join(t.TempDir(), "router.db"))
 			if err != nil {
@@ -212,6 +224,15 @@ func TestRemoteSendProjectsAuditLocallyAfterSingleCommit(t *testing.T) {
 				callerPathSent = callerPathSent || bytes.Contains(requestBody, []byte(root))
 				failGet := failGetNow && method == "Get"
 				mu.Unlock()
+				if method == "Get" && tc.cancelGet {
+					cancel()
+					return
+				}
+				if method == "Get" && tc.mismatch {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"result":[{"ID":"wrong-id"}]}`))
+					return
+				}
 				if failGet {
 					http.Error(w, "inert Get failure", http.StatusServiceUnavailable)
 					return
@@ -269,7 +290,7 @@ func TestRemoteSendProjectsAuditLocallyAfterSingleCommit(t *testing.T) {
 				failGetNow = true
 				mu.Unlock()
 			}
-			res, sendErr := f.Send("a", "b", "audit locally", "review", "preserve the committed row")
+			res, sendErr := f.SendContext(ctx, "a", "b", "audit locally", "review", "preserve the committed row")
 			mu.Lock()
 			gotCalls := make(map[string]int, len(calls))
 			for method, count := range calls {
@@ -294,6 +315,36 @@ func TestRemoteSendProjectsAuditLocallyAfterSingleCommit(t *testing.T) {
 			item, getErr := backend.Get(res.ID)
 			if getErr != nil || item.ID != res.ID {
 				t.Fatalf("canonical row was not retained after Send: item=%+v err=%v", item, getErr)
+			}
+			assertNoAuditFiles := func() {
+				t.Helper()
+				entries, err := os.ReadDir(filepath.Join(root, "items"))
+				if err != nil && !os.IsNotExist(err) {
+					t.Fatalf("read audit directory: %v", err)
+				}
+				if len(entries) != 0 {
+					t.Fatalf("unexpected audit entries: %v", entries)
+				}
+			}
+			if tc.storeWake {
+				if sendErr != nil || res.AuditPath != "" || gotCalls["Get"] != 0 {
+					t.Fatalf("store wake projected audit: result=%+v calls=%+v err=%v", res, gotCalls, sendErr)
+				}
+				assertNoAuditFiles()
+				return
+			}
+			if tc.cancelGet || tc.mismatch {
+				if sendErr == nil || res.AuditPath != "" || gotCalls["Get"] != 1 {
+					t.Fatalf("projection failure lost: result=%+v calls=%+v err=%v", res, gotCalls, sendErr)
+				}
+				if tc.cancelGet && !errors.Is(sendErr, context.Canceled) {
+					t.Fatalf("cancellation lost: %v", sendErr)
+				}
+				if tc.mismatch && !strings.Contains(sendErr.Error(), "canonical Get returned item") {
+					t.Fatalf("mismatch lost: %v", sendErr)
+				}
+				assertNoAuditFiles()
+				return
 			}
 			if tc.failGet || tc.blockWrite {
 				if sendErr == nil || !strings.Contains(sendErr.Error(), "local audit projection failed") || res.AuditPath != "" {
