@@ -26,6 +26,7 @@ import (
 
 var dashboardPort int
 var dashboardNoBrowser bool
+var dashboardTailnetPort int
 
 var dashboardCmd = &cobra.Command{
 	Use:   "dashboard",
@@ -44,6 +45,8 @@ All data stays on your machine — zero telemetry (Rule A11).
 func init() {
 	dashboardCmd.Flags().IntVar(&dashboardPort, "port", dashboard.DashboardPort, "Dashboard server port")
 	dashboardCmd.Flags().BoolVar(&dashboardNoBrowser, "no-open", false, "Don't open browser automatically")
+	dashboardCmd.Flags().IntVar(&dashboardTailnetPort, "tailnet-port", 0,
+		"Also serve this console on 127.0.0.1:<port> to signed-in sirsi.ai tailnet users only; point `tailscale serve` at it, never at --port")
 }
 
 func runDashboard(cmd *cobra.Command, args []string) {
@@ -62,11 +65,12 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	defer fabricSource.Close()
 
 	srv := dashboard.New(dashboard.Config{
-		MercuryFn: mercury.NewConfigured().Read,
-		Port:      dashboardPort,
-		NotifyDB:  nStore,
-		Events:    dashboard.NewEventBuffer(256),
-		SirsiBin:  selfBin,
+		MercuryFn:   mercury.NewConfigured().Read,
+		Port:        dashboardPort,
+		TailnetPort: dashboardTailnetPort,
+		NotifyDB:    nStore,
+		Events:      dashboard.NewEventBuffer(256),
+		SirsiBin:    selfBin,
 		StatsFn: func() ([]byte, error) {
 			snap := collectDashboardStats()
 			return json.Marshal(snap)
