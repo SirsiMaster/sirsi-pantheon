@@ -71,3 +71,36 @@ has no usable heartbeat or its newest heartbeat is older than that window.
 “Picked” is stricter: a non-terminal thread must name the exact item as its
 `current_item`. A fresh session that has not selected the item remains
 unpicked.
+
+## Finish a task: receipts
+
+A task becomes `done` only on a receipt the router checks itself. Free text
+("fixed it", a path, a URL) is refused.
+
+```bash
+sirsi router task complete <agent> <task-id> --lease <token> --receipt pr:SirsiMaster/sirsi-pantheon#1337
+```
+
+| Receipt | What the router checks |
+|---|---|
+| `pr:owner/repo#N` | GitHub says the PR is merged and its merge commit is on the default branch |
+| `ci:owner/repo#RUN@SHA` | the Actions run finished `success`, on exactly that 40-character commit |
+| `tag:owner/repo@TAG` | the tag exists, and every check run on its commit passed (none at all fails) |
+| `maat:RUN` | **host-attested, not verified**: the CLI reads `~/.sirsi/evidence/maat-runs/RUN/terminal.json`, requires `status: success` and exit 0, and sends its SHA-256. The service cannot read your Mac, so it records the hash; it cannot prove the run happened |
+
+- **Fails closed.** If the router cannot reach GitHub or has no token, the task
+  stays not-done and the error says the receipt is unverifiable. The service
+  reads a read-only GitHub token from `SIRSI_ROUTER_GITHUB_TOKEN`; the owner
+  provisions it into Secret Manager. Agents never create tokens.
+- **Re-checked.** `sirsi router task recheck-receipts [--older-than 24h]` (and the
+  supervisor's `receipt-recheck` duty, every 6 hours) re-verifies PR, CI and tag
+  receipts. One now proven false — a reverted merge, a deleted tag — reopens its
+  task to `pending` with a timeline note `receipt no longer valid: …`. A network
+  or token failure never reopens anything: unknown is not invalid.
+- **Owner sign-off and cancel.** Work with nothing to build (a decision, a read)
+  is closed by the owner with a required reason, recorded as tier `owner`. A task
+  that will not be done is `canceled` with a reason; canceled never counts as done.
+  Both are owner-only and are not served to lanes over the router.
+- `--result-ref` is a deprecated alias of `--receipt`; it accepts only a valid receipt.
+- No other path reaches `done`: `task add` cannot create a done or canceled task,
+  and `task update` cannot set either status.

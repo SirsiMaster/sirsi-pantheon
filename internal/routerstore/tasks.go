@@ -57,10 +57,16 @@ var ErrTaskExists = errors.New("routerstore: task already exists")
 
 func validTaskStatus(status string) bool {
 	switch status {
-	case "pending", "in-progress", "blocked", "done":
+	case "pending", "in-progress", "blocked", "done", "canceled":
 		return true
 	}
 	return false
+}
+
+// terminalTaskStatus: done (verified receipt) or canceled (owner, with reason).
+// Neither is reachable through AddTask or UpdateTask.
+func terminalTaskStatus(status string) bool {
+	return status == "done" || status == "canceled"
 }
 
 func validTestState(state string) bool {
@@ -86,7 +92,7 @@ func validateTask(t Task) error {
 		return fmt.Errorf("routerstore: task agent, task-id, and subject are required")
 	}
 	if !validTaskStatus(t.Status) {
-		return fmt.Errorf("routerstore: invalid task status %q (want pending, in-progress, blocked, or done)", t.Status)
+		return fmt.Errorf("routerstore: invalid task status %q (want pending, in-progress, blocked, done or canceled)", t.Status)
 	}
 	if strings.TrimSpace(t.ResponsibleParty) == "" {
 		return fmt.Errorf("routerstore: task responsible-party is required")
@@ -197,6 +203,9 @@ func (s *SQLiteStore) AddTask(t Task) error {
 	}
 	if err := validateTask(t); err != nil {
 		return err
+	}
+	if terminalTaskStatus(t.Status) {
+		return fmt.Errorf("routerstore: a task cannot be created %s; done needs a verified receipt (task complete) and cancel is owner-only", t.Status)
 	}
 	timeline, err := json.Marshal(t.Timeline)
 	if err != nil {
@@ -317,7 +326,7 @@ func (s *SQLiteStore) updateTaskOnce(agent, taskID string, u TaskUpdate) (Task, 
 		// now. A task stuck "in-progress" with no lease or an expired one is not
 		// held by anyone — refusing to relabel it leaves a correctly-blocked
 		// task's status permanently wrong (rs-43).
-		if u.Status == "done" || u.Status == "in-progress" || (t.Status == "in-progress" && leaseLive) {
+		if terminalTaskStatus(u.Status) || u.Status == "in-progress" || (t.Status == "in-progress" && leaseLive) {
 			return Task{}, fmt.Errorf("routerstore: executable task transition %q -> %q requires a fenced task lease", t.Status, u.Status)
 		}
 	}

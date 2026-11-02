@@ -81,7 +81,7 @@ func TestTaskResumeCLIActualRemoteInspectClaimAndComplete(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = client.Close() }()
-	if err := client.CompleteTaskLease(agent, "original", out.Lease.Token, "evidence://owned/normal-complete"); err != nil {
+	if err := client.CompleteTaskLease(agent, "original", out.Lease.Token, "maat:owned-normal-complete@sha256:0000000000000000000000000000000000000000000000000000000000000000"); err != nil {
 		t.Fatal(err)
 	}
 	final, err := s.TaskEligibility(agent, "original")

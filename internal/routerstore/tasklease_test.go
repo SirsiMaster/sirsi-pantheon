@@ -28,14 +28,14 @@ func TestTaskLeaseClaimRenewComplete(t *testing.T) {
 	if ifErr3 := s.RenewTaskLease(lease.Agent, lease.TaskID, lease.Token, 2*time.Minute); ifErr3 != nil {
 		t.Fatal(ifErr3)
 	}
-	if ifErr4 := s.CompleteTaskLease(lease.Agent, lease.TaskID, lease.Token, "proof://R1"); ifErr4 != nil {
+	if ifErr4 := s.CompleteTaskLease(lease.Agent, lease.TaskID, lease.Token, "maat:R1@sha256:0000000000000000000000000000000000000000000000000000000000000000"); ifErr4 != nil {
 		t.Fatal(ifErr4)
 	}
 	got, err := s.GetTask("codex-home", "R1")
 	if err != nil || got.Status != "done" {
 		t.Fatalf("task not completed: %+v err=%v", got, err)
 	}
-	if got.ResultRef != "proof://R1" {
+	if got.ResultRef != "maat:R1@sha256:0000000000000000000000000000000000000000000000000000000000000000" {
 		t.Fatalf("task result reference = %q, want proof://R1", got.ResultRef)
 	}
 }
@@ -56,10 +56,10 @@ func TestTaskLeaseExpiryReclaimsAndFencesOldWorker(t *testing.T) {
 	if fresh.Attempt != 2 || fresh.Token == old.Token {
 		t.Fatalf("expiry must produce a new fenced attempt: old=%+v fresh=%+v", old, fresh)
 	}
-	if ifErr6 := s.CompleteTaskLease(old.Agent, old.TaskID, old.Token, "stale-proof"); !errors.Is(ifErr6, ErrLeaseInvalid) {
+	if ifErr6 := s.CompleteTaskLease(old.Agent, old.TaskID, old.Token, "maat:stale-proof@sha256:0000000000000000000000000000000000000000000000000000000000000000"); !errors.Is(ifErr6, ErrLeaseInvalid) {
 		t.Fatalf("expired worker completed newer lease: %v", ifErr6)
 	}
-	if ifErr7 := s.CompleteTaskLease(fresh.Agent, fresh.TaskID, fresh.Token, "proof://R2"); ifErr7 != nil {
+	if ifErr7 := s.CompleteTaskLease(fresh.Agent, fresh.TaskID, fresh.Token, "maat:R2@sha256:0000000000000000000000000000000000000000000000000000000000000000"); ifErr7 != nil {
 		t.Fatal(ifErr7)
 	}
 }
@@ -141,7 +141,7 @@ func TestTaskClaimErrorNamesTheLedgerNotTheInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if doneErr := s.CompleteTaskLease(lease.Agent, lease.TaskID, lease.Token, "proof://R1"); doneErr != nil {
+	if doneErr := s.CompleteTaskLease(lease.Agent, lease.TaskID, lease.Token, "maat:R1@sha256:0000000000000000000000000000000000000000000000000000000000000000"); doneErr != nil {
 		t.Fatal(doneErr)
 	}
 

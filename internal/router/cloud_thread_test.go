@@ -74,7 +74,7 @@ func TestCloudHostRegistrationHeartbeatClaimCloseRoundTrip120(t *testing.T) {
 	if err != nil || !held.LeaseHeld || held.ThreadID != thread.ThreadID {
 		t.Fatal("claim ownership not retained", err)
 	}
-	if err := store.CompleteTaskLease("sirsi-software-admin", "cloud-roundtrip", lease.Token, "fixture-result"); err != nil {
+	if err := store.CompleteTaskLease("sirsi-software-admin", "cloud-roundtrip", lease.Token, "maat:fixture-result@sha256:0000000000000000000000000000000000000000000000000000000000000000"); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
 	if _, err := CloseThread(root, thread.ThreadID); err != nil {

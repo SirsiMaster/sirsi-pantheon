@@ -127,6 +127,9 @@ type Store interface {
 	PublishIdentifier(namespace string, number int, slug string) error
 	Put(it Item) error
 	ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseReclaim, error)
+	// RecheckTaskReceipts re-verifies done tasks' pr/ci/tag receipts on the
+	// service (which holds the verifier) and reopens any now proven false.
+	RecheckTaskReceipts(olderThan time.Duration) ([]ReceiptRecheck, error)
 	ReconcileOperationalState(agent string, wakeRoutable bool) (ReconcileReport, error)
 	RecordEvidence(reqID string, ev Evidence) error
 	RegisterAgent(id string, pid int) error

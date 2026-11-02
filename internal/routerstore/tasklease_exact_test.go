@@ -13,12 +13,13 @@ func TestClaimTaskSelectsExactIDAndRefusesIneligibleStates(t *testing.T) {
 		{Agent: "codex-home", TaskID: "older", Subject: "older"},
 		{Agent: "codex-home", TaskID: "exact", Subject: "exact"},
 		{Agent: "codex-home", TaskID: "blocked", Subject: "blocked", Status: "blocked"},
-		{Agent: "codex-home", TaskID: "done", Subject: "done", Status: "done"},
+		{Agent: "codex-home", TaskID: "done", Subject: "done"},
 	} {
 		if err := s.AddTask(task); err != nil {
 			t.Fatal(err)
 		}
 	}
+	markDoneFixture(t, s, "codex-home", "done")
 	lease, err := s.ClaimTask("codex-home", "exact", "worker", "thread", time.Minute)
 	if err != nil {
 		t.Fatal(err)

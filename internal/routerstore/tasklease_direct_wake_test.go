@@ -167,7 +167,7 @@ func TestDirectTaskCompletionResolvesOlderLaneFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	now = now.Add(time.Second)
-	if err = s.CompleteTaskLease("lane", "A", l.Token, "canonical://actual-result"); err != nil {
+	if err = s.CompleteTaskLease("lane", "A", l.Token, "maat:actual-result@sha256:0000000000000000000000000000000000000000000000000000000000000000"); err != nil {
 		t.Fatal(err)
 	}
 	state, err := s.ClassifyLane("lane", true, time.Minute)

@@ -247,6 +247,11 @@ func (rs *RemoteStore) ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseRecl
 	err := rs.call("ReclaimExpiredTaskLeases", []any{dryRun}, &o0)
 	return o0, err
 }
+func (rs *RemoteStore) RecheckTaskReceipts(olderThan time.Duration) ([]ReceiptRecheck, error) {
+	var o0 []ReceiptRecheck
+	err := rs.call("RecheckTaskReceipts", []any{olderThan}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) ReconcileOperationalState(agent string, wakeRoutable bool) (ReconcileReport, error) {
 	var o0 ReconcileReport
 	err := rs.call("ReconcileOperationalState", []any{agent, wakeRoutable}, &o0)
