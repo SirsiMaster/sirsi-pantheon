@@ -56,9 +56,11 @@ func (m Method) String() string {
 // compile internal/router, so a stale menubar runs an old reaper silently.
 var family = []string{"sirsi", "sirsi-menubar"}
 
-// probeTimeout bounds each `version --json` subprocess so a hung binary can
-// never stall a health tick.
+// probeTimeout bounds CLI and other version probes so a hung binary cannot
+// stall a health tick. Only the canonical native menubar basename gets the
+// additional cold-start allowance below.
 const probeTimeout = 200 * time.Millisecond
+const menubarProbeTimeout = time.Second
 const maxProbeJSONBytes = 64 << 10
 
 // Sibling is a discovered sirsi-family binary on the host.
@@ -137,16 +139,18 @@ var probeFn = probeBinary
 var probeContextFn = probeBinaryContext
 
 func probeBinary(path string) (version.Info, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
-	defer cancel()
-	return probeBinaryContext(ctx, path)
+	return probeBinaryContext(context.Background(), path)
 }
 
 func probeBinaryContext(parent context.Context, path string) (version.Info, error) {
 	if parent == nil {
 		return version.Info{}, fmt.Errorf("binary version probe requires a context")
 	}
-	ctx, cancel := context.WithTimeout(parent, probeTimeout)
+	timeout := probeTimeout
+	if filepath.Base(path) == "sirsi-menubar" {
+		timeout = menubarProbeTimeout
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "version", "--json")
 	cmd.WaitDelay = probeTimeout
@@ -197,7 +201,7 @@ func ScanHost() (*DriftReport, error) {
 }
 
 // ScanHostContext performs the existing local-only inventory with a caller
-// bound. Each executable probe remains individually bounded by probeTimeout.
+// bound. Each executable probe keeps its CLI or native cold-start allowance.
 func ScanHostContext(ctx context.Context) (*DriftReport, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("binary drift scan requires a context")
@@ -218,7 +222,11 @@ func ScanHostContext(ctx context.Context) (*DriftReport, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return BuildReport(self, siblings, pathBin), nil
+	report := buildReport(ctx, self, siblings, pathBin)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return report, nil
 }
 
 // discoverContext walks candidate install dirs, probing each sirsi-family binary it
@@ -294,6 +302,10 @@ func candidateDirs(selfPath string) []string {
 // BuildReport applies the drift rules to a discovered set. Pure and
 // deterministic — the unit the tests exercise.
 func BuildReport(self version.Info, siblings []Sibling, pathBin string) *DriftReport {
+	return buildReport(context.Background(), self, siblings, pathBin)
+}
+
+func buildReport(ctx context.Context, self version.Info, siblings []Sibling, pathBin string) *DriftReport {
 	r := &DriftReport{Self: self, Siblings: siblings}
 	for _, s := range siblings {
 		// Only compare when the sibling reported a real, stamped version.
@@ -310,24 +322,10 @@ func BuildReport(self version.Info, siblings []Sibling, pathBin string) *DriftRe
 		// Cask installation look drifted and sent the native app to a needless
 		// self-repair screen. Prefer filesystem identity when both paths exist;
 		// retain the conservative textual comparison for unavailable paths.
-		if !sameExecutable(pathBin, self.Path) {
+		if !sameExecutableContext(ctx, pathBin, self.Path) {
 			r.D3PathBin = filepath.Clean(pathBin)
 		}
 	}
 	r.Healthy = len(r.D2Mismatch) == 0 && r.D3PathBin == ""
 	return r
-}
-
-// sameExecutable recognizes two names for the same executable object. os.Stat
-// follows the Cask's intentional symlink, and os.SameFile compares the
-// platform identity rather than string paths. If either path cannot be
-// inspected, only an exact clean spelling is considered equal: missing or
-// ambiguous binaries must continue to surface as drift.
-func sameExecutable(left, right string) bool {
-	if filepath.Clean(left) == filepath.Clean(right) {
-		return true
-	}
-	leftInfo, leftErr := os.Stat(left)
-	rightInfo, rightErr := os.Stat(right)
-	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }

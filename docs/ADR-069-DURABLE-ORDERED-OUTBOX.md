@@ -79,3 +79,33 @@ A wake-driven lane worker must not hot-loop while the cloud is down. When a drai
 - **Requeue on *any* forward error:** double-sends maybe-committed non-idempotent mutations (claim/complete).
 - **Requeue into `req/`:** client/relay file-ownership race.
 - **A local ledger as the offline store:** the split-brain this whole effort exists to end.
+
+## 7. Root relay refresh and retained unknown outcomes (source successor)
+
+The existing root relay lifecycle uses its PID/start-bound maintenance endpoint
+to pause new forwarding duties and await already-admitted request/outbox
+settlement before the existing pinned one-service refresh. A bounded timeout or
+local response/cleanup debt refuses acknowledgment; it does not cancel an
+in-flight mutation or authorize replay. Response metadata remains until the
+lane reads the complete returned body and closes it; an unknown response that
+arrives after a caller's outcome-unknown return remains available for canonical
+readback. An unparkable unknown outbox result remains inflight with sticky
+settlement debt. First-attempt post-send unknowns are moved to the existing
+non-retryable `failed/` custody before their response is published; if parking
+fails or its destination is already occupied, the inflight record remains and
+sticky settlement debt blocks retirement. The transfer is atomic and refuses
+to replace an existing failed envelope. If the service is provably not reached
+but ordered outbox staging fails, the envelope is instead retained in
+non-retryable failed custody with a not-sent response; failed custody transfer
+failure leaves it inflight and sticky. Failure to publish that not-sent response
+also leaves sticky settlement debt, including when local failed custody was
+successfully established.
+Age-based sweeping does not delete `res/` or `inflight/` records: age and
+consumption of error bytes do not establish remote settlement. Parking is
+local custody only and does not resolve or certify the remote outcome. This
+adds no retry class to ADR-069's never-reached-service classifier and creates
+no local full ledger or historical outcome census.
+
+The source integration is governed jointly by this ADR's at-most-once outcome
+rule and ADR-062's existing service/lifecycle authority. It leaves the ordinary
+`Relay.Serve` unbounded join unchanged and does not certify installed behavior.

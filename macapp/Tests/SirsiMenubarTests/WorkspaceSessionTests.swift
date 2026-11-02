@@ -6,10 +6,11 @@ final class WorkspaceSessionTests: XCTestCase {
     private func defaults() -> UserDefaults {
         let name = "WorkspaceSessionTests." + UUID().uuidString
         let store = UserDefaults(suiteName: name)!
-        addTeardownBlock { store.removePersistentDomain(forName: name) }
+        addTeardownBlock { UserDefaults(suiteName: name)?.removePersistentDomain(forName: name) }
         return store
     }
 
+    @MainActor
     func testSwitchingSectionsPreservesIndependentDrilldowns() {
         let session = PantheonWorkspaceSession(defaults: defaults())
         session.select(.ra)
@@ -28,6 +29,66 @@ final class WorkspaceSessionTests: XCTestCase {
         XCTAssertFalse(session.navigation(for: .maat).atRoot)
     }
 
+    func testBackForwardPreservesFrameIdentityAndNewPushDropsForwardBranch() throws {
+        let nav = Nav()
+        nav.push(Text("First"))
+        nav.push(Text("Second"))
+        nav.push(Text("Third"))
+        let firstID = nav.stack[0].id
+        let secondID = nav.stack[1].id
+        let thirdID = nav.stack[2].id
+
+        nav.pop()
+        nav.pop()
+        XCTAssertEqual(nav.stack.map(\.id), [firstID])
+        XCTAssertTrue(nav.canGoForward)
+        nav.forward()
+        XCTAssertEqual(nav.stack.map(\.id), [firstID, secondID])
+        XCTAssertNotEqual(nav.stack.last?.id, thirdID)
+
+        nav.push(Text("Branch"))
+        let branchID = try XCTUnwrap(nav.stack.last?.id)
+        XCTAssertEqual(nav.stack.map(\.id), [firstID, secondID, branchID])
+        XCTAssertFalse(nav.canGoForward)
+        nav.forward()
+        XCTAssertEqual(nav.stack.map(\.id), [firstID, secondID, branchID])
+        XCTAssertEqual(Set(nav.stack.map(\.id)).count, nav.stack.count)
+    }
+
+    @MainActor
+    func testForwardHistoryAndHomeResetStayWithinEachWorkspace() {
+        let session = PantheonWorkspaceSession(defaults: defaults())
+        let ra = session.navigation(for: .ra)
+        let maat = session.navigation(for: .maat)
+        ra.push(Text("Ra root detail"))
+        ra.push(Text("Ra evidence"))
+        let raEvidenceID = ra.stack.last!.id
+        ra.pop()
+        maat.push(Text("Ma'at root detail"))
+        maat.push(Text("Ma'at case"))
+        let maatCaseID = maat.stack.last!.id
+        maat.pop()
+
+        session.select(.ra)
+        XCTAssertTrue(ra.canGoForward)
+        XCTAssertTrue(maat.canGoForward)
+        ra.forward()
+        XCTAssertEqual(ra.stack.last?.id, raEvidenceID)
+        XCTAssertEqual(maat.stack.count, 1)
+        XCTAssertTrue(maat.canGoForward)
+
+        session.select(.maat)
+        maat.forward()
+        XCTAssertEqual(session.navigation.stack.last?.id, maatCaseID)
+        maat.popToRoot() // the workspace Home operation clears both directions
+        XCTAssertTrue(maat.atRoot)
+        XCTAssertFalse(maat.canGoBack)
+        XCTAssertFalse(maat.canGoForward)
+        XCTAssertEqual(ra.stack.last?.id, raEvidenceID)
+        XCTAssertFalse(ra.atRoot)
+    }
+
+    @MainActor
     func testMaatPrimaryViewportIsRootOnlyAndRetainsItsIdentityAcrossDetails() throws {
         let store = defaults()
         let session = PantheonWorkspaceSession(defaults: store)
@@ -72,6 +133,7 @@ final class WorkspaceSessionTests: XCTestCase {
         XCTAssertNil(restoration.layoutChanged(maximumOffset: 300, ready: true))
     }
 
+    @MainActor
     func testRestoreKeepsOnlySectionIdentityWithoutReplayingDrilldowns() {
         let store = defaults()
         let first = PantheonWorkspaceSession(defaults: store)
@@ -82,6 +144,7 @@ final class WorkspaceSessionTests: XCTestCase {
         XCTAssertTrue(restored.navigation.atRoot)
     }
 
+    @MainActor
     func testUnknownStoredWorkspaceRecoversToOverview() {
         let store = defaults()
         store.set("removed-future-workspace", forKey: PantheonWorkspaceSession.selectionKey)
@@ -92,6 +155,7 @@ final class WorkspaceSessionTests: XCTestCase {
                        PantheonWorkspace.allCases.count)
     }
 
+    @MainActor
     func testLegacyWorkerSelectionIsReadableWithoutOverridingCurrentSelection() {
         let store = defaults()
         store.set("maat", forKey: "PantheonWorkspaceSelection")
@@ -100,6 +164,7 @@ final class WorkspaceSessionTests: XCTestCase {
         XCTAssertEqual(PantheonWorkspaceSession(defaults: store).section, .mercury)
     }
 
+    @MainActor
     func testNavigationMutationPublishesToHeaderAndDetail() {
         let session = PantheonWorkspaceSession(defaults: defaults())
         var mutations = 0
@@ -111,6 +176,7 @@ final class WorkspaceSessionTests: XCTestCase {
         withExtendedLifetime(observation) {}
     }
 
+    @MainActor
     func testCrossWorkspaceDetailBelongsToDestinationNotPreviousStack() {
         let session = PantheonWorkspaceSession(defaults: defaults())
         let overview = session.navigation

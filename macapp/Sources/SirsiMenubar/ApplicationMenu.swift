@@ -4,8 +4,14 @@ import SwiftUI
 enum PantheonMenuAction {
     static let search = "search"
     static let back = "back"
+    static let forward = "forward"
     static let home = "home"
     static let help = "help"
+}
+
+@objc private protocol PantheonUndoRedoResponding {
+    func undo(_ sender: Any?)
+    func redo(_ sender: Any?)
 }
 
 @MainActor
@@ -17,6 +23,7 @@ final class PantheonMenuBridge {
     var presentProjectChooser: (() -> Void)?
     var actionHandlers: [String: () -> Void] = [:]
     var canGoBack = false
+    var canGoForward = false
 
     var canChooseProject: Bool { projectChooser != nil || presentProjectChooser != nil }
 
@@ -58,6 +65,11 @@ final class PantheonMenuBridge {
         pendingRequestID = nil
     }
 
+    func bindWorkspaceNavigation(session: PantheonWorkspaceSession) {
+        actionHandlers[PantheonMenuAction.back] = { session.navigation.pop() }
+        actionHandlers[PantheonMenuAction.forward] = { session.navigation.forward() }
+    }
+
     func tearDown() {
         projectChooserID = nil
         projectChooser = nil
@@ -65,6 +77,7 @@ final class PantheonMenuBridge {
         presentProjectChooser = nil
         actionHandlers.removeAll()
         canGoBack = false
+        canGoForward = false
     }
     func perform(_ action: String) { actionHandlers[action]?() }
 }
@@ -83,7 +96,8 @@ extension EnvironmentValues {
 @MainActor
 enum PantheonMenuAvailability {
     static func isEnabled(action: Selector, textSizePercent: Int,
-                          canGoBack: Bool, canChooseProject: Bool) -> Bool? {
+                          canGoBack: Bool, canGoForward: Bool,
+                          canChooseProject: Bool) -> Bool? {
         switch action {
         case #selector(AppDelegate.increaseTextSize(_:)):
             return PantheonTextSizePreference.normalized(textSizePercent) < 150
@@ -93,6 +107,8 @@ enum PantheonMenuAvailability {
             return PantheonTextSizePreference.normalized(textSizePercent) != 100
         case #selector(AppDelegate.goBack(_:)):
             return canGoBack
+        case #selector(AppDelegate.goForward(_:)):
+            return canGoForward
         case #selector(AppDelegate.chooseProject(_:)):
             return canChooseProject
         default:
@@ -120,13 +136,13 @@ func makePantheonMainMenu(target: NSObject, servicesMenu: NSMenu) -> NSMenu {
         item("Close Window", #selector(NSWindow.performClose(_:)), target: nil, key: "w", modifiers: [.command])
     ]))
     mainMenu.addItem(menu(title: "Edit", items: [
-        item("Undo", Selector("undo:"), key: "z", modifiers: [.command]),
-        item("Redo", Selector("redo:"), key: "z", modifiers: [.command, .shift]),
+        item("Undo", #selector(PantheonUndoRedoResponding.undo(_:)), key: "z", modifiers: [.command]),
+        item("Redo", #selector(PantheonUndoRedoResponding.redo(_:)), key: "z", modifiers: [.command, .shift]),
         NSMenuItem.separator(),
-        item("Cut", Selector("cut:"), key: "x", modifiers: [.command]),
-        item("Copy", Selector("copy:"), key: "c", modifiers: [.command]),
-        item("Paste", Selector("paste:"), key: "v", modifiers: [.command]),
-        item("Select All", Selector("selectAll:"), key: "a", modifiers: [.command])
+        item("Cut", #selector(NSText.cut(_:)), key: "x", modifiers: [.command]),
+        item("Copy", #selector(NSText.copy(_:)), key: "c", modifiers: [.command]),
+        item("Paste", #selector(NSText.paste(_:)), key: "v", modifiers: [.command]),
+        item("Select All", #selector(NSText.selectAll(_:)), key: "a", modifiers: [.command])
     ]))
     mainMenu.addItem(menu(title: "View", items: [
         item("Larger Text", #selector(AppDelegate.increaseTextSize(_:)), target: target, key: "+", modifiers: [.command]),
@@ -135,6 +151,7 @@ func makePantheonMainMenu(target: NSObject, servicesMenu: NSMenu) -> NSMenu {
         NSMenuItem.separator(),
         item("Search Workspaces…", #selector(AppDelegate.searchWorkspaces(_:)), target: target, key: "k", modifiers: [.command]),
         item("Back", #selector(AppDelegate.goBack(_:)), target: target, key: "[", modifiers: [.command]),
+        item("Forward", #selector(AppDelegate.goForward(_:)), target: target, key: "]", modifiers: [.command]),
         item("Home", #selector(AppDelegate.goHome(_:)), target: target, key: "h", modifiers: [.command, .shift])
     ]))
     mainMenu.addItem(menu(title: "Window", items: [

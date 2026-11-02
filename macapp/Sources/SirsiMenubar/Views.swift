@@ -272,9 +272,32 @@ extension View {
 final class Nav: ObservableObject {
     struct Frame: Identifiable { let id = UUID(); let view: AnyView }
     @Published var stack: [Frame] = []
-    func push<V: View>(_ v: V) { stack.append(Frame(view: AnyView(v))) }
-    func pop() { if !stack.isEmpty { stack.removeLast() } }
-    func popToRoot() { stack.removeAll() }
+    private var forwardFrames: [Frame] = []
+    var canGoBack: Bool { !stack.isEmpty }
+    var canGoForward: Bool { !forwardFrames.isEmpty }
+
+    func push<V: View>(_ v: V) {
+        forwardFrames.removeAll()
+        stack.append(Frame(view: AnyView(v)))
+    }
+
+    func pop() {
+        guard let frame = stack.last else { return }
+        forwardFrames.append(frame)
+        stack.removeLast()
+    }
+
+    func forward() {
+        guard let frame = forwardFrames.popLast() else { return }
+        stack.append(frame)
+    }
+
+    func popToRoot() {
+        guard !stack.isEmpty || !forwardFrames.isEmpty else { return }
+        forwardFrames.removeAll()
+        stack = []
+    }
+
     var atRoot: Bool { stack.isEmpty }
 }
 
@@ -1325,16 +1348,24 @@ struct FindingView: View {
     }
     private var snapshot: FindingObservationSnapshot { engine.diagnosticSnapshot(check: finding.check) }
     @State private var approval: DiagnosticRepairApproval?
+    // The frozen approval is the result-sheet trigger and content, atomically.
+    @State private var presentedRepair: DiagnosticRepairPresentation?
 
-    private func freezeRepair(_ args: [String]) {
+    private func freezeRepair(_ args: [String]) -> DiagnosticRepairApproval {
         let actual = remediationArguments(args)
-        approval = DiagnosticRepairApproval(snapshot: snapshot, args: actual,
+        let frozen = DiagnosticRepairApproval(snapshot: snapshot, args: actual,
             directory: SirsiEngine.workingDirectory(for: actual))
+        approval = frozen
+        return frozen
     }
     private func approved(_ args: [String]) -> Bool {
+        guard let approval else { return false }
+        return approved(args, using: approval)
+    }
+    private func approved(_ args: [String], using approval: DiagnosticRepairApproval) -> Bool {
         let actual = remediationArguments(args)
-        return approval?.authorizes(snapshot: snapshot, args: actual,
-            directory: SirsiEngine.workingDirectory(for: actual)) == true
+        return approval.authorizes(snapshot: snapshot, args: actual,
+            directory: SirsiEngine.workingDirectory(for: actual))
     }
 
     // The honesty class drives EVERY label so a 7-day history never wears an
@@ -1346,9 +1377,10 @@ struct FindingView: View {
     @State private var maatReviewInFlight = false
     @State private var confirmMaatReview = false
     @State private var confirmFix = false
-    @State private var showConfirmedFix = false
+    @State private var executeReviewedFix = false
+    @State private var repairReviewMessage: String?
     @State private var confirmLegacyRepair = false
-    @State private var showLegacyRepair = false
+    @State private var executeReviewedLegacyRepair = false
 
     // Older installed CLIs can omit `fix` and leave only prose or a backticked
     // command. Never turn that text into executable authority and never send a
@@ -1401,6 +1433,7 @@ struct FindingView: View {
         }
     }
     private var fixButtonLabel: String {
+        if diagnosticOpensMemoryPreview(repairArgs) { return "Review memory relief" }
         if observedFinding.check == "launchd Disabled Override" {
             return "Restore managed services"
         }
@@ -1509,15 +1542,19 @@ struct FindingView: View {
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                         }
                         Text(fixSectionLabel).sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-                        if fixRequiresConfirmation {
-                            Button { freezeRepair(repairArgs); confirmFix = true } label: { fixButtonContents(fix) }
-                                .buttonStyle(DiagnosticRepairButtonStyle())
-                        } else {
-                            Button {
-                                freezeRepair(repairArgs)
+                        Button {
+                            repairReviewMessage = nil
+                            let frozen = freezeRepair(repairArgs)
+                            if diagnosticOpensMemoryPreview(repairArgs) {
+                                presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .typed)
+                            } else {
                                 confirmFix = true
-                            } label: { fixButtonContents(fix) }
-                            .buttonStyle(DiagnosticRepairButtonStyle())
+                            }
+                        } label: { fixButtonContents(fix) }
+                        .buttonStyle(DiagnosticRepairButtonStyle())
+                        if let repairReviewMessage {
+                            Text(repairReviewMessage).sirsiFont(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     } else if requiresNativeCleanupReview {
                         nativeCleanupReview
@@ -1548,7 +1585,7 @@ struct FindingView: View {
             // Evidence changes invalidate an open dialog, not only the final launch.
             // Keep an executing sheet's receipt visible. Its final authorizer
             // still rejects changed evidence; do not discard capture on refresh.
-            if !showConfirmedFix && !showLegacyRepair { approval = nil }
+            if case nil = presentedRepair { approval = nil }
             confirmFix = false
             confirmLegacyRepair = false
         }
@@ -1558,49 +1595,64 @@ struct FindingView: View {
         } message: {
             Text("Ma'at will retain this exact diagnostic finding for review. It will not change the system or claim that the issue is repaired.")
         }
-        .confirmationDialog("Apply this system repair?", isPresented: $confirmFix, titleVisibility: .visible) {
-            Button(fixButtonLabel) { if approved(repairArgs) { showConfirmedFix = true } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            if observedFinding.check == "launchd Disabled Override" {
-                Text("Ma'at will re-check the exact managed disabled labels, restore only that bounded set, verify the same diagnostic afterward, and retain either a verified recovery receipt or an explicit incomplete outcome.")
-            } else {
-                Text("Pantheon will run only the frozen managed repair, then re-check this finding. Changed, stale or unavailable evidence requires new confirmation.")
+        .sheet(isPresented: $confirmFix, onDismiss: {
+            guard executeReviewedFix else { return }
+            executeReviewedFix = false
+            guard approved(repairArgs) else {
+                repairReviewMessage = "The finding changed while the review closed. No repair ran. Review the current finding again."
+                return
             }
-            Text("Pantheon will not broaden the command or touch unrelated services.")
-            Text("Command: \(approval?.args.joined(separator: " ") ?? "unavailable")")
-            Text("Project: \(approval?.directory.path ?? "unavailable")")
+            guard let frozen = approval else { return }
+            presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .typed)
+        }) {
+            ActionReviewSheet(title: "Review system repair",
+                detail: "Pantheon will run the exact command below, then recheck this finding. A changed finding or project requires a fresh review. No unrelated service is selected.",
+                scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) } ?? "No current reviewed command is available.",
+                confirmLabel: fixButtonLabel,
+                cancel: { confirmFix = false },
+                confirm: {
+                    if approved(repairArgs) { executeReviewedFix = true }
+                    else { repairReviewMessage = "The finding changed during review. Read the current finding and review it again; no repair ran." }
+                    confirmFix = false
+                })
         }
-        .sheet(isPresented: $showConfirmedFix) {
-            Group {
-                if let approval {
-                    ResultView(engine: engine, title: observedFinding.check, args: approval.args,
-                               reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
-                               authorizeExecution: { approved(repairArgs) })
+        .sheet(isPresented: $confirmLegacyRepair, onDismiss: {
+            guard executeReviewedLegacyRepair else { return }
+            executeReviewedLegacyRepair = false
+            guard let args = legacyNativeRepairArgs, approved(args) else {
+                repairReviewMessage = "The finding changed while the review closed. No repair ran. Review the current finding again."
+                return
+            }
+            guard let frozen = approval else { return }
+            presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .legacy)
+        }) {
+            ActionReviewSheet(title: "Review bounded repair",
+                detail: "Pantheon will run only the registered repair shown here, then re-check this finding. It will not execute diagnostic message text. A changed finding or project requires a fresh review.",
+                scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) } ?? "No current reviewed command is available.",
+                confirmLabel: "Run repair",
+                cancel: { confirmLegacyRepair = false },
+                confirm: {
+                    if let args = legacyNativeRepairArgs, approved(args) { executeReviewedLegacyRepair = true }
+                    else { repairReviewMessage = "The finding changed during review. Read the current finding and review it again; no repair ran." }
+                    confirmLegacyRepair = false
+                })
+        }
+        .modifier(DiagnosticRepairResultSheet(item: $presentedRepair) { presentation in
+            let frozen = presentation.approval
+            let authorize: () -> Bool = {
+                switch presentation.route {
+                case .typed:
+                    return approved(repairArgs, using: frozen)
+                case .legacy:
+                    return legacyNativeRepairArgs.map { approved($0, using: frozen) } ?? false
                 }
             }
-            .modifier(ResultPanelLayout())
-        }
-        .confirmationDialog("Run this bounded repair in Pantheon?", isPresented: $confirmLegacyRepair, titleVisibility: .visible) {
-            Button("Run repair") { if let args = legacyNativeRepairArgs, approved(args) { showLegacyRepair = true } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Pantheon will run only the frozen registered repair, then re-check this finding. It will not execute diagnostic message text.")
-            Text("Command: \(approval?.args.joined(separator: " ") ?? "unavailable")")
-            Text("Project: \(approval?.directory.path ?? "unavailable")")
-        }
-        .sheet(isPresented: $showLegacyRepair) {
-            Group {
-                if let approval {
-                    ResultView(engine: engine, title: observedFinding.check, args: approval.args,
-                               reverifyCheck: observedFinding.check, reverifyKind: observedFinding.fixKind,
-                               authorizeExecution: { legacyNativeRepairArgs.map { approved($0) } ?? false })
-                } else {
-                    EmptyView()
-                }
-            }
-            .modifier(ResultPanelLayout())
-        }
+            return ResultView(engine: engine, title: frozen.snapshot.check ?? observedFinding.check,
+                              args: frozen.args, reverifyCheck: frozen.snapshot.check,
+                              reverifyKind: frozen.snapshot.fixKind,
+                              authorizeExecution: authorize)
+                .modifier(ResultPanelLayout())
+        })
     }
 
     private func fixButtonContents(_ fix: String) -> some View {
@@ -1611,12 +1663,22 @@ struct FindingView: View {
     @ViewBuilder private var legacyNativeRepair: some View {
         VStack(alignment: .leading, spacing: 9) {
             Text("PANTHEON CAN REPAIR THIS").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-            Text("This diagnostic came from an older local contract. Pantheon matched it to a bounded built-in repair, not message text. Review, confirm, and Pantheon will verify the outcome here.")
+            Text("This diagnostic came from an older local contract. Pantheon matched it to a bounded built-in action, not message text. Read-only memory relief opens a preview first; other repairs show their exact scope and require confirmation.")
                 .sirsiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let repairReviewMessage {
+                Text(repairReviewMessage).sirsiFont(.callout).fixedSize(horizontal: false, vertical: true)
+            }
             Button {
-                if let args = legacyNativeRepairArgs { freezeRepair(args); confirmLegacyRepair = true }
+                guard let args = legacyNativeRepairArgs else { return }
+                let frozen = freezeRepair(args)
+                if diagnosticOpensMemoryPreview(args) {
+                    presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .legacy)
+                } else {
+                    confirmLegacyRepair = true
+                }
             } label: {
-                Label("Resolve in Pantheon", systemImage: "wrench.and.screwdriver.fill")
+                Label(legacyNativeRepairArgs.map { diagnosticOpensMemoryPreview($0) } == true ? "Review memory relief" : "Resolve in Pantheon",
+                      systemImage: "wrench.and.screwdriver.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).tint(gold)
@@ -1677,7 +1739,11 @@ struct FindingView: View {
                     .sirsiFont(.caption)
                     .foregroundStyle(result.ok ? .green : .orange)
                 if result.ok {
-                    NavLink { MaatCasebookView(engine: engine) } label: {
+                    NavLink {
+                        MaatCasebookView(engine: engine,
+                            caseSelection: MaatCaseSelection.recorded(from: result),
+                            selectionFallbackMessage: MaatCaseSelection.fallbackMessage(for: result))
+                    } label: {
                         Label("Continue in Ma'at Casebook", systemImage: "book.closed")
                     }
                     .buttonStyle(.bordered)
@@ -2192,6 +2258,7 @@ struct RaHandoffView: View {
                 Spacer()
                 Button("Cancel") { isPresented = false }
                     .disabled(sending)
+                    .accessibilityIdentifier("ra-handoff-cancel")
             }
             .padding(16)
 
@@ -2225,6 +2292,8 @@ struct RaHandoffView: View {
                                     }
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityIdentifier("ra-handoff-recipient-scroll")
                         }
                     }
 
@@ -2263,6 +2332,7 @@ struct RaHandoffView: View {
                 }
                 .padding(16)
             }
+            .accessibilityIdentifier("ra-handoff-form-scroll")
             Divider()
             Button {
                 sending = true
@@ -2280,9 +2350,11 @@ struct RaHandoffView: View {
             .buttonStyle(.borderedProminent)
             .tint(gold)
             .disabled(!canSend)
+            .accessibilityIdentifier("ra-handoff-send")
             .padding(16)
         }
-        .frame(minWidth: 460, minHeight: 560)
+        .frame(minWidth: 420, idealWidth: 620, maxWidth: 720,
+               minHeight: 420, idealHeight: 560, maxHeight: 680)
     }
 
     private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {
@@ -3919,6 +3991,8 @@ struct ProjectBar: View {
 // that shape fall back to clean text. Every path is navigable; nothing dead-ends.
 struct ResultView: View {
     @ObservedObject var engine: SirsiEngine
+    @Environment(\.isPresented) private var isPresented
+    @Environment(\.dismiss) private var dismiss
     let title: String
     let args: [String]
     let directory: URL
@@ -3985,7 +4059,17 @@ struct ResultView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            BackBar(title: title)
+            if isPresented {
+                HStack {
+                    Text(title).sirsiFont(.headline)
+                    Spacer()
+                    Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
+                        .disabled(applying)
+                }.padding(16)
+                Divider()
+            } else {
+                BackBar(title: title)
+            }
             if isRepoScoped {
                 ProjectBar(engine: engine) { Task { await load() } }
             }
@@ -4026,20 +4110,17 @@ struct ResultView: View {
             }.padding(.horizontal, 14).padding(.vertical, 10)
         }
         .task { if result == nil && raw.isEmpty { await load() } }   // preloaded → already have it
-        .confirmationDialog(
-            "Apply this fix?",
-            isPresented: Binding(get: { pendingApply != nil }, set: { if !$0 { pendingApply = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Apply", role: .destructive) {
-                if let a = pendingApply, let frozen = actionApproval { Task { await apply(a, approval: frozen) } }
-                pendingApply = nil
-            }
-            Button("Cancel", role: .cancel) { pendingApply = nil }
-        } message: {
-            if let a = pendingApply {
-                Text("Runs the frozen command `\(actionApproval?.args.joined(separator: " ") ?? a.command)` for the current result and project. Review its scope; a changed result requires new confirmation.")
-                Text("Project: \(actionApproval?.directory.path ?? "unavailable")")
+        .sheet(isPresented: Binding(get: { pendingApply != nil }, set: { if !$0 { pendingApply = nil } })) {
+            if let action = pendingApply, let frozen = actionApproval {
+                ActionReviewSheet(title: "Review: " + action.label,
+                    detail: (action.description ?? "Review the exact scope before running this action.") + "\n\nPantheon will run only the command below. Any macOS administrator authorization appears separately. Cancel leaves this preview unchanged.",
+                    scope: actionReviewScope(arguments: frozen.args, directory: frozen.directory),
+                    confirmLabel: action.label,
+                    cancel: { pendingApply = nil; actionApproval = nil },
+                    confirm: {
+                        pendingApply = nil
+                        Task { await apply(action, approval: frozen) }
+                    })
             }
         }
     }
@@ -4069,6 +4150,10 @@ struct ResultView: View {
                 }
                 Text(r.summary).sirsiFont(14, weight: .semibold)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if !r.errors.isEmpty {
+                    ResultErrorDetails(errors: r.errors)
+                }
 
                 if !r.evidence.isEmpty {
                     VStack(spacing: 0) {
@@ -4102,6 +4187,25 @@ struct ResultView: View {
             }.padding(16)
     }
 
+    struct ResultErrorDetails: View {
+        let errors: [String]
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("ERROR DETAILS").sirsiFont(.caption2, weight: .semibold)
+                    .foregroundStyle(.orange)
+                ForEach(Array(errors.enumerated()), id: \.offset) { _, error in
+                    Text(error).sirsiFont(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.10)))
+                }
+            }
+        }
+    }
+
     @ViewBuilder private func actionButton(_ a: CRAction) -> some View {
         if a.isApply {
             Button {
@@ -4110,6 +4214,7 @@ struct ResultView: View {
                     producingDirectory: executionDirectory, command: a.command,
                     currentDirectory: SirsiEngine.workingDirectory(for: actual))
                 if actionApproval != nil { pendingApply = a }
+                else { explainChangedAction() }
             } label: { actionLabel(a, prominent: true) }
                 .buttonStyle(ResultActionButtonStyle(prominent: true)).disabled(applying)
         } else {
@@ -4211,8 +4316,17 @@ struct ResultView: View {
             directory: SirsiEngine.workingDirectory(for: approval.args)) && authorizeExecution()
     }
 
+    private func explainChangedAction() {
+        toastOK = false
+        toast = "The finding, result, or project changed during review. No action ran. Close this result, read the current finding, and open a fresh preview before confirming again."
+    }
+
     private func apply(_ action: CRAction, approval: ResultActionApproval) async {
-        guard !applying, action.command == approval.command, actionStillAuthorized(approval) else { return }
+        guard !applying else { return }
+        guard action.command == approval.command, actionStillAuthorized(approval) else {
+            explainChangedAction()
+            return
+        }
         applying = true // Before await; repeated confirmation delivery cannot replay.
         _ = verification.begin()
         actionApproval = nil
@@ -4224,15 +4338,16 @@ struct ResultView: View {
     }
 
     private func retain(_ receipt: CommandExecution, action: CRAction, directory: URL) {
+        let captured = capturedRepairActivity(receipt)
         execution = receipt
         executionDirectory = directory
         result = receipt.result
         raw = result == nil ? receipt.displayText : ""
-        toastOK = receipt.complete && receipt.exitCode == 0 && receipt.result?.ok == true
+        toastOK = captured.resolution == .resolved
         toast = toastOK ? "Command returned a complete report; check fresh evidence below."
             : "Outcome needs review — the command will not be replayed automatically."
         engine.recordActivity(title: action.label, command: action.command,
-            result: receipt.displayText)
+            result: receipt.displayText, capturedRepair: captured)
     }
 
     // applyHeadline pulls the human result line ("Cleaned 8 items. Reclaimed
@@ -4720,7 +4835,11 @@ private struct ActivityDetailView: View {
                                     .foregroundStyle(result.ok ? .green : .orange)
                                     .fixedSize(horizontal: false, vertical: true)
                                 if result.ok {
-                                    NavLink { MaatCasebookView(engine: engine) } label: {
+                                    NavLink {
+                                        MaatCasebookView(engine: engine,
+                                            caseSelection: MaatCaseSelection.recorded(from: result),
+                                            selectionFallbackMessage: MaatCaseSelection.fallbackMessage(for: result))
+                                    } label: {
                                         Label("Open Ma'at Casebook", systemImage: "book.closed")
                                     }
                                     .buttonStyle(.bordered)

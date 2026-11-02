@@ -215,6 +215,10 @@ private struct MaatPrimaryScrollView<Content: View>: View {
     }
 }
 
+final class MaatPrimaryScrollProbeView: NSView {
+    var viewportObservationReady = false
+}
+
 private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
     @Binding var position: CGFloat
     let layoutReady: Bool
@@ -223,7 +227,11 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
         Coordinator(position: $position, layoutReady: layoutReady)
     }
 
-    func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
+    func makeNSView(context: Context) -> NSView {
+        let view = MaatPrimaryScrollProbeView(frame: .zero)
+        view.identifier = NSUserInterfaceItemIdentifier("maat.system-one.primary-root-scroll-probe")
+        return view
+    }
 
     func updateNSView(_ view: NSView, context: Context) {
         context.coordinator.update(position: $position, layoutReady: layoutReady)
@@ -234,11 +242,12 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
         coordinator.disconnect()
     }
 
-    final class Coordinator {
+    @MainActor final class Coordinator {
         private var position: Binding<CGFloat>
         private var layoutReady: Bool
         private var restoration: MaatRootScrollRestoration
         private weak var scrollView: NSScrollView?
+        private weak var probeView: MaatPrimaryScrollProbeView?
         private weak var observedClip: NSClipView?
         private weak var observedDocument: NSView?
         private var clipWasPostingBoundsChanges = false
@@ -263,23 +272,29 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
             guard !connectionScheduled else { return }
             connectionScheduled = true
             DispatchQueue.main.async { [weak self, weak probe] in
-                guard let self else { return }
-                self.connectionScheduled = false
-                guard self.active, let scrollView = probe?.enclosingScrollView else { return }
-                if self.scrollView !== scrollView {
-                    self.removeObservers()
-                    self.scrollView = scrollView
-                    self.observe(scrollView)
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.connectionScheduled = false
+                    guard self.active, let scrollView = probe?.enclosingScrollView else { return }
+                    self.probeView = probe as? MaatPrimaryScrollProbeView
+                    if self.scrollView !== scrollView {
+                        self.probeView?.viewportObservationReady = false
+                        self.removeObservers()
+                        self.scrollView = scrollView
+                        self.observe(scrollView)
+                    }
+                    self.restoration.recordOffset(scrollView.contentView.bounds.origin.y)
+                    self.restoreFromReadyLayout()
                 }
-                self.restoration.recordOffset(scrollView.contentView.bounds.origin.y)
-                self.restoreFromReadyLayout()
             }
         }
 
         func disconnect() {
             active = false
+            probeView?.viewportObservationReady = false
             removeObservers()
             scrollView = nil
+            probeView = nil
         }
 
         private func removeObservers() {
@@ -298,36 +313,54 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
             clip.postsBoundsChangedNotifications = true
             observers.append(NotificationCenter.default.addObserver(
                 forName: NSView.boundsDidChangeNotification, object: clip, queue: .main
-            ) { [weak self] _ in self?.boundsChanged() })
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.boundsChanged() }
+            })
             if let document = scrollView.documentView {
                 observedDocument = document
                 documentWasPostingFrameChanges = document.postsFrameChangedNotifications
                 document.postsFrameChangedNotifications = true
                 observers.append(NotificationCenter.default.addObserver(
                     forName: NSView.frameDidChangeNotification, object: document, queue: .main
-                ) { [weak self] _ in self?.restoreFromReadyLayout() })
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.restoreFromReadyLayout() }
+                })
             }
         }
 
         private func boundsChanged() {
             guard let scrollView else { return }
             let offset = max(0, scrollView.contentView.bounds.origin.y)
-            guard let captured = restoration.boundsChanged(to: offset) else { return }
-            position.wrappedValue = captured
+            if let captured = restoration.boundsChanged(to: offset) {
+                position.wrappedValue = captured
+            }
+            markViewportReadyIfRestored()
         }
 
         private func restoreFromReadyLayout() {
             guard let scrollView, let document = scrollView.documentView else { return }
             let clip = scrollView.contentView
-            guard document.frame.height > 0, clip.bounds.height > 0,
-                  let target = restoration.layoutChanged(
-                    maximumOffset: document.frame.height - clip.bounds.height,
-                    ready: layoutReady
-                  ) else { return }
-            restoration.recordOffset(target)
-            clip.scroll(to: CGPoint(x: clip.bounds.origin.x, y: target))
-            scrollView.reflectScrolledClipView(clip)
-            position.wrappedValue = target
+            guard document.frame.height > 0, clip.bounds.height > 0 else { return }
+            if let target = restoration.layoutChanged(
+                maximumOffset: document.frame.height - clip.bounds.height,
+                ready: layoutReady
+            ) {
+                restoration.recordOffset(target)
+                clip.scroll(to: CGPoint(x: clip.bounds.origin.x, y: target))
+                scrollView.reflectScrolledClipView(clip)
+                position.wrappedValue = target
+            }
+            markViewportReadyIfRestored()
+        }
+
+        private func markViewportReadyIfRestored() {
+            guard layoutReady, restoration.resolved,
+                  let scrollView, let probeView,
+                  probeView.enclosingScrollView === scrollView,
+                  observedClip === scrollView.contentView,
+                  (scrollView.documentView?.frame.height ?? 0) > 0,
+                  scrollView.contentView.bounds.height > 0 else { return }
+            probeView.viewportObservationReady = true
         }
     }
 }
@@ -1560,6 +1593,8 @@ struct MaatKnownFailureProposalsView: View {
     private var loadError: String? { historyRefresh.state.error }
     private var activeQuery: String { historyRefresh.state.query }
     @State private var query = ""
+    @State private var activeCaseSelection: MaatCaseSelection?
+    @State private var selectionFallbackMessage: String?
     @State private var showWithheld = false
     @State private var confirmKnowledgeRefresh = false
     @State private var knowledgeRefreshInFlight = false
@@ -1567,10 +1602,13 @@ struct MaatKnownFailureProposalsView: View {
     @State private var knowledgeRefreshError: String?
 
     init(engine: SirsiEngine, preloaded: MaatCasebookProjection? = nil, showsBackBar: Bool = true,
-         historyStore: MaatHistoryRefreshStore? = nil) {
+         historyStore: MaatHistoryRefreshStore? = nil, caseSelection: MaatCaseSelection? = nil,
+         selectionFallbackMessage: String? = nil) {
         self.engine = engine
         self.showsBackBar = showsBackBar
         _query = State(initialValue: historyStore?.state.query ?? "")
+        _activeCaseSelection = State(initialValue: caseSelection)
+        _selectionFallbackMessage = State(initialValue: selectionFallbackMessage)
         _historyRefresh = StateObject(wrappedValue: historyStore ?? MaatHistoryRefreshStore(projection: preloaded))
     }
 
@@ -1590,6 +1628,11 @@ struct MaatKnownFailureProposalsView: View {
         .task {
             guard casebook == nil else { return }
             await load()
+        }
+        .onChange(of: query) { newQuery in
+            activeCaseSelection = nil
+            selectionFallbackMessage = nil
+            historyRefresh.queryChanged(newQuery)
         }
         .onDisappear { historyRefresh.cancel() }
     }
@@ -1678,6 +1721,28 @@ struct MaatKnownFailureProposalsView: View {
                         MaatJournalIntegrityCard(engine: engine, integrity: casebook.journalIntegrity)
                     }
                     searchField
+                    if let selectionFallbackMessage {
+                        Label(selectionFallbackMessage, systemImage: "info.circle")
+                            .sirsiFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if activeCaseSelection != nil, casebook.history?.coverage == "complete",
+                       activeCaseSelection?.uniqueCompletedCase(in: casebook) == nil {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("The exact recorded case is not confirmed in this completed snapshot. No case was selected.")
+                                .sirsiFont(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button("Browse the casebook") {
+                                activeCaseSelection = nil
+                                selectionFallbackMessage = nil
+                                query = ""
+                                Task { await load(query: "") }
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
                     if let loadError {
                         VStack(alignment: .leading, spacing: 8) {
                             Label(loadError, systemImage: "exclamationmark.triangle.fill")
@@ -1690,15 +1755,20 @@ struct MaatKnownFailureProposalsView: View {
                             }
                         }
                     }
-                    let visible = casebook.cases
-                    if visible.isEmpty, casebook.historyEmptyState == .incomplete, let cursor = casebook.history?.nextCursor {
+                    let visible = activeCaseSelection.flatMap { $0.uniqueCompletedCase(in: casebook).map { [$0] } } ??
+                        (activeCaseSelection == nil ? casebook.cases : [])
+                    if activeCaseSelection != nil, visible.isEmpty, casebook.history?.coverage != "partial" {
+                        Text("Confirm the exact case selection or browse the full casebook.")
+                            .sirsiFont(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else if visible.isEmpty, casebook.historyEmptyState == .incomplete, let cursor = casebook.history?.nextCursor {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("This bounded history scan is incomplete; no empty result is available yet.")
                                 .sirsiFont(.subheadline)
                                 .foregroundStyle(.secondary)
                             Button("Continue history search") { Task { await load(cursor: cursor) } }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(loading || historyRefresh.state.restartRequired)
+                                .disabled(loading || historyRefresh.state.restartRequired || query.trimmingCharacters(in: .whitespacesAndNewlines) != historyRefresh.state.query)
                         }
                     } else if visible.isEmpty, casebook.historyEmptyState == .olderPage, let cursor = casebook.history?.nextCursor {
                         VStack(alignment: .leading, spacing: 8) {
@@ -1707,7 +1777,7 @@ struct MaatKnownFailureProposalsView: View {
                                 .foregroundStyle(.secondary)
                             Button("Load older decisions") { Task { await load(cursor: cursor) } }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(loading || historyRefresh.state.restartRequired)
+                                .disabled(loading || historyRefresh.state.restartRequired || query.trimmingCharacters(in: .whitespacesAndNewlines) != historyRefresh.state.query)
                         }
                     } else if visible.isEmpty, casebook.historyEmptyState == .invalidHistory {
                         Text("No valid decision matched this page. Invalid journal rows prevent a complete absence conclusion.")
@@ -1747,7 +1817,7 @@ struct MaatKnownFailureProposalsView: View {
                         Label(history.coverage == "partial" ? "Continue history search" : "Load older", systemImage: "clock.arrow.circlepath")
                     }
                     .buttonStyle(.borderless)
-                    .disabled(loading || historyRefresh.state.restartRequired)
+                    .disabled(loading || historyRefresh.state.restartRequired || query.trimmingCharacters(in: .whitespacesAndNewlines) != historyRefresh.state.query)
                 }
             }
             .padding(.horizontal, 16)
@@ -1864,7 +1934,9 @@ struct MaatKnownFailureProposalsView: View {
     }
 
     @MainActor private func load(query requestedQuery: String? = nil, cursor: String? = nil) async {
-        await historyRefresh.load(scope: "all", query: requestedQuery, cursor: cursor) { args in
+        let effectiveQuery = requestedQuery ?? historyRefresh.state.refreshQuery
+        await historyRefresh.load(scope: "all", query: effectiveQuery, cursor: cursor,
+                                  selection: activeCaseSelection) { args in
             await SirsiEngine.runJSONRead(args: args)
         }
     }
@@ -2652,24 +2724,128 @@ func maatCasebookFailureMemoryArguments(_ action: MaatFailureMemoryAction) -> [S
     }
 }
 
+struct MaatCaseSelection: Equatable, Sendable {
+    let caseID: String
+    let evidence: String
+
+    init?(caseID: String, evidence: String) {
+        guard Self.isCanonicalCaseID(caseID), Self.isCanonicalEvidence(evidence) else { return nil }
+        self.caseID = caseID
+        self.evidence = evidence
+    }
+
+    static func recorded(from result: CommandResult?) -> MaatCaseSelection? {
+        guard let result, result.status == "ok", result.errors.isEmpty else { return nil }
+        let ids = result.evidence.filter { $0.label == "Case ID" }
+        let evidences = result.evidence.filter { $0.label == "Evidence" }
+        guard ids.count == 1, evidences.count == 1 else { return nil }
+        return MaatCaseSelection(caseID: ids[0].value, evidence: evidences[0].value)
+    }
+
+    static func fallbackMessage(for result: CommandResult?) -> String? {
+        recorded(from: result) == nil
+            ? "The result did not provide one canonical case ID and evidence pair. Casebook is open for browsing; no exact case was opened."
+            : nil
+    }
+
+    func uniqueCompletedCase(in projection: MaatCasebookProjection) -> MaatCase? {
+        guard projection.journalIntegrity.invalidCount == 0,
+              let history = projection.history,
+              history.scope == "all", history.countScope == "query",
+              !history.queryID.isEmpty, !history.snapshot.isEmpty,
+              history.coverage == "complete", history.hasMoreKnown, !history.hasMore,
+              history.candidateMatchesComplete, history.candidateMatches == 1,
+              history.evidenceMatchesComplete == true, let evidenceMatches = history.evidenceMatches, evidenceMatches > 0,
+              history.totalComplete, history.total == 1, history.nextCursor == nil,
+              history.returned == 1, projection.cases.count == 1,
+              let entry = projection.cases.first,
+              entry.id == caseID, entry.evidence == evidence else { return nil }
+        return entry
+    }
+
+    static func isCanonicalCaseID(_ value: String) -> Bool {
+        value.hasPrefix("maat-case-") && isLowerHex(String(value.dropFirst("maat-case-".count)), count: 16)
+    }
+
+    static func isCanonicalEvidence(_ value: String) -> Bool {
+        ["diagnostic-finding:sha256=", "maat-system-one:sha256="].contains { prefix in
+            value.hasPrefix(prefix) && isLowerHex(String(value.dropFirst(prefix.count)), count: 64)
+        }
+    }
+
+    private static func isLowerHex(_ value: String, count: Int) -> Bool {
+        value.utf8.count == count && value.utf8.allSatisfy {
+            (48...57).contains($0) || (97...102).contains($0)
+        }
+    }
+}
+
 func maatExactCasebookReadArguments(evidence: String, cursor: String? = nil) -> [String] {
-	var arguments = ["maat", "casebook", "--json", "--scope", "all", "--evidence", evidence, "--limit", "2"]
+	maatCasebookEvidenceReadArguments(scope: "all", evidence: evidence, cursor: cursor)
+}
+
+func maatCasebookEvidenceReadArguments(scope: String, evidence: String, cursor: String? = nil) -> [String] {
+	var arguments = ["maat", "casebook", "--json", "--scope", scope, "--evidence", evidence, "--limit", "2"]
 	if let cursor, !cursor.isEmpty { arguments += ["--cursor", cursor] }
 	return arguments
 }
 
+func maatExactCasebookSelectionReadArguments(_ selection: MaatCaseSelection, cursor: String? = nil) -> [String] {
+    var arguments = maatExactCasebookReadArguments(evidence: selection.evidence, cursor: cursor)
+    arguments.append(selection.caseID)
+    return arguments
+}
+
 func maatCasebookHistoryArguments(scope: String, query: String = "", cursor: String? = nil) -> [String] {
+    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let evidence = maatCanonicalFullCasebookEvidence(normalizedQuery) {
+        return maatCasebookEvidenceReadArguments(scope: scope, evidence: evidence, cursor: cursor)
+    }
     var arguments = ["maat", "casebook", "--json", "--scope", scope, "--limit", "50"]
     if let cursor, !cursor.isEmpty { arguments += ["--cursor", cursor] }
-    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     if !normalizedQuery.isEmpty { arguments.append(normalizedQuery) }
     return arguments
+}
+
+private func maatCanonicalFullCasebookEvidence(_ value: String) -> String? {
+    MaatCaseSelection.isCanonicalEvidence(value) ? value : nil
+}
+
+enum MaatInactiveDispositionFailurePresentation {
+    static func summary(_ capture: CommandExecution) -> String {
+        let reason: String
+        if !capture.complete {
+            reason = "The command did not return a complete receipt; the disposition outcome is unverified."
+        } else if capture.exitCode != 0 {
+            reason = "The command exited with status \(capture.exitCode.map(String.init) ?? "unavailable"); the disposition outcome is unverified."
+        } else {
+            reason = "The returned disposition receipt was invalid or did not match this case; the outcome is unverified."
+        }
+
+        let diagnostic = capture.issue ?? capture.stderr
+        let detail = diagnostic.isEmpty
+            ? "No diagnostic details were returned."
+            : String(SirsiEngine.stripANSI(diagnostic).prefix(1200))
+        return "Ma'at could not confirm the exact no-longer-active disposition. \(reason) \(detail) No repair was performed. Inspect this exact case's retained record and refresh Casebook before any retry."
+    }
+}
+
+struct MaatCaseAssessmentPresentation: Equatable {
+    let assessment: String
+    let why: String?
+}
+
+func maatCaseAssessmentPresentation(assessed: String, why: String) -> MaatCaseAssessmentPresentation {
+    MaatCaseAssessmentPresentation(
+        assessment: assessed.isEmpty ? why : assessed,
+        why: assessed.isEmpty || why.isEmpty ? nil : why
+    )
 }
 
 private struct MaatCaseDetailView: View {
     @ObservedObject var engine: SirsiEngine
     @ObservedObject var operations: MaatCaseOperationStore
-    let entry: MaatCase
+    @State private var entry: MaatCase
     @State private var conclusion = ""
     @State private var confirmAction = false
     @State private var evidenceCopied = false
@@ -2688,6 +2864,14 @@ private struct MaatCaseDetailView: View {
     @State private var failureMemoryHistoryKey: MaatOperationKey?
     @State private var failureMemoryHistoryAction: MaatFailureMemoryAction?
     @State private var retryReviewBusy = false
+    @State private var retryReviewTask: Task<Void, Never>?
+    @State private var invalidJournalIntegrity: MaatJournalIntegrity?
+
+    init(engine: SirsiEngine, operations: MaatCaseOperationStore, entry: MaatCase) {
+        _engine = ObservedObject(wrappedValue: engine)
+        _operations = ObservedObject(wrappedValue: operations)
+        _entry = State(initialValue: entry)
+    }
 
     private var operationKey: MaatOperationKey { MaatOperationKey(case: entry) }
     private var operationRecord: MaatOperationRecord? { operations.record(for: operationKey) }
@@ -2711,7 +2895,14 @@ private struct MaatCaseDetailView: View {
                             .sirsiFont(.caption, weight: .semibold)
                             .foregroundStyle(entry.status == "resolved" ? .green : .orange)
                     }
-                    detailSection("Assessment", entry.assessed.isEmpty ? entry.why : entry.assessed)
+                    if let invalidJournalIntegrity {
+                        MaatJournalIntegrityCard(engine: engine, integrity: invalidJournalIntegrity) {
+                            await refreshAfterIntegrityRepair()
+                        }
+                    }
+                    let assessment = maatCaseAssessmentPresentation(assessed: entry.assessed, why: entry.why)
+                    detailSection("Assessment", assessment.assessment)
+                    if let why = assessment.why { detailSection("Why", why, selectable: true) }
                     detailSection("Determination", entry.determination)
                     if !entry.resource.isEmpty { detailSection("Resource", entry.resource) }
                     if !entry.affected.isEmpty { detailSection("Affected", entry.affected) }
@@ -2801,18 +2992,21 @@ private struct MaatCaseDetailView: View {
             guard entry.nextAction?.actionID == "liveness-watch" else { return }
             await refreshFailureMemoryStatus()
         }
-        .confirmationDialog(confirmationTitle, isPresented: $confirmAction, titleVisibility: .visible) {
-            Button(confirmationButton) {
-                let confirmedNote = conclusion.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let action = pendingFailureMemoryAction {
-                    Task { await performFailureMemoryAction(action) }
-                } else {
-                    Task { await performResolution(confirmedNote: confirmedNote) }
-                }
-            }
-            Button("Cancel", role: .cancel) { pendingFailureMemoryAction = nil; recordBinaryDriftInactive = false }
-        } message: {
-            Text(confirmationMessage)
+        .sheet(isPresented: $confirmAction) {
+            ActionReviewSheet(title: confirmationTitle,
+                detail: confirmationMessage,
+                scope: "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)",
+                confirmLabel: confirmationButton,
+                cancel: { confirmAction = false; pendingFailureMemoryAction = nil; recordBinaryDriftInactive = false },
+                confirm: {
+                    let confirmedNote = conclusion.trimmingCharacters(in: .whitespacesAndNewlines)
+                    confirmAction = false
+                    if let action = pendingFailureMemoryAction {
+                        Task { await performFailureMemoryAction(action) }
+                    } else {
+                        Task { await performResolution(confirmedNote: confirmedNote) }
+                    }
+                })
         }
     }
 
@@ -3008,13 +3202,22 @@ private struct MaatCaseDetailView: View {
             return
         }
         let projection = MaatOperationPreflight.decodeProjection(from: read.data)
-        guard case .ready = MaatOperationPreflight.evaluate(
+        let preflight = MaatOperationPreflight.evaluate(
             original: entry,
             exitStatus: read.exitStatus,
             timedOut: read.timedOut,
             launchError: read.launchError,
             projection: projection
-        ) else {
+        )
+        switch preflight {
+        case .ready:
+            invalidJournalIntegrity = nil
+        case .invalidIntegrity(let integrity):
+            invalidJournalIntegrity = integrity
+            failureMemoryMessage = "The decision journal contains invalid records. Review and preserve the original before continuing."
+            return
+        case .rejected:
+            invalidJournalIntegrity = nil
             failureMemoryMessage = "The reviewed Ma'at case changed or could not be re-read. Refresh this case before continuing."
             return
         }
@@ -3088,17 +3291,26 @@ private struct MaatCaseDetailView: View {
                     .foregroundStyle(.orange)
             }
             if operationRecord != nil && !operationInFlight {
+                if retryReviewBusy {
+                    ProgressView("Reading this case's retained history…").sirsiFont(.callout)
+                    Text("No approval or repair is being submitted. Your review progress is retained between bounded reads.")
+                        .sirsiFont(.callout).fixedSize(horizontal: false, vertical: true)
+                    if retryReviewTask != nil {
+                        Button("Cancel history read") { retryReviewTask?.cancel() }.buttonStyle(.bordered)
+                    }
+                }
                 Button {
-                    Task { await reviewRetry() }
+                    guard retryReviewTask == nil else { return }
+                    retryReviewTask = Task { await reviewRetry(); retryReviewTask = nil }
                 } label: {
                     Label(operations.hasHistoryContinuation(for: operationKey) ? "Continue exact history review" : operationRecord?.phase == .retryReady ? "Review again" : "Refresh and review retry", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
-                .disabled(operationInFlight || retryReviewBusy)
+                .disabled(operationInFlight || retryReviewBusy || retryReviewTask != nil)
                 if operations.hasHistoryContinuation(for: operationKey) {
                     Button("Start fresh history review") { operations.restartHistory(operationKey) }
                         .buttonStyle(.bordered)
-                        .disabled(operationInFlight || retryReviewBusy)
+                        .disabled(operationInFlight || retryReviewBusy || retryReviewTask != nil)
                 }
             }
         }
@@ -3149,7 +3361,7 @@ private struct MaatCaseDetailView: View {
                 Button {
                     confirmAction = true
                 } label: {
-                    Label("Confirm this exact update", systemImage: "wrench.and.screwdriver.fill")
+                    Label(operationRecord?.phase == .retryReady ? "Confirm reviewed update" : "Confirm this exact update", systemImage: "wrench.and.screwdriver.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -3275,11 +3487,18 @@ private struct MaatCaseDetailView: View {
             launchError: read.launchError,
             projection: projection
         ) {
+        case .invalidIntegrity(let integrity):
+            invalidJournalIntegrity = integrity
+            recordBinaryDriftInactive = false
+            operations.rejectPreflight(key, guidance: "The decision journal contains invalid records. Review and preserve the original before continuing.")
+            return
         case .rejected(let guidance):
+            invalidJournalIntegrity = nil
             recordBinaryDriftInactive = false
             operations.rejectPreflight(key, guidance: guidance)
             return
         case .ready:
+            invalidJournalIntegrity = nil
             break
         }
 
@@ -3295,7 +3514,9 @@ private struct MaatCaseDetailView: View {
             guard capture.complete, capture.exitCode == 0,
                   let receipt = try? JSONDecoder().decode(MaatBinaryDriftInactiveDispositionReceipt.self, from: capture.stdoutData),
                   receipt.isValid(for: action.evidence) else {
-                operations.complete(key, receipt: MaatOperationReceipt(summary: "Ma'at could not confirm the exact no-longer-active disposition. No repair was performed; refresh and review this case.", succeeded: false))
+                operations.complete(key, receipt: MaatOperationReceipt(
+                    summary: MaatInactiveDispositionFailurePresentation.summary(capture), succeeded: false
+                ))
                 return
             }
             binaryDriftInactiveReceipt = receipt
@@ -3390,20 +3611,81 @@ private struct MaatCaseDetailView: View {
             projection: projection
         ) {
         case .ready:
-            operations.authorizeReviewedRetry(key, reviewedGeneration: prior.generation)
+            guard let projection,
+                  let selected = projection.cases.first(where: { $0.id == entry.id && $0.evidence == entry.evidence }) else {
+                invalidJournalIntegrity = nil
+                operations.rejectRetryReview(key, reviewedGeneration: prior.generation,
+                    guidance: "The exact selected case could not be refreshed. Review the casebook before confirming an action.")
+                return
+            }
+            entry = selected
+            invalidJournalIntegrity = nil
+            guard operations.authorizeReviewedRetry(key, reviewedGeneration: prior.generation,
+                continuation: prior.intent == .inactiveDisposition ? read.retryReadCursor : nil) else {
+                operations.rejectRetryReview(key, reviewedGeneration: prior.generation,
+                    guidance: "The completed history cursor did not match this exact case. Review the casebook again before confirming an action.")
+                return
+            }
+        case .invalidIntegrity(let integrity):
+            invalidJournalIntegrity = integrity
+            operations.rejectRetryReview(key, reviewedGeneration: prior.generation,
+                guidance: "The decision journal still contains invalid records. Review and preserve the original before continuing.")
         case .rejected(let guidance):
+            invalidJournalIntegrity = nil
             operations.rejectRetryReview(key, reviewedGeneration: prior.generation, guidance: guidance)
         }
     }
 
-    private func detailSection(_ title: String, _ value: String) -> some View {
+    @MainActor private func refreshAfterIntegrityRepair() async {
+        let key = operationKey
+        if let record = operations.record(for: key) {
+            guard !record.phase.isInFlight else { return }
+            await reviewRetry()
+            return
+        }
+
+        let read = await MaatOperationPreflight.readCompleteExactHistory(evidence: entry.evidence) { args, timeout in
+            await SirsiEngine.runJSONRead(args: args, timeoutSeconds: timeout)
+        }
+        guard !Task.isCancelled, read.continuation == nil else {
+            failureMemoryMessage = "The exact case history remains incomplete. Review it again before confirming the named action."
+            return
+        }
+        let projection = MaatOperationPreflight.decodeProjection(from: read.data)
+        switch MaatOperationPreflight.evaluate(original: entry, exitStatus: read.exitStatus,
+            timedOut: read.timedOut, launchError: read.launchError, projection: projection) {
+        case .ready:
+            guard let selected = projection?.cases.first(where: { $0.id == entry.id && $0.evidence == entry.evidence }) else {
+                failureMemoryMessage = "The exact selected case could not be refreshed. Review it before confirming the named action."
+                return
+            }
+            entry = selected
+            invalidJournalIntegrity = nil
+            failureMemoryMessage = "The casebook was repaired and this exact case was refreshed. Confirm its named action again before continuing."
+        case .invalidIntegrity(let integrity):
+            invalidJournalIntegrity = integrity
+            failureMemoryMessage = "The decision journal still contains invalid records. Review and preserve the original before continuing."
+        case .rejected(let guidance):
+            invalidJournalIntegrity = nil
+            failureMemoryMessage = guidance
+        }
+    }
+
+    @ViewBuilder private func detailSection(_ title: String, _ value: String, selectable: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .sirsiFont(.caption, weight: .bold)
                 .foregroundStyle(.secondary)
-            Text(value)
-                .sirsiFont(.body)
-                .fixedSize(horizontal: false, vertical: true)
+            if selectable {
+                Text(value)
+                    .sirsiFont(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            } else {
+                Text(value)
+                    .sirsiFont(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -4006,6 +4288,8 @@ struct MaatHistoryRefreshState {
     private(set) var error: String?
     private(set) var failure: MaatHistoryRefreshFailure?
     private(set) var query: String
+    private(set) var selection: MaatCaseSelection?
+    private var requestedQuery: String
     private(set) var loading: Bool
     private(set) var continuationPaused: Bool
     private(set) var restartRequired: Bool
@@ -4014,6 +4298,8 @@ struct MaatHistoryRefreshState {
     init(projection: MaatCasebookProjection?, error: String? = nil, query: String = "") {
         self.projection = projection
         self.error = error
+        selection = nil
+        requestedQuery = query
         failure = nil
         self.query = query
         loading = projection == nil
@@ -4023,14 +4309,21 @@ struct MaatHistoryRefreshState {
 
     // A write refresh must not replace an in-flight newly selected filter with
     // the older committed query. Cursor reuse still requires a fresh snapshot.
-    var refreshQuery: String { pending?.query ?? query }
+    var refreshQuery: String { pending?.query ?? requestedQuery }
+    var refreshSelection: MaatCaseSelection? {
+        if let pending { return pending.selection }
+        return selection
+    }
 
-    mutating func begin(scope: String, query requestedQuery: String? = nil, cursor: String? = nil) -> MaatHistoryRefreshRequest? {
+    mutating func begin(scope: String, query requestedQuery: String? = nil, cursor: String? = nil,
+                        selection requestedSelection: MaatCaseSelection? = nil) -> MaatHistoryRefreshRequest? {
         let nextQuery = (requestedQuery ?? query).trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextSelection = requestedSelection
         let nextCursor = cursor.flatMap { $0.isEmpty ? nil : $0 }
         let history = projection?.history
         if let nextCursor {
             guard !restartRequired, history?.scope == scope, history?.nextCursor == nextCursor, nextQuery == query,
+                  nextSelection == selection,
                   history?.queryID.isEmpty == false, history?.snapshot.isEmpty == false else {
                 pending = nil
                 loading = false
@@ -4045,7 +4338,11 @@ struct MaatHistoryRefreshState {
             error = nil
         }
         continuationPaused = false
-        let request = MaatHistoryRefreshRequest(scope: scope, query: nextQuery, cursor: nextCursor,
+        if nextCursor == nil {
+            self.requestedQuery = nextQuery
+            selection = nextSelection
+        }
+        let request = MaatHistoryRefreshRequest(scope: scope, query: nextQuery, selection: nextSelection, cursor: nextCursor,
             queryID: nextCursor == nil ? nil : history?.queryID, snapshot: nextCursor == nil ? nil : history?.snapshot)
         pending = request
         loading = true
@@ -4108,6 +4405,8 @@ struct MaatHistoryRefreshState {
         }
         projection = next
         query = request.query
+        requestedQuery = request.query
+        selection = request.selection
         error = nil
         failure = nil
         restartRequired = false
@@ -4140,6 +4439,17 @@ struct MaatHistoryRefreshState {
         setFailure(.invalidResponse)
     }
 
+    mutating func updateQueryIntent(_ query: String, selection: MaatCaseSelection?) {
+        pending = nil
+        loading = false
+        continuationPaused = false
+        restartRequired = false
+        error = nil
+        failure = nil
+        requestedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.selection = selection
+    }
+
     func isCurrent(_ request: MaatHistoryRefreshRequest) -> Bool { pending == request }
 
     private mutating func setFailure(_ failure: MaatHistoryRefreshFailure) {
@@ -4164,19 +4474,24 @@ struct MaatHistoryRefreshRequest: Equatable, Sendable {
     private let generation = UUID()
     let scope: String
     let query: String
+    let selection: MaatCaseSelection?
     let cursor: String?
     let queryID: String?
     let snapshot: String?
 
-    fileprivate init(scope: String, query: String, cursor: String?, queryID: String?, snapshot: String?) {
+    fileprivate init(scope: String, query: String, selection: MaatCaseSelection?, cursor: String?, queryID: String?, snapshot: String?) {
         self.scope = scope
         self.query = query
+        self.selection = selection
         self.cursor = cursor
         self.queryID = queryID
         self.snapshot = snapshot
     }
 
-    var arguments: [String] { maatCasebookHistoryArguments(scope: scope, query: query, cursor: cursor) }
+    var arguments: [String] {
+        if let selection { return maatExactCasebookSelectionReadArguments(selection, cursor: cursor) }
+        return maatCasebookHistoryArguments(scope: scope, query: query, cursor: cursor)
+    }
 }
 
 struct MaatKnownFailureProposal: Decodable, Identifiable {
@@ -4211,7 +4526,7 @@ struct MaatKnownFailureProposal: Decodable, Identifiable {
     }
 }
 
-struct MaatJournalIntegrity: Decodable {
+struct MaatJournalIntegrity: Decodable, Equatable {
     let invalidCount: Int
     let countIsLowerBound:Bool
     let issues: [MaatJournalIssue]
@@ -4240,7 +4555,7 @@ struct MaatJournalIntegrity: Decodable {
     }
 }
 
-struct MaatJournalIssue: Decodable, Identifiable {
+struct MaatJournalIssue: Decodable, Identifiable, Equatable {
     let line: Int
     let digest: String
     let reason: String
@@ -4353,7 +4668,7 @@ struct MaatCase: Decodable, Identifiable {
 
     var searchText: String {
         let caseFields = [
-            time, kind, category, status, requester, resource, affected,
+            id, time, kind, category, status, requester, resource, affected,
             determination, assessed, why, evidence, resolution, verifiedRepairEvidence, repairOutcomeEvidence, pendingRepairAttemptEvidence,
         ]
         let nextActionFields = [

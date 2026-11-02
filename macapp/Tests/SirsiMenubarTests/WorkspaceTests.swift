@@ -11,6 +11,85 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertEqual(PantheonWorkspace.matching(" \n ").count, PantheonWorkspace.allCases.count)
     }
 
+    @MainActor func testMountedMaatRootScrollSurvivesSectionUnmountAndRemount() throws {
+        _ = NSApplication.shared
+        guard let screen = NSScreen.main else {
+            throw XCTSkip("A native screen is required to host the AppKit scroll viewport")
+        }
+        let defaultsName = "MountedMaatScrollTests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+
+        let session = PantheonWorkspaceSession(defaults: defaults)
+        session.select(.maat)
+        let engine = SirsiEngine()
+        let root = PantheonDesktopView(
+            engine: engine,
+            session: session,
+            maatCasebookPreview: .snapshotPreview,
+            loadsInitialWorkspaceData: false
+        ).environment(\.snapshotMode, false)
+        let hosting = NSHostingView(rootView: root)
+        let size = NSSize(width: 1180, height: 760)
+        let visible = screen.visibleFrame
+        let origin = NSPoint(x: visible.minX + max(0, (visible.width - size.width) / 2),
+                             y: visible.minY + max(0, (visible.height - size.height) / 2))
+        hosting.sizingOptions = []
+        hosting.autoresizingMask = [.width, .height]
+        hosting.frame = NSRect(origin: .zero, size: size)
+        let window = NSPanel(contentRect: NSRect(origin: origin, size: size),
+                             styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
+                             backing: .buffered, defer: false)
+        window.isFloatingPanel = false
+        window.hidesOnDeactivate = false
+        window.becomesKeyOnlyIfNeeded = true
+        window.isReleasedWhenClosed = false
+        window.contentView = hosting
+        window.orderFront(nil)
+        defer { window.close() }
+
+        let firstProbe = try XCTUnwrap(waitForMaatScrollProbe(in: hosting))
+        let firstScrollView = try XCTUnwrap(firstProbe.enclosingScrollView)
+        let firstClip = firstScrollView.contentView
+        let document = try XCTUnwrap(firstScrollView.documentView)
+        let maximumOffset = document.frame.height - firstClip.bounds.height
+        XCTAssertTrue(firstProbe.viewportObservationReady,
+                      "the coordinator must attach to this clip and finish initial restoration before interaction")
+        XCTAssertTrue(firstClip.postsBoundsChangedNotifications)
+        XCTAssertGreaterThan(maximumOffset, 40, "the mounted System One pane must have real vertical overflow")
+
+        let targetOffset = min(80, maximumOffset)
+        firstClip.scroll(to: CGPoint(x: firstClip.bounds.origin.x, y: targetOffset))
+        firstScrollView.reflectScrolledClipView(firstClip)
+        XCTAssertTrue(waitUntil {
+            let retained = session.maatPrimaryRootScrollPosition(for: session.navigation(for: .maat))?.wrappedValue ?? 0
+            return abs(retained - targetOffset) < 1
+        })
+        let staleRootPosition = try XCTUnwrap(
+            session.maatPrimaryRootScrollPosition(for: session.navigation(for: .maat))
+        )
+
+        session.select(.horus)
+        // Model a final AppKit bounds callback already queued by the old
+        // mounted observer. The current section must reject its stale write.
+        staleRootPosition.wrappedValue = 0
+        XCTAssertEqual(staleRootPosition.wrappedValue, targetOffset, accuracy: 1)
+
+        XCTAssertNil(session.maatPrimaryRootScrollPosition(for: session.navigation(for: .horus)))
+        XCTAssertTrue(waitUntil { findMaatScrollProbe(in: hosting) == nil },
+                      "the selected workspace subtree should unmount before returning")
+        session.select(.maat)
+        staleRootPosition.wrappedValue = 0
+        XCTAssertEqual(staleRootPosition.wrappedValue, targetOffset, accuracy: 1,
+                       "a callback from the prior mount must remain stale after returning")
+        let restoredProbe = try XCTUnwrap(waitForMaatScrollProbe(in: hosting))
+        XCTAssertFalse(restoredProbe === firstProbe, "switching sections must remount the Ma'at subtree")
+        let restoredScrollView = try XCTUnwrap(restoredProbe.enclosingScrollView)
+        XCTAssertTrue(waitUntil { abs(restoredScrollView.contentView.bounds.origin.y - targetOffset) < 1 },
+                      "the real AppKit viewport must restore the root offset after remount")
+        XCTAssertEqual(staleRootPosition.wrappedValue, targetOffset, accuracy: 1)
+    }
+
     func testApolloRevisionRetainsTheExactMachineRouteAndEnvelope() {
         XCTAssertNil(plan().revisionError(in: .snapshotPreview))
         XCTAssertNotNil(plan(machine: "removed-peer").revisionError(in: .snapshotPreview))
@@ -105,5 +184,34 @@ final class WorkspaceTests: XCTestCase {
         ApolloPlan(machineID: machine, engineID: engine, residentModel: model,
                    cpuCores: cores, memoryBytes: memory, swapBytes: 0,
                    chipEstates: estates, unavailableEstates: nil)
+    }
+
+    @MainActor private func waitForMaatScrollProbe(in root: NSView) -> MaatPrimaryScrollProbeView? {
+        let deadline = Date().addingTimeInterval(2)
+        repeat {
+            root.layoutSubtreeIfNeeded()
+            if let probe = findMaatScrollProbe(in: root), probe.viewportObservationReady { return probe }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        } while Date() < deadline
+        return findMaatScrollProbe(in: root).flatMap { $0.viewportObservationReady ? $0 : nil }
+    }
+
+    @MainActor private func findMaatScrollProbe(in view: NSView) -> MaatPrimaryScrollProbeView? {
+        if view.identifier?.rawValue == "maat.system-one.primary-root-scroll-probe" {
+            return view as? MaatPrimaryScrollProbeView
+        }
+        for child in view.subviews {
+            if let probe = findMaatScrollProbe(in: child) { return probe }
+        }
+        return nil
+    }
+
+    @MainActor private func waitUntil(_ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(2)
+        repeat {
+            if condition() { return true }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        } while Date() < deadline
+        return condition()
     }
 }

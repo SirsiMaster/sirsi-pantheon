@@ -77,8 +77,10 @@ Classification: commercial-product UI increment to the existing public app.
 User: the Mac operator managing local intelligence and connected work. Success:
 reach each principal workflow from persistent navigation, preserve selected
 context into the next operation, and see evidence/error/next-action states.
-Canonical Go commands retain operation authority. SSA owns integration and the
-single release train; source/build evidence alone is not an installed release.
+Structured result panes retain full command error details alongside the summary,
+evidence and recovery actions. Canonical Go commands retain operation authority.
+SSA owns integration and the single release train; source/build evidence alone
+is not an installed release.
 
 Validation: Swift package tests, capacity/route drift controls, window-width
 rendering and independent source/design review. Signed packaging, installed

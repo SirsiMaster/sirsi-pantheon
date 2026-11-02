@@ -107,7 +107,8 @@ final class ApolloPlanContinuityTests: XCTestCase {
         let engine = SirsiEngine(), nav = Nav()
         var pushed: ApolloRunPlannerView? = ApolloRunPlannerView(engine: engine, preloadedCatalog: catalog())
         edit(pushed!.draft)
-        weak var retained = pushed!.draft
+        weak var retained: ApolloPlannerDraft?
+        retained = pushed!.draft
         nav.push(pushed!)
         let frame = try XCTUnwrap(nav.stack.last?.id)
         var telemetry: ApolloTelemetryView? = pushed!.telemetryDestination(for: plan(pushed!.draft))

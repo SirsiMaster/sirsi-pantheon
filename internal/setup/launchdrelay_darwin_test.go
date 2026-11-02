@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/servicedrain"
 	"golang.org/x/sys/unix"
 )
 
@@ -84,20 +85,21 @@ func TestRootRelaySpoolArgumentLookalikesRefused(t *testing.T) {
 }
 
 type relayNativeFixture struct {
-	t                                                                                             *testing.T
-	uid, euid                                                                                     int
-	config                                                                                        rootRelayConfiguration
-	bootouts, bootstraps, prints, childReads, waits, locks, postReads                             int
-	bootstrapFailures                                                                             int
-	bootoutFailure, lockFailure                                                                   bool
-	bootoutError, failedProbeError                                                                error
-	failedProbeReads                                                                              int
-	failedProbeDrift                                                                              bool
-	childAt, driftAt                                                                              int
-	childError, malformedChildren, sameInstance, postDrift, changedArtifacts, unavailableReadback bool
-	onBootout                                                                                     func()
-	spoolReads, spoolBusyAt                                                                       int
-	spoolError                                                                                    bool
+	t                                                                                                            *testing.T
+	uid, euid                                                                                                    int
+	config                                                                                                       rootRelayConfiguration
+	bootouts, bootstraps, prints, childReads, waits, locks, postReads, drainCalls, resumeCalls, verifyDrainCalls int
+	bootstrapFailures                                                                                            int
+	bootoutFailure, lockFailure                                                                                  bool
+	bootoutError, failedProbeError                                                                               error
+	postBootoutReads                                                                                             int
+	failedProbeDrift                                                                                             bool
+	childAt, driftAt                                                                                             int
+	childError, malformedChildren, sameInstance, postDrift, changedArtifacts, unavailableReadback                bool
+	onBootout                                                                                                    func()
+	spoolReads, spoolBusyAt                                                                                      int
+	spoolError                                                                                                   bool
+	events                                                                                                       []string
 }
 
 func newRelayNativeFixture(t *testing.T) (*relayNativeFixture, nativeServiceBackend) {
@@ -107,8 +109,32 @@ func newRelayNativeFixture(t *testing.T) (*relayNativeFixture, nativeServiceBack
 	d := rootRelayDependencies{
 		admission: func(ctx context.Context, op func() error) error { return op() },
 		uid:       func() int { return f.uid }, euid: func() int { return f.euid }, read: f.read,
+		prepareDrain: func(ctx context.Context, p ServiceInstance) (servicedrain.MaintenanceReady, error) {
+			f.drainCalls++
+			f.events = append(f.events, "drain")
+			if p != relayInstanceFixture() || ctx.Err() != nil {
+				return servicedrain.MaintenanceReady{}, errors.New("selected producer or caller context changed")
+			}
+			return rootRelayDrainReadyFixture(), nil
+		},
+		resumeDrain: func(ctx context.Context, p ServiceInstance, ready servicedrain.MaintenanceReady) error {
+			f.resumeCalls++
+			if p != relayInstanceFixture() || ready != rootRelayDrainReadyFixture() || ctx.Err() != nil {
+				return errors.New("exact selected producer drain could not be resumed")
+			}
+			return nil
+		},
+		verifyDrain: func(ctx context.Context, p ServiceInstance, ready servicedrain.MaintenanceReady) error {
+			f.verifyDrainCalls++
+			f.events = append(f.events, "verify-drain")
+			if p != relayInstanceFixture() || ready != rootRelayDrainReadyFixture() || ctx.Err() != nil {
+				return errors.New("exact selected producer drain readback changed")
+			}
+			return nil
+		},
 		spoolClear: func(ctx context.Context) error {
 			f.spoolReads++
+			f.events = append(f.events, "spool")
 			if f.spoolError {
 				return errors.New("spool probe unavailable")
 			}
@@ -162,6 +188,12 @@ func newRelayNativeFixture(t *testing.T) (*relayNativeFixture, nativeServiceBack
 	return f, nativeServiceBackend{relay: &d}
 }
 
+func rootRelayDrainReadyFixture() servicedrain.MaintenanceReady {
+	return servicedrain.MaintenanceReady{Schema: 1, PID: 123, Started: "old-start", Generation: strings.Repeat("c", 32),
+		Version: 4, State: "relay_drain_acknowledged", Marker: servicedrain.MaintenanceMarker{Schema: 1,
+			ID: strings.Repeat("d", 32), PlanSHA256: strings.Repeat("e", 64), RootDevice: 3, RootInode: 4}}
+}
+
 func (f *relayNativeFixture) read(ctx context.Context, input []byte, executable string, args ...string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -176,6 +208,7 @@ func (f *relayNativeFixture) read(ctx context.Context, input []byte, executable 
 	case "/bin/ps":
 		if joined == "-axo pid=,ppid=" {
 			f.childReads++
+			f.events = append(f.events, fmt.Sprintf("children-%d", f.childReads))
 			if f.childError {
 				return nil, errors.New("enumeration unavailable")
 			}
@@ -198,7 +231,7 @@ func (f *relayNativeFixture) read(ctx context.Context, input []byte, executable 
 		case "print " + rootRelayTarget:
 			f.prints++
 			if f.bootoutFailure && f.bootouts > 0 {
-				f.failedProbeReads++
+				f.postBootoutReads++
 				deadline, ok := ctx.Deadline()
 				if !ok || time.Until(deadline) > 5*time.Second {
 					f.t.Fatal("failed bootout probe lost its independent bound")
@@ -229,8 +262,12 @@ func (f *relayNativeFixture) read(ctx context.Context, input []byte, executable 
 			}
 			return []byte("pid = 123\n"), nil
 		case "bootout " + rootRelayTarget:
-			if f.locks != 1 || f.childReads != 2 || f.spoolReads != 2 {
+			f.events = append(f.events, "bootout")
+			if f.locks != 1 || f.drainCalls != 1 || f.verifyDrainCalls != 1 || f.childReads != 3 || f.spoolReads != 2 {
 				f.t.Fatal("bootout escaped locked double inspection")
+			}
+			if got, want := strings.Join(f.events, ","), "children-1,drain,children-2,spool,children-3,spool,verify-drain,bootout"; got != want {
+				f.t.Fatalf("root refresh control order = %s, want %s", got, want)
 			}
 			f.bootouts++
 			if f.onBootout != nil {
@@ -408,8 +445,12 @@ func TestRootRelayFailedBootoutDoesNotBootstrap(t *testing.T) {
 			if f.failedProbeError != nil && !errors.Is(err, f.failedProbeError) {
 				t.Fatal("unknown-outcome error lost probe failure")
 			}
-			if f.bootouts != 1 || f.bootstraps != 0 || f.failedProbeReads != 1 || f.waits != 0 {
-				t.Fatal("failed bootout repeated a mutation or skipped bounded read-only probe")
+			wantProbes, wantResumes := 1, 0
+			if name == "same-instance" {
+				wantProbes, wantResumes = 2, 1 // bounded outcome probe, then exact resume revalidation
+			}
+			if f.bootouts != 1 || f.bootstraps != 0 || f.postBootoutReads != wantProbes || f.prints != 3+wantProbes || f.resumeCalls != wantResumes || f.waits != 0 {
+				t.Fatalf("failed bootout control counts: bootout=%d bootstrap=%d postBootoutInspections=%d allInspections=%d resumes=%d waits=%d", f.bootouts, f.bootstraps, f.postBootoutReads, f.prints, f.resumeCalls, f.waits)
 			}
 		})
 	}
@@ -441,8 +482,8 @@ func TestRootRelaySpoolRefusesWithoutOSChildren(t *testing.T) {
 			if f.bootouts != 0 || f.bootstraps != 0 {
 				t.Fatal("relay retired with busy/unknown spool")
 			}
-			if name == "second-pass-arrival" && f.spoolReads != 2 {
-				t.Fatal("second preboot spool sample not exercised")
+			if name == "second-pass-arrival" && (f.childReads != 3 || f.spoolReads != 2) {
+				t.Fatalf("second preboot pass not exercised: childReads=%d queueChecks=%d", f.childReads, f.spoolReads)
 			}
 		})
 	}
@@ -560,5 +601,57 @@ func TestRootRelayProducerAdmissionRefusalNeverBootsOut(t *testing.T) {
 	}
 	if f.bootouts != 0 || f.bootstraps != 0 {
 		t.Fatal("mutated service after admission refusal")
+	}
+}
+
+func TestRootRelayRefreshRequiresProducerDrainBeforeQueueChecks(t *testing.T) {
+	f, b := newRelayNativeFixture(t)
+	if err := b.Refresh(context.Background(), relayInstanceFixture()); err != nil {
+		t.Fatal(err)
+	}
+	if f.drainCalls != 1 || f.verifyDrainCalls != 1 || f.resumeCalls != 0 || f.bootouts != 1 || f.spoolReads != 2 {
+		t.Fatalf("selected producer control was not held through exact refresh: %+v", f)
+	}
+}
+
+func TestRootRelayRefreshRefusesProducerDrainTimeout(t *testing.T) {
+	f, b := newRelayNativeFixture(t)
+	b.relay.prepareDrain = func(ctx context.Context, p ServiceInstance) (servicedrain.MaintenanceReady, error) {
+		f.drainCalls++
+		if p != relayInstanceFixture() {
+			return servicedrain.MaintenanceReady{}, errors.New("selected producer changed")
+		}
+		return servicedrain.MaintenanceReady{}, context.DeadlineExceeded
+	}
+	if err := b.Refresh(context.Background(), relayInstanceFixture()); err == nil {
+		t.Fatal("producer timeout allowed retirement")
+	}
+	if f.drainCalls != 1 || f.resumeCalls != 0 || f.bootouts != 0 || f.bootstraps != 0 {
+		t.Fatalf("producer timeout did not fail closed: %+v", f)
+	}
+}
+
+func TestRootRelayRefreshRefusesAndResumesAfterPostDrainQueueDebt(t *testing.T) {
+	f, b := newRelayNativeFixture(t)
+	f.spoolBusyAt = 1
+	if err := b.Refresh(context.Background(), relayInstanceFixture()); err == nil {
+		t.Fatal("post-drain queue debt allowed retirement")
+	}
+	if f.drainCalls != 1 || f.resumeCalls != 1 || f.bootouts != 0 || f.bootstraps != 0 {
+		t.Fatalf("failed pre-retirement check did not resume exact live producer: %+v", f)
+	}
+}
+
+func TestRootRelayRefreshRefusesChangedDrainAcknowledgment(t *testing.T) {
+	f, b := newRelayNativeFixture(t)
+	b.relay.verifyDrain = func(context.Context, ServiceInstance, servicedrain.MaintenanceReady) error {
+		f.verifyDrainCalls++
+		return errors.New("fixture producer generation changed")
+	}
+	if err := b.Refresh(context.Background(), relayInstanceFixture()); err == nil {
+		t.Fatal("changed producer acknowledgment authorized retirement")
+	}
+	if f.drainCalls != 1 || f.verifyDrainCalls != 1 || f.resumeCalls != 1 || f.bootouts != 0 || f.bootstraps != 0 {
+		t.Fatalf("changed acknowledgment did not refuse and resume exact live producer: %+v", f)
 	}
 }

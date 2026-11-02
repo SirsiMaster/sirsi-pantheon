@@ -246,6 +246,9 @@ func TestSpoolRelayShutdownRefusesUnsettledPublicationAndRecovery(t *testing.T) 
 				t.Fatal("Serve did not finish its bounded shutdown")
 			}
 			retainedDir := "inflight"
+			if mode == "startup-recovery" {
+				retainedDir = "failed"
+			}
 			if mode == "queued-ack" {
 				retainedDir = "outbox"
 			}
@@ -340,7 +343,10 @@ func TestSpoolRelayNeverReplaysInflight(t *testing.T) {
 		t.Fatalf("restart must never re-forward: %d calls", calls.Load())
 	}
 	if _, err := os.Stat(filepath.Join(lane, "inflight", "1-1-dead.json")); !os.IsNotExist(err) {
-		t.Fatal("in-flight file must be removed after reporting")
+		t.Fatal("recovered unknown must leave inflight after transfer")
+	}
+	if _, err := os.Stat(filepath.Join(lane, "failed", "1-1-dead.json")); err != nil {
+		t.Fatalf("recovered unknown custody was not parked: %v", err)
 	}
 	// Consume happens before forward: a request that vanishes between glob and
 	// rename (another relay took it) is not forwarded.
@@ -414,6 +420,409 @@ func TestSpoolCancelledMutationNamesOutcome(t *testing.T) {
 	_, err = tr.RoundTrip(req2)
 	if err == nil || !strings.Contains(err.Error(), "OUTCOME UNKNOWN") || !strings.Contains(err.Error(), "SendGuarded id ") || !strings.Contains(err.Error(), "context deadline exceeded") {
 		t.Fatalf("consumed + canceled must be outcome-unknown naming method, id and cause: %v", err)
+	}
+}
+
+func TestSpoolUnusableResponsePresentBeforeUnknownReturnRemainsForReadback(t *testing.T) {
+	spool := t.TempDir()
+	tr := newSpoolTransport(spool, "lane-late")
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://spool/v1/call/SendGuarded", strings.NewReader(`{"args":[]}`))
+	done := make(chan error, 1)
+	go func() {
+		_, err := tr.RoundTrip(req)
+		done <- err
+	}()
+	request := filepath.Join(spool, "lane-late", "req")
+	var leaves []string
+	deadline := time.Now().Add(time.Second)
+	for len(leaves) == 0 && time.Now().Before(deadline) {
+		leaves, _ = filepath.Glob(filepath.Join(request, "*.json"))
+		time.Sleep(time.Millisecond)
+	}
+	if len(leaves) != 1 {
+		t.Fatalf("fixture did not observe one published request: %v", leaves)
+	}
+	id := strings.TrimSuffix(filepath.Base(leaves[0]), ".json")
+	inflight := filepath.Join(spool, "lane-late", "inflight", id+".json")
+	if err := os.MkdirAll(filepath.Dir(inflight), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(leaves[0], inflight); err != nil {
+		t.Fatal(err)
+	}
+	responsePath := filepath.Join(spool, "lane-late", "res", id+".json")
+	if err := os.MkdirAll(filepath.Dir(responsePath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	response := []byte(`{"status":200`)
+	if err := os.WriteFile(responsePath, response, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var unknown error
+	select {
+	case unknown = <-done:
+	case <-time.After(time.Second):
+		t.Fatal("consumed request did not resolve to a bounded unknown outcome")
+	}
+	if unknown == nil || !strings.Contains(unknown.Error(), "OUTCOME UNKNOWN") {
+		t.Fatalf("consumed request was not classified unknown: %v", unknown)
+	}
+	if got, err := os.ReadFile(responsePath); err != nil || !bytes.Equal(got, response) {
+		t.Fatalf("unusable response present before unknown return was removed or changed: %v", err)
+	}
+}
+
+func TestSpoolPartialResponseBodyCloseRetainsResponseFile(t *testing.T) {
+	spool := t.TempDir()
+	tr := newSpoolTransport(spool, "lane-partial")
+	tr.wait = time.Second
+	result := make(chan error, 1)
+	go func() {
+		requestDir := filepath.Join(spool, "lane-partial", "req")
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			leaves, _ := filepath.Glob(filepath.Join(requestDir, "*.json"))
+			if len(leaves) == 1 {
+				id := strings.TrimSuffix(filepath.Base(leaves[0]), ".json")
+				inflight := filepath.Join(spool, "lane-partial", "inflight")
+				if err := os.MkdirAll(inflight, 0700); err != nil {
+					result <- err
+					return
+				}
+				if err := os.Rename(leaves[0], filepath.Join(inflight, id+".json")); err != nil {
+					result <- err
+					return
+				}
+				response, err := json.Marshal(spoolResponse{Status: http.StatusOK, Body: []byte("partial-readable")})
+				if err != nil {
+					result <- err
+					return
+				}
+				if err := os.WriteFile(filepath.Join(spool, "lane-partial", "res", id+".json"), response, 0600); err != nil {
+					result <- err
+					return
+				}
+				result <- nil
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		result <- errors.New("fixture did not observe request")
+	}()
+	req, _ := http.NewRequest(http.MethodPost, "http://spool/v1/call/Read", strings.NewReader(`{"args":[]}`))
+	response, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	// The request ID is carried by the response file name, not the URL.
+	files, err := filepath.Glob(filepath.Join(spool, "lane-partial", "res", "*.json"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("response file count = %d, err=%v", len(files), err)
+	}
+	path := files[0]
+	var partial [3]byte
+	if n, err := response.Body.Read(partial[:]); err != nil || n != len(partial) || string(partial[:]) != "par" {
+		t.Fatalf("partial read = %q, n=%d, err=%v", partial, n, err)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("partial body close removed unread response metadata: %v", err)
+	}
+}
+
+func TestRelaySweepRetainsAgedOutcomeCustody(t *testing.T) {
+	spool := t.TempDir()
+	lane := filepath.Join(spool, "lane-sweep")
+	paths := map[string]string{
+		"req":      filepath.Join(lane, "req", "abandoned.json"),
+		"res":      filepath.Join(lane, "res", "unknown.json"),
+		"inflight": filepath.Join(lane, "inflight", "unknown.json"),
+	}
+	old := time.Now().Add(-2 * spoolStaleAfter)
+	for _, path := range paths {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("fixture custody"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	requestTemp := filepath.Join(lane, "req", "partial.tmp")
+	if err := os.WriteFile(requestTemp, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(requestTemp, old, old); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	rl := &Relay{Spool: spool, now: func() time.Time { return now }, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	rl.sweep()
+	for kind, path := range paths {
+		_, err := os.Stat(path)
+		if kind == "req" && !os.IsNotExist(err) {
+			t.Fatalf("abandoned request was not age-swept: %v", err)
+		}
+		if (kind == "res" || kind == "inflight") && err != nil {
+			t.Fatalf("aged %s outcome custody was removed: %v", kind, err)
+		}
+	}
+	if _, err := os.Stat(requestTemp); !os.IsNotExist(err) {
+		t.Fatalf("abandoned temporary file was not age-swept: %v", err)
+	}
+}
+
+func TestHandleOneFirstAttemptUnknownParksCustodyBeforeResponse(t *testing.T) {
+	cases := []struct {
+		name         string
+		neverReached bool
+		parkConflict string
+		wantDebt     bool
+		wantUnknown  bool
+	}{
+		{name: "unknown_parked", wantUnknown: true},
+		{name: "unknown_park_directory_failure", parkConflict: "file", wantDebt: true, wantUnknown: true},
+		{name: "unknown_occupied_destination", parkConflict: "destination", wantDebt: true, wantUnknown: true},
+		{name: "not_sent_retry_staging_failure", neverReached: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spool := t.TempDir()
+			lane := "lane-unknown"
+			for _, dir := range []string{"req", "res", "inflight"} {
+				if err := os.MkdirAll(filepath.Join(spool, lane, dir), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.parkConflict == "file" {
+				if err := os.WriteFile(filepath.Join(spool, lane, "failed"), []byte("not a directory"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.neverReached {
+				if err := os.WriteFile(filepath.Join(spool, lane, "outbox"), []byte("not a directory"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			router := &Relay{Spool: spool, Base: "http://upstream", Token: "token", now: time.Now,
+				Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Client: &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+					if tc.neverReached {
+						return nil, &url.Error{Op: "Post", URL: "http://upstream", Err: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}}
+					}
+					return nil, errors.New("connection lost after request reached upstream")
+				})}}
+			transport := newSpoolTransport(spool, lane)
+			transport.wait = time.Second
+			type callerResult struct {
+				response *http.Response
+				err      error
+			}
+			callerDone := make(chan callerResult, 1)
+			request, err := http.NewRequest(http.MethodPost, "http://spool/v1/call/SendGuarded", strings.NewReader(`{"args":[]}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			go func() {
+				response, err := transport.RoundTrip(request)
+				callerDone <- callerResult{response: response, err: err}
+			}()
+			requestDir := filepath.Join(spool, lane, "req")
+			var requestFiles []string
+			deadline := time.Now().Add(time.Second)
+			for time.Now().Before(deadline) {
+				requestFiles, _ = filepath.Glob(filepath.Join(requestDir, "*.json"))
+				if len(requestFiles) != 0 {
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+			if len(requestFiles) != 1 {
+				t.Fatalf("caller did not publish exactly one request: %v", requestFiles)
+			}
+			id := strings.TrimSuffix(filepath.Base(requestFiles[0]), ".json")
+			incoming, err := os.ReadFile(requestFiles[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			inflight := filepath.Join(spool, lane, "inflight", id+".json")
+			inflightInfo, err := os.Stat(requestFiles[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			var occupiedBytes []byte
+			var occupiedInfo os.FileInfo
+			if tc.parkConflict == "destination" {
+				failedDir := filepath.Join(spool, lane, "failed")
+				if err := os.Mkdir(failedDir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				occupiedBytes = []byte("pre-existing failed custody with distinct bytes")
+				failedPath := filepath.Join(failedDir, id+".json")
+				if err := os.WriteFile(failedPath, occupiedBytes, 0600); err != nil {
+					t.Fatal(err)
+				}
+				occupiedInfo, err = os.Stat(failedPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if router.handleOne(context.Background(), lane, requestFiles[0]) {
+				t.Fatal("outcome-unknown request reported as settled")
+			}
+			var caller callerResult
+			select {
+			case caller = <-callerDone:
+			case <-time.After(time.Second):
+				t.Fatal("spool caller did not receive the published unknown response")
+			}
+			if caller.err != nil || caller.response == nil {
+				t.Fatalf("spool caller response = %#v, err=%v", caller.response, caller.err)
+			}
+			body, err := io.ReadAll(caller.response.Body)
+			if err != nil || bytes.Contains(body, []byte("OUTCOME UNKNOWN")) != tc.wantUnknown {
+				t.Fatalf("caller response classification unexpected: %s, %v", body, err)
+			}
+			if err := caller.response.Body.Close(); err != nil {
+				t.Fatal(err)
+			}
+			responsePath := filepath.Join(spool, lane, "res", id+".json")
+			if _, err := os.Stat(responsePath); !os.IsNotExist(err) {
+				t.Fatalf("fully consumed caller response was not cleaned up: %v", err)
+			}
+			failed := filepath.Join(spool, lane, "failed", id+".json")
+			if tc.parkConflict == "destination" {
+				got, err := os.ReadFile(failed)
+				info, statErr := os.Stat(failed)
+				if err != nil || !bytes.Equal(got, occupiedBytes) || statErr != nil || !os.SameFile(occupiedInfo, info) {
+					t.Fatalf("occupied failed destination changed: bytes=%q stat=%v read=%v", got, statErr, err)
+				}
+				got, err = os.ReadFile(inflight)
+				info, statErr = os.Stat(inflight)
+				if err != nil || !bytes.Equal(got, incoming) || statErr != nil || !os.SameFile(inflightInfo, info) {
+					t.Fatalf("incoming inflight envelope changed: bytes=%q stat=%v read=%v", got, statErr, err)
+				}
+			} else if tc.parkConflict == "file" {
+				got, err := os.ReadFile(inflight)
+				if err != nil || !bytes.Equal(got, incoming) {
+					t.Fatalf("park failure lost exact inflight custody: %v", err)
+				}
+			} else {
+				got, err := os.ReadFile(failed)
+				if err != nil || !bytes.Equal(got, incoming) {
+					t.Fatalf("inflight envelope was not retained in failed custody: %v", err)
+				}
+				if _, err := os.Stat(inflight); !os.IsNotExist(err) {
+					t.Fatalf("transferred envelope remained inflight: %v", err)
+				}
+			}
+			if got := router.settlementFailed.Load(); got != tc.wantDebt {
+				t.Fatalf("sticky settlement debt = %v, want %v", got, tc.wantDebt)
+			}
+			if !tc.neverReached {
+				if _, err := os.Stat(filepath.Join(spool, lane, "outbox", id+".json")); !os.IsNotExist(err) {
+					t.Fatalf("failed or unknown envelope became retryable: %v", err)
+				}
+			}
+			drainCtx, cancelDrain := context.WithTimeout(context.Background(), time.Second)
+			drainErr := router.prepareDrain(drainCtx)
+			cancelDrain()
+			if tc.wantDebt && !errors.Is(drainErr, ErrRelaySettlementIncomplete) {
+				t.Fatalf("custody-transfer failure acknowledged drain: %v", drainErr)
+			}
+			if !tc.wantDebt && drainErr != nil {
+				t.Fatalf("durable local disposition refused drain: %v", drainErr)
+			}
+		})
+	}
+}
+
+func TestSpoolResponseFileLivesUntilBodyIsConsumedAndClosed(t *testing.T) {
+	spool := t.TempDir()
+	tr := newSpoolTransport(spool, "lane-body")
+	tr.wait = time.Second
+	type responseResult struct {
+		id  string
+		err error
+	}
+	responded := make(chan responseResult, 1)
+	go func() {
+		requestDir := filepath.Join(spool, "lane-body", "req")
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			leaves, _ := filepath.Glob(filepath.Join(requestDir, "*.json"))
+			if len(leaves) == 1 {
+				id := strings.TrimSuffix(filepath.Base(leaves[0]), ".json")
+				inflight := filepath.Join(spool, "lane-body", "inflight")
+				if err := os.MkdirAll(inflight, 0700); err != nil {
+					responded <- responseResult{err: err}
+					return
+				}
+				if err := os.Rename(leaves[0], filepath.Join(inflight, id+".json")); err != nil {
+					responded <- responseResult{err: err}
+					return
+				}
+				responseDir := filepath.Join(spool, "lane-body", "res")
+				if err := os.MkdirAll(responseDir, 0700); err != nil {
+					responded <- responseResult{err: err}
+					return
+				}
+				body, err := json.Marshal(spoolResponse{Status: http.StatusOK, Body: []byte("fixture-result")})
+				if err != nil {
+					responded <- responseResult{err: err}
+					return
+				}
+				temporary := filepath.Join(responseDir, id+".fixture-tmp")
+				if err := os.WriteFile(temporary, body, 0600); err != nil {
+					responded <- responseResult{err: err}
+					return
+				}
+				if err := os.Rename(temporary, filepath.Join(responseDir, id+".json")); err != nil {
+					responded <- responseResult{err: err}
+					return
+				}
+				responded <- responseResult{id: id}
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		responded <- responseResult{err: errors.New("fixture did not observe request")}
+	}()
+	req, _ := http.NewRequest(http.MethodPost, "http://spool/v1/call/Read", strings.NewReader(`{"args":[]}`))
+	response, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := <-responded
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	id := result.id
+	path := filepath.Join(spool, "lane-body", "res", id+".json")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("response metadata was removed before caller read: %v", err)
+	}
+	got, err := io.ReadAll(response.Body)
+	if err != nil || string(got) != "fixture-result" {
+		t.Fatalf("response body = %q, %v", got, err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("response metadata was removed before caller close: %v", err)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("consumed response was not cleaned up on close: %v", err)
 	}
 }
 
@@ -611,7 +1020,10 @@ func TestSpoolRecoveryIsBoundedAndCorrelated(t *testing.T) {
 		t.Fatal("recovery must never forward")
 	}
 	if left, _ := filepath.Glob(filepath.Join(lane, "inflight", "*")); len(left) != 0 {
-		t.Fatalf("in-flight files must be removed: %v", left)
+		t.Fatalf("recovered in-flight files must be transferred: %v", left)
+	}
+	if left, _ := filepath.Glob(filepath.Join(lane, "failed", "*.json")); len(left) != 2 {
+		t.Fatalf("recovered unknown custody missing from failed/: %v", left)
 	}
 }
 

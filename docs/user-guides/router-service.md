@@ -63,6 +63,17 @@ items, or `[]` when empty. Item fields match the `items` array from
 `router wait --ensure --json`; pull performs the same facade inbox read and no
 additional body/detail lookup, acknowledgement, claim or mutation.
 
+`sirsi router show <id> --json` returns the canonical item as one JSON object
+using the same `work.Item` fields as inbox results. Without `--json`, show keeps
+the full Markdown rendering. `sirsi router reassign <id> --to <agent> --json`
+returns one compact success object (`id`, `to`, `status`) after the existing
+authorized reassignment; `status` is `open`. The normal human confirmation is
+unchanged. Both commands return a nonzero error without a success document when
+their read or reassignment operation fails. A failed JSON write after a
+successful reassignment includes the item id for reconciliation; do not retry
+the mutation blindly. Reassignment authorization and history rules remain
+those in ADR-072 C5.
+
 `--build-filter` keeps its existing build-shaped-item predicate and ordering.
 With `--json`, deferred-item guidance goes to stderr so stdout remains one JSON
 document, including when every item is deferred. Without `--json`, the existing

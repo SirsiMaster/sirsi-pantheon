@@ -242,16 +242,3 @@ func openAbsoluteDirectoryNoFollow(path string) (int, error) {
 	}
 	return fd, nil
 }
-
-func validSpoolAgentName(agent string) bool {
-	if agent == "" || len(agent) > 128 || filepath.Base(agent) != agent || agent == "." || agent == ".." {
-		return false
-	}
-	for _, r := range agent {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
-			continue
-		}
-		return false
-	}
-	return true
-}

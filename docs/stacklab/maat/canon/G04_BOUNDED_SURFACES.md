@@ -1,5 +1,27 @@
 # G04 — bounded history and archive read surfaces
 
+## Case identity navigation source candidate (unqualified, 2026-11-01)
+
+Casebook search includes the canonical case ID. A complete `maat-case-` ID is
+matched against each raw decision before linked-state qualification, so an exact
+ID query does not qualify unrelated rows through repeated full-journal link
+scans. Other text queries retain their existing projection search semantics;
+they still require linked state where status or linked fields can affect a
+match. The continuation query key is versioned with this projection change.
+
+Native result handoffs carry one typed Case ID and one canonical evidence
+identity only when the producing command returned one successful structured
+result. The native reader uses the existing bounded exact-evidence Casebook
+read, then requires a complete, integrity-clean, unique projection matching
+both identities before showing that case. Missing, duplicate, malformed,
+ambiguous or incomplete evidence leaves the user in explicit Casebook browsing.
+Query edits clear exact selection intent; refresh and cancellation retain the
+current generic query, and continuation remains tied to its accepted query and
+snapshot. The existing 128-read/eight-second burst limit, cancellation and
+generation fences remain in force. Exact evidence reads still verify the
+existing frozen journal prefix; this source change adds no index and makes no
+constant-time or installed-runtime claim.
+
 Current source status (2026-10-27): normal merged PR1240 at
 `e26e324be107ab541ec8d4d1400392e1ee55fc26` includes the independently reviewed
 G04 engine/native corrections. Focused engine normal/race and causal controls,

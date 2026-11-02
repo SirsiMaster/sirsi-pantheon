@@ -38,6 +38,35 @@ retirement remains open pending an actual source-supported join boundary.
 
 ## Closed operation
 
+## Active successor control
+
+An ordinary current-source root relay retains the existing private per-PID
+maintenance endpoint for its serving lifetime, bound to the kernel PID/start and
+opened spool-root device/inode. The first clean 0.24.147 transition remains the
+separate legacy interruption profile above: that old process has no endpoint,
+and its historical/unknown remote outcomes are not certified or replayed. Once
+the successor is explicitly activated, later root refreshes use the successor's
+live endpoint; no release-version allowlist is extended for modern source.
+
+The existing protected root refresh path requests a bounded producer pause over
+that endpoint while holding the service lock and physical spool admission. The
+producer stops admitting new forwarding duties, joins already-admitted local
+request and outbox duties without canceling their HTTP contexts, and returns an
+exact-generation acknowledgment only when local response and cleanup settlement
+is clear. The caller then repeats its existing selected PID/start, child,
+artifact and no-follow queue checks and reads back the same acknowledgment before
+the existing single-service retirement. An empty queue or OS-child sample alone
+is not a drain proof.
+
+A timeout, local outcome-custody error, changed endpoint/root identity, lost or
+malformed acknowledgment, active queue or changed selected service refuses
+retirement. Before retirement, the caller explicitly resumes only the same
+acknowledged PID/start/generation/root; if that identity cannot be revalidated,
+it retains the held process and reports recovery debt. Admitted remote outcomes
+remain outcome-unknown where their response was not read; retained response or
+inflight metadata is re-queried, never replayed to manufacture a clean drain.
+No census of outcomes that were never recorded is inferred.
+
 The canonical app engine exposes `launchd legacy-maintenance` with `preview`,
 `confirm`, `status`, `recover`, `abort`, `restore-preview`, and `restore-confirm`.
 There is no arbitrary label, PID, executable
@@ -51,7 +80,16 @@ These verbs are the application integration API, not a manual recovery recipe.
 Preview needs an explicitly selected retained, root-owned signed legacy payload.
 The first closed source profile is released134 commit
 `ba2a07bb464bbfd68808254a7d489769f122149b`, inspected for consume-before-forward.
-Other old releases are not inferred from their names. Preview independently binds
+The existing interruption path also recognizes only the exact clean 0.24.147
+source commit `63fbba661b6c7c2b487979ef4ce58d28ea2d611c`; its published version
+or a nearby/modified build is not sufficient. For that legacy profile, an absent
+PID-specific maintenance endpoint permits only the existing fresh, instance-pinned
+interruption workflow. An occupied endpoint refuses this legacy profile and must
+use its existing strict path when supported; a historical completed transaction
+is never borrowed for a new PID. Per-envelope custody remains classified
+`outcome_unknown_never_replay`, and the operation does not certify an old remote
+outcome or a drain. Other old releases are not inferred from their names. Preview
+independently binds
 the old kernel PID/start and signed CDHash to that payload, plus the currently
 installed replacement, plist and physical spool. The protected program is
 `/usr/local/libexec/sirsi-pantheon/sirsi`; target is exactly

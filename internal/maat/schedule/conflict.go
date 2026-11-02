@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
 )
@@ -20,6 +21,43 @@ type Actor struct {
 	Detail string `json:"detail"`
 	Owner  string `json:"owner,omitempty"`
 	PID    int    `json:"pid,omitempty"`
+}
+
+// SampleStatus describes only what one completed activity sample observed.
+// It never qualifies an interval as quiet.
+type SampleStatus string
+
+const (
+	SampleUnverified             SampleStatus = "unverified"
+	SampleSharedFloorObserved    SampleStatus = "shared_floor_observed"
+	SampleForeignActorObserved   SampleStatus = "foreign_actor_observed"
+	SampleNoForeignActorObserved SampleStatus = "no_foreign_actor_observed"
+)
+
+// ObservationCoverage names the extent of activity evidence in a report.
+type ObservationCoverage string
+
+const (
+	ObservationCoverageNone        ObservationCoverage = "none"
+	ObservationCoveragePointSample ObservationCoverage = "point_sample"
+)
+
+// MeasurementObservation carries the bounded result of the existing actor
+// probe. A point sample is not evidence that a reservation was quiet over an
+// interval.
+type MeasurementObservation struct {
+	Status      SampleStatus         `json:"status"`
+	Coverage    ObservationCoverage  `json:"coverage"`
+	ObservedAt  *time.Time           `json:"observed_at,omitempty"`
+	FloorShares []ObservedFloorShare `json:"floor_shares,omitempty"`
+}
+
+// ObservedFloorShare identifies an admitted floor reservation observed in
+// the same actor sample. It is typed separately from Shared's display text.
+type ObservedFloorShare struct {
+	ReservationID string `json:"reservation_id"`
+	Holder        string `json:"holder"`
+	Cores         int    `json:"cores"`
 }
 
 // ActivityProbe samples the load/traffic actors on a machine. It is injectable so
@@ -38,6 +76,9 @@ var (
 func SetActivityProbe(p ActivityProbe) {
 	probeMu.Lock()
 	defer probeMu.Unlock()
+	if p == nil {
+		p = probeProcesses
+	}
 	activeProbe = p
 }
 
@@ -62,18 +103,19 @@ type ConflictReport struct {
 	// parallel signal the caller (CLI/human) sees beside the clean process
 	// list, closing the gap where a clean report can coexist with a host
 	// that's swapping.
-	Pressure       guard.PressureLevel `json:"pressure,omitempty"`
-	PressureSource string              `json:"pressure_source,omitempty"`
-	FloorMemGB     int                 `json:"floor_mem_gb,omitempty"` // FloorShareMemGB(resource), informational
+	Pressure               guard.PressureLevel    `json:"pressure,omitempty"`
+	PressureSource         string                 `json:"pressure_source,omitempty"`
+	FloorMemGB             int                    `json:"floor_mem_gb,omitempty"` // FloorShareMemGB(resource), informational
+	MeasurementObservation MeasurementObservation `json:"measurement_observation"`
 }
 
 // CheckConflicts samples current activity on the resource's machine and reports
-// any actor that is NOT the primary holder, and not a lane holding a Ma'at-
-// granted floor share on the same resource, as an intruder — for a quiet or
-// loaded reservation that is live now. A build-regime reservation tolerates
-// foreign build load. A floor-share lane is recorded in Shared (owner
-// directive 2026-09-26: Ma'at grants floor shares deliberately, so a lane
-// running on one is expected activity, never a contaminant to invalidate).
+// policy intruders for a quiet or loaded reservation that is live now. A
+// build-regime reservation tolerates foreign build load. A floor-share lane is
+// recorded in Shared (owner directive 2026-09-26: Ma'at grants floor shares
+// deliberately, so a lane running on one is expected activity, never a
+// contaminant to invalidate). MeasurementObservation describes only the
+// successful point sample and never qualifies the reservation interval.
 // This DETECTS and reports; the caller decides whether to Invalidate and
 // notify (the CLI does both). `machine` is the machine to probe; for a rail
 // resource, pass the machine that owns the rail's near end.
@@ -82,7 +124,14 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 	if err != nil {
 		return ConflictReport{}, err
 	}
-	rep := ConflictReport{Resource: resource, Clean: true}
+	rep := ConflictReport{
+		Resource: resource,
+		Clean:    true,
+		MeasurementObservation: MeasurementObservation{
+			Status:   SampleUnverified,
+			Coverage: ObservationCoverageNone,
+		},
+	}
 	if len(holders) == 0 {
 		rep.Summary = "no live reservation covers " + resource + " now"
 		return rep, nil
@@ -107,6 +156,9 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 	if err != nil {
 		return ConflictReport{}, err
 	}
+	completedAt := l.now().UTC()
+	rep.MeasurementObservation.Coverage = ObservationCoveragePointSample
+	rep.MeasurementObservation.ObservedAt = &completedAt
 	var ancestry map[int]int
 	if cur.ExemptPID != 0 {
 		// Only walk the process tree when a reservation actually named an
@@ -116,12 +168,28 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 		ancestry, _ = getProcessAncestryFn()()
 	}
 	sharedSeen := map[string]bool{}
+	floorReservationSeen := map[string]bool{}
+	foreignAdmittedActor := false
 	for _, a := range actors {
 		if a.Owner != "" {
 			if h, ok := known[a.Owner]; ok {
-				if h.Holder != cur.Holder && h.Share == ShareFloor && !sharedSeen[h.Holder] {
-					sharedSeen[h.Holder] = true
-					rep.Shared = append(rep.Shared, fmt.Sprintf("shared: %s floor %d cores", h.Holder, h.Cores))
+				if h.Holder != cur.Holder {
+					if h.Share == ShareFloor {
+						if !sharedSeen[h.Holder] {
+							sharedSeen[h.Holder] = true
+							rep.Shared = append(rep.Shared, fmt.Sprintf("shared: %s floor %d cores", h.Holder, h.Cores))
+						}
+						if !floorReservationSeen[h.ID] {
+							floorReservationSeen[h.ID] = true
+							rep.MeasurementObservation.FloorShares = append(rep.MeasurementObservation.FloorShares, ObservedFloorShare{
+								ReservationID: h.ID,
+								Holder:        h.Holder,
+								Cores:         h.Cores,
+							})
+						}
+					} else {
+						foreignAdmittedActor = true
+					}
 				}
 				continue // the primary holder's own work, or a granted floor-share lane
 			}
@@ -153,10 +221,21 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 		rep.Summary = "foreign " + strings.Join(parts, ", ") + " during " + string(cur.Regime) +
 			" reservation " + cur.ID + " held by " + cur.Holder
 	} else {
-		rep.Summary = "clean: only the holder's work (and any granted floor shares) is active"
+		rep.Summary = "clean: no policy intruder requiring invalidation was observed"
 	}
 	if rep.Pressure >= guard.PressureWarn {
 		rep.Summary += fmt.Sprintf(" — memory pressure %s (floor %dGB)", rep.Pressure, rep.FloorMemGB)
+	}
+	switch {
+	case foreignAdmittedActor || len(rep.Intruders) > 0:
+		rep.MeasurementObservation.Status = SampleForeignActorObserved
+		rep.Summary += " — foreign activity observed in this point sample; quiet interval unverified"
+	case len(rep.MeasurementObservation.FloorShares) > 0:
+		rep.MeasurementObservation.Status = SampleSharedFloorObserved
+		rep.Summary += " — admission policy clean; admitted floor activity observed. Point sample only; quiet interval unverified"
+	default:
+		rep.MeasurementObservation.Status = SampleNoForeignActorObserved
+		rep.Summary += " — no foreign actor observed in this point sample; quiet interval unverified"
 	}
 	return rep, nil
 }
