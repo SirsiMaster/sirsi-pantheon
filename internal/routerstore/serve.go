@@ -56,6 +56,12 @@ var notServed = map[string]bool{
 	// HostIdentity is the ADR-067 identity resolver: read by threadAuthority and
 	// the mint host-check, never a node-reachable RPC (it takes no credential).
 	"HostIdentity": true,
+	// ExportMarkdown writes every item to a caller-named directory. Over the
+	// wire that directory is a path on the caller's Mac, so the service would
+	// MkdirAll it on its own filesystem (500 "mkdir /Users: permission denied")
+	// — and it was Rule-of-Ra exempt as a "read-only view". It has no remote
+	// caller; a node that wants an audit dump renders locally from ListAll.
+	"ExportMarkdown": true,
 }
 
 // itemOwnership: method → index of the item id argument. The caller's session
@@ -113,7 +119,7 @@ var ruleOfRaExempt = map[string]bool{
 	"Get": true, "Inbox": true, "ListAll": true, "ListPage": true, "ListTasks": true, "GetTask": true, "GetAgent": true, "ListAgents": true,
 	"GetState": true, "Counters": true, "Breakers": true, "Render": true, "ListWakeEvents": true, "ListIdentifiers": true,
 	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "OperationalAgents": true,
-	"Wait": true, "ListenNotify": true, "NotifyAgent": true, "NotifyPath": true, "ExportItem": true, "ExportMarkdown": true,
+	"Wait": true, "ListenNotify": true, "NotifyAgent": true, "NotifyPath": true, "ExportItem": true,
 	"ForceOwner": true, "AudienceSince": true, "TaskLeaseEventsSince": true,
 }
 
