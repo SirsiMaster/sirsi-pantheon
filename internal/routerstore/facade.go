@@ -40,6 +40,62 @@ var (
 // throttle item was updated in place. Nothing was appended.
 var ErrOverQuota = errors.New("routerstore: sender over quota — throttle singleton updated, nothing appended")
 
+// Recipient admission (owner directive 2026-11-02: "warn first, halt at 99").
+// The quota above bounds a SENDER; these bound a RECIPIENT's backlog, so a lane
+// that is not draining stops accumulating work instead of growing a 593-item
+// inbox nobody reads. Either count reaching the limit triggers it. Vars so
+// tests can tighten them.
+var (
+	RecipientWarnAt     = 50
+	RecipientHaltAt     = 99
+	RecipientStallAfter = 24 * time.Hour
+)
+
+// ErrRecipientSaturated means the recipient's backlog reached RecipientHaltAt;
+// its singleton saturation escalation was updated. Nothing was appended.
+var ErrRecipientSaturated = errors.New("routerstore: recipient saturated — nothing appended")
+
+// RecipientLoad is one recipient's backlog as admission reads it: open items it
+// has not acknowledged, and ledger tasks not done whose row has not moved (no
+// claim, renewal or update) for RecipientStallAfter and that hold no live lease.
+type RecipientLoad struct {
+	Unacked int `json:"unacked"`
+	Stalled int `json:"stalled"`
+}
+
+// Warning is the sender-facing notice in the warn band ("" below it).
+func (l RecipientLoad) Warning(agent string) string {
+	if max(l.Unacked, l.Stalled) < RecipientWarnAt {
+		return ""
+	}
+	return fmt.Sprintf("%s is backlogged: %d unacknowledged items, %d stalled tasks — new sends are refused at %d",
+		agent, l.Unacked, l.Stalled, RecipientHaltAt)
+}
+
+func (l RecipientLoad) saturated() bool { return max(l.Unacked, l.Stalled) >= RecipientHaltAt }
+
+func recipientLoad(q interface {
+	QueryRow(string, ...any) *sql.Row
+}, agent string, now time.Time) (RecipientLoad, error) {
+	var l RecipientLoad
+	nowS, cutoff := now.Format(time.RFC3339), now.Add(-RecipientStallAfter).Format(time.RFC3339)
+	err := q.QueryRow(`SELECT
+	    (SELECT COUNT(*) FROM items WHERE to_agent = ? AND status = 'open' AND acked_at = ''),
+	    (SELECT COUNT(*) FROM tasks WHERE agent = ? AND status <> 'done' AND updated < ?
+	        AND (lease_expires IS NULL OR lease_expires = '' OR lease_expires < ?));`,
+		agent, agent, cutoff, nowS).Scan(&l.Unacked, &l.Stalled)
+	if err != nil {
+		return l, fmt.Errorf("routerstore: recipient load %s: %w", agent, err)
+	}
+	return l, nil
+}
+
+// RecipientLoad reports one recipient's backlog (read-only). The send path
+// reads it after an accepted send to surface the warn band to the sender.
+func (s *SQLiteStore) RecipientLoad(agent string) (RecipientLoad, error) {
+	return recipientLoad(s.db, agent, s.clock())
+}
+
 // SendReq is one guarded send. SubjectKey defaults to a slug of Title; set it
 // explicitly when retries may rephrase the title (the idempotency key must
 // survive rewording). SourceItem ties emissions to the item that caused them.
@@ -64,6 +120,7 @@ func (s *SQLiteStore) idemKey(r SendReq, now time.Time) string {
 //   - fresh insert → (new id, false, nil)
 //   - idempotent duplicate → (existing id, true, nil); occurrences bumped
 //   - over quota → ("", false, ErrOverQuota); throttle singleton updated
+//   - saturated recipient → ("", false, ErrRecipientSaturated); saturation singleton updated
 //   - tripped breaker → ("", false, ErrBreakerOpen)
 func (s *SQLiteStore) SendGuarded(r SendReq) (string, bool, error) {
 	if strings.TrimSpace(r.From) == "" || strings.TrimSpace(r.To) == "" {
@@ -126,6 +183,29 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 			return "", false, fmt.Errorf("routerstore: SendGuarded: commit: %w", err)
 		}
 		return existing, true, nil
+	}
+
+	// Recipient admission: a saturated recipient refuses new work. Router-internal
+	// senders are exempt so an escalation to a saturated owner still lands.
+	if r.From != "routerstore" {
+		load, lerr := recipientLoad(tx, r.To, now)
+		if lerr != nil {
+			return "", false, lerr
+		}
+		if load.saturated() {
+			if _, err = s.escalateTx(tx, now, "saturated:"+r.To, "recipient_saturated",
+				fmt.Sprintf("saturated: %s refusing new sends", r.To),
+				fmt.Sprintf("%s has %d unacknowledged items and %d stalled tasks (limit %d). New sends are refused until it drains; refused sends are counted here, not appended.",
+					r.To, load.Unacked, load.Stalled, RecipientHaltAt),
+			); err != nil {
+				return "", false, err
+			}
+			if err = tx.Commit(); err != nil {
+				return "", false, fmt.Errorf("routerstore: SendGuarded: commit: %w", err)
+			}
+			return "", false, fmt.Errorf("%w: %s has %d unacknowledged items and %d stalled tasks (limit %d)",
+				ErrRecipientSaturated, r.To, load.Unacked, load.Stalled, RecipientHaltAt)
+		}
 	}
 
 	// Quota (§2b axiom 7): spend one slot for the sender→recipient pair and
