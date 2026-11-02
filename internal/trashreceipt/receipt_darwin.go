@@ -222,6 +222,12 @@ func (t *tree) bindings(parent string, reviewed map[string]Identity) error {
 // afterPreflight is per-invocation and fixture-only. Production never supplies
 // it; tests can prove that late additions are not discovered or deleted.
 func applyHome(home string, m Manifest, confirmed bool, afterPreflight func()) Report {
+	return applyHomeWithJournal(home, m, confirmed, afterPreflight, func(review Manifest) (operationJournal, error) {
+		return newOperationJournalForHome(home, review)
+	})
+}
+
+func applyHomeWithJournal(home string, m Manifest, confirmed bool, afterPreflight func(), openJournal func(Manifest) (operationJournal, error)) Report {
 	r := report("review_required")
 	refuse := func(err error) Report { r.Errors = append(r.Errors, err.Error()); return r }
 	if !confirmed {
@@ -255,6 +261,18 @@ func applyHome(home string, m Manifest, confirmed bool, afterPreflight func()) R
 	if afterPreflight != nil {
 		afterPreflight()
 	}
+	journal, err := openJournal(m)
+	if err != nil {
+		return refuse(fmt.Errorf("could not durably record reviewed Trash intent; no deletion was attempted: %w", err))
+	}
+	defer journal.Close()
+	r.OperationID = journal.OperationID()
+	finish := func() Report {
+		if err := journal.Finish(r); err != nil {
+			r.Errors = append(r.Errors, "could not durably finalize Trash receipt: "+boundedJournalError(err.Error()))
+		}
+		return r
+	}
 	reviewed := map[string]Identity{}
 	for _, e := range m.Containers {
 		reviewed[e.Path] = e.Identity
@@ -264,6 +282,7 @@ func applyHome(home string, m Manifest, confirmed bool, afterPreflight func()) R
 	}
 	for index := len(m.Entries) - 1; index >= 0; index-- {
 		e := m.Entries[index]
+		attemptStarted := false
 		parent := path.Dir(e.Path)
 		err := t.bindings(parent, reviewed)
 		if err == nil {
@@ -274,6 +293,14 @@ func applyHome(home string, m Manifest, confirmed bool, afterPreflight func()) R
 			}
 		}
 		if err == nil {
+			if err := journal.AttemptStarted(index); err != nil {
+				r.Errors = append(r.Errors, e.Path+": could not persist attempt before unlink: "+boundedJournalError(err.Error()))
+				if len(r.Deleted) > 0 {
+					r.Status = "partial"
+				}
+				return finish()
+			}
+			attemptStarted = true
 			flags := 0
 			if e.Identity.Type == "directory" {
 				flags = unix.AT_REMOVEDIR
@@ -288,13 +315,24 @@ func applyHome(home string, m Manifest, confirmed bool, afterPreflight func()) R
 			} else if r.Attempted > 0 {
 				r.Status = "failed"
 			}
-			return r
+			if attemptStarted {
+				if persistErr := journal.AttemptResult(index, "unlink_failed", err.Error()); persistErr != nil {
+					r.Errors = append(r.Errors, e.Path+": unlink result is not durable: "+boundedJournalError(persistErr.Error()))
+					return r
+				}
+			}
+			return finish()
 		}
 		r.Deleted = append(r.Deleted, e.Path)
 		if e.Identity.Type != "directory" {
 			r.LogicalBytes += e.Identity.Size
 		}
+		if persistErr := journal.AttemptResult(index, "unlink_succeeded", ""); persistErr != nil {
+			r.Status = "partial"
+			r.Errors = append(r.Errors, e.Path+": unlink succeeded but its receipt result is not durable: "+boundedJournalError(persistErr.Error()))
+			return r
+		}
 	}
 	r.Status = "completed"
-	return r
+	return finish()
 }

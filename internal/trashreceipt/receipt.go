@@ -14,12 +14,14 @@ import (
 )
 
 const (
-	ManifestSchema   = "pantheon.trash-manifest.v1"
-	ReportSchema     = "pantheon.trash-report.v1"
-	MaxEntries       = 1024
-	MaxManifestBytes = 64 * 1024
-	MaxDirectories   = 64
-	MaxDepth         = 24
+	ManifestSchema      = "pantheon.trash-manifest.v1"
+	ReportSchema        = "pantheon.trash-report.v1"
+	HistoryPageSchema   = "pantheon.trash-history-page.v1"
+	HistoryDetailSchema = "pantheon.trash-history-detail.v1"
+	MaxEntries          = 1024
+	MaxManifestBytes    = 64 * 1024
+	MaxDirectories      = 64
+	MaxDepth            = 24
 )
 
 type Identity struct {
@@ -48,12 +50,53 @@ type Manifest struct {
 
 type Report struct {
 	Schema       string    `json:"schema"`
+	OperationID  string    `json:"operation_id,omitempty"`
 	Status       string    `json:"status"`
 	Preview      *Manifest `json:"preview,omitempty"`
 	Attempted    int       `json:"attempted"`
 	Deleted      []string  `json:"deleted"`
 	LogicalBytes int64     `json:"logical_bytes"`
 	Errors       []string  `json:"errors"`
+}
+
+// HistoryPage is a bounded read-only projection of durable Empty Trash
+// operations. It is never deletion authorization.
+type HistoryPage struct {
+	Schema     string        `json:"schema"`
+	Items      []HistoryItem `json:"items"`
+	NextCursor string        `json:"next_cursor"`
+	Incomplete bool          `json:"incomplete"`
+	Issues     []string      `json:"issues"`
+}
+
+type HistoryItem struct {
+	OperationID        string `json:"operation_id"`
+	StartedAt          string `json:"started_at"`
+	State              string `json:"state"`
+	ManifestEntryCount int    `json:"manifest_entry_count"`
+	Attempted          int    `json:"attempted"`
+	Deleted            int    `json:"deleted"`
+	ErrorsCount        int    `json:"errors_count"`
+}
+
+// HistoryDetail carries the exact pre-delete review and every member's
+// last durably known state. Missing result events remain outcome_unknown.
+type HistoryDetail struct {
+	Schema           string           `json:"schema"`
+	OperationID      string           `json:"operation_id"`
+	State            string           `json:"state"`
+	StartedAt        string           `json:"started_at"`
+	ReviewedManifest Manifest         `json:"reviewed_manifest"`
+	Attempts         []HistoryAttempt `json:"attempts"`
+	TerminalReport   *Report          `json:"terminal_report,omitempty"`
+	IntegrityError   string           `json:"integrity_error,omitempty"`
+}
+
+type HistoryAttempt struct {
+	EntryIndex int    `json:"entry_index"`
+	Path       string `json:"path"`
+	State      string `json:"state"`
+	Error      string `json:"error,omitempty"`
 }
 
 func report(status string) Report {
