@@ -340,6 +340,20 @@ class _LocalChildIdentity:
     start: str
 
 
+@dataclass
+class _FabricChildIdentity:
+    handle: object
+    pid: int
+    parent: int
+    uid: int
+    real_uid: int
+    group: int
+    start: str
+    signals_closed: bool = False
+    reap_started: bool = False
+    reaped: bool = False
+
+
 def local_bind_owned_child(child, birth):
     # Called on the actual Popen handle while its launch pipe still withholds
     # the payload. Capture credentials as well as start/parent from live libproc.
@@ -349,6 +363,40 @@ def local_bind_owned_child(child, birth):
             or row.pgid!=child.pid or _process_start(row)!=birth):
         raise Refused('Live owned child UID/start/parent/group binding differs before release')
     child._sirsi_local_identity=_LocalChildIdentity(child,child.pid,row.ppid,row.uid,row.ruid,row.pgid,birth)
+
+
+def fabric_bind_child(child):
+    """Bind the direct start-new-session child without borrowing local authority."""
+    if child.returncode is not None or type(child.pid) is not int or child.pid <= 1:
+        raise Refused('Fabric child is not an unreaped direct Popen child')
+    if sys.platform == 'darwin':
+        row = native_process_info(child.pid, include_zombies=True)
+        if (row.pid != child.pid or row.ppid != os.getpid() or row.uid != os.getuid()
+                or row.ruid != os.getuid() or row.pgid != child.pid):
+            raise Refused('Fabric child parent/UID/group binding differs')
+        identity = _FabricChildIdentity(child, child.pid, row.ppid, row.uid,
+                                        row.ruid, row.pgid, _process_start(row))
+    else:
+        try:
+            group = os.getpgid(child.pid)
+        except OSError as error:
+            raise Refused('Fabric child process group unavailable') from error
+        if group != child.pid:
+            raise Refused('Fabric child is not the new-session group leader')
+        uid = os.getuid()
+        identity = _FabricChildIdentity(child, child.pid, os.getpid(), uid, uid, group, '')
+    child._sirsi_fabric_identity = identity
+    return identity
+
+
+def fabric_owned_identity(child):
+    owned = getattr(child, '_sirsi_fabric_identity', None)
+    if (not isinstance(owned, _FabricChildIdentity) or owned.handle is not child
+            or owned.pid != child.pid or owned.parent != os.getpid()
+            or owned.group != child.pid or child.returncode is not None
+            or owned.signals_closed or owned.reap_started or owned.reaped):
+        raise Refused('Exact unreaped fabric child/group custody unavailable')
+    return owned
 
 
 def local_owned_identity(child):
@@ -361,8 +409,74 @@ def local_owned_identity(child):
     return owned
 
 
+def _nonreaping_child_terminal(child, owned, wait=None):
+    """Observe a bound direct child with WNOWAIT; never consume its PID anchor."""
+    if (owned.handle is not child or owned.pid != child.pid or child.returncode is not None
+            or type(child.pid) is not int or child.pid <= 1):
+        raise LocalWaitRefused('Direct-child wait custody unavailable',
+                               dict(expected_pid=getattr(owned, 'pid', None), pid=getattr(child, 'pid', None)))
+    if sys.platform == 'darwin':
+        if (ctypes.sizeof(ctypes.c_void_p) != 8 or ctypes.sizeof(_Siginfo) != 104
+                or _Siginfo.pid.offset != 12 or _Siginfo.status.offset != 20):
+            raise Refused('Owned child wait ABI unavailable')
+        if wait is None:
+            library = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
+            wait = library.waitid
+            wait.argtypes = [ctypes.c_int, ctypes.c_uint32, ctypes.POINTER(_Siginfo), ctypes.c_int]
+            wait.restype = ctypes.c_int
+        info = _Siginfo()
+        # P_PID=1; WNOHANG=1, WEXITED=4, WNOWAIT=0x20. Never consumes the child.
+        result = wait(1, child.pid, ctypes.byref(info), 1 | 4 | 0x20)
+        observation = dict(api='libSystem.waitid', result=result,
+                           errno=ctypes.get_errno() if result else 0,
+                           expected_pid=owned.pid, expected_uid=owned.uid,
+                           expected_signal=int(signal.SIGCHLD), pid=info.pid, uid=info.uid,
+                           signo=info.signo, error=info.error, code=info.code, status=info.status,
+                           abi_bytes=ctypes.sizeof(info), pid_offset=_Siginfo.pid.offset,
+                           status_offset=_Siginfo.status.offset)
+        if result != 0:
+            raise LocalWaitRefused('Owned child wait observation failed; no exit or absence inferred', observation)
+        if info.pid == 0:
+            if any((info.signo, info.error, info.code, info.uid, info.status)):
+                raise LocalWaitRefused('Malformed empty owned child wait observation', observation)
+            return None
+        # XNU's waitid path may leave si_uid zero; that is not a credential.
+        # Accept it only because the exact bound unreaped Popen is also required.
+        if info.pid != owned.pid or info.uid not in (0, owned.uid) or info.signo != signal.SIGCHLD or info.error:
+            raise LocalWaitRefused('Owned child wait PID/UID/signal differs', observation)
+        code, status = info.code, info.status
+    else:
+        wait = wait or getattr(os, 'waitid', None)
+        flags = (getattr(os, 'WEXITED', 0) | getattr(os, 'WNOHANG', 0) |
+                 getattr(os, 'WNOWAIT', 0))
+        if wait is None or not all((getattr(os, 'P_PID', 0), getattr(os, 'WEXITED', 0),
+                                    getattr(os, 'WNOHANG', 0), getattr(os, 'WNOWAIT', 0))):
+            raise Refused('Non-reaping child wait API unavailable')
+        try:
+            info = wait(os.P_PID, child.pid, flags)
+        except (ChildProcessError, OSError) as error:
+            raise LocalWaitRefused('Owned child wait observation failed; no exit or absence inferred',
+                                   dict(api='os.waitid', pid=child.pid, error=str(error))) from error
+        if info is None:
+            return None
+        pid = getattr(info, 'si_pid', None)
+        uid = getattr(info, 'si_uid', None)
+        signo = getattr(info, 'si_signo', None)
+        code = getattr(info, 'si_code', None)
+        status = getattr(info, 'si_status', None)
+        observation = dict(api='os.waitid', pid=pid, uid=uid, signo=signo, code=code,
+                           status=status, expected_pid=owned.pid, expected_uid=owned.uid)
+        if pid != owned.pid or uid != owned.uid or signo != signal.SIGCHLD:
+            raise LocalWaitRefused('Owned child wait PID/UID/signal differs', observation)
+    if code == 1 and 0 <= status <= 255:  # CLD_EXITED
+        return status
+    if code in (2, 3) and 0 < status < signal.NSIG:  # CLD_KILLED/DUMPED
+        return -status
+    raise LocalWaitRefused('Unknown owned child terminal status', observation)
+
+
 def local_child_terminal(child, wait=None):
-    """Non-reaping kernel receipt for our exact child; ECHILD is not absence.
+    """Non-reaping kernel receipt for our exact local child; ECHILD is not absence.
 
     Python's Darwin os module omits waitid, but libSystem exposes the public C
     interface. Constants/layout below are from SDK sys/wait.h and sys/signal.h.
@@ -370,42 +484,33 @@ def local_child_terminal(child, wait=None):
     WNOWAIT keeps this exact exited child waitable, preventing PID reuse before
     the controller's sole later wait/reap. No unavailable libproc read implies exit.
     """
-    if (sys.platform!='darwin' or type(child.pid) is not int or child.pid<=1
-            or ctypes.sizeof(ctypes.c_void_p)!=8 or ctypes.sizeof(_Siginfo)!=104
-            or _Siginfo.pid.offset!=12 or _Siginfo.status.offset!=20):
+    if (sys.platform != 'darwin' or type(child.pid) is not int or child.pid <= 1
+            or ctypes.sizeof(ctypes.c_void_p) != 8 or ctypes.sizeof(_Siginfo) != 104
+            or _Siginfo.pid.offset != 12 or _Siginfo.status.offset != 20):
         raise Refused('Owned child wait ABI unavailable')
-    owned=local_owned_identity(child)
-    if wait is None:
-        library=ctypes.CDLL('/usr/lib/libSystem.B.dylib',use_errno=True)
-        wait=library.waitid
-        wait.argtypes=[ctypes.c_int,ctypes.c_uint32,ctypes.POINTER(_Siginfo),ctypes.c_int]
-        wait.restype=ctypes.c_int
-    info=_Siginfo()
-    # P_PID=1; WNOHANG=1, WEXITED=4, WNOWAIT=0x20. Never consumes the child.
-    result=wait(1,child.pid,ctypes.byref(info),1|4|0x20)
-    observation=dict(api='libSystem.waitid',result=result,errno=ctypes.get_errno() if result else 0,
-                     expected_pid=owned.pid,expected_uid=owned.uid,expected_signal=int(signal.SIGCHLD),
-                     pid=info.pid,uid=info.uid,signo=info.signo,error=info.error,code=info.code,status=info.status,
-                     abi_bytes=ctypes.sizeof(info),pid_offset=_Siginfo.pid.offset,status_offset=_Siginfo.status.offset)
-    # Only defined scalar fields: no addresses, reserved bytes, argv or environment.
-    if result!=0:
-        raise LocalWaitRefused('Owned child wait observation failed; no exit or absence inferred',observation)
-    if info.pid==0:
-        if any((info.signo,info.error,info.code,info.uid,info.status)):
-            raise LocalWaitRefused('Malformed empty owned child wait observation',observation)
-        return None
-    # XNU kern_exit.c waitid_nocancel/SZOMB zeroes siginfo and does not assign
-    # si_uid. Zero is NOT a root credential or an ownership observation. Require
-    # exact unreaped direct-child custody above; group credentials are separately
-    # observed and checked before any signal/reap/release. Populated foreign UID
-    # remains a refusal, as do foreign PID/signal, ECHILD and unknown status.
-    if info.pid!=owned.pid or info.uid not in (0,owned.uid) or info.signo!=signal.SIGCHLD or info.error:
-        raise LocalWaitRefused('Owned child wait PID/UID/signal differs',observation)
-    if info.code==1 and 0<=info.status<=255:  # CLD_EXITED
-        return info.status
-    if info.code in (2,3) and 0<info.status<signal.NSIG:  # CLD_KILLED/DUMPED
-        return -info.status
-    raise LocalWaitRefused('Unknown owned child terminal status',observation)
+    owned = local_owned_identity(child)
+    return _nonreaping_child_terminal(child, owned, wait)
+
+
+def fabric_child_terminal(child, wait=None):
+    """Non-reaping status for the exact fabric Popen/group binding."""
+    owned = fabric_owned_identity(child)
+    return _nonreaping_child_terminal(child, owned, wait)
+
+
+def fabric_wait_terminal(child, timeout, observe=None, monotonic=None, sleep=None):
+    observe = observe or fabric_child_terminal
+    monotonic = monotonic or time.monotonic
+    sleep = sleep or time.sleep
+    deadline = monotonic() + timeout
+    while True:
+        status = observe(child)
+        if status is not None:
+            return status
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired('fabric child', timeout)
+        sleep(min(0.02, remaining))
 
 
 def local_anchor_matches(child, birth):
@@ -1057,20 +1162,32 @@ class ProvenLease:
             raise Refused('Confirmed lease already exhausted')
 
 
-def stop(child):
+def _signal_fabric_group(child, sig, observe=None, send_group=None):
+    custody = fabric_owned_identity(child)
+    (observe or fabric_child_terminal)(child)  # WNOWAIT proves the leader remains waitable.
+    custody = fabric_owned_identity(child)
+    (send_group or os.killpg)(custody.group, sig)
+
+
+def stop(child, observe=None, send_group=None, reap=None, monotonic=None, sleep=None):
+    custody = fabric_owned_identity(child)
     try:
-        os.killpg(child.pid, signal.SIGTERM)
+        _signal_fabric_group(child, signal.SIGTERM, observe, send_group)
     except ProcessLookupError:
         pass
     try:
-        child.wait(timeout=2)
+        fabric_wait_terminal(child, 2, observe, monotonic, sleep)
     except subprocess.TimeoutExpired:
         pass
     try:
-        os.killpg(child.pid, signal.SIGKILL)
+        _signal_fabric_group(child, signal.SIGKILL, observe, send_group)
     except ProcessLookupError:
         pass
-    child.wait()
+    finally:
+        custody.signals_closed = True
+    custody.reap_started = True
+    (reap or (lambda target: target.wait()))(child)
+    custody.reaped = True
 
 
 def check_deadlines(execution_deadline, lease, started, timeout, record):
@@ -1207,6 +1324,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             record.update(cpu_cores=cpu_cores, share=before['share'])
         child = subprocess.Popen(command, start_new_session=True, env=child_env)
         record.update(pid=child.pid, status='running')
+        fabric_bind_child(child)
         started_at = time.monotonic()
         deadline = started_at + timeout
         if isinstance(job_deadline, (int, float)) and job_deadline <= deadline:
@@ -1227,7 +1345,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                     row = backend.lookup(resource)
                     lease.check(row)
                     check_deadlines(deadline, lease, started_at, timeout, record)
-                    if child.poll() is None:
+                    if fabric_child_terminal(child) is None:
                         if owned:
                             started = time.monotonic()
                             renewed = backend.heartbeat(owned)
@@ -1249,7 +1367,8 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             if remaining <= 0:
                 check_deadlines(deadline, lease, started_at, timeout, record)
             try:
-                code = child.wait(timeout=min(2, remaining, max(0.001, control_at - time.monotonic())))
+                code = fabric_wait_terminal(
+                    child, timeout=min(2, remaining, max(0.001, control_at - time.monotonic())))
                 try:
                     after = backend.lookup(resource)
                     lease.check(after)

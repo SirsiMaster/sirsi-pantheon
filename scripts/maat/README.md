@@ -280,6 +280,14 @@ separate SHA observation at45.289seconds, against the old eight-second deadline.
 
 These are cooperative operational controls, not an OS security sandbox against same-user tampering, deliberately hidden workloads, escaped descendant sessions or supervisor SIGKILL. A native tool hook and per-runtime adoption must be proven separately. The execution timeout begins at child spawn; metadata and cleanup calls have their separate bounds. Do not mistake a receipt file's existence for live admission.
 
+The fabric supervisor uses a separate Popen/session-group binding. It observes
+the direct leader with non-reaping `waitid(WNOWAIT)`, keeps that leader
+waitable while sending TERM/KILL to its exact process group, then performs one
+final `Popen.wait()` reap. The leader's unreaped PID prevents reuse of the
+group identifier between cleanup signals; if custody or wait observation is
+uncertain, cleanup remains debt and no later group signal is attempted. This
+does not prove containment of descendants that escape the session/group.
+
 ### Long runs, transport uncertainty and recurring jobs
 
 `--timeout` is a total **per-child execution budget**, not a heartbeat TTL.
