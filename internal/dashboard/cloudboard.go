@@ -1,7 +1,9 @@
 package dashboard
 
 import (
+	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -9,7 +11,9 @@ import (
 // its assets and its read-only producers. Workstation endpoints (run, clean,
 // slay, vault, guard, ghosts, ask …) act on the host they run on; in the cloud
 // that host is the board's own container, so they are not reachable at all.
-var cloudBoardPaths = []string{"/", "/router", "/router/", "/api/router", "/api/fabric", "/healthz"}
+// Mac controls are never relayed: the board only links to each Mac's console.
+var cloudBoardPaths = []string{"/", "/router", "/router/", "/api/router", "/api/fabric", "/healthz",
+	"/api/macs", "/sw.js", "/offline.html", "/manifest.webmanifest", "/consoleprobe.js"}
 
 var cloudBoardPrefixes = []string{"/assets/", "/api/router/v1/"}
 
@@ -43,4 +47,25 @@ func cloudBoardAllows(path string) bool {
 		}
 	}
 	return false
+}
+
+// apiMacs lists the Mac consoles the board links to. Its presence is also how
+// the page knows it is the hosted board: a Mac's own console has no list.
+func (s *Server) apiMacs(w http.ResponseWriter, r *http.Request) {
+	if len(s.cfg.Macs) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	names := make([]string, 0, len(s.cfg.Macs))
+	for n := range s.cfg.Macs {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	consoles := make([]map[string]string, 0, len(names))
+	for _, n := range names {
+		consoles = append(consoles, map[string]string{"name": n, "url": s.cfg.Macs[n]})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"macs": consoles})
 }

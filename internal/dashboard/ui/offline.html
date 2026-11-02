@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ra — cloud board unavailable</title>
+<style>
+:root{color-scheme:dark;--bg:#0d1512;--ink:#e6efe9;--dim:#9fb3a9;--ok:#2bd29b;--warn:#cdad5a;--line:#22302a}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:560px;margin:0 auto;padding:48px 16px}
+h1{font-size:22px;margin:0 0 8px}p{color:var(--dim);margin:0 0 20px}
+ul{list-style:none;padding:0;margin:0;border-top:1px solid var(--line)}
+li{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--line)}
+a{color:var(--ok)}.st{color:var(--dim);font-size:14px}.st.ok{color:var(--ok)}.st.no{color:var(--warn)}
+</style>
+<script src="/consoleprobe.js"></script>
+</head>
+<body>
+<main>
+<h1>The cloud board is not answering</h1>
+<p id="msg">Looking for a live Mac console on your tailnet…</p>
+<ul id="macs"></ul>
+<p class="st" style="margin-top:20px">A console counts as live only when it answers its health check in full and admits this device's sirsi.ai tailnet sign-in. This page retries the cloud board every 30 seconds and returns there when it is back. The ledger lives in the router service; if that is down too, every console will say so.</p>
+</main>
+<script>
+(function(){
+'use strict';
+var P=globalThis.consoleProbe,list=document.getElementById('macs'),msg=document.getElementById('msg');
+function cloudBack(){
+ fetch('/healthz',{cache:'no-store',signal:AbortSignal.timeout(4000)}).then(function(r){if(r.ok)location.replace('/')},function(){});
+}
+function row(m,i){
+ var li=document.createElement('li'),a=document.createElement('a'),s=document.createElement('span');
+ a.href=m.url+'/';a.textContent=m.name;s.className='st';s.id='s'+i;s.textContent='checking…';
+ li.append(a,s);return li;
+}
+caches.match('/api/macs').then(function(r){return r?r.json():{macs:[]}}).then(function(d){
+ var macs=((d&&d.macs)||[]).filter(function(m){return /^https:\/\//.test(m.url)});
+ if(!macs.length){msg.textContent='No Mac consoles are known to this device yet. Open the board once while it is up.';return}
+ macs.forEach(function(m,i){list.append(row(m,i))});
+ Promise.all(macs.map(function(m,i){return P.probe(fetch,m.url).then(function(ok){
+  var s=document.getElementById('s'+i);s.textContent=ok?'live':'not verified';s.className='st '+(ok?'ok':'no');return ok})})).then(function(oks){
+  var m=P.pick(macs,oks);
+  if(!m){msg.textContent='No Mac console verified live. Is this device on the Sirsi tailnet and signed in with a sirsi.ai account?';return}
+  msg.textContent='Opening '+m.name+'…';setTimeout(function(){location.href=m.url+'/'},800);
+ });
+});
+setInterval(cloudBack,30000);
+})();
+</script>
+</body>
+</html>

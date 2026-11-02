@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -51,10 +52,15 @@ hosting platform's job (Cloud Run IAP), not this process's.`,
 		fabric := ledger.NewFabricGenerationProducerContext(ctx, collectDashboardFabricReadContext, build)
 		defer fabric.Close()
 
+		macs, err := boardMacConsoles()
+		if err != nil {
+			return err
+		}
 		srv := dashboard.New(dashboard.Config{
 			Port:       port,
 			ListenHost: "0.0.0.0",
 			CloudBoard: true,
+			Macs:       macs,
 			RouterFn:   collectDashboardRouter,
 			RoutabilityFn: func() (map[string]bool, error) {
 				repoRoot, err := router.FindRepoRoot()
@@ -74,6 +80,49 @@ hosting platform's job (Cloud Run IAP), not this process's.`,
 		<-ctx.Done()
 		return srv.Stop()
 	},
+}
+
+// boardMacConsoles links every admitted Sirsi Mac to its console on the
+// tailnet named by SIRSI_BOARD_TAILNET (e.g. taild727f7.ts.net). The list is
+// the machine registry — Ra's admission record — so a Mac appears once it is
+// admitted, and only then. Unset tailnet means no consoles are offered.
+func boardMacConsoles() (map[string]string, error) {
+	tailnet := strings.Trim(strings.TrimSpace(os.Getenv("SIRSI_BOARD_TAILNET")), ".")
+	if tailnet == "" {
+		return nil, nil
+	}
+	repo, err := router.FindRepoRoot()
+	if err != nil {
+		return nil, fmt.Errorf("board: locate registry: %w", err)
+	}
+	machines, err := router.LoadMachines(filepath.Join(repo, ".agents", "idea-router"))
+	if err != nil {
+		return nil, fmt.Errorf("board: %w", err)
+	}
+	return macConsoleURLs(machines, tailnet)
+}
+
+var macHostLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+
+// macConsoleURLs maps each machine to https://<lowercased id>.<tailnet>, the
+// MagicDNS name its console is served on. Two ids that land on the same name,
+// or an id that is not a valid DNS label, fail the whole list rather than
+// silently pointing one Mac's button at another.
+func macConsoleURLs(machines []router.Machine, tailnet string) (map[string]string, error) {
+	urls := map[string]string{}
+	owner := map[string]string{}
+	for _, m := range machines {
+		label := strings.ToLower(strings.TrimSpace(m.ID))
+		if !macHostLabel.MatchString(label) {
+			return nil, fmt.Errorf("board: machine %q is not a valid tailnet name", m.ID)
+		}
+		if prev, dup := owner[label]; dup {
+			return nil, fmt.Errorf("board: machines %q and %q both map to %s.%s", prev, m.ID, label, tailnet)
+		}
+		owner[label] = m.ID
+		urls[m.ID] = "https://" + label + "." + tailnet
+	}
+	return urls, nil
 }
 
 // registerBoardThread gives the board its own registered thread (Rule of Ra:
