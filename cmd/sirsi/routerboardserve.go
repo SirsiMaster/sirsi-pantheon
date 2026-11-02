@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -53,17 +51,11 @@ hosting platform's job (Cloud Run IAP), not this process's.`,
 		fabric := ledger.NewFabricGenerationProducerContext(ctx, collectDashboardFabricReadContext, build)
 		defer fabric.Close()
 
-		macs, transport, err := boardMacConsoles()
-		if err != nil {
-			return err
-		}
 		srv := dashboard.New(dashboard.Config{
-			Port:         port,
-			ListenHost:   "0.0.0.0",
-			CloudBoard:   true,
-			MacConsoles:  macs,
-			MacTransport: transport,
-			RouterFn:     collectDashboardRouter,
+			Port:       port,
+			ListenHost: "0.0.0.0",
+			CloudBoard: true,
+			RouterFn:   collectDashboardRouter,
 			RoutabilityFn: func() (map[string]bool, error) {
 				repoRoot, err := router.FindRepoRoot()
 				if err != nil {
@@ -82,39 +74,6 @@ hosting platform's job (Cloud Run IAP), not this process's.`,
 		<-ctx.Done()
 		return srv.Stop()
 	},
-}
-
-// boardMacConsoles reads the Mac consoles the board drives from
-// SIRSI_BOARD_MACS ("M1=https://m1.<tailnet>.ts.net,M5=…") and reaches them
-// through the board's Tailscale proxy, SIRSI_BOARD_TS_PROXY
-// (socks5://127.0.0.1:1055). No consoles configured means a read-only board.
-func boardMacConsoles() (map[string]string, http.RoundTripper, error) {
-	macs := map[string]string{}
-	for _, pair := range strings.Split(os.Getenv("SIRSI_BOARD_MACS"), ",") {
-		if pair = strings.TrimSpace(pair); pair == "" {
-			continue
-		}
-		name, base, ok := strings.Cut(pair, "=")
-		u, err := url.Parse(strings.TrimSpace(base))
-		if !ok || strings.TrimSpace(name) == "" || err != nil || u.Scheme != "https" || u.Host == "" {
-			return nil, nil, fmt.Errorf("SIRSI_BOARD_MACS entry %q: want name=https://host", pair)
-		}
-		macs[strings.TrimSpace(name)] = strings.TrimRight(u.String(), "/")
-	}
-	if len(macs) == 0 {
-		return nil, nil, nil
-	}
-	proxy := strings.TrimSpace(os.Getenv("SIRSI_BOARD_TS_PROXY"))
-	if proxy == "" {
-		return nil, nil, fmt.Errorf("SIRSI_BOARD_MACS is set but SIRSI_BOARD_TS_PROXY is empty: Mac consoles are reachable only over the tailnet")
-	}
-	pu, err := url.Parse(proxy)
-	if err != nil || pu.Scheme != "socks5" {
-		return nil, nil, fmt.Errorf("SIRSI_BOARD_TS_PROXY %q: want socks5://host:port", proxy)
-	}
-	t := http.DefaultTransport.(*http.Transport).Clone()
-	t.Proxy = http.ProxyURL(pu)
-	return macs, t, nil
 }
 
 // registerBoardThread gives the board its own registered thread (Rule of Ra:
