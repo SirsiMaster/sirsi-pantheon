@@ -76,6 +76,23 @@ prove → re-verify**. Admin levers always route through the macOS auth dialog.
 - **P3:** DNS flush, `launchctl bootout` for runaway agents, font caches.
 - **P4:** extract the `RemediationCatalog` type; migrate `remediationCommand` to it; add the guidance renderer for the no-lever findings.
 
+## Permanent deletion evidence
+
+The review-bound Empty Trash apply path preserves its Report v1 and explicit
+confirmation behavior while writing a private local operation record before its
+first unlink. Each syscall attempt has a durable start and a separately durable
+known result; a terminal report is accepted only when its counts and deleted
+prefix reconcile with those events and the exact reviewed manifest. The native
+surface can reopen read-only operation history after the original view or
+process is gone. Missing results remain unknown, and an absent terminal is not
+evidence that a process was interrupted. History never authorizes a new delete.
+
+This record proves only what Pantheon durably recorded. Fsync of the receipt
+does not fsync the Trash namespace or prove physical space reclamation, and
+permanently deleted bytes cannot be restored by the receipt. No automatic
+pruning is allowed; bounded pages expose integrity debt rather than silently
+dismissing it.
+
 ## Neith's Triad (A22)
 
 - **Data flow:** `finding → RemediationCatalog lookup → {Action | Guidance | Info} → (preview → auth/confirm → lever → measure) → re-verify → surface`.

@@ -148,7 +148,11 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 			}
 		}
 		switch {
-		case !worker.ConsumerCapable || (l != nil && !l.ConsumerDeclared):
+		// A declared-attended lane publishes no consumer ON PURPOSE (its loop never
+		// stands in for the session), so its truth is the attended hold below, not
+		// "no working consumer" — that misread sent SSA's reviews chasing a broken
+		// consumer that was never the problem.
+		case (!worker.ConsumerCapable || (l != nil && !l.ConsumerDeclared)) && (l == nil || l.Hold != HoldAttended):
 			res.Verdict = VerdictWatchOnly
 			res.Detail = "a wake loop is running but declares no working consumer, so it will watch the inbox and never work it"
 		case l != nil && l.LastOutcome == OutcomeProviderQuota:

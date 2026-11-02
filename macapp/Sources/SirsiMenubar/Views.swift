@@ -2848,6 +2848,7 @@ struct AnubisView: View {
     // Own the model in that value, not remount-scoped StateObject storage: a
     // return must preserve the explicit-retry fence, never create new intent.
     @ObservedObject var workflow: TrashWorkflow
+    @State private var historyExpanded = false
 
     init(engine: SirsiEngine, workflow: TrashWorkflow? = nil) {
         self.engine = engine
@@ -2995,6 +2996,103 @@ struct AnubisView: View {
                         }
                         if let message = workflow.message { Text(message).sirsiFont(12).foregroundStyle(.orange) }
                     }
+                    Divider()
+                    DisclosureGroup("Operation history", isExpanded: $historyExpanded) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Read-only records of reviewed Empty Trash operations. History cannot repeat deletion or restore items. No undo is available for permanent deletion.")
+                                .sirsiFont(12).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            HStack(spacing: 12) {
+                                Button(workflow.historyItems.isEmpty ? "Load history" : "Refresh history") {
+                                    Task { await workflow.loadHistory { limit, cursor in
+                                        await engine.emptyTrashHistory(limit: limit, cursor: cursor)
+                                    } }
+                                }.disabled(workflow.historyLoading)
+                                if workflow.historyLoading {
+                                    ProgressView().controlSize(.small)
+                                    Button("Cancel read") { workflow.cancelHistoryRead() }
+                                }
+                            }
+                            if let message = workflow.historyMessage {
+                                Text(message).sirsiFont(12).foregroundStyle(.orange)
+                                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            }
+                            if workflow.historyIncomplete {
+                                Label("History is incomplete; some records may be missing or corrupt.", systemImage: "exclamationmark.triangle")
+                                    .sirsiFont(12).foregroundStyle(.orange)
+                            }
+                            if !workflow.historyHasLoaded && workflow.historyMessage == nil && !workflow.historyLoading {
+                                Text("Load saved operation history to review previous results.")
+                                    .sirsiFont(13).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            } else if workflow.historyVerifiedEmpty && workflow.historyMessage == nil && !workflow.historyLoading {
+                                Text("No recorded Empty Trash operations are available on this page.")
+                                    .sirsiFont(13).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            }
+                            ForEach(workflow.historyItems) { item in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Button {
+                                        Task { await workflow.loadHistoryDetail(item.operation_id) { id in
+                                            await engine.emptyTrashHistoryDetail(operationID: id)
+                                        } }
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(historyStateLabel(item.state))
+                                                .sirsiFont(13, weight: .semibold)
+                                            if item.state == "unknown" {
+                                                Text("Recorded counts unavailable")
+                                                    .sirsiFont(12).foregroundStyle(.orange)
+                                            } else {
+                                                Text("\(item.deleted)/\(item.manifest_entry_count) deleted")
+                                                    .sirsiFont(13)
+                                                Text("\(item.attempted) attempts · \(item.errors_count) errors")
+                                                    .sirsiFont(12).foregroundStyle(.secondary)
+                                            }
+                                            if item.started_at.isEmpty {
+                                                Text("Start time unavailable")
+                                                    .sirsiFont(12).foregroundStyle(.orange)
+                                            } else {
+                                                Text(item.started_at).sirsiFont(12).foregroundStyle(.secondary)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
+                                            Text(item.operation_id).sirsiFont(12).foregroundStyle(.secondary)
+                                                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                                            if item.state == "unknown" || item.state == "review_required" {
+                                                Text("Review the latest Trash contents before any new confirmed action. Never repeat deletion from history.")
+                                                    .sirsiFont(12).foregroundStyle(.orange)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
+                                            ForEach(workflow.historyIssues.filter {
+                                                $0.hasPrefix(item.operation_id + ": ")
+                                            }, id: \.self) { issue in
+                                                Text(issue).sirsiFont(12).foregroundStyle(.orange)
+                                                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                                            }
+                                        }.frame(maxWidth: .infinity, alignment: .leading)
+                                    }.buttonStyle(.plain)
+                                    if workflow.historySelectedID == item.operation_id,
+                                       let detail = workflow.historyDetail {
+                                        historyDetail(detail)
+                                    }
+                                }
+                                .padding(9)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.045)))
+                            }
+                            ForEach(workflow.historyIssues.filter { issue in
+                                !workflow.historyItems.contains { issue.hasPrefix($0.operation_id + ": ") }
+                            }, id: \.self) { issue in
+                                Text(issue).sirsiFont(12).foregroundStyle(.orange)
+                                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            }
+                            if workflow.historyCursor != nil {
+                                Button("Load older operations") {
+                                    Task { await workflow.loadMoreHistory { limit, cursor in
+                                        await engine.emptyTrashHistory(limit: limit, cursor: cursor)
+                                    } }
+                                }.disabled(workflow.historyLoading)
+                            }
+                        }
+                        .padding(.top, 8)
+                    }
                     if let execution = workflow.execution {
                         DisclosureGroup("Retained operation receipt") {
                             Text(execution.displayText).sirsiFont(12)
@@ -3009,7 +3107,7 @@ struct AnubisView: View {
             await workflow.loadInitial { await engine.trashList(browser: workflow.browser) }
         }
         .onAppear { workflow.activateBrowse() }
-        .onDisappear { workflow.cancelBrowse() }
+        .onDisappear { workflow.cancelBrowse(); workflow.cancelHistoryRead() }
         .navigationTitle("Empty Trash")
     }
 
@@ -3017,6 +3115,102 @@ struct AnubisView: View {
         let parent = page.directory.split(separator: "/").dropLast().joined(separator: "/")
         let request = TrashBrowseRequest(directory: parent.isEmpty ? "." : parent, root: page.root)
         Task { await workflow.loadPage { await engine.trashList(request, browser: workflow.browser) } }
+    }
+
+    private func historyStateLabel(_ state: String) -> String {
+        switch state {
+        case "not_finalized": return "Result not finalized"
+        case "completed": return "Completed"
+        case "partial": return "Partially completed"
+        case "failed", "review_required": return "Needs attention"
+        default: return "Record could not be verified"
+        }
+    }
+
+    @ViewBuilder private func historyDetail(_ detail: TrashHistoryDetail) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text("Reviewed inventory · \(historyStateLabel(detail.state))").sirsiFont(13, weight: .bold)
+                Spacer()
+                Button("Retry read") {
+                    Task { await workflow.loadHistoryDetail(detail.operation_id) { id in
+                        await engine.emptyTrashHistoryDetail(operationID: id)
+                    } }
+                }.sirsiFont(13).disabled(workflow.historyLoading)
+            }
+            if detail.started_at.isEmpty {
+                Text("Start time is unavailable because this record could not be verified.")
+                    .sirsiFont(12).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Started \(detail.started_at)")
+                    .sirsiFont(12).foregroundStyle(.secondary).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let manifest = detail.reviewed_manifest, manifest.validWireShape {
+                Text("Trash root device/inode \(manifest.root.device):\(manifest.root.inode)")
+                    .sirsiFont(12).foregroundStyle(.secondary).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !manifest.containers.isEmpty {
+                    Text("Retained containers:").sirsiFont(12, weight: .semibold)
+                    ForEach(manifest.containers, id: \.path) { container in
+                        Text(container.path).sirsiFont(12).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } else {
+                Text("The reviewed inventory is unavailable because this record could not be verified.")
+                    .sirsiFont(12).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(detail.attempts) { attempt in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(attempt.path).sirsiFont(12).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(attemptStateLabel(attempt.state))
+                        .sirsiFont(12).foregroundStyle(attempt.state == "unlink_failed" || attempt.state == "outcome_unknown" ? .orange : .secondary)
+                    if let error = attempt.error {
+                        Text(error).sirsiFont(12).foregroundStyle(.orange).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            if let report = detail.terminal_report {
+                Text("Terminal receipt: \(historyStateLabel(report.status)) · \(report.deleted.count) deleted · \(SirsiEngine.human(report.logical_bytes)) advisory logical bytes")
+                    .sirsiFont(12).fixedSize(horizontal: false, vertical: true)
+                ForEach(Array(report.errors.enumerated()), id: \.offset) { _, error in
+                    Text(error).sirsiFont(12).foregroundStyle(.orange).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let integrityError = detail.integrity_error {
+                Label("This record could not be verified: \(integrityError)", systemImage: "exclamationmark.triangle")
+                    .sirsiFont(12).foregroundStyle(.orange).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if detail.state == "not_finalized" {
+                Text("No valid terminal receipt is recorded. Items without a durable result have an unknown outcome; this does not establish whether the command is still running or stopped.")
+                    .sirsiFont(12).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text("Refresh history and review the latest Trash contents before any new confirmed action. Never repeat deletion from history.")
+                    .sirsiFont(12).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else if detail.state == "unknown" {
+                Text("The record could not be verified. Refresh history and review the latest Trash contents before any new confirmed action. Never repeat deletion from history.")
+                    .sirsiFont(12).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            } else if detail.state == "review_required" {
+                Text("Deletion was not confirmed for this operation. Review the latest Trash contents before any new confirmed action. Never repeat deletion from history.")
+                    .sirsiFont(12).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.035)))
+    }
+
+    private func attemptStateLabel(_ state: String) -> String {
+        switch state {
+        case "not_attempted": return "Not attempted"
+        case "outcome_unknown": return "Outcome unknown; the result was not durably recorded"
+        case "unlink_succeeded": return "Deleted"
+        case "unlink_failed": return "Deletion failed"
+        default: return "Outcome could not be verified"
+        }
     }
 }
 

@@ -1510,6 +1510,20 @@ final class SirsiEngine: ObservableObject {
         await Self.runCaptured(args: ["anubis", "empty-trash", "select"], stdin: input)
     }
 
+    func emptyTrashHistory(limit: Int = 20, cursor: String? = nil) async -> CommandExecution {
+        let boundedLimit = min(max(limit, 1), 20)
+        var args = ["anubis", "empty-trash", "history", "--limit", String(boundedLimit)]
+        if let cursor, !cursor.isEmpty { args += ["--cursor", cursor] }
+        return await Self.runCaptured(args: args)
+    }
+
+    func emptyTrashHistoryDetail(operationID: String) async -> CommandExecution {
+        guard validTrashOperationID(operationID) else {
+            return CommandExecution(launchError: "Invalid Trash history operation identifier.")
+        }
+        return await Self.runCaptured(args: ["anubis", "empty-trash", "history", "--operation-id", operationID])
+    }
+
     func emptyTrash(_ approval: TrashApproval,
                     authorize: @escaping ProcessLaunchAuthorization) async -> CommandExecution {
         busy = true

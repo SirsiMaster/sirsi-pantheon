@@ -42,6 +42,10 @@ const (
 	// and a worker that cannot see its thread id cannot link its claims to its lane
 	// (SSA reported thread=unset, 2026-10-01).
 	consumerThreadPlaceholder = "{{thread}}"
+	// consumerTailnetPlaceholder expands to every admitted Mac's Tailscale address as
+	// codex permission-table entries, so a lane's network allowlist follows the
+	// machine registry instead of a hand-copied IP list per lane.
+	consumerTailnetPlaceholder = "{{machine_tailnet_domains}}"
 )
 
 // Env vars every dispatched consumer receives. A consumer that prefers reading
@@ -206,8 +210,21 @@ func ResolveConsumer(cfg AgentConfig, routerRoot string) (*ResolvedConsumer, str
 		return nil, "consumer.interactive is set — a REPL is a session, not an inbox consumer"
 	}
 
+	// Expanded only when declared; a registry that cannot render it leaves the lane
+	// watch-only with the reason, never spawned with a silently narrowed allowlist.
+	var tailnet string
+	if strings.Contains(strings.Join(c.Command, "\x00")+c.Prompt, consumerTailnetPlaceholder) {
+		ms, err := LoadMachines(routerRoot)
+		if err == nil {
+			tailnet, err = machineTailnetDomains(ms)
+		}
+		if err != nil {
+			return nil, "consumer network allowlist: " + err.Error()
+		}
+	}
 	subst := func(s string) string {
 		s = strings.ReplaceAll(s, consumerAgentPlaceholder, cfg.ID)
+		s = strings.ReplaceAll(s, consumerTailnetPlaceholder, tailnet)
 		return rebaseForeignHome(strings.ReplaceAll(s, consumerRootPlaceholder, routerRoot))
 	}
 	cfg.Cwd = rebaseForeignHome(cfg.Cwd)

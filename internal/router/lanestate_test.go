@@ -49,6 +49,8 @@ func TestPingLaneVerdicts(t *testing.T) {
 		// The lead/attended session these holds defer to is absent here, so nothing reads the inbox.
 		{"no_grant without a live session has no consumer", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldNoGrant}, time.Minute)), AgentConfig{}, VerdictHeld, false, "no live consumer"},
 		{"attended hold without a live session has no consumer", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldAttended}, time.Minute)), AgentConfig{}, VerdictHeld, false, "needs-owner"},
+		// What a declared-attended loop actually publishes (wakeLoopConsumerCapable is false for it).
+		{"declared-attended loop reads held, not watch-only", regWith(worker("a", false, &LaneState{Hold: HoldAttended}, time.Minute)), AgentConfig{}, VerdictHeld, false, "needs-owner"},
 		{"relay unreachable", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, LastOutcome: OutcomeRelay, LastDetail: "64 requests in flight"}, time.Minute)), AgentConfig{}, VerdictHeld, false, "relay"},
 		{"stale worker", regWith(worker("a", true, ok, time.Hour)), AgentConfig{}, VerdictUnreachable, false, "last reported"},
 		{"no thread, wake none", regWith(), AgentConfig{}, VerdictUnstaffed, false, "no worker path"},
