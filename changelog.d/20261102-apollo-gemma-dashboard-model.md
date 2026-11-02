@@ -1,0 +1,1 @@
+- fix(dashboard): when Apollo.app provides the local model, Ask no longer sends the placeholder model "local" (which Apollo's router rejects); a missing, unreadable or blank `~/.sirsi/gemma-model.conf` is a clear error instead. Hosts on the legacy broker keep "local".
