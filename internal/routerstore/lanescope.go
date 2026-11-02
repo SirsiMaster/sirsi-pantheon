@@ -10,6 +10,7 @@ package routerstore
 // (messaging is the point), read and work only what is addressed to it, and see only items it is a party to.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -103,8 +104,82 @@ var laneAPI = map[string]laneRule{
 	"RunnableFor":          {agents: []int{0}, item: noItem},
 }
 
+// ObserverScope is a reserved scope entry (no agent id starts with "@"). A token whose scope includes it is a
+// read-only observer — the hosted router board: it may read the whole ledger through observerReads, and may
+// register and heartbeat only its own listed agent's thread (the Rule of Ra applies to it like any thread).
+// Every other method is refused, including the lane API's messaging and work verbs for its own agent.
+const ObserverScope = "@observer"
+
+// Observer data contract (SSA PR #1310 review, 20261102-050808). The board is the owner's console for sirsi.ai
+// accounts behind IAP, so it sees the work: item titles, senders, recipients, types, ages and instructions, and
+// task subjects and status — that drill-down is what the owner asked for. It never sees a thread's continuation
+// or session state: ListThreads returns each row projected to observerThreadKeys, exactly the fields lane
+// verdicts read (router.PingLane, betterWorker), so suspend payloads (ResumePrompt, OwnedOpenItems, ThothRef),
+// current item, last error, repo, session id and process identity stay on the Macs.
+var observerThreadKeys = []string{
+	"thread_id", "agent_id", "surface", "status", "started_at", "last_seen_at", "watches",
+	"wake_mechanism", "consumer_capable", "lane", "host", "machine_id",
+}
+
+// observerThreadView projects one thread row to the observer contract. A payload that does not decode is
+// dropped to "{}" rather than passed through: an unreadable row must never leak by failing to parse.
+func observerThreadView(r ThreadRecord) ThreadRecord {
+	var full map[string]json.RawMessage
+	kept := map[string]json.RawMessage{}
+	if json.Unmarshal(r.Payload, &full) == nil {
+		for _, k := range observerThreadKeys {
+			if v, ok := full[k]; ok {
+				kept[k] = v
+			}
+		}
+	}
+	r.Payload, _ = json.Marshal(kept)
+	return r
+}
+
+// observerReads are the whole-ledger reads an observer may make, regardless of agent. Each is a read: adding a
+// method here grants every observer token a view of it, so a new entry needs the same review as laneAPI.
+var observerReads = map[string]bool{
+	"ClassifyLane": true, "ListThreads": true, "ListActive": true, "CountClosed": true,
+	"OperationalAgents": true, "ListTasks": true, "Inbox": true,
+}
+
+// observerOwnThread are the lane-API methods an observer keeps, for its own agent only: identity and thread
+// registration, so it can satisfy the Rule of Ra. Their laneAPI rules still apply.
+var observerOwnThread = map[string]bool{
+	"MintSession": true, "MintSessionForThread": true, "RegisterAgent": true, "Heartbeat": true,
+	"ThreadBinding": true, "GetThreadRecord": true, "UpsertThreadCAS": true, "UpsertThreads": true,
+	"ResumeThreadCAS": true,
+}
+
+// splitObserver separates the observer marker from a token's agent scope. The marker is a capability, never
+// an identity: the returned scope never contains it, so nothing may mint, register or act as "@observer".
+func splitObserver(scope map[string]bool) (map[string]bool, bool) {
+	if !scope[ObserverScope] {
+		return scope, false
+	}
+	agents := make(map[string]bool, len(scope))
+	for a := range scope {
+		if a != ObserverScope {
+			agents[a] = true
+		}
+	}
+	return agents, true
+}
+
 // laneScope returns nil when the call is inside the token's scope, ErrLaneScope otherwise.
-func (s *server) laneScope(scope map[string]bool, sess Session, name string, in []reflect.Value) error {
+func (s *server) laneScope(scope map[string]bool, observer bool, sess Session, name string, in []reflect.Value) error {
+	if observer {
+		if sess.Agent != "" && !scope[sess.Agent] {
+			return fmt.Errorf("%w: session agent %q is outside the token's scope", ErrLaneScope, sess.Agent)
+		}
+		if observerReads[name] {
+			return nil
+		}
+		if !observerOwnThread[name] {
+			return fmt.Errorf("%w: %s is not permitted for a read-only observer", ErrLaneScope, name)
+		}
+	}
 	rule, ok := laneAPI[name]
 	if !ok {
 		return fmt.Errorf("%w: %s is not part of the lane API", ErrLaneScope, name)

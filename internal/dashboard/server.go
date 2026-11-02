@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,7 +28,15 @@ type Config struct {
 	// MercuryFn supplies the same bounded read-only dashboard projection as CLI/native.
 	MercuryFn func(context.Context) mercury.Read
 	Port      int
-	NotifyDB  *notify.Store
+	// ListenHost is the bind address. Empty means 127.0.0.1: the workstation
+	// dashboard never listens beyond the loopback interface.
+	ListenHost string
+	// CloudBoard serves only the read-only router surface (cloudBoardPaths)
+	// and 404s everything else, so a hosted board can never reach the
+	// workstation's run/clean/slay/vault endpoints. It also skips the
+	// single-dashboard host lock, which belongs to a workstation.
+	CloudBoard bool
+	NotifyDB   *notify.Store
 	// StatsFn returns the current system stats as JSON bytes.
 	// The menubar marshals its own StatsSnapshot; we pass it through.
 	StatsFn func() ([]byte, error)
@@ -230,9 +239,16 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/apollo/telemetry", s.apiApolloTelemetry)
 
 	s.handler = mux
+	if cfg.CloudBoard {
+		s.handler = cloudBoardOnly(mux)
+	}
+	if cfg.ListenHost == "" {
+		cfg.ListenHost = "127.0.0.1"
+		s.cfg.ListenHost = cfg.ListenHost
+	}
 	s.srv = &http.Server{
-		Addr:         fmt.Sprintf("127.0.0.1:%d", cfg.Port),
-		Handler:      mux,
+		Addr:         net.JoinHostPort(cfg.ListenHost, strconv.Itoa(cfg.Port)),
+		Handler:      s.handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 0, // SSE connections are long-lived
 	}
@@ -251,9 +267,12 @@ func (s *Server) Start() error {
 		return nil
 	}
 
-	unlock, err := platform.TryLock("dashboard")
-	if err != nil {
-		return fmt.Errorf("dashboard: %w", err)
+	unlock := func() {}
+	if !s.cfg.CloudBoard {
+		var err error
+		if unlock, err = platform.TryLock("dashboard"); err != nil {
+			return fmt.Errorf("dashboard: %w", err)
+		}
 	}
 	listener, err := net.Listen("tcp", s.srv.Addr)
 	if err != nil {
