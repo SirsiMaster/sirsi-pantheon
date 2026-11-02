@@ -206,4 +206,201 @@ final class TrashReceiptTests: XCTestCase {
                              generation: String(repeating: "a", count: 64), more: false, next: nil, errors: [])
         XCTAssertTrue(page.validWireShape)
     }
+
+    func testHistoryPageAndDetailDecodeExactReadOnlyReceipt() throws {
+        let m = manifest()
+        let item = TrashHistoryItem(operation_id: "0123456789abcdef0123456789abcdef", started_at: "2026-11-01T12:00:00Z",
+                                    state: "not_finalized", manifest_entry_count: 1,
+                                    attempted: 1, deleted: 0, errors_count: 0)
+        let page = TrashHistoryPage(schema: "pantheon.trash-history-page.v1", items: [item],
+                                    next_cursor: "cursor-next", incomplete: false, issues: [])
+        XCTAssertTrue(page.validWireShape)
+        let decodedPage = try XCTUnwrap(TrashHistoryCommandRead(page: CommandExecution(
+            stdout: JSONEncoder().encode(page), exitCode: 0, childState: .exitConfirmed)).page)
+        XCTAssertEqual(decodedPage.items.map(\.operation_id), ["0123456789abcdef0123456789abcdef"])
+        XCTAssertEqual(decodedPage.next_cursor, "cursor-next")
+
+        let detail = TrashHistoryDetail(schema: "pantheon.trash-history-detail.v1", operation_id: "0123456789abcdef0123456789abcdef",
+                                        state: "not_finalized", started_at: item.started_at,
+                                        reviewed_manifest: m,
+                                        attempts: [TrashHistoryAttempt(entry_index: 0, path: "reviewed",
+                                                                       state: "outcome_unknown", error: nil)],
+                                        terminal_report: nil, integrity_error: nil)
+        XCTAssertTrue(detail.validWireShape)
+        let read = TrashHistoryCommandRead(detail: CommandExecution(
+            stdout: try JSONEncoder().encode(detail), exitCode: 0, childState: .exitConfirmed))
+        XCTAssertEqual(read.detail?.attempts.first?.path, "reviewed")
+        XCTAssertEqual(read.detail?.attempts.first?.state, "outcome_unknown")
+        XCTAssertNil(read.detail?.terminal_report)
+    }
+
+    func testHistoryRejectsMismatchedInventoryAndIntegrityClaims() throws {
+        let m = manifest()
+        let wrongPath = TrashHistoryDetail(schema: "pantheon.trash-history-detail.v1", operation_id: "0123456789abcdef0123456789abcdef",
+                                           state: "not_finalized", started_at: "2026-11-01T12:00:00Z",
+                                           reviewed_manifest: m,
+                                           attempts: [TrashHistoryAttempt(entry_index: 0, path: "unreviewed",
+                                                                          state: "not_attempted", error: nil)],
+                                           terminal_report: nil, integrity_error: nil)
+        XCTAssertFalse(wrongPath.validWireShape)
+        let falseIntegrity = TrashHistoryDetail(schema: "pantheon.trash-history-detail.v1", operation_id: "0123456789abcdef0123456789abcdef",
+                                                state: "unknown", started_at: "2026-11-01T12:00:00Z",
+                                                reviewed_manifest: m,
+                                                attempts: [TrashHistoryAttempt(entry_index: 0, path: "reviewed",
+                                                                               state: "outcome_unknown", error: nil)],
+                                                terminal_report: nil, integrity_error: nil)
+        XCTAssertFalse(falseIntegrity.validWireShape)
+        let badPage = TrashHistoryPage(schema: "pantheon.trash-history-page.v1", items: [],
+                                       next_cursor: "", incomplete: false, issues: [])
+        XCTAssertTrue(badPage.validWireShape)
+        XCTAssertNil(TrashHistoryCommandRead(page: CommandExecution(stdout: Data("{}".utf8), exitCode: 0,
+                                                                    childState: .exitConfirmed)).page)
+    }
+
+    func testOptionalOperationIDDecodesOldAndNewReportV1() throws {
+        let oldReport = TrashReport(schema: "pantheon.trash-report.v1", status: "completed", preview: nil,
+                                    attempted: 1, deleted: ["reviewed"], logical_bytes: 4, errors: [])
+        let oldData = try JSONEncoder().encode(oldReport)
+        XCTAssertNil(try JSONDecoder().decode(TrashReport.self, from: oldData).operation_id)
+        let withID = TrashReport(schema: "pantheon.trash-report.v1", operation_id: "0123456789abcdef0123456789abcdef", status: "completed",
+                                 preview: nil, attempted: 1, deleted: ["reviewed"], logical_bytes: 4, errors: [])
+        XCTAssertEqual(try JSONDecoder().decode(TrashReport.self, from: JSONEncoder().encode(withID)).operation_id, "0123456789abcdef0123456789abcdef")
+    }
+
+    func testUnknownDetailWithoutReadableManifestStillShowsIntegrityError() throws {
+        let data = Data(#"{"schema":"pantheon.trash-history-detail.v1","operation_id":"0123456789abcdef0123456789abcdef","state":"unknown","started_at":"","reviewed_manifest":{"schema":"","uid":0,"root":{"device":0,"inode":0,"uid":0,"mode":0,"size":0,"mtime_ns":0,"ctime_ns":0,"type":""},"containers":null,"entries":null},"attempts":[],"integrity_error":"operation record is unavailable"}"#.utf8)
+        let read = TrashHistoryCommandRead(detail: CommandExecution(stdout: data, exitCode: 0, childState: .exitConfirmed))
+        XCTAssertEqual(read.detail?.state, "unknown")
+        XCTAssertNil(read.detail?.reviewed_manifest)
+        XCTAssertEqual(read.detail?.integrity_error, "operation record is unavailable")
+        let verified = TrashHistoryItem(operation_id: "1123456789abcdef0123456789abcdef",
+                                        started_at: "2026-11-01T11:00:00Z", state: "completed",
+                                        manifest_entry_count: 1, attempted: 1, deleted: 1, errors_count: 0)
+        let missing = TrashHistoryItem(operation_id: "0123456789abcdef0123456789abcdef", started_at: "",
+                                       state: "unknown", manifest_entry_count: 0,
+                                       attempted: 0, deleted: 0, errors_count: 0)
+        let page = TrashHistoryPage(schema: "pantheon.trash-history-page.v1", items: [verified, missing],
+                                    next_cursor: "", incomplete: true,
+                                    issues: ["0123456789abcdef0123456789abcdef: operation record is unavailable"])
+        XCTAssertTrue(page.validWireShape)
+        XCTAssertEqual(page.items.map(\.operation_id), [verified.operation_id, missing.operation_id])
+    }
+
+    @MainActor func testHistoryReadsNeverCreateApprovalAndRefreshIsReadOnly() async throws {
+        let workflow = TrashWorkflow()
+        XCTAssertFalse(workflow.historyHasLoaded)
+        XCTAssertFalse(workflow.historyVerifiedEmpty)
+        let item = TrashHistoryItem(operation_id: "0123456789abcdef0123456789abcdef", started_at: "2026-11-01T12:00:00Z",
+                                    state: "not_finalized", manifest_entry_count: 1,
+                                    attempted: 1, deleted: 0, errors_count: 0)
+        let page = TrashHistoryPage(schema: "pantheon.trash-history-page.v1", items: [item],
+                                    next_cursor: "", incomplete: false, issues: [])
+        var reads = 0
+        await workflow.loadHistory { limit, cursor in
+            reads += 1; XCTAssertEqual(limit, 20); XCTAssertNil(cursor)
+            return CommandExecution(stdout: try! JSONEncoder().encode(page), exitCode: 0, childState: .exitConfirmed)
+        }
+        XCTAssertEqual(reads, 1); XCTAssertEqual(workflow.historyItems, [item]); XCTAssertNil(workflow.approval)
+
+        let m = manifest()
+        let detail = TrashHistoryDetail(schema: "pantheon.trash-history-detail.v1", operation_id: "0123456789abcdef0123456789abcdef",
+                                        state: "not_finalized", started_at: item.started_at,
+                                        reviewed_manifest: m,
+                                        attempts: [TrashHistoryAttempt(entry_index: 0, path: "reviewed",
+                                                                       state: "not_attempted", error: nil)],
+                                        terminal_report: nil, integrity_error: nil)
+        await workflow.loadHistoryDetail("0123456789abcdef0123456789abcdef") { id in
+            reads += 1; XCTAssertEqual(id, "0123456789abcdef0123456789abcdef")
+            return CommandExecution(stdout: try! JSONEncoder().encode(detail), exitCode: 0, childState: .exitConfirmed)
+        }
+        XCTAssertEqual(reads, 2); XCTAssertEqual(workflow.historyDetail, detail)
+        XCTAssertNil(workflow.approval); XCTAssertNil(workflow.preview)
+    }
+
+    @MainActor func testHistoryInitialStateDiffersFromVerifiedEmptyPage() async throws {
+        let workflow = TrashWorkflow()
+        XCTAssertFalse(workflow.historyHasLoaded)
+        XCTAssertFalse(workflow.historyVerifiedEmpty)
+        let emptyPage = TrashHistoryPage(schema: "pantheon.trash-history-page.v1", items: [],
+                                         next_cursor: "", incomplete: false, issues: [])
+        await workflow.loadHistory { _, _ in
+            CommandExecution(stdout: try! JSONEncoder().encode(emptyPage), exitCode: 0, childState: .exitConfirmed)
+        }
+        XCTAssertTrue(workflow.historyHasLoaded)
+        XCTAssertTrue(workflow.historyItems.isEmpty)
+        XCTAssertTrue(workflow.historyVerifiedEmpty)
+
+        let incompleteWorkflow = TrashWorkflow()
+        let incompleteEmptyPage = TrashHistoryPage(schema: "pantheon.trash-history-page.v1", items: [],
+                                                   next_cursor: "", incomplete: true,
+                                                   issues: ["history index could not be fully read"])
+        await incompleteWorkflow.loadHistory { _, _ in
+            CommandExecution(stdout: try! JSONEncoder().encode(incompleteEmptyPage), exitCode: 0, childState: .exitConfirmed)
+        }
+        XCTAssertTrue(incompleteWorkflow.historyHasLoaded)
+        XCTAssertTrue(incompleteWorkflow.historyItems.isEmpty)
+        XCTAssertTrue(incompleteWorkflow.historyIncomplete)
+        XCTAssertFalse(incompleteWorkflow.historyVerifiedEmpty)
+    }
+
+    @MainActor func testHistoryStaleDetailCannotReplaceNewSelection() async throws {
+        let workflow = TrashWorkflow()
+        let first = TrashHistoryItem(operation_id: "0123456789abcdef0123456789abcdef", started_at: "2026-11-01T12:00:00Z",
+                                     state: "not_finalized", manifest_entry_count: 1,
+                                     attempted: 0, deleted: 0, errors_count: 0)
+        let second = TrashHistoryItem(operation_id: "1123456789abcdef0123456789abcdef", started_at: "2026-11-01T12:01:00Z",
+                                      state: "not_finalized", manifest_entry_count: 1,
+                                      attempted: 0, deleted: 0, errors_count: 0)
+        let page = TrashHistoryPage(schema: "pantheon.trash-history-page.v1", items: [first, second],
+                                    next_cursor: "", incomplete: false, issues: [])
+        await workflow.loadHistory { _, _ in
+            CommandExecution(stdout: try! JSONEncoder().encode(page), exitCode: 0, childState: .exitConfirmed)
+        }
+        let m = manifest()
+        let detail = TrashHistoryDetail(schema: "pantheon.trash-history-detail.v1", operation_id: "1123456789abcdef0123456789abcdef",
+                                        state: "not_finalized", started_at: second.started_at,
+                                        reviewed_manifest: m,
+                                        attempts: [TrashHistoryAttempt(entry_index: 0, path: "reviewed",
+                                                                       state: "not_attempted", error: nil)],
+                                        terminal_report: nil, integrity_error: nil)
+        let staleRead = Task {
+            await workflow.loadHistoryDetail("0123456789abcdef0123456789abcdef") { _ in
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                return CommandExecution(launchError: "late stale read")
+            }
+        }
+        await Task.yield()
+        XCTAssertEqual(workflow.historySelectedID, "0123456789abcdef0123456789abcdef")
+        await workflow.loadHistoryDetail("1123456789abcdef0123456789abcdef") { _ in
+            CommandExecution(stdout: try! JSONEncoder().encode(detail), exitCode: 0, childState: .exitConfirmed)
+        }
+        await staleRead.value
+        XCTAssertEqual(workflow.historySelectedID, "1123456789abcdef0123456789abcdef"); XCTAssertEqual(workflow.historyDetail, detail)
+    }
+
+    @MainActor func testCancelHistoryReadInvalidatesAndCancelsPendingCapture() async throws {
+        let workflow = TrashWorkflow()
+        let item = TrashHistoryItem(operation_id: "0123456789abcdef0123456789abcdef", started_at: "2026-11-01T12:00:00Z",
+                                    state: "not_finalized", manifest_entry_count: 1,
+                                    attempted: 0, deleted: 0, errors_count: 0)
+        let page = TrashHistoryPage(schema: "pantheon.trash-history-page.v1", items: [item],
+                                    next_cursor: "", incomplete: false, issues: [])
+        let pending = Task {
+            await workflow.loadHistory { _, _ in
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                if Task.isCancelled { return CommandExecution(launchError: "cancelled read") }
+                return CommandExecution(stdout: try! JSONEncoder().encode(page), exitCode: 0, childState: .exitConfirmed)
+            }
+        }
+        await Task.yield()
+        XCTAssertTrue(workflow.historyLoading)
+        workflow.cancelHistoryRead()
+        await pending.value
+        XCTAssertTrue(workflow.historyItems.isEmpty)
+        XCTAssertFalse(workflow.historyHasLoaded)
+        XCTAssertFalse(workflow.historyVerifiedEmpty)
+        XCTAssertFalse(workflow.historyLoading)
+        XCTAssertEqual(workflow.historyMessage, "History read cancelled. No deletion was started.")
+        XCTAssertNil(workflow.approval)
+    }
 }

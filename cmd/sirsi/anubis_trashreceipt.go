@@ -37,7 +37,7 @@ func newTrashReceiptCommand(apply bool) *cobra.Command {
 		if err := json.NewEncoder(cmd.OutOrStdout()).Encode(result); err != nil {
 			return err
 		}
-		if result.Status != "ready" && result.Status != "empty" && result.Status != "completed" {
+		if (result.Status != "ready" && result.Status != "empty" && result.Status != "completed") || len(result.Errors) > 0 {
 			return fmt.Errorf("Empty Trash %s: %s", name, result.Status)
 		}
 		return nil
@@ -46,7 +46,28 @@ func newTrashReceiptCommand(apply bool) *cobra.Command {
 }
 
 func init() {
-	anubisEmptyTrashCmd.AddCommand(newTrashReceiptCommand(false), newTrashReceiptCommand(true), newTrashBrowseCommand(), newTrashSelectionCommand())
+	anubisEmptyTrashCmd.AddCommand(newTrashReceiptCommand(false), newTrashReceiptCommand(true), newTrashBrowseCommand(), newTrashSelectionCommand(), newTrashHistoryCommand())
+}
+
+func newTrashHistoryCommand() *cobra.Command {
+	c := &cobra.Command{Use: "history", Args: cobra.NoArgs, Short: "Read bounded durable Empty Trash history"}
+	c.Flags().Int("limit", 20, "maximum history entries in this page (capped at 20)")
+	c.Flags().String("cursor", "", "continue a bounded history page")
+	c.Flags().String("operation-id", "", "show the exact reviewed inventory and recorded result")
+	c.RunE = func(cmd *cobra.Command, _ []string) error {
+		operationID, _ := cmd.Flags().GetString("operation-id")
+		cursor, _ := cmd.Flags().GetString("cursor")
+		limit, _ := cmd.Flags().GetInt("limit")
+		if operationID != "" && (cmd.Flags().Changed("cursor") || cmd.Flags().Changed("limit")) {
+			return fmt.Errorf("--operation-id cannot be combined with --cursor or --limit")
+		}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		if operationID != "" {
+			return enc.Encode(trashreceipt.ReadHistoryDetail(operationID))
+		}
+		return enc.Encode(trashreceipt.ReadHistoryPage(limit, cursor))
+	}
+	return c
 }
 
 func newTrashBrowseCommand() *cobra.Command {

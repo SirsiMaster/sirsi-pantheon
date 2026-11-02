@@ -1,9 +1,21 @@
 # Review-bound native Empty Trash correction
 
-Status: current child is source-only; its tests, build, race, independent review
-and installed UX qualification are unrun. b966f2c9 compiled in Main's actual
-pr42NX qualification but failed three cursor/coverage tests; race and Swift did
-not run. That immutable failure is not acceptance of its stateless design.
+Status (durable-history qualification at source 7960a495): Go normal and race
+runs on exact source 4629f327 passed; all Go blobs are unchanged at 7960a495.
+Each run reported 29 top-level tests and 93 passing test events across two
+packages (normal 40.016s; race 120.613s). At 7960a495, strict-concurrency Swift
+build passed and XCTest reported 18 passes, but the qualification wrapper failed
+afterward because its expected XML was missing; the native qualification is
+incomplete and independent review is pending. Release qualification and
+installed-history verification remain unrun.
+
+Current source is successor 44685c22. It removes the explicit flock unlock
+(Darwin releases it when the last descriptor closes) and an unused write
+wrapper; no Go test/build was rerun on this successor.
+
+Historical browse qualification: b966f2c9 compiled in Main's actual pr42NX
+qualification but failed three cursor/coverage tests; race and Swift did not
+run. That immutable failure is not acceptance of its stateless design.
 Main's subsequent 0701770c normal/race Go runs passed and Swift built, but one
 fixture failed because APFS refused creation of an invalid UTF-8 name. Its
 minimal child tests inert raw bytes through the exact production name decoder;
@@ -150,6 +162,57 @@ nonzero partial/failed reports remain evidence. The returned deletion prefix
 must match the frozen selected manifest. Malformed, timeout, cancelled,
 overflowed or unconfirmed output never becomes success/empty.
 
+## Durable operation history
+
+The apply path keeps Report v1 and its reviewed manifest/confirmation contract.
+An apply result may add `operation_id`; preview and failures before durable intent
+creation omit it. Go stores owner-local receipts under `~/.sirsi/trash-receipts`
+using private, no-follow files. Before the first unlink, it writes and fsyncs the
+exact manifest, then fsyncs the receipt directory. Before every unlink it fsyncs
+an attempt-start event; after the syscall it fsyncs the known result before
+starting another member. A terminal Report is written only after the durable
+member events reconcile to its exact reverse-order deleted prefix, counts and
+logical-byte total. A writer persistence failure poisons that writer: it cannot
+append a success-shaped terminal after a torn or unsynced event.
+
+The append-only operation index supports bounded newest-first pages without a
+directory-wide scan. `sirsi anubis empty-trash history --limit N [--cursor TOKEN]`
+returns at most20 summaries, scans at most64KiB and at most1,024 bytes per index
+row, and returns a device/inode-bound byte cursor. Each operation record is
+bounded to1MiB. `sirsi anubis empty-trash history --operation-id ID` returns the
+exact reviewed manifest, one state per manifest entry, and the validated
+terminal Report when present. The index contains only operation identity, start
+time and manifest digest; the per-operation journal contains the reviewed paths
+and results. No history command constructs approval, replays deletion, or
+changes the Trash contents.
+
+The operation byte budget derives from the 64 KiB manifest limit, 1,024 maximum
+entry-attempt pairs, bounded event/error fields, and the terminal deleted-path
+prefix. Every append checks the 1 MiB cap; an attempt-start that cannot fit
+fails before its unlink. Index appenders hold the verified descriptor and the
+nonblocking exclusive lock while checking the final byte. If an earlier crash
+left an unterminated row, they append and fsync a newline boundary before the
+next row; they never truncate the old bytes. A failed boundary write or sync
+stops the current apply before any unlink.
+
+Existing index and operation files are opened nonblocking and rejected unless
+they are private regular single-link files; substituted FIFOs, symlinks and
+hardlinks are surfaced as incomplete/unknown evidence without changing them.
+Index writers take a nonblocking exclusive lock. Contention aborts before any
+Trash unlink and returns a visible retry error.
+
+If an attempt-start is durable without a durable syscall result, that member is
+`outcome_unknown`. A missing terminal is `not_finalized`; the record does not
+claim whether a process is live or interrupted. Corrupt records remain visible
+as `unknown` with bounded integrity issues, while readable neighboring rows can
+still be paged. There is no automatic pruning or silent record cap. The native
+Empty Trash screen can reopen the read-only history and show the reviewed
+inventory, known per-entry outcomes, exact terminal report and errors. History
+does not restore deleted bytes: Empty Trash remains permanent and has no undo.
+Receipt fsync does not fsync the Trash namespace, prove power-loss durability of
+an unlink, or measure physical bytes reclaimed. Cooperative-owner stat/unlink
+limitations remain unchanged.
+
 The invocation consumes approval before its first await. Double taps, .task,
 page changes, Retry and Refresh do not replay deletion. Read-only page/selection
 changes invalidate old consent. A failed remaining-items read preserves the
@@ -157,7 +220,26 @@ original operation receipt and deleted prefix. UI branding/layout remains the
 incumbent black/emerald/gold native surface, with explicit loading/error/empty/
 browsing/ready/applying/result states.
 
-## Qualification handoff (not executed by author)
+## Qualification status and remaining browse handoff
+
+### Durable-history qualification at source 7960a495
+
+The Go results above are pinned to exact source 4629f327; every Go source and
+test blob was identical at 7960a495. Normal completed in 40.016s and race in
+120.613s; each reported 29 top-level tests and 93 passing test events across two
+packages. This qualifies only the executed Go package inventory.
+
+Successor 44685c22 changes only the Darwin receipt-journal Go blob for the
+last-close lock release and unused-wrapper cleanup. Those test results were not
+rerun on 44685c22.
+
+For exact source 7960a495, the strict-concurrency Swift build passed and the
+test output reported 18 XCTest passes. The enclosing qualification wrapper then
+failed because its expected XML output was missing. Treat that native attempt as
+incomplete, not accepted; independent review is pending. Release qualification
+and installed Empty Trash history verification remain unrun.
+
+### Remaining browse qualification handoff
 
 - Go: `./internal/trashreceipt`, selector `^TestTrash(Receipt|Browse|Oversized|Selected|Selection)`.
   Includes >1024 paged inventory, oversized-folder descendant selection,
