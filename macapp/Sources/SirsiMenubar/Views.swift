@@ -1321,8 +1321,6 @@ func findingDisplayTitle(check: String) -> String {
 // a command copied out of the diagnostic.
 func legacyDiagnosticRepairArgs(check: String, severity: Int) -> [String]? {
     switch check {
-    case "launchd Disabled Override":
-        return ["maat", "repair", "launchd-disabled", "--confirm"]
     case "binary-drift":
         return ["self-update"]
     case "App Hangs (7d)", "Process Footprint", "Thread Leaks":
@@ -1381,6 +1379,13 @@ struct FindingView: View {
     @State private var repairReviewMessage: String?
     @State private var confirmLegacyRepair = false
     @State private var executeReviewedLegacyRepair = false
+    @State private var launchdPreview: MaatLaunchdDisabledPreview?
+    @State private var launchdPreviewLoading = false
+    @State private var launchdPreviewError: String?
+
+    private var isLaunchdDisabledRepair: Bool {
+        observedFinding.check == "launchd Disabled Override"
+    }
 
     // Older installed CLIs can omit `fix` and leave only prose or a backticked
     // command. Never turn that text into executable authority and never send a
@@ -1455,9 +1460,9 @@ struct FindingView: View {
     // moves the confirm → bounded repair → re-check → durable outcome loop into
     // Ma'at instead of leaving a successful repair as a transient sheet.
     private var repairArgs: [String] {
-        if observedFinding.check == "launchd Disabled Override",
-           observedFinding.fix == "sirsi liveness-watch restore-disabled --confirm" {
-            return ["maat", "repair", "launchd-disabled", "--confirm"]
+        if isLaunchdDisabledRepair {
+            guard let preview = launchdPreview, preview.isValid else { return maatLaunchdPreviewArguments }
+            return maatLaunchdRepairArguments(previewBinding: preview.binding)
         }
 		if observedFinding.check == "liveness-watch",
 		   observedFinding.fix == "sirsi liveness-watch install" {
@@ -1479,17 +1484,23 @@ struct FindingView: View {
             BackBar(title: displayTitle)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    if observedFinding.check == "launchd Disabled Override" {
+                    if isLaunchdDisabledRepair {
                         Label("Pantheon can restore these managed services", systemImage: "wrench.and.screwdriver.fill")
                             .sirsiFont(.callout, weight: .semibold)
                             .foregroundStyle(gold)
-                        Text("Review the affected labels below. When you confirm, Ma'at re-checks the exact managed set, restores only that set, and records a verified result here.")
+                        Text("Review the affected labels below. After confirmation, Pantheon shows Ma'at's repair result and the status of a fresh check of this finding. Failed or incomplete checks remain labeled unverified; the interface does not call them fixed.")
                             .sirsiFont(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(RoundedRectangle(cornerRadius: 10).fill(PantheonTheme.panel))
+                        MaatLaunchdPreviewReviewControls(
+                            preview: $launchdPreview, loading: $launchdPreviewLoading, error: $launchdPreviewError,
+                            confirmLabel: "Review and confirm these targets",
+                            canConfirm: true,
+                            onConfirm: beginLaunchdRepairConfirmation
+                        )
                     }
                     HStack(alignment: .top, spacing: 8) {
                         Circle().fill(findingColor(observedFinding)).frame(width: 10, height: 10).padding(.top, 4)
@@ -1526,7 +1537,7 @@ struct FindingView: View {
                                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                         }
                     }
-                    if let fix = observedFinding.fix, !fix.isEmpty {
+                    if !isLaunchdDisabledRepair, let fix = observedFinding.fix, !fix.isEmpty {
                         // Honest framing BEFORE the click: a 7-day history must never
                         // look like an instant cure — that's the "I clicked Fix and
                         // nothing changed" trap. The banner sets the true expectation.
@@ -1556,11 +1567,11 @@ struct FindingView: View {
                             Text(repairReviewMessage).sirsiFont(.callout)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                    } else if requiresNativeCleanupReview {
+                    } else if !isLaunchdDisabledRepair, requiresNativeCleanupReview {
                         nativeCleanupReview
-                    } else if legacyNativeRepairArgs != nil {
+                    } else if !isLaunchdDisabledRepair, legacyNativeRepairArgs != nil {
                         legacyNativeRepair
-                    } else if requiresMaatReview {
+                    } else if !isLaunchdDisabledRepair, requiresMaatReview {
                         // A high-severity finding without a safe automatic
                         // mutation still gets a complete resolution path. Ma'at
                         // records the exact observed finding only after the
@@ -1568,14 +1579,18 @@ struct FindingView: View {
                         // explicit acceptance step. This never paints a manual
                         // conclusion as a completed repair.
                         maatResolutionPath
-                    } else if isAcceptedObservation {
+                    } else if !isLaunchdDisabledRepair, isAcceptedObservation {
                         acceptedObservation
-                    } else {
+                    } else if !isLaunchdDisabledRepair {
                         // The route function is deliberately exhaustive, but
                         // preserve a visible recovery route if a future CLI
                         // resolution value arrives before this native surface
                         // knows its dedicated action.
                         maatResolutionPath
+                    }
+                    if isLaunchdDisabledRepair, let repairReviewMessage {
+                        Text(repairReviewMessage).sirsiFont(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
                 }.padding(16)
@@ -1585,7 +1600,11 @@ struct FindingView: View {
             // Evidence changes invalidate an open dialog, not only the final launch.
             // Keep an executing sheet's receipt visible. Its final authorizer
             // still rejects changed evidence; do not discard capture on refresh.
-            if case nil = presentedRepair { approval = nil }
+            if case nil = presentedRepair {
+                approval = nil
+                launchdPreview = nil
+                launchdPreviewError = nil
+            }
             confirmFix = false
             confirmLegacyRepair = false
         }
@@ -1605,9 +1624,16 @@ struct FindingView: View {
             guard let frozen = approval else { return }
             presentedRepair = DiagnosticRepairPresentation(approval: frozen, route: .typed)
         }) {
+            let reviewScope = approval.map { frozen in
+                var scope = actionReviewScope(arguments: frozen.args, directory: frozen.directory)
+                if isLaunchdDisabledRepair, let launchdPreview {
+                    scope += "\n\n\(launchdPreview.reviewDetails)"
+                }
+                return scope
+            }
             ActionReviewSheet(title: "Review system repair",
                 detail: "Pantheon will run the exact command below, then recheck this finding. A changed finding or project requires a fresh review. No unrelated service is selected.",
-                scope: approval.map { actionReviewScope(arguments: $0.args, directory: $0.directory) } ?? "No current reviewed command is available.",
+                scope: reviewScope ?? "No current reviewed command is available.",
                 confirmLabel: fixButtonLabel,
                 cancel: { confirmFix = false },
                 confirm: {
@@ -1653,6 +1679,16 @@ struct FindingView: View {
                               authorizeExecution: authorize)
                 .modifier(ResultPanelLayout())
         })
+    }
+
+    private func beginLaunchdRepairConfirmation() {
+        guard let preview = launchdPreview, preview.isValid else {
+            launchdPreviewError = "A valid exact-target preview is required before confirmation. Refresh the preview and review the displayed targets."
+            return
+        }
+        repairReviewMessage = nil
+        _ = freezeRepair(maatLaunchdRepairArguments(previewBinding: preview.binding))
+        confirmFix = true
     }
 
     private func fixButtonContents(_ fix: String) -> some View {

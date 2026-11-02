@@ -916,7 +916,8 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
                 Text("Inspect the selected project only: \(root)")
                     .sirsiFont(.caption, design: .monospaced)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             } else {
                 Text("Choose a project below before preflighting. Ma'at will not guess a checkout or inspect an ambient directory.")
                     .sirsiFont(.subheadline)
@@ -2858,6 +2859,10 @@ private struct MaatCaseDetailView: View {
     @State private var binaryDriftPreview: MaatBinaryDriftPreview?
     @State private var binaryDriftPreviewLoading = false
     @State private var binaryDriftPreviewError: String?
+    @State private var launchdPreview: MaatLaunchdDisabledPreview?
+    @State private var launchdPreviewLoading = false
+    @State private var launchdPreviewError: String?
+    @State private var confirmedLaunchdConsent: MaatCasebookLaunchdConsent?
     @State private var recordBinaryDriftInactive = false
     @State private var binaryDriftInactiveReceipt: MaatBinaryDriftInactiveDispositionReceipt?
     @State private var failureMemoryHistory: MaatExactHistoryContinuation?
@@ -2995,16 +3000,22 @@ private struct MaatCaseDetailView: View {
         .sheet(isPresented: $confirmAction) {
             ActionReviewSheet(title: confirmationTitle,
                 detail: confirmationMessage,
-                scope: "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)",
+                scope: confirmationScope,
                 confirmLabel: confirmationButton,
-                cancel: { confirmAction = false; pendingFailureMemoryAction = nil; recordBinaryDriftInactive = false },
+                cancel: {
+                    confirmAction = false
+                    pendingFailureMemoryAction = nil
+                    recordBinaryDriftInactive = false
+                    confirmedLaunchdConsent = nil
+                },
                 confirm: {
                     let confirmedNote = conclusion.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let launchdConsent = confirmedLaunchdConsent
                     confirmAction = false
                     if let action = pendingFailureMemoryAction {
                         Task { await performFailureMemoryAction(action) }
                     } else {
-                        Task { await performResolution(confirmedNote: confirmedNote) }
+                        Task { await performResolution(confirmedNote: confirmedNote, confirmedLaunchdConsent: launchdConsent) }
                     }
                 })
         }
@@ -3019,6 +3030,7 @@ private struct MaatCaseDetailView: View {
         case "system_one_review" where entry.nextAction?.actionID == "inspect_binary_drift_attempt": return "Inspect the retained updater attempt?"
         case "system_one_review" where entry.nextAction?.actionID == "rescreen_system_one": return "Run a fresh System One screen?"
         case "maat_repair" where entry.nextAction?.actionID == "binary-drift": return "Run this reviewed Homebrew update?"
+        case "maat_repair" where entry.nextAction?.actionID == "launchd-disabled": return "Restore these reviewed managed services?"
         case "maat_repair": return "Apply Ma'at's bounded recovery?"
         case "owner_acceptance": return "Record this owner acceptance?"
         case "system_one_floor_recovery": return "Record this recovery review?"
@@ -3036,6 +3048,7 @@ private struct MaatCaseDetailView: View {
         case "system_one_review" where entry.nextAction?.actionID == "inspect_binary_drift_attempt": return "Inspect attempt"
         case "system_one_review" where entry.nextAction?.actionID == "rescreen_system_one": return "Run fresh screen"
         case "maat_repair" where entry.nextAction?.actionID == "binary-drift": return "Run Homebrew updater"
+        case "maat_repair" where entry.nextAction?.actionID == "launchd-disabled": return "Restore reviewed services"
         case "maat_repair": return "Apply bounded recovery"
         case "owner_acceptance": return "Record owner acceptance"
         case "system_one_floor_recovery": return "Record recovery review"
@@ -3063,6 +3076,13 @@ private struct MaatCaseDetailView: View {
             let updater = binaryDriftPreview?.updaterPath ?? "unavailable"
             let binding = binaryDriftPreview?.binding ?? "unavailable"
             return "Run the reviewed Homebrew executable at \(updater) with `upgrade sirsi-pantheon` for these targets: \(targets), under preview binding \(binding). Ma'at will recheck binary drift and retain the result. A changed preview is refused; Pantheon will not replace or re-sign a CLI directly."
+        }
+        if entry.nextAction?.kind == "maat_repair", entry.nextAction?.actionID == "launchd-disabled" {
+            guard let preview = confirmedLaunchdConsent?.preview else { return "No valid managed LaunchAgent preview is available. No service will be changed." }
+            let targets = preview.targets.map { target in
+                "\(target.label): \(target.wasLoaded ? "enable; already loaded" : "enable and bootstrap")"
+            }.joined(separator: "\n")
+            return "Restore only these exact managed targets from preview \(preview.binding):\n\(targets)\nMa'at rechecks this binding and the plist contents before changing state, preserves the existing managed-label and quarantine rules, then rechecks the diagnostic and records the result."
         }
         return entry.nextAction?.kind == "maat_repair"
             ? "Ma'at will re-check the exact managed disabled labels, change only the bounded verified set, re-check the same diagnostic, and retain the outcome. It will not touch unrelated services."
@@ -3258,7 +3278,9 @@ private struct MaatCaseDetailView: View {
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(2...4)
             }
-            if action.kind == "maat_repair", action.actionID == "binary-drift" {
+            if action.kind == "maat_repair", action.actionID == "launchd-disabled" {
+                launchdDisabledRecoveryControls()
+            } else if action.kind == "maat_repair", action.actionID == "binary-drift" {
                 binaryDriftRecoveryControls(action)
             } else {
                 Button {
@@ -3316,6 +3338,33 @@ private struct MaatCaseDetailView: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    private var confirmationScope: String {
+        var scope = "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)"
+        if entry.nextAction?.actionID == "launchd-disabled", let preview = confirmedLaunchdConsent?.preview {
+            scope += "\n\n\(preview.reviewDetails)"
+        }
+        return scope
+    }
+
+    @ViewBuilder private func launchdDisabledRecoveryControls() -> some View {
+        MaatLaunchdPreviewReviewControls(
+            preview: $launchdPreview, loading: $launchdPreviewLoading, error: $launchdPreviewError,
+            confirmLabel: operationRecord?.phase == .retryReady ? "Confirm reviewed targets" : "Review and confirm these targets",
+            canConfirm: !operationInFlight && canBeginOperation,
+            canRefresh: !operationInFlight,
+            onConfirm: beginLaunchdRepairConfirmation
+        )
+    }
+
+    private func beginLaunchdRepairConfirmation() {
+        guard let consent = MaatCasebookLaunchdConsent(preview: launchdPreview) else {
+            launchdPreviewError = "A valid exact-target preview is required before confirmation. Refresh the preview and review the displayed targets."
+            return
+        }
+        confirmedLaunchdConsent = consent
+        confirmAction = true
     }
 
     @ViewBuilder private func binaryDriftRecoveryControls(_ action: MaatCaseNextAction) -> some View {
@@ -3453,7 +3502,10 @@ private struct MaatCaseDetailView: View {
         }
     }
 
-    @MainActor private func performResolution(confirmedNote: String) async {
+    @MainActor private func performResolution(
+        confirmedNote: String,
+        confirmedLaunchdConsent: MaatCasebookLaunchdConsent? = nil
+    ) async {
         guard let action = entry.nextAction else { return }
         guard action.kind != "owner_acceptance" || !confirmedNote.isEmpty else { return }
         let key = operationKey
@@ -3464,6 +3516,10 @@ private struct MaatCaseDetailView: View {
         )
         guard operations.begin(key, intent: selection.operationIntent) else { recordBinaryDriftInactive = false; return }
         guard let generation = operations.record(for: key)?.generation else { recordBinaryDriftInactive = false; return }
+        if action.actionID == "launchd-disabled", confirmedLaunchdConsent == nil {
+            operations.rejectPreflight(key, guidance: "The exact managed-target preview was not frozen at confirmation. Review a fresh preview before trying again.")
+            return
+        }
 
         let read = await MaatOperationPreflight.readCompleteExactHistory(evidence: entry.evidence,
             continuing: operations.historyContinuation(for: key, generation: generation)) { args, timeout in
@@ -3533,7 +3589,32 @@ private struct MaatCaseDetailView: View {
             return
         }
         if action.kind == "maat_repair" {
-            if action.actionID == "binary-drift" {
+            if action.actionID == "launchd-disabled" {
+                guard let consent = confirmedLaunchdConsent else {
+                    operations.rejectPreflight(key, guidance: "The confirmed managed-target preview is unavailable. Refresh and review a new preview before confirming.")
+                    return
+                }
+                guard !Task.isCancelled else {
+                    operations.rejectPreflight(key, guidance: "The exact history read was cancelled. No Ma'at action ran; review again before retrying.")
+                    return
+                }
+                switch await consent.apply(afterHistoryRead: { true }, run: { args in
+                    await SirsiEngine.runResult(args: args)
+                }) {
+                case .historyRejected:
+                    operations.rejectPreflight(key, guidance: "The exact history read was rejected. No Ma'at action ran; review the case and targets again.")
+                    return
+                case .submitted(let commandResult):
+                    result = commandResult
+                }
+                launchdPreview = nil
+                self.confirmedLaunchdConsent = nil
+                operations.complete(key, receipt: MaatOperationReceipt(
+                    summary: result?.summary ?? "Ma'at did not return a readable launchd recovery result. Refresh and review before retrying.",
+                    succeeded: result?.ok == true
+                ))
+                return
+            } else if action.actionID == "binary-drift" {
                 guard selection == .binaryDriftUpdater else {
                     operations.rejectPreflight(key, guidance: "Choose and confirm the current binary-drift action again before continuing.")
                     return
@@ -3709,12 +3790,14 @@ private struct MaatCaseDetailView: View {
                                 .sirsiFont(.caption)
                                 .foregroundStyle(.secondary)
                             Spacer(minLength: 6)
-                            if !finding.location.isEmpty {
-                                Text(finding.location)
-                                    .sirsiFont(.caption2, design: .monospaced)
-                                    .foregroundStyle(.tertiary)
-                                    .lineLimit(1)
-                            }
+                        }
+                        if !finding.location.isEmpty {
+                            Text(finding.location)
+                                .sirsiFont(.caption2, design: .monospaced)
+                                .foregroundStyle(.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         Text(finding.claim)
                             .sirsiFont(.body)
@@ -3809,8 +3892,6 @@ private struct MaatCaseDetailView: View {
 // recovery without becoming a shell-launch surface.
 func maatCasebookRepairArguments(actionID: String) -> [String]? {
     switch actionID {
-    case "launchd-disabled":
-        return ["maat", "repair", "launchd-disabled", "--confirm"]
     case "liveness-watch":
         return ["maat", "repair", "liveness-watch", "--confirm"]
     default:

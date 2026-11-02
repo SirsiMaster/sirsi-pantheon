@@ -17,14 +17,16 @@ const maatRepairLivenessWatchCheck = "liveness-watch"
 
 var (
 	maatRepairConfirm                 bool
+	maatRepairLaunchdPreviewBinding   string
 	maatRepairInitializeFailureMemory bool
 	maatRepairInspectFailureMemory    bool
 	maatRepairReobserveFailureMemory  bool
 	// Seams keep command tests wholly local: no test should inspect a live
 	// launchd database or mutate a real LaunchAgent while proving the receipt
 	// contract.
-	maatRepairReadDiagnosis       = pantheonDoctor
-	maatRepairRestoreLaunchAgents = router.RestoreDisabledManagedLaunchAgents
+	maatRepairReadDiagnosis               = pantheonDoctor
+	maatRepairPreviewLaunchAgents         = router.PreviewDisabledManagedLaunchAgents
+	maatRepairRestoreReviewedLaunchAgents = router.RestoreReviewedDisabledManagedLaunchAgents
 )
 
 // maatRepairCmd is deliberately a closed repair registry. Ma'at never accepts
@@ -41,8 +43,33 @@ var maatRepairLaunchdDisabledCmd = &cobra.Command{
 	Short: "Restore only verified managed launchd labels disabled by an override",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		preview, err := maatRepairPreviewLaunchAgents()
+		if err != nil {
+			return fmt.Errorf("Ma'at launchd recovery preview: %w", err)
+		}
+		if err := preview.Validate(); err != nil {
+			return fmt.Errorf("Ma'at launchd recovery preview is invalid: %w", err)
+		}
 		if !maatRepairConfirm {
-			return fmt.Errorf("Ma'at launchd recovery changes managed launchd state; rerun with --confirm after reviewing the exact disabled labels")
+			if JsonOutput || maatJSON {
+				return emitJSON(preview)
+			}
+			fmt.Printf("Ma'at managed LaunchAgent preview (read-only):\n")
+			for _, target := range preview.Targets {
+				disposition := "enable and bootstrap"
+				if target.WasLoaded {
+					disposition = "enable; already loaded"
+				}
+				fmt.Printf("  %s · %s · plist sha256:%s\n", target.Label, disposition, target.SHA256)
+			}
+			fmt.Printf("Preview binding: %s\nNo service state was changed. Review this exact target set before confirming.\n", preview.Binding)
+			return nil
+		}
+		if !isSHA256Hex(maatRepairLaunchdPreviewBinding) {
+			return fmt.Errorf("Ma'at launchd recovery requires the binding from a fresh read-only preview")
+		}
+		if preview.Binding != maatRepairLaunchdPreviewBinding {
+			return fmt.Errorf("Ma'at launchd recovery preview changed; no service state was changed. Refresh the case and review a new preview")
 		}
 		beforeReport, err := maatRepairReadDiagnosis()
 		if err != nil {
@@ -53,7 +80,7 @@ var maatRepairLaunchdDisabledCmd = &cobra.Command{
 			return fmt.Errorf("Ma'at launchd recovery preflight: no actionable managed disabled-override finding exists; no launchd state changed")
 		}
 
-		recovery, repairErr := maatRepairRestoreLaunchAgents()
+		recovery, repairErr := maatRepairRestoreReviewedLaunchAgents(maatRepairLaunchdPreviewBinding)
 		afterReport, observationErr := maatRepairReadDiagnosis()
 		after, cleared := "post-repair diagnostic unavailable", false
 		if observationErr == nil {
@@ -65,6 +92,7 @@ var maatRepairLaunchdDisabledCmd = &cobra.Command{
 			return fmt.Errorf("Ma'at launchd recovery: open outcome journal after managed repair: %w", journalErr)
 		}
 		operation := "enable only the preflight-disabled managed labels; bootstrap only those still unloaded"
+		operation += " from reviewed preview sha256=" + maatRepairLaunchdPreviewBinding
 		outcome := maat.DiagnosticRepair{
 			Check: maatRepairLaunchdDisabledCheck, Operation: operation, Before: before, After: after,
 			Determination: "failed",
@@ -91,6 +119,8 @@ var maatRepairLaunchdDisabledCmd = &cobra.Command{
 			Summary:    "Managed LaunchAgent recovery was verified and recorded by Ma'at.",
 			Evidence: []output.Evidence{
 				{Label: "Preflight", Value: before},
+				{Label: "Reviewed targets", Value: joinedLaunchdPreviewLabels(preview.Targets)},
+				{Label: "Preview binding", Value: preview.Binding},
 				{Label: "Post-repair", Value: after},
 				{Label: "Ma'at receipt", Value: decision.Evidence},
 			},
@@ -114,6 +144,14 @@ var maatRepairLaunchdDisabledCmd = &cobra.Command{
 		result.Render()
 		return nil
 	},
+}
+
+func joinedLaunchdPreviewLabels(targets []router.ManagedLaunchdPreviewTarget) string {
+	labels := make([]string, len(targets))
+	for i, target := range targets {
+		labels[i] = target.Label
+	}
+	return strings.Join(labels, ", ")
 }
 
 // maatRepairLivenessWatchCmd is the closed Ma'at resolution for an absent
@@ -168,6 +206,7 @@ func maatRepairFindingDescription(finding guard.DiagnosticFinding) string {
 
 func init() {
 	maatRepairLaunchdDisabledCmd.Flags().BoolVar(&maatRepairConfirm, "confirm", false, "confirm bounded managed LaunchAgent recovery")
+	maatRepairLaunchdDisabledCmd.Flags().StringVar(&maatRepairLaunchdPreviewBinding, "preview-binding", "", "exact binding returned by the latest read-only managed-label preview")
 	maatRepairLivenessWatchCmd.Flags().BoolVar(&maatRepairConfirm, "confirm", false, "confirm bounded liveness-watch installation")
 	maatRepairLivenessWatchCmd.Flags().BoolVar(&maatRepairInitializeFailureMemory, "initialize-failure-memory", false, "explicitly initialize the private per-user Ma'at failure-memory store")
 	maatRepairLivenessWatchCmd.Flags().BoolVar(&maatRepairInspectFailureMemory, "inspect-failure-memory", false, "inspect default failure-memory and incomplete-attempt state without changing it")

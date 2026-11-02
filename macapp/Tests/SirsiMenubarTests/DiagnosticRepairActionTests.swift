@@ -70,7 +70,9 @@ final class DiagnosticRepairActionTests: XCTestCase {
     @MainActor
     private func render(width: CGFloat, scale: CGFloat, long: Bool = false) throws -> NSImage {
         let title = long ? "Restore managed services and verify their recovery" : "Relieve the live cause"
-        let command = long ? "sirsi maat repair launchd-disabled --confirm" : "sirsi relieve --memory"
+        let command = long
+            ? "sirsi maat repair launchd-disabled --preview-binding <sha256> --confirm --json"
+            : "sirsi relieve --memory"
         let content = Button {} label: {
             DiagnosticRepairActionLabel(title: title, command: command, systemImage: "info.circle")
         }

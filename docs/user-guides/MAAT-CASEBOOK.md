@@ -39,6 +39,35 @@ The Horus dashboard's **Ma'at** view shows the same projection at
 `/api/maat/casebook`. Cases include an evidence graph that links each recorded
 decision to its requester, affected agent, resource, and evidence reference.
 
+## Review a managed service recovery
+
+For a System One `launchd Disabled Override` case, choose **Preview exact
+managed targets** before opening confirmation. The preview lists each eligible
+managed label, its LaunchAgent plist digest, and whether the operation would
+enable it only or enable and bootstrap it. Review those exact labels in the
+confirmation sheet. Ma'at refuses to act if the preview binding, plist, or
+eligible target set changed; the action does not accept caller-supplied labels
+or launchctl commands. It rechecks the same diagnostic and records the outcome.
+The same preview and confirmation flow is available from both native System
+One finding entry paths.
+
+The read-only CLI preview is also available directly:
+
+```sh
+sirsi maat repair launchd-disabled --json
+```
+
+Apply requires the `binding` from that preview:
+
+```sh
+sirsi maat repair launchd-disabled --preview-binding <binding> --confirm --json
+```
+
+The repair remains limited to eligible managed LaunchAgents and preserves the
+existing quarantine rules. A loaded target is enabled without bootstrap; an
+unloaded target is enabled and bootstrapped. A refusal requires a fresh preview
+and review.
+
 ## Classification
 
 The casebook derives a descriptive category from the recorded `kind` field:

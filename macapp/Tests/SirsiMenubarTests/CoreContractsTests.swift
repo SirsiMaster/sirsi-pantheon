@@ -1,6 +1,57 @@
 import XCTest
 @testable import SirsiMenubar
 
+private actor MaatLaunchdHistoryGate {
+    private var didSuspend = false
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var enteredContinuation: CheckedContinuation<Void, Never>?
+
+    func pause() async {
+        await withCheckedContinuation { continuation in
+            didSuspend = true
+            enteredContinuation?.resume()
+            enteredContinuation = nil
+            releaseContinuation = continuation
+        }
+    }
+
+    func waitUntilSuspended() async {
+        guard !didSuspend else { return }
+        await withCheckedContinuation { enteredContinuation = $0 }
+    }
+
+    func resume() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
+
+private actor MaatLaunchdStaleBindingProbe {
+    private var currentBinding: String
+    private var submittedArguments: [String]?
+    private var refusedStaleBinding = false
+    private var actuatorCalls = 0
+
+    init(currentBinding: String) { self.currentBinding = currentBinding }
+
+    func replaceCurrentBinding(_ binding: String) { currentBinding = binding }
+
+    func submit(_ arguments: [String]) -> Bool {
+        submittedArguments = arguments
+        guard let index = arguments.firstIndex(of: "--preview-binding"), arguments.indices.contains(index + 1),
+              arguments[index + 1] == currentBinding else {
+            refusedStaleBinding = true
+            return false
+        }
+        actuatorCalls += 1
+        return true
+    }
+
+    func snapshot() -> (arguments: [String]?, refused: Bool, actuatorCalls: Int) {
+        (submittedArguments, refusedStaleBinding, actuatorCalls)
+    }
+}
+
 final class CoreContractsTests: XCTestCase {
     func testPeriodicMemoryVitalsRequestsSummaryAndDecodesEmptyTop() throws {
         XCTAssertEqual(SirsiEngine.vitalsReadArguments, ["vitals", "--summary", "--json"])
@@ -314,11 +365,8 @@ final class CoreContractsTests: XCTestCase {
         XCTAssertEqual(findingDisplayTitle(check: "Swap Usage"), "Swap Usage")
     }
 
-    func testLegacyLaunchdOverrideStillGetsTheClosedMaatRepairRoute() {
-        XCTAssertEqual(
-            legacyDiagnosticRepairArgs(check: "launchd Disabled Override", severity: 3),
-            ["maat", "repair", "launchd-disabled", "--confirm"]
-        )
+    func testLegacyLaunchdOverrideCannotBecomeAnUnboundRepairCommand() {
+        XCTAssertNil(legacyDiagnosticRepairArgs(check: "launchd Disabled Override", severity: 3))
         XCTAssertNil(legacyDiagnosticRepairArgs(check: "unrecognized historical diagnostic", severity: 3))
     }
 
@@ -635,13 +683,103 @@ final class CoreContractsTests: XCTestCase {
     func testMaatCasebookExecutesOnlyClosedNativeRepairReferences() {
         XCTAssertEqual(
             maatCasebookRepairArguments(actionID: "launchd-disabled"),
-            ["maat", "repair", "launchd-disabled", "--confirm"]
+            nil
         )
         XCTAssertEqual(
             maatCasebookRepairArguments(actionID: "liveness-watch"),
             ["maat", "repair", "liveness-watch", "--confirm"]
         )
         XCTAssertNil(maatCasebookRepairArguments(actionID: "launchctl bootstrap gui/501/untrusted"))
+    }
+
+    func testMaatLaunchdRepairRequiresReviewedTypedPreview() throws {
+        let binding = String(repeating: "a", count: 64)
+        XCTAssertEqual(maatLaunchdPreviewArguments, ["maat", "repair", "launchd-disabled", "--json"])
+        XCTAssertEqual(
+            maatLaunchdRepairArguments(previewBinding: binding),
+            ["maat", "repair", "launchd-disabled", "--preview-binding", binding, "--confirm", "--json"]
+        )
+
+        let raw = #"{"schema":"sirsi.maat.launchd-disabled-preview.v1","targets":[{"label":"ai.sirsi.menubar","plist":"ai.sirsi.menubar.plist","sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","was_loaded":false}],"binding":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#
+        let preview = try XCTUnwrap(MaatLaunchdDisabledPreview.decode(raw))
+        XCTAssertTrue(preview.isValid)
+        XCTAssertEqual(preview.targets.map(\.label), ["ai.sirsi.menubar"])
+        XCTAssertFalse(preview.targets[0].wasLoaded)
+        XCTAssertTrue(preview.reviewDetails.contains("ai.sirsi.menubar · unloaded; enable and bootstrap"))
+        XCTAssertTrue(preview.reviewDetails.contains("plist sha256 bbbbbbbbb"))
+
+        let malformed = raw.replacingOccurrences(of: "ai.sirsi.menubar", with: "ai.sirsi../untrusted")
+        XCTAssertFalse(try XCTUnwrap(MaatLaunchdDisabledPreview.decode(malformed)).isValid)
+        let nonASCII = raw.replacingOccurrences(of: "ai.sirsi.menubar", with: "ai.sirsi.💥")
+        XCTAssertFalse(try XCTUnwrap(MaatLaunchdDisabledPreview.decode(nonASCII)).isValid)
+        let missing = #"{"schema":"sirsi.maat.launchd-disabled-preview.v1","targets":[],"binding":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#
+        XCTAssertFalse(try XCTUnwrap(MaatLaunchdDisabledPreview.decode(missing)).isValid)
+    }
+
+    @MainActor
+    func testCasebookConfirmedLaunchdPreviewSurvivesHistoryWaitAndStaleBindingDoesNotActuate() async throws {
+        func preview(bindingCharacter: Character) throws -> MaatLaunchdDisabledPreview {
+            let binding = String(repeating: bindingCharacter, count: 64)
+            let plistHash = String(repeating: "b", count: 64)
+            let raw = #"{"schema":"sirsi.maat.launchd-disabled-preview.v1","targets":[{"label":"ai.sirsi.menubar","plist":"ai.sirsi.menubar.plist","sha256":"\#(plistHash)","was_loaded":false}],"binding":"\#(binding)"}"#
+            return try XCTUnwrap(MaatLaunchdDisabledPreview.decode(raw))
+        }
+
+        let previewP = try preview(bindingCharacter: "a")
+        let previewQ = try preview(bindingCharacter: "c")
+        XCTAssertNotEqual(previewP.binding, previewQ.binding)
+        let consent = try XCTUnwrap(MaatCasebookLaunchdConsent(preview: previewP))
+        let gate = MaatLaunchdHistoryGate()
+        let probe = MaatLaunchdStaleBindingProbe(currentBinding: previewP.binding)
+
+        let attempt = Task { @MainActor in
+            await consent.apply(afterHistoryRead: {
+                await gate.pause()
+                return true
+            }, run: { arguments in
+                await probe.submit(arguments)
+            })
+        }
+
+        await gate.waitUntilSuspended()
+        await probe.replaceCurrentBinding(previewQ.binding)
+        await gate.resume()
+
+        guard case .submitted(let accepted) = await attempt.value else {
+            return XCTFail("validated history should reach the stale-binding refusal")
+        }
+        let result = await probe.snapshot()
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(try XCTUnwrap(result.arguments), maatLaunchdRepairArguments(previewBinding: previewP.binding))
+        XCTAssertTrue(result.refused)
+        XCTAssertEqual(result.actuatorCalls, 0)
+    }
+
+    func testLaunchdStaleApprovalGuidanceIsRenderedAndConsentUsesFrozenPreview() throws {
+        let macapp = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let casebook = try String(contentsOf: macapp.appendingPathComponent("Sources/SirsiMenubar/MaatCasebookView.swift"), encoding: .utf8)
+        let finding = try String(contentsOf: macapp.appendingPathComponent("Sources/SirsiMenubar/Views.swift"), encoding: .utf8)
+        let launchd = try String(contentsOf: macapp.appendingPathComponent("Sources/SirsiMenubar/MaatLaunchdReview.swift"), encoding: .utf8)
+        let resolutionStart = try XCTUnwrap(casebook.components(separatedBy: "@MainActor private func performResolution(").last)
+        let resolution = try XCTUnwrap(resolutionStart.components(separatedBy: "@MainActor private func reviewRetry()").first)
+        XCTAssertTrue(casebook.contains("let launchdConsent = confirmedLaunchdConsent"))
+        XCTAssertTrue(casebook.contains("performResolution(confirmedNote: confirmedNote, confirmedLaunchdConsent: launchdConsent)"))
+        XCTAssertTrue(casebook.contains("confirmedLaunchdConsent: MaatCasebookLaunchdConsent? = nil"))
+        XCTAssertTrue(casebook.contains("let consent = confirmedLaunchdConsent else"))
+        XCTAssertTrue(casebook.contains("confirmedLaunchdConsent = consent"))
+        XCTAssertTrue(casebook.contains("canRefresh: !operationInFlight"))
+        XCTAssertTrue(casebook.contains("consent.apply(afterHistoryRead: { true }"))
+        XCTAssertFalse(resolution.contains("guard let preview = launchdPreview"))
+        XCTAssertFalse(resolution.contains("maatLaunchdRepairArguments(previewBinding: launchdPreview"))
+        XCTAssertTrue(launchd.contains("let frozenArguments = repairArguments"))
+        XCTAssertTrue(launchd.contains("guard preview.isValid, await afterHistoryRead()"))
+        XCTAssertTrue(launchd.contains("run(frozenArguments)"))
+        XCTAssertTrue(finding.contains("if isLaunchdDisabledRepair, let repairReviewMessage"))
+        XCTAssertTrue(finding.contains("Text(repairReviewMessage).sirsiFont(.callout)"))
+        XCTAssertTrue(finding.contains("DiagnosticRepairResultSheet(item: $presentedRepair)"))
+        XCTAssertTrue(finding.contains("args: frozen.args, reverifyCheck: frozen.snapshot.check"))
+        XCTAssertTrue(finding.contains("Failed or incomplete checks remain labeled unverified; the interface does not call them fixed."))
     }
 
     func testMaatBinaryDriftUsesEvidenceBoundPreviewAndConfirmedUpdaterArguments() {

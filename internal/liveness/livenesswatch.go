@@ -1090,9 +1090,11 @@ func probeLaunchdDisabled() Finding {
 			"possibly still running if launched before disabling, but launchd will NOT restart " +
 			"them after the next reboot. Disabling may be intentional; passive recovery " +
 			"preserves this host's disabled overrides. Review the affected services and leave " +
-			"intentional stops unchanged. For deliberate restoration, use " +
-			"`sirsi maat repair launchd-disabled --confirm`; the existing repair targets the " +
-			"reviewed disabled set, preserves quarantine protections, and verifies the result.",
+			"intentional stops unchanged. For deliberate restoration, first run " +
+			"`sirsi maat repair launchd-disabled --json` and review its exact eligible targets. " +
+			"Then confirm with the returned binding: " +
+			"`sirsi maat repair launchd-disabled --preview-binding <binding> --confirm --json`. " +
+			"The repair preserves quarantine protections and verifies the result.",
 	}
 	if runtime.GOOS != "darwin" {
 		f.OK, f.Fixable, f.Detail = true, false, "not macOS"

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -10,12 +13,35 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
 )
 
+func fixtureMaatLaunchdPreview(t *testing.T) router.ManagedLaunchdPreview {
+	t.Helper()
+	targets := []router.ManagedLaunchdPreviewTarget{{
+		Label: "ai.sirsi.menubar", Plist: "ai.sirsi.menubar.plist",
+		SHA256: strings.Repeat("a", 64), WasLoaded: true,
+	}}
+	canonical := struct {
+		Schema  string                               `json:"schema"`
+		Targets []router.ManagedLaunchdPreviewTarget `json:"targets"`
+	}{Schema: "sirsi.maat.launchd-disabled-preview.v1", Targets: targets}
+	raw, err := json.Marshal(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(raw)
+	return router.ManagedLaunchdPreview{Schema: canonical.Schema, Targets: targets, Binding: hex.EncodeToString(sum[:])}
+}
+
 func TestMaatRepairLaunchdDisabledRecordsOnlyVerifiedRecovery(t *testing.T) {
-	oldConfirm, oldRead, oldRestore, oldJournal := maatRepairConfirm, maatRepairReadDiagnosis, maatRepairRestoreLaunchAgents, newMaatDecisionJournal
+	oldConfirm, oldBinding := maatRepairConfirm, maatRepairLaunchdPreviewBinding
+	oldRead, oldPreview, oldRestore, oldJournal := maatRepairReadDiagnosis, maatRepairPreviewLaunchAgents, maatRepairRestoreReviewedLaunchAgents, newMaatDecisionJournal
 	t.Cleanup(func() {
-		maatRepairConfirm, maatRepairReadDiagnosis, maatRepairRestoreLaunchAgents, newMaatDecisionJournal = oldConfirm, oldRead, oldRestore, oldJournal
+		maatRepairConfirm, maatRepairLaunchdPreviewBinding = oldConfirm, oldBinding
+		maatRepairReadDiagnosis, maatRepairPreviewLaunchAgents, maatRepairRestoreReviewedLaunchAgents, newMaatDecisionJournal = oldRead, oldPreview, oldRestore, oldJournal
 	})
 	maatRepairConfirm = true
+	preview := fixtureMaatLaunchdPreview(t)
+	maatRepairLaunchdPreviewBinding = preview.Binding
+	maatRepairPreviewLaunchAgents = func() (router.ManagedLaunchdPreview, error) { return preview, nil }
 	reads := 0
 	maatRepairReadDiagnosis = func() (*guard.DoctorReport, error) {
 		reads++
@@ -28,7 +54,10 @@ func TestMaatRepairLaunchdDisabledRecordsOnlyVerifiedRecovery(t *testing.T) {
 			Check: maatRepairLaunchdDisabledCheck, Severity: guard.SeverityOK, Message: "no recoverable managed labels are disabled",
 		}}}, nil
 	}
-	maatRepairRestoreLaunchAgents = func() (router.ManagedLaunchdRecovery, error) {
+	maatRepairRestoreReviewedLaunchAgents = func(binding string) (router.ManagedLaunchdRecovery, error) {
+		if binding != preview.Binding {
+			t.Fatalf("restore binding = %q, want reviewed %q", binding, preview.Binding)
+		}
 		return router.ManagedLaunchdRecovery{Enabled: []string{"ai.sirsi.menubar"}, Bootstrapped: []string{"ai.sirsi.menubar"}}, nil
 	}
 	journal := &maatTestJournal{}
@@ -48,21 +77,50 @@ func TestMaatRepairLaunchdDisabledRecordsOnlyVerifiedRecovery(t *testing.T) {
 	}
 }
 
-func TestMaatRepairLaunchdDisabledRequiresConfirmation(t *testing.T) {
-	oldConfirm, oldRead, oldRestore := maatRepairConfirm, maatRepairReadDiagnosis, maatRepairRestoreLaunchAgents
+func TestMaatRepairLaunchdDisabledPreviewIsReadOnly(t *testing.T) {
+	oldConfirm, oldJSON, oldRead, oldPreview, oldRestore := maatRepairConfirm, maatJSON, maatRepairReadDiagnosis, maatRepairPreviewLaunchAgents, maatRepairRestoreReviewedLaunchAgents
 	t.Cleanup(func() {
-		maatRepairConfirm, maatRepairReadDiagnosis, maatRepairRestoreLaunchAgents = oldConfirm, oldRead, oldRestore
+		maatRepairConfirm, maatJSON = oldConfirm, oldJSON
+		maatRepairReadDiagnosis, maatRepairPreviewLaunchAgents, maatRepairRestoreReviewedLaunchAgents = oldRead, oldPreview, oldRestore
 	})
 	maatRepairConfirm = false
-	called := false
-	maatRepairReadDiagnosis = func() (*guard.DoctorReport, error) { called = true; return nil, errors.New("should not read") }
-	maatRepairRestoreLaunchAgents = func() (router.ManagedLaunchdRecovery, error) {
-		called = true
+	maatJSON = true
+	readCalled, restoreCalled := false, false
+	maatRepairReadDiagnosis = func() (*guard.DoctorReport, error) {
+		readCalled = true
+		return nil, errors.New("diagnostic is not part of preview")
+	}
+	preview := fixtureMaatLaunchdPreview(t)
+	maatRepairPreviewLaunchAgents = func() (router.ManagedLaunchdPreview, error) { return preview, nil }
+	maatRepairRestoreReviewedLaunchAgents = func(string) (router.ManagedLaunchdRecovery, error) {
+		restoreCalled = true
 		return router.ManagedLaunchdRecovery{}, nil
 	}
 	err := maatRepairLaunchdDisabledCmd.RunE(maatRepairLaunchdDisabledCmd, nil)
-	if err == nil || !strings.Contains(err.Error(), "--confirm") || called {
-		t.Fatalf("confirmation error = %v, called=%v", err, called)
+	if err != nil || readCalled || restoreCalled {
+		t.Fatalf("preview error=%v diagnostic=%v restore=%v", err, readCalled, restoreCalled)
+	}
+}
+
+func TestMaatRepairLaunchdDisabledStaleBindingCannotReachDiagnosisOrActuation(t *testing.T) {
+	oldConfirm, oldBinding, oldRead, oldPreview, oldRestore := maatRepairConfirm, maatRepairLaunchdPreviewBinding, maatRepairReadDiagnosis, maatRepairPreviewLaunchAgents, maatRepairRestoreReviewedLaunchAgents
+	t.Cleanup(func() {
+		maatRepairConfirm, maatRepairLaunchdPreviewBinding = oldConfirm, oldBinding
+		maatRepairReadDiagnosis, maatRepairPreviewLaunchAgents, maatRepairRestoreReviewedLaunchAgents = oldRead, oldPreview, oldRestore
+	})
+	maatRepairConfirm = true
+	maatRepairLaunchdPreviewBinding = strings.Repeat("b", 64)
+	preview := fixtureMaatLaunchdPreview(t)
+	maatRepairPreviewLaunchAgents = func() (router.ManagedLaunchdPreview, error) { return preview, nil }
+	readCalled, restoreCalled := false, false
+	maatRepairReadDiagnosis = func() (*guard.DoctorReport, error) { readCalled = true; return nil, nil }
+	maatRepairRestoreReviewedLaunchAgents = func(string) (router.ManagedLaunchdRecovery, error) {
+		restoreCalled = true
+		return router.ManagedLaunchdRecovery{}, nil
+	}
+	err := maatRepairLaunchdDisabledCmd.RunE(maatRepairLaunchdDisabledCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "preview changed") || readCalled || restoreCalled {
+		t.Fatalf("stale confirmation error=%v diagnostic=%v restore=%v", err, readCalled, restoreCalled)
 	}
 }
 
