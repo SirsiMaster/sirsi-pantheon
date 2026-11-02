@@ -250,7 +250,8 @@ done
 for needle in \
   'ActionReviewSheet(title: confirmationTitle,' \
   'detail: confirmationMessage,' \
-  'scope: "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)",'; do
+  'scope: confirmationScope,' \
+  'var scope = "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)"'; do
   /usr/bin/grep -Fq "$needle" "$casebook" || {
     echo "native Ma'at Casebook action review wiring missing: $needle" >&2
     exit 1
