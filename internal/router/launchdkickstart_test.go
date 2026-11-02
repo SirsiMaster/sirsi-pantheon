@@ -1,10 +1,12 @@
 package router
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -172,6 +174,7 @@ func TestRecoverManagedLaunchdTargetsOnlyDisabledLabels(t *testing.T) {
 	dir := t.TempDir()
 	writeAgentPlist(t, dir, "ai.sirsi.disabled.plist")
 	writeAgentPlist(t, dir, "ai.sirsi.unrelated.plist")
+	writeAgentPlist(t, dir, "ai.sirsi.gemma-broker.plist")
 
 	var enabled, bootstrapped []string
 	recovery, err := recoverManagedLaunchd(dir, launchdDeps{
@@ -315,6 +318,154 @@ func TestKickstartHonorsFabricQuarantine(t *testing.T) {
 	}
 	if len(bootstrapped) != 0 {
 		t.Fatalf("fabric quarantine must never bootstrap: got %v", bootstrapped)
+	}
+}
+
+func TestManagedLaunchdPreviewAndApplyUseOnlyReviewedEligibleTargets(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentPlist(t, dir, "ai.sirsi.loaded.plist")
+	writeAgentPlist(t, dir, "ai.sirsi.unloaded.plist")
+	writeAgentPlist(t, dir, "ai.sirsi.unrelated.plist")
+	writeAgentPlist(t, dir, "com.other.foreign.plist")
+	writeAgentPlist(t, dir, "ai.sirsi.loaded.plist.bak-1")
+
+	enabled, bootstrapped := []string{}, []string{}
+	listCalls := 0
+	deps := launchdDeps{
+		listLabels: func() (map[string]bool, error) {
+			listCalls++
+			return map[string]bool{"ai.sirsi.loaded": true}, nil
+		},
+		disabledLabels: func() (map[string]bool, error) {
+			return map[string]bool{"ai.sirsi.loaded": true, "ai.sirsi.unloaded": true, "ai.sirsi.unrelated": false, "ai.sirsi.gemma-broker": true, "com.other.foreign": true}, nil
+		},
+		isQuarantined:  func() bool { return true },
+		enableLabel:    func(_, label string) error { enabled = append(enabled, label); return nil },
+		bootstrapPlist: func(path string) error { bootstrapped = append(bootstrapped, filepath.Base(path)); return nil },
+		uid:            func() int { return 501 },
+	}
+	preview, err := previewManagedLaunchd(dir, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := preview.Validate(); err != nil {
+		t.Fatalf("preview validation: %v", err)
+	}
+	if got := []string{preview.Targets[0].Label, preview.Targets[1].Label}; !slices.Equal(got, []string{"ai.sirsi.loaded", "ai.sirsi.unloaded"}) {
+		t.Fatalf("preview targets = %v", got)
+	}
+	if len(enabled)+len(bootstrapped) != 0 {
+		t.Fatalf("preview actuated launchd: enabled=%v bootstrapped=%v", enabled, bootstrapped)
+	}
+
+	recovery, err := restoreReviewedManagedLaunchd(dir, deps, preview.Binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(enabled, []string{"ai.sirsi.loaded", "ai.sirsi.unloaded"}) {
+		t.Fatalf("enabled labels = %v", enabled)
+	}
+	if !slices.Equal(bootstrapped, []string{"ai.sirsi.unloaded.plist"}) {
+		t.Fatalf("bootstrapped plists = %v", bootstrapped)
+	}
+	if !slices.Equal(recovery.Enabled, enabled) || !slices.Equal(recovery.Bootstrapped, []string{"ai.sirsi.unloaded"}) {
+		t.Fatalf("recovery receipt = %+v", recovery)
+	}
+	if listCalls != 2 {
+		t.Fatalf("launchd list calls = %d, want initial preview and binding recheck only", listCalls)
+	}
+}
+
+func TestManagedLaunchdChangedPreviewRefusesBeforeAnyActuation(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentPlist(t, dir, "ai.sirsi.target.plist")
+	enabled, bootstrapped := 0, 0
+	deps := launchdDeps{
+		listLabels:     func() (map[string]bool, error) { return map[string]bool{}, nil },
+		disabledLabels: func() (map[string]bool, error) { return map[string]bool{"ai.sirsi.target": true}, nil },
+		enableLabel:    func(string, string) error { enabled++; return nil },
+		bootstrapPlist: func(string) error { bootstrapped++; return nil },
+		uid:            func() int { return 501 },
+	}
+	preview, err := previewManagedLaunchd(dir, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ai.sirsi.target.plist"), []byte("<changed/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restoreReviewedManagedLaunchd(dir, deps, preview.Binding); err == nil || !strings.Contains(err.Error(), "preview changed") {
+		t.Fatalf("changed preview error = %v", err)
+	}
+	if enabled != 0 || bootstrapped != 0 {
+		t.Fatalf("stale preview actuated launchd: enabled=%d bootstrapped=%d", enabled, bootstrapped)
+	}
+}
+
+func TestManagedLaunchdOversizedSecondTargetRefusesBeforeAnyActuation(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentPlist(t, dir, "ai.sirsi.a-first.plist")
+	writeAgentPlist(t, dir, "ai.sirsi.z-second.plist")
+	enabled, bootstrapped := 0, 0
+	deps := launchdDeps{
+		listLabels: func() (map[string]bool, error) { return map[string]bool{}, nil },
+		disabledLabels: func() (map[string]bool, error) {
+			return map[string]bool{"ai.sirsi.a-first": true, "ai.sirsi.z-second": true}, nil
+		},
+		enableLabel:    func(string, string) error { enabled++; return nil },
+		bootstrapPlist: func(string) error { bootstrapped++; return nil },
+	}
+	preview, err := previewManagedLaunchd(dir, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oversized := bytes.Repeat([]byte("x"), managedLaunchdPreviewMaxPlistBytes+1)
+	if err := os.WriteFile(filepath.Join(dir, "ai.sirsi.z-second.plist"), oversized, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restoreReviewedManagedLaunchd(dir, deps, preview.Binding); err == nil {
+		t.Fatal("oversized changed target was accepted")
+	}
+	if enabled != 0 || bootstrapped != 0 {
+		t.Fatalf("later malformed target was detected after actuation: enabled=%d bootstrapped=%d", enabled, bootstrapped)
+	}
+}
+
+func TestManagedLaunchdPlistReaderCapsGrowthBeyondReviewLimit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "growing.plist")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), managedLaunchdPreviewMaxPlistBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := readManagedLaunchdPlist(path)
+	if err == nil || contents != nil {
+		t.Fatalf("oversized plist read = %d bytes, error %v", len(contents), err)
+	}
+}
+
+func TestManagedLaunchdPreviewRejectsMissingAndMalformedTargets(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		setup  func(*testing.T, string)
+		labels map[string]bool
+	}{
+		{name: "missing", setup: func(*testing.T, string) {}, labels: map[string]bool{"ai.sirsi.missing": true}},
+		{name: "symlink", setup: func(t *testing.T, dir string) {
+			if err := os.Symlink("absent", filepath.Join(dir, "ai.sirsi.link.plist")); err != nil {
+				t.Fatal(err)
+			}
+		}, labels: map[string]bool{"ai.sirsi.link": true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			tc.setup(t, dir)
+			_, err := previewManagedLaunchd(dir, launchdDeps{
+				listLabels:     func() (map[string]bool, error) { return map[string]bool{}, nil },
+				disabledLabels: func() (map[string]bool, error) { return tc.labels, nil },
+			})
+			if err == nil {
+				t.Fatal("preview accepted a missing or malformed target")
+			}
+		})
 	}
 }
 

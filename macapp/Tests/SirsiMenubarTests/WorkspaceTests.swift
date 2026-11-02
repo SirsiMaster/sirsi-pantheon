@@ -28,7 +28,9 @@ final class WorkspaceTests: XCTestCase {
             session: session,
             maatCasebookPreview: .snapshotPreview,
             loadsInitialWorkspaceData: false
-        ).environment(\.snapshotMode, false)
+        )
+        .environment(\.snapshotMode, false)
+        .defaultAppStorage(defaults)
         let hosting = NSHostingView(rootView: root)
         let size = NSSize(width: 1180, height: 760)
         let visible = screen.visibleFrame

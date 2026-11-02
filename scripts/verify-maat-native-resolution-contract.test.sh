@@ -92,7 +92,8 @@ negative review-body-scope macapp/Sources/SirsiMenubar/ActionReviewSheet.swift '
 negative review-body-detail macapp/Sources/SirsiMenubar/ActionReviewSheet.swift 'Text(detail).sirsiFont(.body)' 'repair review scope or persistent controls missing'
 negative casebook-review-callsite macapp/Sources/SirsiMenubar/MaatCasebookView.swift 'ActionReviewSheet(title: confirmationTitle,' 'Casebook action review wiring missing'
 negative casebook-review-detail macapp/Sources/SirsiMenubar/MaatCasebookView.swift 'detail: confirmationMessage,' 'Casebook action review wiring missing'
-negative casebook-evidence-conclusion-scope macapp/Sources/SirsiMenubar/MaatCasebookView.swift 'scope: "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)",' 'Casebook action review wiring missing'
+negative casebook-review-scope-binding macapp/Sources/SirsiMenubar/MaatCasebookView.swift 'scope: confirmationScope,' 'Casebook action review wiring missing'
+negative casebook-evidence-conclusion-scope macapp/Sources/SirsiMenubar/MaatCasebookView.swift 'var scope = "Case: \(entry.id)\n\nEvidence: \(entry.evidence)\n\nOwner conclusion: \(conclusion.isEmpty ? "Not supplied" : conclusion)"' 'Casebook action review wiring missing'
 # Display wording is not consent. Keep the actual handoff/scope/control
 # assertions while allowing a harmless title change in the source fixture.
 refresh
@@ -100,4 +101,4 @@ perl -0pi -e 's/Review system repair/Inspect managed action/g' "$fixture/macapp/
 bash "$fixture/scripts/verify-maat-native-resolution-contract.sh" > "$fixture/heading.log" 2>&1
 grep -Fq "Ma'at native resolution contract: pass" "$fixture/heading.log"
 echo 'PASS accepts display heading changes with consent and scope intact'
-echo 'PASS two positives and thirty-eight causal projection/host/serving/review negatives'
+echo 'PASS two positives and thirty-nine causal projection/host/serving/review negatives'

@@ -320,9 +320,9 @@ struct StackLabContractDetail: View {
     // becoming executable input while still giving an operator a complete path.
     private var maatHealthRecipeHandoff: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Observe this Mac with Ma'at", systemImage: "waveform.path.ecg")
+            Label("Open System One to observe this Mac", systemImage: "waveform.path.ecg")
                 .sirsiFont(.headline)
-            Text("Run one local System One health observation, inspect every finding, then choose its bounded repair, review, or owner-resolution route. Recording the evidence requires confirmation; observation never repairs or changes this Mac.")
+            Text("This link opens Ma'at System One; it does not start an observation. Expand “Local observation and record recovery” and choose Observe to read this Mac. Recording evidence requires separate confirmation, and observation never repairs or changes the Mac.")
                 .sirsiFont(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -199,9 +199,14 @@ head. The digest pins bytes only, not their truth or external qualification.
   guidance.
 - **Confirmed recovery:** when the diagnostic has an exact safe repair, the
   native surface presents the precise command and requires confirmation before
-  it changes state. The disabled-launchd recovery is bounded to the captured
-  disabled-label snapshot and to managed labels with a regular non-symlink
-  LaunchAgent plist; it honors existing quarantine markers, never treats a
+  it changes state. Disabled-launchd recovery first shows a typed read-only
+  preview of every eligible managed label, plist digest, and loaded state.
+  Confirmation is bound to that preview; a changed binding or missing/malformed
+  plist refuses before actuation. Both native finding entry paths share the
+  typed review control; no compatibility path emits an unbound confirmation.
+  The bounded no-follow plist reader caps reads at 1 MiB plus one byte and
+  validates all frozen targets before actuation. Recovery remains limited to
+  that exact label set, honors existing quarantine markers, never treats a
   confirmation as permission to revive an unrelated unloaded service, separates
   enable-only from bootstrap outcomes, and reruns the diagnostic.
 - **Fail honest:** unavailable journal input returns an error/503. Unknown case
