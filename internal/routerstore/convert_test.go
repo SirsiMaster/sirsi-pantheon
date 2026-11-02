@@ -32,13 +32,56 @@ func TestConvertItemToTaskClosesAndAddsTask(t *testing.T) {
 	if it.Status != "closed" || it.Result != "converted to task ra/"+id+" by ra@m1" {
 		t.Fatalf("item = %s %q", it.Status, it.Result)
 	}
-	// Idempotent: a re-run (even naming a different task id) returns the same task and adds nothing.
-	again, err := s.ConvertItemToTask(id, "ra", "other", "ra@m1")
-	if err != nil || again.TaskID != id {
-		t.Fatalf("re-run = %+v, %v", again, err)
+	// Idempotent: a re-run returns the same task and adds nothing.
+	for _, tid := range []string{"", id} {
+		again, err := s.ConvertItemToTask(id, "ra", tid, "ra@m1")
+		if err != nil || again.TaskID != id {
+			t.Fatalf("re-run(%q) = %+v, %v", tid, again, err)
+		}
 	}
 	if tasks, _ := s.ListTasks("ra"); len(tasks) != 1 {
 		t.Fatalf("re-run duplicated the task: %d tasks", len(tasks))
+	}
+	// A re-run naming a different task or another ledger is refused, not answered with this task.
+	if _, err := s.ConvertItemToTask(id, "ra", "other", "ra@m1"); !errors.Is(err, ErrAlreadyClosed) {
+		t.Fatalf("different task id: err = %v, want ErrAlreadyClosed", err)
+	}
+	if _, err := s.ConvertItemToTask(id, "codex-pantheon", "", "x"); !errors.Is(err, ErrAlreadyClosed) {
+		t.Fatalf("different ledger: err = %v, want ErrAlreadyClosed", err)
+	}
+}
+
+func TestConvertItemToTaskRejectsUnsafeTaskIDs(t *testing.T) {
+	s := newTestStore(t)
+	id := sendItem(t, s, "mercury", "ra", "Bad id")
+	for _, tid := range []string{"a/b", "a b", "a\tb"} {
+		if _, err := s.ConvertItemToTask(id, "ra", tid, "ra@m1"); err == nil {
+			t.Fatalf("task id %q accepted", tid)
+		}
+	}
+	if it, _ := s.Get(id); it.Status != "open" {
+		t.Fatal("a rejected task id closed the item")
+	}
+}
+
+// Regression (independent review of #1338): the idempotent path once trusted the item's free-text close
+// result. A scoped lane could close its OWN item with "converted to task ra/<task> by x" and then call
+// ConvertItemToTask to read another lane's task. The link is now a state row only the convert writes.
+func TestRemoteConvertCannotBeForgedThroughCloseResult(t *testing.T) {
+	f := newSSAFixture(t, []string{"cloud-a"})
+	if err := f.backend.AddTask(Task{Agent: "ra", TaskID: "victim", Subject: "RA PRIVATE TASK"}); err != nil {
+		t.Fatal(err)
+	}
+	mine := sendItem(t, f.backend, "ra", "cloud-a", "Mine")
+	rs := f.client()
+	if err := rs.CloseItem(mine, "converted to task ra/victim by x"); err != nil {
+		t.Fatal(err)
+	}
+	for _, agent := range []string{"cloud-a", "ra"} {
+		got, err := rs.ConvertItemToTask(mine, agent, "", "cloud-a")
+		if err == nil || got.Subject == "RA PRIVATE TASK" {
+			t.Fatalf("CONFIDENTIALITY BREACH: forged close result returned %+v (agent %s, err %v)", got, agent, err)
+		}
 	}
 }
 
