@@ -1,1 +1,0 @@
-- fix(core): `board.sh verify` reads the IAP-enabled annotation via JSON (the escaped gcloud projection failed) and reports an unreadable IAP policy as a permission gap instead of a wrong binding.

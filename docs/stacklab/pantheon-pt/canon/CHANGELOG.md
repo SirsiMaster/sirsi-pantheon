@@ -1,5 +1,126 @@
 # Changelog — Pantheon PT canon
 
+## 2026-11-02 — v0.24.162 release candidate
+
+- fix(core): `board.sh verify` reads the IAP-enabled annotation via JSON (the escaped gcloud projection failed) and reports an unreadable IAP policy as a permission gap instead of a wrong binding.
+
+- **System One managed-service review:** preview the exact eligible service labels, loaded state, and plist digests before consent. The canonical engine refuses a changed target set before applying the bounded recovery. Current and legacy Health findings use the same typed review; incomplete outcomes stay visible with fresh-check guidance.
+
+- **Stable approval and recovery:** keep the approved preview fixed through asynchronous history reads, retain the real repair result, and show stale-approval guidance without silently replacing the reviewed action.
+
+- **Readable navigation:** Stack Lab clearly opens System One without implying an observation has run. Long finding locations and project roots wrap and remain selectable.
+
+- Refs: docs/stacklab/maat/canon/NATIVE_REMEDIATION_EXECUTION.md, docs/user-guides/MAAT-CASEBOOK.md, docs/qa/MAAT_SYSTEM_ONE_CATALOG.md, docs/ADR-070-MAAT-STRUCTURED-VERDICT.md
+
+- **Ledger tasks finish only on a router-checked receipt.** `sirsi router task complete --receipt` takes `pr:owner/repo#N` (merged, merge commit on the default branch), `ci:owner/repo#RUN@SHA` (run succeeded on exactly that commit), `tag:owner/repo@TAG` (tag exists; every check run on its commit, across all pages, finished with no failure and at least one success) or `maat:RESERVATION-ID` (the router's own Ma'at ledger shows a host-token holder released, with exit 0, a reservation held under the task agent's name — not proof the run happened; scoped cloud tokens cannot reserve or release). The router verifies PR/CI/tag receipts itself against GitHub with the read-only `SIRSI_ROUTER_GITHUB_TOKEN` and fails closed when it cannot. Receipts are bound: repos must belong to `ReceiptRepoOwners` (default `SirsiMaster`), `.`/`..`/empty path segments are refused, and one receipt proves one task. Free text is refused; `--result-ref` remains only as a deprecated alias for a valid receipt. `task add` can no longer create a `done` task. The receipt is recorded beside the task (state `task-receipt:<agent>/<task>`, unwritable through generic state). `sirsi maat release <id> --exit-code N` records the run's exit status on the reservation (`exit_code`). New terminal status `canceled` (owner-only, with reason) never counts as done. `sirsi router task recheck-receipts` and the supervisor duty `receipt-recheck` (6h) re-verify PR/CI/tag receipts and reopen a task only on positive proof of falsity — a bare 404 or a network error never reopens — guarded on the exact receipt read. Owner sign-off (`CompleteTaskByOwner`) and `CancelTask` are store methods that are deliberately not served remotely. Refs: owner decision 2026-11-02 "Router-checked receipt", ADR-057.
+
+- **Router recipient admission: warn at 50, refuse at 99.** `SendGuarded` now reads the recipient's backlog before it appends: open items it has not acknowledged, and ledger tasks not done whose row has not moved for 24 hours and that hold no live lease. Either count at 99 refuses the send with `ErrRecipientSaturated` (named over the wire) and updates ONE escalation per recipient (`saturated:<agent>` / `recipient_saturated`) instead of appending. From 50 the send lands, and `sirsi router send` (stderr, plus `warning` in `--json`) and the MCP `router_submit` reply carry the warning. Router-internal escalations are exempt, so they still reach a saturated owner. The new read-only `RecipientLoad(agent)` store method backs the warning. Limits are `RecipientWarnAt`, `RecipientHaltAt` and `RecipientStallAfter`. Refs: ADR-035 §2b, ADR-062.
+
+- **Router service no longer serves bulk `ExportMarkdown`** (ra, 2026-11-02). Over the wire the directory argument is a path on the caller's Mac, so a served call made the service `MkdirAll` it on its own filesystem — and the method was Rule-of-Ra exempt as a "read-only view" while writing files. It has no remote caller; it is now in `notServed` (404) and out of the exempt list. Regression `TestRemoteExportMarkdownIsNotServed` asserts the refusal and that the caller-named directory is never created; negative control (method served again) fails with one file written server-side. Single-item `ExportItem` is a separate fix owned by codex-pantheon (client-local-send-audit-20261101). Refs: ADR-062, ADR-036; Changelog: Unreleased
+
+- **`sirsi router convert <item-id> [--agent A] [--task ID]`: turn a router item into ledger work.** One transaction closes the open item with the result `converted to task <agent>/<task-id> by <actor>` and adds a `pending` task: subject from the item title, outline naming the item and its sender, commissioned by the sender. If either write fails, neither lands. The item→task link is stored as its own `state` row, written in the same transaction, and never read from the item's close text, so a forged close result cannot point at another lane's task. Re-running on the same item returns the linked task only on the same ledger (and with the same task id, if one is given). An item closed any other way is refused. On Postgres the item row is locked, so concurrent converts serialize. The task id defaults to the item id and may not contain `/` or whitespace. Authority is the same as `router close` (owner-addressed items are refused, and another lane's item needs `close:any`). Over the router service, the new `ConvertItemToTask` RPC is in the lane API: a scoped token may convert only items addressed to it, onto its own ledger. The server records the actor from the authenticated session, never from the client, and the method counts as answering an item for the headless-worker hold. Refs: ADR-062, LANE_SCOPED_TOKENS, ROUTER_TASK_LEDGER.
+
+- Allow complete managed pre-tool hook envelopes up to a local 8 MiB cap while preserving cap+1 rejection, full JSON framing, and command/cmd checks for every tool name. This is a local resource policy, not an emitter maximum.
+
+- Refs: `cmd/sirsi-pretoolguard/README.md`, `docs/ADR-119-SLEEP-CUSTODY-PRODUCTION-CONTROLLER.md`
+
+- `sirsi router ping` now reports a declared-attended lane whose session is not open as HELD (needs-owner) instead of WATCH_ONLY "declares no working consumer". The loop withholds its consumer on purpose for attended lanes, so the old wording sent people chasing a broken consumer.
+
+- **Codex lane network allowlists follow the machine registry.** A new consumer placeholder, `{{machine_tailnet_domains}}`, renders every admitted Mac's Tailscale address from `machines.json` at resolve time. The 12 codex lanes in `agents.json` now use it instead of three hand-copied IPs each, so admitting a Mac widens every lane's allowlist with no per-lane edit. A registry that cannot render the list keeps the lane watch-only with the reason. That covers a missing registry, an address outside 100.64.0.0/10, or an address claimed twice. Today's checked-in registry renders exactly the previous allowlist.
+
+- **Ledger editing from the hosted board.** A new reserved token capability, `@ledger-editor`, lets the hosted board close, convert (item → ledger task) and reassign any lane's router items, and add, relabel (pending/blocked), rename and reassign any lane's tasks (owner decision 2026-11-02, "full ledger edit"). It never permits Send, deletion, token, session, or another lane's thread control, and — because a task lease is bound to the claiming lane's own authenticated thread — it never claims, renews, releases or completes a task. Like `@observer` it is a capability, never an identity. The board exposes the edits at `/api/router/v1/act/` only under `sirsi router board-serve`; each one requires IAP's signed assertion (ES256, `SIRSI_BOARD_IAP_AUDIENCE`, sirsi.ai account; unset audience refuses all), the board's own origin plus `X-Sirsi-Board: 1` (CSRF), and is recorded as `board:<email>` in the item result or task timeline. `board.sh mint` now issues `--agents router-board,@observer,@ledger-editor`; `deploy` sets the audience. Guide: docs/user-guides/router-board.md. Refs: ADR-062, LANE_SCOPED_TOKENS.
+
+- Add inert `create_blob` and `create_tree` hook-envelope fixtures at exact
+  64 KiB boundaries and larger representative sizes, plus short-chunk,
+  truncation, invalid-UTF-8, and trailing-data reader cases. Oversized inputs
+  must retain the adapter's explicit cap error; the production limit and deny
+  behavior are unchanged.
+
+- Isolate the mounted native workspace test's `@AppStorage` normalization in its UUID-scoped test defaults.
+
+- Refs: macapp/README.md, PANTHEON_RULES.md (A16), ADR-018-NATIVE-MAC-APP
+
+- **Mac consoles on the tailnet, signed in; the hosted board links to them.** `sirsi dashboard --tailnet-port 9120` adds a second loopback entrance meant for `tailscale serve`. It admits only requests Tailscale stamps with a sirsi.ai sign-in, and refuses any control not sent from the console's own page, so a hostile site can't drive a Mac through a viewer's browser. The keyboard port 9119 is unchanged. The hosted board never relays controls: it lists every admitted Mac from the machine registry (a name collision or an invalid name fails the list closed) and links to each console. Its offline fallback opens a console only after a full, readable health check returns 200 "ok"; opaque, redirected, failed and login-page answers count as not live.
+
+- **The tailnet entrance is a hard boundary.**
+  - `--tailnet-socket <path>` serves the entrance on a `0600` Unix socket in a private directory, so only the user and tailscaled can reach the handler that trusts Tailscale's identity stamp.
+  - The port mode answers loopback peers only.
+  - Both modes refuse a missing, blank or duplicated identity header.
+  - The console refuses to start if the entrance can't bind, or if `--tailnet-port` reuses an unguarded console port.
+  - `/whoami` and `scripts/router-service/verify-mac-console.sh` let the host lane prove that a forged header never wins.
+
+- **Read-only observer tokens.** A scoped host token whose scope includes the reserved `@observer` marker may read the whole ledger (ListActive, CountClosed, every lane's ListThreads row, any Inbox and ListTasks, ClassifyLane, OperationalAgents) and register only its own agent's thread; every other method is refused, including Send, close, claim and task writes for its own agent. The marker is a capability, never an identity: nothing can mint, register or act as `@observer`. The hosted router board uses `@observer` for reads; its separate `@ledger-editor` capability authorizes the limited edits described above. Tokens without the marker behave exactly as before. **Data contract:** the observer sees work items and task subjects/status (the owner's drill-down), but a foreign thread row comes back projected to the fields lane verdicts read (agent, surface, status, liveness, watches, wake mechanism, consumer capability, lane state, host) — never a suspend/continuation payload, current item, last error, repo, session id or process identity. `scripts/router-service/board.sh verify` (run at the end of every deploy) reads back the effective Cloud Run, IAP and project policy and fails unless only the IAP service agent may invoke the service and only `domain:sirsi.ai` may pass IAP. The mint job's principal is never defaulted: `JOB_SA=<sa> board.sh provision` grants it `secretVersionAdder` on the one board secret, and `mint` refuses to run unless that binding is in force and carries no IAM condition. The hosted board rejects non-GET/HEAD/OPTIONS methods outside its explicitly authorized ledger-edit API; `/healthz` remains read-only. Refs: ADR-062, LANE_SCOPED_TOKENS.
+
+- Treat valid plus-prefixed short options as options instead of script operands,
+  so a later minus-prefixed `-c` still selects its command string. Consume
+  `+o`/`+O` option-name operands, including attached values; `+c` does not
+  select command text. Existing `--` and script-operand boundaries remain.
+
+- Extend only pure selector controls with harmless `printf` argv values. No
+  shell payload is executed, and the recognizer remains a bounded argv selector
+  rather than a general shell parser.
+
+- Refs: `docs/ADR-040-DO-NO-HARM-TO-THE-RUNNING-HOST.md`,
+  `docs/ADR-119-SLEEP-CUSTODY-PRODUCTION-CONTROLLER.md`,
+  independent review `independent-display-2ce95b6f-source-review.md`.
+
+- Replace substring matching on shell options with a bounded argv selector.
+  Long options such as `--norc` no longer stand in for `-c`; bundled `-lc` and
+  `-ic`, option operands for `-o`/`-O` and Bash `--rcfile`/`--init-file`, the
+  `--` boundary, and script-operand stopping are covered by pure harmless
+  `printf` controls.
+
+- Later positional argv values remain outside the selected command string.
+  This is an argv option selector, not a general shell parser.
+
+- Refs: `docs/ADR-040-DO-NO-HARM-TO-THE-RUNNING-HOST.md`,
+  `docs/ADR-119-SLEEP-CUSTODY-PRODUCTION-CONTROLLER.md`,
+  independent review `independent-display-cbd5d7ca-source-review.md`.
+
+- Keep Bash optional `-o`/`+o`/`-O`/`+O` names from consuming a following
+  option when the name is omitted. Treat Zsh `-O`/`+O` as no-operand flags,
+  while Zsh `-o`/`+o` consumes its named option. Consume Zsh's separate
+  `--emulate MODE` operand before scanning its following invocation options.
+
+- Retain actual minus-prefixed `-c` selection, bundled short options, separate
+  Bash rcfile/init-file operands, Zsh emulation modes, and `--`/script boundaries.
+  The matrix uses harmless `printf` argv values and does not claim general
+  shell parsing or shell execution qualification.
+
+- Refs: `docs/ADR-040-DO-NO-HARM-TO-THE-RUNNING-HOST.md`,
+  `docs/ADR-119-SLEEP-CUSTODY-PRODUCTION-CONTROLLER.md`,
+  independent review `independent-display-15fbf097-consolidated-selector-source-review.md`.
+
+- Update only the expected order in the two inert command-substitution lexer
+  fixtures. The parser emits each substitution's invocation before the outer
+  invocation, matching its recursive recognizer traversal. The first focused
+  applied run exposed a fixture ordering mismatch; it did not identify a
+  production defect. All empty-argument and other parser assertions remain.
+
+- Refs: `docs/ADR-119-SLEEP-CUSTODY-PRODUCTION-CONTROLLER.md`,
+  `display-parser-cure-0312`, source checkpoint `cbd5d7ca61ba8056dd1589415a2b6c691798b58e`.
+
+- Restore the bounded direct-command recognizer, deny-only hook adapter, and
+  source-only managed command matcher selected by the independent review.
+
+- Preserve `agentguard.SafeRun`'s existing resource preflight while making the
+  display-command denial non-bypassable by `Force` or ignored health checks.
+
+- Keep shell command operands distinct from positional arguments, retain empty
+  quoted arguments, and share a fixed parser-depth budget across substitutions
+  and nested wrappers. Add inert parser, adapter, and matcher fixtures.
+
+- No hook installation or activation, system-setting change, native display or
+  power command execution, new issuer, custody store, or authority change is included.
+  The source fixtures do not establish installed-route or GUI-action coverage.
+
+- Refs: `docs/ADR-040-DO-NO-HARM-TO-THE-RUNNING-HOST.md`,
+  `docs/ADR-119-SLEEP-CUSTODY-PRODUCTION-CONTROLLER.md`, original
+  `display-parser-cure-0312`, independent review of
+  `e6bcb1941de732f9de162f204a694e4fc3c295b7`.
+
+- **`sirsi router board-serve` hosts the router board in the cloud.** The same "Ra — Sirsi work fabric" console (lanes, mailboxes, drill-down) now runs on Cloud Run, reading the canonical ledger, so the owner can open it from any device and no Mac rebuilds the 5 MB snapshot. Cloud-board mode serves the router surface, its read APIs, and the limited authorized ledger-edit API described above; workstation endpoints (run, clean, slay, vault, ghosts, stats) return 404, and non-read methods outside the edit API return 405. The workstation `sirsi dashboard` is unchanged and still binds loopback only. Refs: ADR-077, ADR-062.
+
 ## 2026-11-01 — v0.24.161 release candidate
 
 - The review-bound Empty Trash apply path now persists the exact reviewed manifest before its first unlink, records each durable attempt and known result, and exposes bounded newest-first history plus exact operation detail through `sirsi anubis empty-trash history`. Existing Report v1 fields and explicit confirmation remain unchanged; unfinished or damaged records stay visible as unknown evidence. Receipts do not restore permanently deleted bytes or claim Trash namespace durability. Independent cumulative source review accepted the final correction; installed-history verification remains separate.
