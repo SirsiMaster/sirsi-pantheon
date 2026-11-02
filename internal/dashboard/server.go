@@ -122,6 +122,10 @@ type Config struct {
 	// session sample. The dashboard does not inspect SNE endpoints or calculate
 	// derived throughput; it presents this typed read verbatim.
 	ApolloTelemetryFn ApolloTelemetryProducer
+	// BoardActFn enables the hosted board's ledger-edit API (boardActPrefix); nil leaves it unmounted.
+	// BoardIAPAudience is the IAP JWT audience it requires; empty refuses every edit (fail closed).
+	BoardActFn       BoardActFn
+	BoardIAPAudience string
 }
 
 // MaatDecisionProducer supplies the most recent recorded Ma'at decisions.
@@ -154,6 +158,7 @@ type Server struct {
 	confirm        *ConfirmGuard
 	fleet          *FleetTracker
 	surfaceOrigins map[string]struct{}
+	iap            *iapVerifier
 }
 
 // New creates a dashboard server with all routes registered.
@@ -237,6 +242,10 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/maat/casebook", s.apiMaatCasebook)
 	mux.HandleFunc("/api/maat/knowledge", s.apiMaatKnowledge)
 	mux.HandleFunc("/api/apollo/telemetry", s.apiApolloTelemetry)
+	if cfg.BoardActFn != nil {
+		s.iap = newIAPVerifier(cfg.BoardIAPAudience, "sirsi.ai")
+		mux.HandleFunc(boardActPrefix, s.apiBoardAct)
+	}
 
 	s.handler = mux
 	if cfg.CloudBoard {

@@ -29,9 +29,11 @@ var routerBoardServeCmd = &cobra.Command{
 	Use:   "board-serve",
 	Short: "Serve the read-only router board for a cloud runtime (Cloud Run)",
 	Long: `Serves the router board — lanes, mailboxes, threads, drill-down — on 0.0.0.0:$PORT
-(default 8080) from the canonical router store. Only the router surface and its
-read-only APIs are reachable; workstation endpoints return 404. Sign-in is the
-hosting platform's job (Cloud Run IAP), not this process's.`,
+(default 8080) from the canonical router store. Only the router surface, its
+read APIs and the ledger-edit API (/api/router/v1/act/) are reachable;
+workstation endpoints return 404. Sign-in is Cloud Run IAP's job; every edit
+also verifies IAP's signed assertion for SIRSI_BOARD_IAP_AUDIENCE and a sirsi.ai
+account, and is recorded as board:<email>.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		port := 8080
@@ -66,6 +68,9 @@ hosting platform's job (Cloud Run IAP), not this process's.`,
 			FabricReadFn: collectDashboardFabricRead,
 			FabricSource: fabric,
 			FabricBuild:  build,
+			// Ledger edits for the signed-in sirsi.ai account; unset audience refuses every edit.
+			BoardActFn:       boardActFn,
+			BoardIAPAudience: strings.TrimSpace(os.Getenv("SIRSI_BOARD_IAP_AUDIENCE")),
 		})
 		if err := srv.Start(); err != nil {
 			return err

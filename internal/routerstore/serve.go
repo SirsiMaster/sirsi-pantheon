@@ -361,7 +361,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// retry, not conclude its credentials died (rs-13 outage finding — every
 	// call during a 30 s Postgres outage came back "invalid bearer token").
 	tokenHost, tokenScope, ok, lookupErr := s.hostForBearer(r)
-	tokenScope, observer := splitObserver(tokenScope)
+	tokenScope, observer, editor := splitCapabilities(tokenScope)
 	if lookupErr != nil {
 		writeErr(w, http.StatusServiceUnavailable, "", "ledger unavailable: "+lookupErr.Error())
 		return
@@ -552,7 +552,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// 6a. lane scope (schema v25): a token confined to listed agents may only call the lane API, as those
 	// agents. Checked on EVERY call including mint, before any ownership or thread rule, and deny-by-default.
 	if tokenScope != nil {
-		if lerr := s.laneScope(tokenScope, observer, sess, name, in); lerr != nil {
+		if lerr := s.laneScope(tokenScope, observer, editor, sess, name, in); lerr != nil {
 			// A refusal is evidence of an attempt to step outside a lane (a cloud sandbox probing, or a compromised
 			// session): record who tried what, best-effort, so the owner can see it in `router audience`.
 			s.logf("lane-scope: REFUSED %s from %s@%s (token host %s): %v", name, sess.Agent, sess.Host, tokenHost, lerr)
