@@ -1,0 +1,7 @@
+- **Mac consoles on the tailnet, signed in; the hosted board links to them.** `sirsi dashboard --tailnet-port 9120` adds a second loopback entrance meant for `tailscale serve`. It admits only requests Tailscale stamps with a sirsi.ai sign-in, and refuses any control not sent from the console's own page, so a hostile site can't drive a Mac through a viewer's browser. The keyboard port 9119 is unchanged. The hosted board never relays controls: it lists every admitted Mac from the machine registry (a name collision or an invalid name fails the list closed) and links to each console. Its offline fallback opens a console only after a full, readable health check returns 200 "ok"; opaque, redirected, failed and login-page answers count as not live.
+- **The tailnet entrance is a hard boundary.**
+  - `--tailnet-socket <path>` serves the entrance on a `0600` Unix socket in a private directory, so only the user and tailscaled can reach the handler that trusts Tailscale's identity stamp.
+  - The port mode answers loopback peers only.
+  - Both modes refuse a missing, blank or duplicated identity header.
+  - The console refuses to start if the entrance can't bind, or if `--tailnet-port` reuses an unguarded console port.
+  - `/whoami` and `scripts/router-service/verify-mac-console.sh` let the host lane prove that a forged header never wins.
