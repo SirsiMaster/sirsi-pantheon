@@ -191,6 +191,10 @@ func TestRemoteSendProjectsAuditLocallyAfterSingleCommit(t *testing.T) {
 			t.Setenv(routercfg.StoreWakeEnv, wake)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+			// Do not let the handler return an empty success response while
+			// cancellation is still propagating to the HTTP client.
+			releaseCanceledGet := make(chan struct{})
+			defer close(releaseCanceledGet)
 			root := filepath.Join(t.TempDir(), "idea-router")
 			backend, err := routerstore.OpenPath(filepath.Join(t.TempDir(), "router.db"))
 			if err != nil {
@@ -226,6 +230,7 @@ func TestRemoteSendProjectsAuditLocallyAfterSingleCommit(t *testing.T) {
 				mu.Unlock()
 				if method == "Get" && tc.cancelGet {
 					cancel()
+					<-releaseCanceledGet
 					return
 				}
 				if method == "Get" && tc.mismatch {
