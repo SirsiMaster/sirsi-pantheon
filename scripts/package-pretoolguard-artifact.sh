@@ -47,7 +47,10 @@ LC_ALL=C /usr/bin/codesign -d --verbose=4 "$dir/payload/sirsi-display-power-guar
 LC_ALL=C /usr/bin/codesign -d --verbose=4 "$dir/payload/sirsi-pretoolguard-install" > "$dir/installer-signature-details.txt" 2>&1
 /usr/bin/grep -q '^Timestamp=' "$dir/installer-signature-details.txt" || { echo 'installer secure timestamp not reported' >&2; exit 1; }
 /usr/bin/grep -E -q '^CodeDirectory .*flags=.*\(.*runtime.*\)' "$dir/installer-signature-details.txt" || { echo 'installer hardened runtime flag not reported' >&2; exit 1; }
-/usr/bin/hdiutil create -quiet -format UDZO -srcfolder "$dir/payload" "$dir/pretoolguard.dmg"
+# Pin a single HFS+ filesystem without a partition map. The attachment custody
+# check below deliberately refuses synthesized multi-root layouts (e.g. APFS)
+# rather than guessing which device is safe to detach.
+/usr/bin/hdiutil create -quiet -format UDZO -layout NONE -fs HFS+ -srcfolder "$dir/payload" "$dir/pretoolguard.dmg"
 "$PANTHEON_SIGN_CLIENT" "$dir/pretoolguard.dmg" dmg
 signed="$dir/signed-pretoolguard.dmg"
 [[ -f "$signed" && ! -L "$signed" && -f "$signed.receipt.txt" && ! -L "$signed.receipt.txt" ]] || { echo 'signed image or receipt missing' >&2; exit 1; }

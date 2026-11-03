@@ -114,6 +114,7 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
             "'guard hardened runtime flag not reported' >&2; exit 1;",
             "'installer secure timestamp not reported' >&2; exit 1;",
             "'installer hardened runtime flag not reported' >&2; exit 1;",
+            '/usr/bin/hdiutil create -quiet -format UDZO -layout NONE -fs HFS+ -srcfolder "$dir/payload" "$dir/pretoolguard.dmg"',
             '"$PANTHEON_SIGN_CLIENT" "$dir/pretoolguard.dmg" dmg',
             '"$signed.receipt.txt"',
             '/usr/bin/xcrun stapler validate "$signed"',

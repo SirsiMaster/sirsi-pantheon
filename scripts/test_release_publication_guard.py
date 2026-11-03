@@ -345,6 +345,50 @@ class GuardImageVerificationTests(unittest.TestCase):
             publication.verify_guard_image(Path("inert.dmg"), {},
                                            lambda argv: self.fail("unexpected process"))
 
+    def test_unpartitioned_hfs_volume_uses_its_exact_device_for_detach(self):
+        payloads = {"sirsi-display-power-guard": b"guard", "sirsi-pretoolguard-install": b"installer"}
+        expected = {name: {"sha256": hashlib.sha256(data).hexdigest(), "identifier": name}
+                    for name, data in payloads.items()}
+        with tempfile.TemporaryDirectory() as temporary:
+            mount = Path(temporary) / "mount"
+            mount.mkdir()
+            calls = []
+            def run(argv):
+                calls.append(list(argv))
+                if argv[:2] == ["/usr/bin/hdiutil", "attach"]:
+                    for name, data in payloads.items():
+                        (mount / name).write_bytes(data)
+                        (mount / name).chmod(0o755)
+                    return subprocess.CompletedProcess(argv, 0, plistlib.dumps({"system-entities": [
+                        {"dev-entry": "/dev/disk123", "mount-point": str(mount)}]}), b"")
+                if argv[:2] == ["/usr/bin/hdiutil", "detach"]:
+                    for name in payloads:
+                        (mount / name).unlink()
+                details = (b"Timestamp=fixture\nCodeDirectory v=1 flags=0x10000(runtime)\n"
+                           if argv[:2] == ["/usr/bin/codesign", "-d"] else b"")
+                return subprocess.CompletedProcess(argv, 0, details, b"")
+            with mock.patch.object(publication.tempfile, "mkdtemp", return_value=str(mount)):
+                publication.verify_guard_image(Path("inert.dmg"), expected, run)
+            self.assertEqual(calls[-1], ["/usr/bin/hdiutil", "detach", "/dev/disk123"])
+            self.assertFalse(mount.exists())
+
+    def test_synthesized_multi_root_is_retained_without_guessing_detach(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mount = Path(temporary) / "mount"
+            mount.mkdir()
+            calls = []
+            def run(argv):
+                calls.append(list(argv))
+                self.assertEqual(argv[:2], ["/usr/bin/hdiutil", "attach"])
+                topology = {"system-entities": [{"dev-entry": "/dev/disk123"},
+                    {"dev-entry": "/dev/disk124s1", "mount-point": str(mount)}]}
+                return subprocess.CompletedProcess(argv, 0, plistlib.dumps(topology), b"")
+            with mock.patch.object(publication.tempfile, "mkdtemp", return_value=str(mount)):
+                with self.assertRaisesRegex(publication.Refusal, "topology unknown"):
+                    publication.verify_guard_image(Path("inert.dmg"), MANIFEST, run)
+            self.assertEqual(len(calls), 1)
+            self.assertTrue(mount.is_dir())
+
     def test_extra_mounted_volume_is_refused_and_known_device_detached(self):
         with tempfile.TemporaryDirectory() as temporary:
             mount = Path(temporary) / "mount"
