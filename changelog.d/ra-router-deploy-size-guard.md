@@ -1,0 +1,1 @@
+- Router deploy keeps the live service size: `deploy.sh` holds the size in one `SIZE` line and refuses to deploy when it differs from the live service (set `RESIZE=1` to resize on purpose). It also connects the receipts GitHub token from the existing `ADMIN_GITHUB_PAT` secret.
