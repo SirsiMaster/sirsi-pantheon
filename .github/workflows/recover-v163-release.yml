@@ -188,7 +188,7 @@ jobs:
           [[ ${#RECEIPTS[@]} -eq 1 ]]
           RECEIPT="${RECEIPTS[0]}"
           jq -e '.release_id == 432359892 and .tag == "v0.24.163" and .commit == "a5967913c68c03be435ab009f24df01e908681b3" and .published == true and .status == "published_verified_set"' "$RECEIPT" >/dev/null
-          EXPECTED="$(jq -er '.assets["SirsiPantheon-0.24.163-arm64.dmg"]' "$RECEIPT")"
+          EXPECTED="$(jq -er '.assets["SirsiPantheon-0.24.163-arm64.dmg"].sha256 | select(type == "string" and test("^[0-9a-f]{64}$"))' "$RECEIPT")"
           ASSET="$(gh api repos/SirsiMaster/sirsi-pantheon/releases/432359892 --jq '[.assets[] | select(.name == "SirsiPantheon-0.24.163-arm64.dmg") | .id] | if length == 1 then .[0] else error("asset identity ambiguous") end')"
           gh api -H 'Accept: application/octet-stream' "repos/SirsiMaster/sirsi-pantheon/releases/assets/$ASSET" > SirsiPantheon-0.24.163-arm64.dmg
           ACTUAL="$(sha256sum SirsiPantheon-0.24.163-arm64.dmg | awk '{print $1}')"

@@ -1,4 +1,6 @@
 import unittest
+import json
+import subprocess
 from pathlib import Path
 
 
@@ -26,6 +28,15 @@ class RecoveryWorkflowContractTests(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
         self.assertNotIn('gh release create', workflow)
         self.assertNotIn('git push', workflow)
+
+    def test_cask_receipt_selects_digest_from_actual_publisher_shape(self):
+        workflow = (Path(__file__).parent.parent / '.github/workflows/recover-v163-release.yml').read_text()
+        selector = '.assets["SirsiPantheon-0.24.163-arm64.dmg"].sha256 | select(type == "string" and test("^[0-9a-f]{64}$"))'
+        self.assertIn(selector, workflow)
+        receipt = {'assets': {'SirsiPantheon-0.24.163-arm64.dmg': {'sha256': 'a' * 64, 'bytes': 123}}}
+        result = subprocess.run(['jq', '-er', selector], input=json.dumps(receipt), text=True,
+                                capture_output=True, check=True)
+        self.assertEqual(result.stdout.strip(), 'a' * 64)
 
 
 if __name__ == '__main__':
