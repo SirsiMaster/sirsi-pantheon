@@ -74,7 +74,7 @@ if ! /usr/bin/hdiutil attach -plist -readonly -nobrowse -mountpoint "$dir/mount"
 fi
 topology_ok=1
 /usr/bin/python3 -B - "$dir/attach.plist" "$dir/mount" "$dir/device.txt" <<'PY' || topology_ok=0
-import plistlib, re, sys
+import os, plistlib, re, sys
 source, mount, output = sys.argv[1:]
 with open(source, 'rb') as f:
     data = f.read(1024 * 1024 + 1)
@@ -91,8 +91,14 @@ matching = [x for x in entities if x.get('mount-point') == mount]
 if len(matching) != 1 or matching[0].get('dev-entry') not in devices:
     raise SystemExit('mount/device association unknown; manual custody required')
 mounted = matching[0]['dev-entry']
-with open(output, 'x') as f:
+# Publish only complete, flushed device identity. A failed partial write must
+# never leave a syntactically plausible prefix at the path the shell trusts.
+partial = output + '.partial'
+with open(partial, 'x') as f:
     f.write(matches[0].group(1))
+    f.flush()
+    os.fsync(f.fileno())
+os.link(partial, output, follow_symlinks=False)
 mounts = [x['mount-point'] for x in entities if 'mount-point' in x]
 if mounts != [mount]:
     raise SystemExit('unexpected image mount topology')

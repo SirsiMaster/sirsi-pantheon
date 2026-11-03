@@ -158,20 +158,23 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
     def test_packaging_device_receipt_requires_proven_mount_association(self):
         marker = '<<\'PY\' || topology_ok=0\n'
         parser = self.package.split(marker, 1)[1].split('\nPY\n', 1)[0]
-        for kind in ('missing', 'mismatched', 'exact'):
+        for kind in ('missing', 'mismatched', 'exact', 'write-failure'):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 mount = str(root / 'mount')
                 entity = {'mount-point': mount}
                 if kind == 'mismatched':
                     entity['dev-entry'] = '/dev/disk124s1'
-                elif kind == 'exact':
+                elif kind in ('exact', 'write-failure'):
                     entity['dev-entry'] = '/dev/disk123'
                 source = root / 'attach.plist'
                 source.write_bytes(plistlib.dumps({'system-entities': [
                     {'dev-entry': '/dev/disk123'}, entity]}))
                 output = root / 'device.txt'
-                result = subprocess.run([sys.executable, '-B', '-c', parser,
+                program = parser
+                if kind == 'write-failure':
+                    program = "import os\ndef fail_fsync(fd): raise OSError('inert fsync failure')\nos.fsync = fail_fsync\n" + parser
+                result = subprocess.run([sys.executable, '-B', '-c', program,
                                          str(source), mount, str(output)],
                                         capture_output=True, timeout=5)
                 if kind == 'exact':
@@ -180,6 +183,8 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
                 else:
                     self.assertNotEqual(result.returncode, 0)
                     self.assertFalse(output.exists(), 'ambiguous mount must not authorize detach')
+                    if kind == 'write-failure':
+                        self.assertTrue(Path(str(output) + '.partial').exists())
 
     def test_restrictive_umask_staged_modes_normalized(self):
         with tempfile.TemporaryDirectory() as tmp:
