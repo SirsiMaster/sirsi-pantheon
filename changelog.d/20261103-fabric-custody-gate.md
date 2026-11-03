@@ -1,0 +1,1 @@
+Gate fabric payload launch on direct-child binding and retain cleanup debt when child or reservation custody is uncertain. Reobserve the process group immediately after escalation; isolated helper and lease-expiry limits remain. Refs: `docs/runbooks/maat-job-stop-ownership.md`, `scripts/maat/README.md`.
