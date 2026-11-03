@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- The Ma'at fabric supervisor gates payload launch until direct-child binding, and records unresolved child and reservation custody when cleanup cannot be confirmed. The isolated helper and lease-expiry limitations require further qualification.
+
+- Refs: `docs/runbooks/maat-job-stop-ownership.md`, `scripts/maat/README.md`
+
 ## [0.24.161] — 2026-11-01
 
 - The review-bound Empty Trash apply path now persists the exact reviewed manifest before its first unlink, records each durable attempt and known result, and exposes bounded newest-first history plus exact operation detail through `sirsi anubis empty-trash history`. Existing Report v1 fields and explicit confirmation remain unchanged; unfinished or damaged records stay visible as unknown evidence. Receipts do not restore permanently deleted bytes or claim Trash namespace durability. Independent cumulative source review accepted the final correction; installed-history verification remains separate.

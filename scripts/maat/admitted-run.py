@@ -587,6 +587,58 @@ def release_local_child(fd):
     if os.write(fd,b'1')!=1:raise Refused('Owned local launch handshake was not delivered')
 
 
+def release_fabric_child(fd):
+    if os.write(fd,b'1')!=1:raise Refused('Owned fabric launch handshake was not delivered')
+
+
+_FABRIC_GATE_ENV = 'SIRSI_MAAT_FABRIC_GATE_ENV'
+# Inline code avoids re-opening this mutable script. The Python executable and
+# its standard library remain external trust dependencies, not pinned identity.
+_FABRIC_GATE_PROGRAM = '''\
+import os, select, stat, sys
+fd = int(sys.argv[1])
+if len(sys.argv) < 3 or not stat.S_ISFIFO(os.fstat(fd).st_mode):
+    sys.exit(78)
+ready, _, _ = select.select([fd], [], [], 5)
+token = os.read(fd, 1) if ready else b''
+os.close(fd)
+if token != b'1':
+    sys.exit(78)
+import json
+saved = json.loads(os.environ.pop('SIRSI_MAAT_FABRIC_GATE_ENV'))
+os.environ.update(saved['loader'])
+if saved['prior'] is not None:
+    os.environ['SIRSI_MAAT_FABRIC_GATE_ENV'] = saved['prior']
+try:
+    os.execvpe(sys.argv[2], sys.argv[2:], os.environ.copy())
+except OSError as error:
+    print("Ma'at fabric payload exec failed: " + str(error), file=sys.stderr)
+    sys.exit(78)
+sys.exit(78)
+'''
+
+
+def fabric_gate_environment(env):
+    # The dynamic loader acts before Python can honor -I. Restore these only
+    # after release so the eventual payload receives its original environment.
+    result = env.copy()
+    loader = {key: result.pop(key) for key in list(result)
+              if key.startswith(('DYLD_', 'LD_'))}
+    prior = result.pop(_FABRIC_GATE_ENV, None)
+    result[_FABRIC_GATE_ENV] = json.dumps(dict(loader=loader, prior=prior))
+    return result
+
+
+def wait_unreleased_fabric_child(child):
+    # Popen.wait() can synthesize status 0 on ECHILD. Under the helper's
+    # interpreter trust assumption, accept only its explicit refusal status.
+    if type(child.pid) is not int or child.pid <= 1 or child.returncode is not None:
+        raise Refused('Unreleased fabric helper wait custody unavailable')
+    status = child.wait(timeout=6)
+    if status != 78 or child.returncode != 78:
+        raise Refused('Unreleased fabric helper exit receipt is ambiguous')
+
+
 def owned_local_child(fd,command):
     # Same foreground child, no daemon/helper service or independent authority.
     import select
@@ -1160,6 +1212,15 @@ class ProvenLease:
         self.deadline = started + row['lease_ttl_sec'] - max(0, age)
         if time.monotonic() >= self.deadline:
             raise Refused('Confirmed lease already exhausted')
+        try:
+            expiry = (stamp + dt.timedelta(seconds=row['lease_ttl_sec'])).isoformat()
+        except OverflowError:
+            expiry = None
+        self.last_confirmation = dict(heartbeat_at=row['heartbeat_at'],
+                                      lease_ttl_sec=row['lease_ttl_sec'],
+                                      heartbeat_plus_ttl=expiry,
+                                      authority=row.get('authority'), epoch=row.get('epoch'))
+        self.renewal_outcome = 'confirmed'
 
 
 def _signal_fabric_group(child, sig, observe=None, send_group=None):
@@ -1180,14 +1241,59 @@ def stop(child, observe=None, send_group=None, reap=None, monotonic=None, sleep=
     except subprocess.TimeoutExpired:
         pass
     try:
-        _signal_fabric_group(child, signal.SIGKILL, observe, send_group)
-    except ProcessLookupError:
-        pass
+        try:
+            _signal_fabric_group(child, signal.SIGKILL, observe, send_group)
+        except ProcessLookupError:
+            pass
+        terminal = fabric_wait_terminal(child, 2, observe, monotonic, sleep)
     finally:
         custody.signals_closed = True
     custody.reap_started = True
-    (reap or (lambda target: target.wait()))(child)
+    reaped = (reap or (lambda target: target.wait(timeout=1)))(child)
+    if reaped != terminal or child.returncode != terminal:
+        raise Refused('Fabric child reap differs from terminal receipt')
     custody.reaped = True
+
+
+def append_cleanup_debt(record, detail):
+    prior = record.get('cleanup_debt')
+    record['cleanup_debt'] = (prior + '; ' if prior else '') + detail
+
+
+def retain_fabric_cleanup_evidence(record, child, lease, owned, release_attempted, release_outcome, thread):
+    # This is an incident record for exact-ID read-only inspection, not a
+    # transferable Popen handle, a PID signal authority or a handback receipt.
+    identity = getattr(child, '_sirsi_fabric_identity', None)
+    binding = None
+    if isinstance(identity, _FabricChildIdentity):
+        binding = dict(handle_matches=identity.handle is child, pid=identity.pid,
+                       parent=identity.parent, uid=identity.uid, real_uid=identity.real_uid,
+                       group=identity.group, start=identity.start or None,
+                       signals_closed=identity.signals_closed,
+                       reap_started=identity.reap_started, reaped=identity.reaped)
+    record['unresolved_child_custody'] = dict(
+        supervisor_pid=os.getpid(), executor_thread=thread,
+        popen_pid=child.pid, popen_returncode=child.returncode,
+        bound_identity=binding, release_attempted=release_attempted,
+        release_outcome=release_outcome,
+        termination_confirmed=False, handle_transferable=False)
+    record['unresolved_reservation'] = dict(
+        scope=dict(lease.scope), owned=bool(owned),
+        last_confirmed=dict(lease.last_confirmation),
+        renewal_outcome=lease.renewal_outcome,
+        expiry_is_current_authority=False,
+        explicit_release='deferred' if owned else 'not_owned',
+        automatic_expiry_possible=True,
+        recovery='exact reservation ID read-only status; child custody and safe handback remain unresolved')
+
+
+def close_fabric_executor(backend, record):
+    if record.get('child_cleanup_unconfirmed'):
+        append_cleanup_debt(record, 'Executor close deferred: child termination unconfirmed')
+    elif record.get('reservation_outcome_unconfirmed'):
+        append_cleanup_debt(record, 'Executor close deferred: reservation outcome unconfirmed')
+    else:
+        backend.close_executor()
 
 
 def check_deadlines(execution_deadline, lease, started, timeout, record):
@@ -1226,6 +1332,9 @@ def refusal_details(reply):
 def supervise(command, resource, agent, thread, work, timeout, backend, record):
     owned = None
     child = None
+    gate_read = gate_write = None
+    release_attempted = False
+    release_outcome = 'not_attempted'
     code = 78
     reservation_requested = reservation_replied = False
     cpu_cores = getattr(backend, 'cpu_cores', None)
@@ -1322,14 +1431,30 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                         'VECLIB_MAXIMUM_THREADS','NUMEXPR_NUM_THREADS','BLIS_NUM_THREADS'):
                 child_env[key] = str(cpu_cores)
             record.update(cpu_cores=cpu_cores, share=before['share'])
-        child = subprocess.Popen(command, start_new_session=True, env=child_env)
-        record.update(pid=child.pid, status='running')
-        fabric_bind_child(child)
+        gate_read, gate_write = os.pipe()
+        launcher = [sys.executable, '-I', '-S', '-c', _FABRIC_GATE_PROGRAM,
+                    str(gate_read), *command]
+        child = subprocess.Popen(launcher, start_new_session=True,
+                                 env=fabric_gate_environment(child_env),
+                                 pass_fds=(gate_read,))
         started_at = time.monotonic()
         deadline = started_at + timeout
         if isinstance(job_deadline, (int, float)) and job_deadline <= deadline:
             deadline = job_deadline
             record['execution_bound'] = 'job_timeout'
+        os.close(gate_read)
+        gate_read = None
+        record.update(pid=child.pid, status='running')
+        fabric_bind_child(child)
+        check_deadlines(deadline, lease, started_at, timeout, record)
+        # A write can be delivered before an exception is observed. From this
+        # point onward cleanup must assume the payload may have been released.
+        release_attempted = True
+        release_outcome = 'unknown'
+        release_fabric_child(gate_write)
+        release_outcome = 'delivered'
+        os.close(gate_write)
+        gate_write = None
         control_at = time.monotonic() + min(30, max(0.001, (lease.deadline - time.monotonic()) / 3))
         backoff = 1
         if isinstance(backend, Native):
@@ -1348,6 +1473,8 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                     if fabric_child_terminal(child) is None:
                         if owned:
                             started = time.monotonic()
+                            # A transport failure can follow a committed heartbeat.
+                            lease.renewal_outcome = 'unknown'
                             renewed = backend.heartbeat(owned)
                             if time.monotonic() >= lease.deadline:
                                 raise Refused('Renewal arrived after proven deadline')
@@ -1389,20 +1516,45 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             code = 78
         if isinstance(backend, Native):
             backend.deadline = None  # cleanup must run even after lease expiry
+        for name, fd in (('gate_read', gate_read), ('gate_write', gate_write)):
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except (OSError, KeyboardInterrupt) as error:
+                    append_cleanup_debt(record, 'Fabric launch gate close unconfirmed: ' + str(error))
+                    code = 78
+                if name == 'gate_read':
+                    gate_read = None
+                else:
+                    gate_write = None
+        child_cleanup_confirmed = child is None
         if child is not None:
             try:
-                stop(child)
-            except Exception as error:
-                record.update(cleanup_debt='Child group cleanup unconfirmed: '+str(error))
+                if release_attempted:
+                    stop(child)
+                else:
+                    wait_unreleased_fabric_child(child)
+                child_cleanup_confirmed = True
+            except (Exception, KeyboardInterrupt) as error:
+                append_cleanup_debt(record, 'Child group cleanup unconfirmed: '+str(error))
+                record['child_cleanup_unconfirmed'] = True
+                retain_fabric_cleanup_evidence(record, child, lease, owned, release_attempted,
+                                               release_outcome, thread)
                 code = 78
-        if owned:
+        if owned and not child_cleanup_confirmed:
+            append_cleanup_debt(record, 'Owned reservation release deferred; lease may expire before child cleanup')
+        elif owned:
             try:
                 backend.release(owned)
-            except Exception as error:
-                record.update(cleanup_debt='Reservation release unconfirmed: '+str(error))
+            except (Exception, KeyboardInterrupt) as error:
+                append_cleanup_debt(record, 'Reservation release unconfirmed: '+str(error))
+                record['reservation_outcome_unconfirmed'] = True
                 code = 78
         elif reservation_requested and not reservation_replied:
             record['cleanup_debt'] = 'Reservation request outcome unknown; inspect own host/holder/work before retry. No child was launched.'
+            record['reservation_outcome_unconfirmed'] = True
+        if record.get('cleanup_debt'):
+            record['status'] = 'refused_or_stopped'
         record['exit_code'] = code
     return code
 
@@ -1434,6 +1586,10 @@ def supervise_iterations(command, resource, agent, thread, work, timeout, backen
         current = {'iteration': index + 1}
         code = supervise(command, resource, agent, thread, work, min(timeout, remaining), backend, current)
         record['iterations'].append(current)
+        if current.get('child_cleanup_unconfirmed'):
+            record['child_cleanup_unconfirmed'] = True
+        if current.get('reservation_outcome_unconfirmed'):
+            record['reservation_outcome_unconfirmed'] = True
         record.update(status='waiting' if code == 0 else 'refused_or_stopped', exit_code=code)
         if persist:
             persist()
@@ -1567,8 +1723,8 @@ def main():
         code = 78
     finally:
         try:
-            backend.close_executor()
-        except Exception as error:
+            close_fabric_executor(backend, record)
+        except (Exception, KeyboardInterrupt) as error:
             record['cleanup_debt'] = record.get('cleanup_debt', '') + '; Executor registration close unconfirmed: '+str(error)
             record['exit_code'] = 78
             code = 78

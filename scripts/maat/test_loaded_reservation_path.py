@@ -29,6 +29,7 @@ class LoadedReservationPathTests(unittest.TestCase):
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
                 mock.patch.object(runner.subprocess, 'Popen', return_value=support.FakeChild(clock, 0)) as spawn, \
                 mock.patch.object(runner, 'fabric_bind_child', side_effect=support.bind_fake_fabric_child), \
+                mock.patch.object(runner, 'release_fabric_child'), \
                 mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda child: child.terminal_status()), \
                 mock.patch.object(runner, 'stop'):
             code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 30, backend, record)
