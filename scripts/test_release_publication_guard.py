@@ -512,7 +512,8 @@ class GuardImageVerificationTests(unittest.TestCase):
 
 
 class DraftReservationFixtureTests(unittest.TestCase):
-    def invoke(self, *, pages=None, post_pages=None, heads=None, response=None, create_failure=False):
+    def invoke(self, *, pages=None, post_pages=None, heads=None, response=None, create_failure=False,
+               persist=lambda state: None):
         calls, record = [], {}
         pages = pages or {}
         heads = list(heads or [fixture.HEAD, fixture.HEAD, fixture.HEAD])
@@ -521,9 +522,10 @@ class DraftReservationFixtureTests(unittest.TestCase):
         if post_pages is None:
             post_pages = {1: [identity]}
         created = False
+        post_scan = -1
 
         def run(argv):
-            nonlocal created
+            nonlocal created, post_scan
             calls.append(list(argv))
             if argv[0] == "git":
                 head = heads.pop(0)
@@ -532,7 +534,12 @@ class DraftReservationFixtureTests(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, raw, b"")
             if argv[:2] == ["gh", "api"] and "--method" not in argv:
                 page = int(argv[-1].rsplit("page=", 1)[1])
-                source = post_pages if created else pages
+                if created and isinstance(post_pages, list):
+                    if page == 1:
+                        post_scan += 1
+                    source = post_pages[min(post_scan, len(post_pages) - 1)]
+                else:
+                    source = post_pages if created else pages
                 return subprocess.CompletedProcess(argv, 0, json.dumps(source.get(page, [])).encode(), b"")
             if argv[:2] == ["gh", "api"] and "--method" in argv:
                 created = True
@@ -542,7 +549,7 @@ class DraftReservationFixtureTests(unittest.TestCase):
 
         with mock.patch.object(reserve_release.subprocess, "run", side_effect=AssertionError("real process forbidden")):
             try:
-                reserve_release.reserve(fixture.VERSION, fixture.HEAD, record, run=run)
+                reserve_release.reserve(fixture.VERSION, fixture.HEAD, record, run=run, persist=persist)
                 error = None
             except (RuntimeError, ValueError) as exc:
                 error = exc
@@ -580,6 +587,95 @@ class DraftReservationFixtureTests(unittest.TestCase):
                 self.assertEqual(record["release_id"], 314)
                 self.assertNotEqual(record["status"], "reserved")
                 self.assertEqual(len(self.creates(calls)), 1)
+
+    def test_post_create_page_shift_restarts_read_only_discovery_once(self):
+        tag = "v" + fixture.VERSION
+        selected = {"id": 314, "tag_name": tag, "draft": True}
+        page = [selected] + [{"id": i, "tag_name": "v0.0." + str(i), "draft": False}
+                             for i in range(1, 100)]
+        shifted = {1: page, 2: [page[-1]]}
+        stable = {1: page, 2: [{"id": 100, "tag_name": "v0.0.100", "draft": False}]}
+        calls, record, error = self.invoke(post_pages=[shifted, stable])
+        self.assertIsNone(error)
+        self.assertEqual(record["release_id"], 314)
+        self.assertEqual(record["status"], "reserved")
+        self.assertEqual(len(self.creates(calls)), 1)
+
+    def test_intent_and_returned_id_are_persisted_before_next_operation(self):
+        states = []
+        calls, record, error = self.invoke(persist=lambda state: states.append(dict(state)))
+        self.assertIsNone(error)
+        self.assertEqual(states[0]["status"], "create_outcome_unknown")
+        self.assertTrue(states[0]["creation_attempted"])
+        self.assertNotIn("release_id", states[0])
+        self.assertEqual(states[1]["release_id"], 314)
+        self.assertEqual(len(self.creates(calls)), 1)
+
+    def test_persist_interruption_stops_before_following_transport(self):
+        for interrupt_after in (1, 2):
+            with self.subTest(interrupt_after=interrupt_after):
+                states = []
+                def persist(state):
+                    states.append(dict(state))
+                    if len(states) == interrupt_after:
+                        raise RuntimeError("simulated persistence interruption")
+                calls, record, error = self.invoke(persist=persist)
+                self.assertIsNotNone(error)
+                self.assertEqual(len(self.creates(calls)), interrupt_after - 1)
+                if interrupt_after == 2:
+                    self.assertEqual(states[-1]["release_id"], 314)
+                    self.assertEqual(calls[-1], self.creates(calls)[0])
+
+    def test_atomic_receipt_retains_last_persisted_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "receipt.json"
+            path.touch(exist_ok=False)
+            intent = {"status": "create_outcome_unknown", "creation_attempted": True}
+            reserve_release.persist_receipt(str(path), intent)
+            self.assertEqual(json.loads(path.read_text()), intent)
+            identified = {**intent, "release_id": 314}
+            reserve_release.persist_receipt(str(path), identified)
+            self.assertEqual(json.loads(path.read_text()), identified)
+            self.assertEqual(sorted(p.name for p in Path(directory).iterdir()), ["receipt.json"])
+
+    def test_receipt_failure_before_replace_preserves_previous_intent(self):
+        for method in ('replace', 'fsync'):
+            with self.subTest(method=method), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'receipt.json'
+                path.touch(exist_ok=False)
+                intent = {'status': 'create_outcome_unknown', 'creation_attempted': True}
+                reserve_release.persist_receipt(str(path), intent)
+                with mock.patch.object(reserve_release.os, method, side_effect=OSError('inert failure')):
+                    with self.assertRaises(OSError):
+                        reserve_release.persist_receipt(str(path), {**intent, 'release_id': 314})
+                self.assertEqual(json.loads(path.read_text()), intent)
+                self.assertEqual(sorted(p.name for p in Path(directory).iterdir()), ['receipt.json'])
+
+    def test_post_create_repeated_page_shift_or_conflicting_duplicate_fails_closed(self):
+        tag = "v" + fixture.VERSION
+        selected = {"id": 314, "tag_name": tag, "draft": True}
+        page = [selected] + [{"id": i, "tag_name": "v0.0." + str(i), "draft": False}
+                             for i in range(1, 100)]
+        for second in ([page[-1]], [{**page[-1], "draft": True}]):
+            calls, record, error = self.invoke(post_pages=[{1: page, 2: second}])
+            self.assertIsNotNone(error)
+            self.assertNotEqual(record["status"], "reserved")
+            self.assertEqual(record["release_id"], 314)
+            self.assertEqual(len(self.creates(calls)), 1)
+
+    def test_observed_competing_draft_is_not_forgotten_on_page_shift(self):
+        tag = "v" + fixture.VERSION
+        selected = {"id": 314, "tag_name": tag, "draft": True}
+        competitor = {"id": 315, "tag_name": tag, "draft": True}
+        others = [{"id": i, "tag_name": "v0.0." + str(i), "draft": False}
+                  for i in range(1, 99)]
+        page = [selected, competitor] + others
+        calls, record, error = self.invoke(post_pages=[{1: page, 2: [others[-1]]},
+                                                       {1: [selected]}])
+        self.assertIsNotNone(error)
+        self.assertIn('observed conflicting release identity', str(error))
+        self.assertNotEqual(record['status'], 'reserved')
+        self.assertEqual(len(self.creates(calls)), 1)
 
     def test_wrong_peeled_commit_before_or_after_discovery_never_creates(self):
         for heads in (["b" * 40], [fixture.HEAD, "b" * 40]):
