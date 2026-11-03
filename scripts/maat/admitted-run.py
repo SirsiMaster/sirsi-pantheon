@@ -1355,6 +1355,10 @@ def stop(child, observe=None, send_group=None, reap=None, monotonic=None, sleep=
                                 # must still confirm that state before reaping.
                                 break
                             kill_deadline = monotonic() + 2
+                            # Reobserve immediately: the group may already have
+                            # exited when SIGKILL returns. Do not spend a poll
+                            # interval before checking the retained leader.
+                            continue
                         elif kill_sent and now >= kill_deadline:
                             if snapshot_error is not None:
                                 raise Refused(
