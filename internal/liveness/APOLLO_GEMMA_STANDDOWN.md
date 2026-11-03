@@ -15,8 +15,8 @@ and router healer). The read-only liveness watch (`probeGemma`) is unchanged
 and still issues its existing single chat-completion probe, which can wake an
 idle Apollo model. A provider-aware non-generating watch is separate work.
 
-The dashboard's local ask request refuses HTTP redirects, so the question and
-diagnostic grounding cannot be redirected off the machine.
+The dashboard's local Ask request refuses HTTP redirects (main 568fa6e3), so
+the question and diagnostic grounding cannot be redirected off the machine.
 
 This is stand-down only. No endpoint, model profile, or gemma-server.port is
 created or rewritten. The selected host route remains authoritative: M5's

@@ -40,12 +40,6 @@ import (
 // by a loud failure than a spinner.
 const askTimeout = 45 * time.Second
 
-// askClient never follows redirects: the question and diagnostic grounding
-// must not leave the machine, and a redirect could send them off-host.
-var askClient = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
-	return http.ErrUseLastResponse
-}}
-
 // sneDefaultPort is the fallback when the contract file is missing. Prefer the
 // file — a hardcoded port is exactly what made the fabric watchdog kill a
 // healthy broker for hours after serving moved off 8765.
@@ -295,7 +289,7 @@ func askLocalEngine(ctx context.Context, question, grounding string) (modelSelec
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := askClient.Do(httpReq)
+	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
 		return modelSelection{}, "", fmt.Errorf("local engine not reachable on 127.0.0.1:%d — is ai.sirsi.gemma-broker running? (%v)", port, err)
 	}
