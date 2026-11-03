@@ -18,7 +18,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -130,17 +129,8 @@ func readMetadata(dir int, name string) (metadata, error) {
 	}
 	// Do not add RETURNED_ATTRS or PACK_INVAL_ATTRS: those change the
 	// unsupported-attribute behavior on which zero-length interpretation rests.
-	attrs := struct {
-		Count, Reserved              uint16
-		Common, Vol, Dir, File, Fork uint32
-	}{Count: 5, Common: unix.ATTR_CMN_EXTENDED_SECURITY}
 	var buf [8192]byte
-	_, _, errno := unix.Syscall6(unix.SYS_FGETATTRLIST, uintptr(fd), uintptr(unsafe.Pointer(&attrs)), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), unix.FSOPT_REPORT_FULLSIZE, 0)
-	var queryErr error
-	if errno != 0 {
-		queryErr = errno
-	}
-	if err = validateACLResponse(buf[:], queryErr); err != nil {
+	if err = validateACLResponse(buf[:], queryACL(fd, buf[:])); err != nil {
 		return result, err
 	}
 	var end unix.Stat_t

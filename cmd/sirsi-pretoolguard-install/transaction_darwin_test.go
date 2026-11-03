@@ -147,6 +147,9 @@ func TestFixtureSwapRollbackAndMismatch(t *testing.T) {
 }
 
 func TestFixtureExplicitRollback(t *testing.T) {
+	if !aclInspectionAvailable {
+		t.Skip("real ACL metadata inspection requires cgo")
+	}
 	root := t.TempDir()
 	id := strings.Repeat("c", 64)
 	dir := filepath.Join(root, ".sirsi-pretoolguard-"+id)
@@ -224,6 +227,9 @@ func TestFixtureExplicitRollback(t *testing.T) {
 
 // Recovery observes fixtures only; it never invokes the installer or a hook.
 func TestPreparedRecoveryOutcomes(t *testing.T) {
+	if !aclInspectionAvailable {
+		t.Skip("real ACL metadata inspection requires cgo")
+	}
 	for _, tc := range []struct {
 		phase   string
 		swapped bool

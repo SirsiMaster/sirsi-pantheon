@@ -121,11 +121,21 @@ zero-length reference. The parser accepts only that exact 12-byte layout or a
 well-formed no-ACL sentinel; empty ACLs, nonempty ACLs, malformed/truncated
 responses, and syscall errors are rejected. This interpretation depends on that
 kernel/filesystem behavior and has not been verified on the target OS build.
+The query uses the macOS libSystem `fgetattrlist` entry point through cgo;
+Darwin builds without cgo refuse ACL verification and therefore fail closed.
 
 Inert temporary-file fixtures passed on M5 on 2026-11-03 under the agent's own
 released CPU build admission `20261103T024034Z-m5-sirsi-software-admin-58568bda628968e6771058a6e4048b1c`;
 terminal receipt `fc369a315f43463b8c18e1c006b940bc` records success. Earlier
 attempts failed compilation and then ACL fixtures; those outcomes are retained.
+After replacing the deprecated direct ACL syscall with the libSystem bridge,
+the cgo fixture suite and the no-cgo refusal fixture passed under released M5
+admission `20261103T024824Z-m5-sirsi-software-admin-d7ddefc9e71a9c1fa76d0e8a01cb9e48`;
+terminal receipt `aa12596637064ffbb0b88fd7358e9fe0` records success.
+The full package fixtures subsequently passed both with cgo and without cgo
+under released M5 admission `20261103T024925Z-m5-sirsi-software-admin-bb95dbd84a280f770b089450545377f5`,
+terminal `f9d58c1837a9406db84689dc09526788`. Without cgo, the two fixtures
+requiring actual ACL reads are skipped, and the refusal fixture remains active.
 The revised source received a bounded read-only review, not live qualification.
 Fixture coverage does not
 prove signature verification, account resolution, crash consistency, ACLs,
