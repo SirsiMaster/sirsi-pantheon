@@ -965,14 +965,17 @@ class FabricLaunchGateTests(unittest.TestCase):
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
                 mock.patch.object(runner.os, 'pipe', return_value=(41, 42)), \
                 mock.patch.object(runner.os, 'close'), \
-                mock.patch.object(runner.os, 'killpg'), \
+                mock.patch.object(runner.os, 'killpg') as kill_group, \
                 mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
                 mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
                 mock.patch.object(runner, 'release_fabric_child'), \
-                mock.patch.object(runner, 'fabric_child_terminal', return_value=78):
+                mock.patch.object(runner, 'fabric_child_terminal', return_value=78), \
+                mock.patch.object(runner, 'local_group_snapshot',
+                                  side_effect=lambda group: [dict(pid=child.pid, pgid=group, status='Z')]):
             self.assertEqual(runner.supervise(['missing-payload'], 'm5', 'lane', 'thread', 'work', 30,
                                               backend, record), 78)
         child.wait.assert_called_once_with(timeout=1)
+        kill_group.assert_not_called()
         backend.release.assert_called_once_with('fixture-id')
         self.assertNotIn('cleanup_debt', record)
 
@@ -1435,6 +1438,161 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(events[-1], ('reap', False, True))
         self.assertTrue(identity.reaped)
         self.assertTrue(identity.signals_closed)
+
+    def test_fabric_exit_between_wait_and_initial_snapshot_is_reobserved(self):
+        child = FakeChild(Clock(), 0, exit_code=17)
+        identity = bind_fake_fabric_child(child)
+        observations = iter([None, 17])
+        send = mock.Mock()
+        def reap(target):
+            target._record_reap()
+            return 17
+        runner.stop(child, observe=lambda target: next(observations), send_group=send, reap=reap,
+                    snapshot_group=lambda group: [dict(pid=child.pid, pgid=group, status='Z')])
+        self.assertEqual(child.returncode, 17)
+        self.assertTrue(identity.reaped)
+        send.assert_not_called()
+
+    def test_fabric_zombie_without_terminal_wait_receipt_stays_debt(self):
+        child = FakeChild(Clock(), 0)
+        identity = bind_fake_fabric_child(child)
+        send, reap = mock.Mock(), mock.Mock()
+        with self.assertRaisesRegex(runner.Refused, 'Live wait status conflicts'):
+            runner.stop(child, observe=lambda target: None, send_group=send, reap=reap,
+                        snapshot_group=lambda group: [dict(pid=child.pid, pgid=group, status='Z')])
+        self.assertTrue(identity.signals_closed)
+        self.assertFalse(identity.reaped)
+        send.assert_not_called()
+        reap.assert_not_called()
+
+    def test_fabric_exit_between_wait_and_post_term_snapshot_is_reobserved(self):
+        child = FakeChild(Clock(), 0)
+        identity = bind_fake_fabric_child(child)
+        observations = iter([None, None, None, 0, 0])
+        signals = []
+        def snapshot(group):
+            return [dict(pid=child.pid, pgid=group, status='Z' if signals else 'S')]
+        def send(group, sig):
+            self.assertFalse(identity.reaped)
+            signals.append(sig)
+        def reap(target):
+            target._record_reap()
+            return 0
+        runner.stop(child, observe=lambda target: next(observations), send_group=send, reap=reap,
+                    snapshot_group=snapshot)
+        self.assertEqual(signals, [runner.signal.SIGTERM])
+        self.assertTrue(identity.reaped)
+
+    def test_fabric_drifting_snapshots_after_term_escalate_with_retained_custody(self):
+        for failure, recovers in (('drift', True), ('drift', False), ('denied', False)):
+            with self.subTest(failure=failure, recovery_after_kill=recovers):
+                clock = Clock()
+                child = FakeChild(clock, 0)
+                identity = bind_fake_fabric_child(child)
+                signals = []
+                killed = False
+                def observe(target):
+                    self.assertFalse(identity.reaped)
+                    return 0 if killed else None
+                def snapshot(group):
+                    if not signals:
+                        return [dict(pid=child.pid, pgid=group, status='S')]
+                    if killed and recovers:
+                        return [dict(pid=child.pid, pgid=group, status='Z')]
+                    if failure == 'denied':
+                        raise PermissionError(runner.errno.EPERM, 'group observation denied')
+                    raise runner.Refused('Native process-group membership changed during observation')
+                def send(group, sig):
+                    nonlocal killed
+                    self.assertEqual(group, child.pid)
+                    self.assertFalse(identity.reaped)
+                    self.assertFalse(identity.signals_closed)
+                    signals.append((sig, clock.now))
+                    if sig == runner.signal.SIGKILL:
+                        killed = True
+                def reap(target):
+                    target._record_reap()
+                    return 0
+                reap_call = mock.Mock(side_effect=reap)
+                if recovers:
+                    runner.stop(child, observe=observe, send_group=send, reap=reap_call,
+                                monotonic=clock.monotonic, sleep=clock.advance, snapshot_group=snapshot)
+                    self.assertTrue(identity.reaped)
+                    reap_call.assert_called_once_with(child)
+                else:
+                    with self.assertRaisesRegex(runner.Refused, 'observation uncertain after KILL'):
+                        runner.stop(child, observe=observe, send_group=send, reap=reap_call,
+                                    monotonic=clock.monotonic, sleep=clock.advance, snapshot_group=snapshot)
+                    self.assertFalse(identity.reaped)
+                    reap_call.assert_not_called()
+                    self.assertGreaterEqual(clock.now, 4)
+                    self.assertLess(clock.now, 4.001)
+                self.assertEqual([sig for sig, _ in signals], [runner.signal.SIGTERM, runner.signal.SIGKILL])
+                self.assertGreaterEqual(signals[1][1], 2)
+                self.assertLess(signals[1][1], 2.001)
+                self.assertTrue(identity.signals_closed)
+                if recovers:
+                    with self.assertRaises(runner.Refused):
+                        runner._signal_fabric_group(child, runner.signal.SIGKILL, observe, send, snapshot)
+                    self.assertEqual(len(signals), 2)
+
+    def test_fabric_drift_during_final_confirmation_still_escalates(self):
+        clock = Clock()
+        child = FakeChild(clock, 0)
+        identity = bind_fake_fabric_child(child)
+        signals = []
+        post_term_reads = 0
+        killed = False
+        def observe(target):
+            return 0 if signals else None
+        def snapshot(group):
+            nonlocal post_term_reads
+            leader = dict(pid=child.pid, pgid=group, status='Z' if signals else 'S')
+            if not signals or killed:
+                return [leader]
+            post_term_reads += 1
+            if post_term_reads == 1:
+                return [leader]
+            if post_term_reads == 2:
+                raise runner.Refused('Native process-group membership changed during observation')
+            return [leader, dict(pid=424243, pgid=group, status='S')]
+        def send(group, sig):
+            nonlocal killed
+            self.assertFalse(identity.reaped)
+            signals.append(sig)
+            if sig == runner.signal.SIGKILL:
+                killed = True
+        def reap(target):
+            target._record_reap()
+            return 0
+        runner.stop(child, observe=observe, send_group=send, reap=reap,
+                    monotonic=clock.monotonic, sleep=clock.advance, snapshot_group=snapshot)
+        self.assertEqual(signals, [runner.signal.SIGTERM, runner.signal.SIGKILL])
+        self.assertTrue(identity.reaped)
+
+    def test_fabric_drift_with_uncertain_wait_custody_never_escalates_or_reaps(self):
+        clock = Clock()
+        child = FakeChild(clock, 0)
+        identity = bind_fake_fabric_child(child)
+        signals = []
+        def observe(target):
+            if clock.now >= 2:
+                raise runner.Refused('wait custody unavailable')
+            return None
+        def snapshot(group):
+            if not signals:
+                return [dict(pid=child.pid, pgid=group, status='S')]
+            raise runner.Refused('membership changed during observation')
+        def send(group, sig):
+            signals.append(sig)
+        reap = mock.Mock()
+        with self.assertRaisesRegex(runner.Refused, 'wait custody unavailable'):
+            runner.stop(child, observe=observe, send_group=send, reap=reap,
+                        monotonic=clock.monotonic, sleep=clock.advance, snapshot_group=snapshot)
+        self.assertEqual(signals, [runner.signal.SIGTERM])
+        self.assertTrue(identity.signals_closed)
+        self.assertFalse(identity.reaped)
+        reap.assert_not_called()
 
     def test_fabric_group_snapshot_errors_keep_live_or_unknown_group_as_debt(self):
         for failure in [PermissionError(1, 'operation not permitted'),

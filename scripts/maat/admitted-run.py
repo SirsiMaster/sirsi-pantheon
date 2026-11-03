@@ -260,11 +260,12 @@ def native_group_snapshot(group):
     Same-executor positive control must enumerate our own known-live PID. The
     requested group is enumerated before and after exact BSD-info metadata,
     including zombies, without reading argv/environment or trusting a cache.
-    Denial, partial observation and membership drift retain cleanup debt. The
-    kernel API does not provide an atomic group snapshot: membership can change
-    between the two enumerations, and descendants that leave this process group
-    are outside this observation. The double enumeration bounds the race; it
-    does not establish complete descendant containment.
+    Denial, partial observation and membership drift refuse that observation;
+    unresolved uncertainty retains cleanup debt. The kernel API does not
+    provide an atomic group snapshot: membership can change between the two
+    enumerations, and descendants that leave this process group are outside this
+    observation. The double enumeration bounds the race; it does not establish
+    complete descendant containment.
     """
     if (sys.platform != 'darwin' or type(group) is not int or not 1 < group <= 0x7fffffff
             or ctypes.sizeof(ctypes.c_int) != 4 or ctypes.sizeof(_BSDInfo) != 136):
@@ -1284,9 +1285,14 @@ def stop(child, observe=None, send_group=None, reap=None, monotonic=None, sleep=
         terminal = observe(child)
         members = group_snapshot()
         leader_status = members[custody.pid]
+        # The leader can exit after WNOWAIT returned no status but before the
+        # snapshot read its zombie state. Reobserve; never infer exit from Z.
+        if terminal is None and leader_status == 'Z':
+            terminal = observe(child)
         if terminal is not None and leader_status != 'Z':
             raise Refused('Terminal leader is not the retained group zombie; cleanup remains debt')
 
+        confirmed = False
         # The only signal-free fast path is an exact singleton snapshot of the
         # unreaped terminal leader. In particular, EPERM/ESRCH and empty or
         # partial observations have already failed closed above.
@@ -1305,16 +1311,40 @@ def stop(child, observe=None, send_group=None, reap=None, monotonic=None, sleep=
                     term_deadline = monotonic() + 2
                     kill_sent = False
                     kill_deadline = None
+                    singleton_seen = False
+                    snapshot_error = None
                     while True:
                         terminal = observe(child)
-                        members = group_snapshot()
-                        leader_status = members[custody.pid]
-                        if terminal is not None and leader_status != 'Z':
-                            raise Refused('Terminal leader absent from zombie state; cleanup remains debt')
-                        if terminal is not None and members == {custody.pid: 'Z'}:
-                            break
-                        if terminal is not None and all(status == 'Z' for status in members.values()):
-                            raise Refused('Additional group zombies remain; cleanup remains debt')
+                        try:
+                            members = group_snapshot()
+                        except (Refused, OSError) as error:
+                            # Membership drift, denial and malformed reads are
+                            # unknown, never absence. Keep the unreaped anchor
+                            # and retry; a fresh WNOWAIT gates later KILL.
+                            snapshot_error = error
+                            members = None
+                        if members is not None:
+                            snapshot_error = None
+                            leader_status = members[custody.pid]
+                            if terminal is None and leader_status == 'Z':
+                                terminal = observe(child)
+                                if terminal is None:
+                                    snapshot_error = Refused('Zombie leader has no terminal wait receipt')
+                                    members = None
+                            if members is not None and terminal is not None:
+                                if leader_status != 'Z':
+                                    raise Refused('Terminal leader absent from zombie state; cleanup remains debt')
+                                if members == {custody.pid: 'Z'}:
+                                    if singleton_seen:
+                                        confirmed = True
+                                        break
+                                    # A fresh second observation protects the
+                                    # final reap check from membership drift too.
+                                    singleton_seen = True
+                                    continue
+                                if all(status == 'Z' for status in members.values()):
+                                    raise Refused('Additional group zombies remain; cleanup remains debt')
+                        singleton_seen = False
                         now = monotonic()
                         if not kill_sent and now >= term_deadline:
                             kill_sent = _signal_fabric_group(
@@ -1326,13 +1356,18 @@ def stop(child, observe=None, send_group=None, reap=None, monotonic=None, sleep=
                                 break
                             kill_deadline = monotonic() + 2
                         elif kill_sent and now >= kill_deadline:
+                            if snapshot_error is not None:
+                                raise Refused(
+                                    'Fabric group observation uncertain after KILL; cleanup remains debt'
+                                ) from snapshot_error
                             raise Refused('Live fabric group members remain after KILL; cleanup remains debt')
                         sleep(min(0.05, max(0, (kill_deadline if kill_sent else term_deadline) - now)))
-        if terminal is None:
-            terminal = observe(child)
-        members = group_snapshot()
-        if terminal is None or members != {custody.pid: 'Z'}:
-            raise Refused('Exact singleton leader zombie is unconfirmed; cleanup remains debt')
+        if not confirmed:
+            if terminal is None:
+                terminal = observe(child)
+            members = group_snapshot()
+            if terminal is None or members != {custody.pid: 'Z'}:
+                raise Refused('Exact singleton leader zombie is unconfirmed; cleanup remains debt')
     finally:
         # Includes initial observation/snapshot failures and signal failures.
         if isinstance(custody, _FabricChildIdentity):

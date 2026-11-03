@@ -290,9 +290,13 @@ and requires the exact singleton leader zombie before the single final
 `Popen.wait()`. Additional zombie members retain cleanup debt. The leader's
 unreaped PID prevents reuse of the group identifier while any signal can be
 sent. Snapshot denial, malformed or changing membership, and signal errors
-retain cleanup debt. For EPERM or ESRCH from a group signal, cleanup performs
-an independent WNOWAIT and group snapshot; it accepts the failed signal only
-when that predicate proves the exact singleton leader zombie. `proc_listpids`
+are never interpreted as group absence. After TERM, snapshot failures are
+reobserved within the grace and KILL deadlines while the leader remains
+waitable; KILL still requires fresh WNOWAIT custody. Unresolved observation or
+terminal status retains cleanup debt. For EPERM or ESRCH from a group signal,
+cleanup performs an independent WNOWAIT and group snapshot; it accepts the
+failed signal only when that predicate proves the exact singleton leader zombie.
+`proc_listpids`
 with before/after enumeration and per-PID metadata is a bounded, non-atomic
 observation: a process can join or leave between reads, and descendants that
 escape the session/group are outside its scope. This is not a proof of complete
