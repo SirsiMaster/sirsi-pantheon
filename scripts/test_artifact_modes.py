@@ -465,6 +465,9 @@ FROZEN_APOLLO_DIGESTS="$1"
             for path in (scripts, runner_temp, app):
                 path.mkdir(parents=True, exist_ok=True)
             (workspace / "bin").mkdir()
+            fake_git = workspace / "bin/git"
+            fake_git.write_text("#!/bin/bash\nprintf '%s\\n' 0123456789abcdef0123456789abcdef01234567\n")
+            fake_git.chmod(0o755)
             (workspace / "VERSION").write_text("0.24.151-fixture\n")
             github_env.touch()
             order = root / "order.log"
@@ -485,6 +488,11 @@ builder="$1"
 shift
 printf 'sdk:%s\\n' "$builder" >> "$ORDER_LOG"
 "$builder" "$@"
+""")
+            (scripts / "build-release-pretoolguard.sh").write_text("""#!/bin/bash
+set -euo pipefail
+printf 'guard\\n' >> "$ORDER_LOG"
+[[ "$1" == 0123456789abcdef0123456789abcdef01234567 && "$2" == "$BUILD_VERSION" && -d "$3" ]]
 """)
             (scripts / "build-dmg.sh").write_text("""#!/bin/bash
 set -euo pipefail
@@ -523,16 +531,20 @@ fi
             for path in (
                 scripts / "new-apollo-digest-receipt.sh",
                 scripts / "ci-private-sdk.sh",
+                scripts / "build-release-pretoolguard.sh",
                 scripts / "build-dmg.sh",
                 scripts / "build-pkg.sh",
             ):
                 path.chmod(0o755)
 
             env = {
-                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "PATH": str(workspace / "bin") + ":/usr/bin:/bin:/usr/sbin:/sbin",
                 "GITHUB_WORKSPACE": str(workspace),
                 "RUNNER_TEMP": str(runner_temp),
                 "GITHUB_ENV": str(github_env),
+                "GITHUB_RUN_ID": "123",
+                "GITHUB_RUN_ATTEMPT": "1",
+                "GITHUB_SHA": "0123456789abcdef0123456789abcdef01234567",
                 "BUILD_VERSION": "0.24.151-fixture",
                 "PANTHEON_APOLLO_CAPABILITY": "disabled",
                 "ORDER_LOG": str(order),
@@ -564,16 +576,18 @@ fi
             Path(receipt).read_text(),
             "info_sha256=" + "a" * 64 + "\napollo_profile_sha256=absent\n",
         )
-        self.assertEqual(
-            (root / "fixture GITHUB_ENV").read_text(),
-            f"PANTHEON_APOLLO_DIGEST_RECEIPT={receipt}\n",
-        )
+        env_lines = (root / "fixture GITHUB_ENV").read_text().splitlines()
+        self.assertEqual(env_lines[0], f"PANTHEON_APOLLO_DIGEST_RECEIPT={receipt}")
+        self.assertEqual(len(env_lines), 2)
+        self.assertTrue(env_lines[1].startswith("PANTHEON_GUARD_ATTEMPT=" + str(root / "runner temp") + "/pantheon-guard-123-1."))
         self.assertEqual((root / "dmg.receipt").read_text().strip(), receipt)
         self.assertEqual((root / "pkg.receipt").read_text().strip(), receipt)
         self.assertEqual(
             order.read_text().splitlines(),
             [
                 "receipt-maker",
+                "sdk:bash",
+                "guard",
                 "sdk:scripts/build-dmg.sh",
                 "dmg",
                 "sdk:scripts/build-pkg.sh",
@@ -603,6 +617,8 @@ fi
             legacy_order.read_text().splitlines(),
             [
                 "receipt-maker",
+                "sdk:bash",
+                "guard",
                 "sdk:scripts/build-dmg.sh",
                 "dmg",
                 "sdk:scripts/build-pkg.sh",
@@ -617,12 +633,12 @@ fi
         )
         self.assertEqual(missing.returncode, 46, missing.stderr)
         missing_path = str(missing_root / "runner temp/apollo-input-digests.fixture/pre-sign-digests.txt")
-        self.assertEqual(
-            (missing_root / "fixture GITHUB_ENV").read_text(),
-            f"PANTHEON_APOLLO_DIGEST_RECEIPT={missing_path}\n",
-        )
+        missing_env = (missing_root / "fixture GITHUB_ENV").read_text().splitlines()
+        self.assertEqual(missing_env[0], f"PANTHEON_APOLLO_DIGEST_RECEIPT={missing_path}")
+        self.assertEqual(len(missing_env), 2)
+        self.assertTrue(missing_env[1].startswith("PANTHEON_GUARD_ATTEMPT="))
         self.assertFalse(Path(missing_path).exists(), "path recording must not fabricate the receipt")
-        self.assertEqual(missing_order.read_text().splitlines(), ["receipt-maker", "sdk:scripts/build-dmg.sh", "dmg"])
+        self.assertEqual(missing_order.read_text().splitlines(), ["receipt-maker", "sdk:bash", "guard", "sdk:scripts/build-dmg.sh", "dmg"])
         self.assertIn("if-no-files-found: warn", upload_step)
 
         for target, mode in (("pkg-dev", "--development"), ("release-pkg", "--release")):
