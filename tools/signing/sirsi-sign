@@ -19,10 +19,54 @@ for h in $HOSTS; do
 done
 [ -n "$H" ] || { echo "sirsi-sign: no signing host reachable/enrolled" >&2; exit 4; }
 echo "sirsi-sign: signing host ${H#*@}"
-id=$(uuidgen | tr A-Z a-z); n=${f:t}; n=${n%/}; n=${n//[^A-Za-z0-9._-]/_}
+# A custody-aware caller may allocate and durably register the exact job ID
+# before invoking the client. The caller remains responsible for the barrier;
+# accepting an ID here does not itself establish admission or custody.
+id=${SIRSI_SIGN_JOB_ID:-$(uuidgen | tr A-Z a-z)}
+[[ "$id" =~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' ]] || { echo 'sirsi-sign: invalid canonical job UUID' >&2; exit 2; }
+n=${f:t}; n=${n%/}; n=${n//[^A-Za-z0-9._-]/_}
+# When requested by the release workflow, persist the exact ID and input
+# identity before any remote staging or enqueue. Unknown transport outcomes
+# must be reconciled by this ID, never resubmitted as a new job. This local
+# record is not a host-wide admission fence or proof that a job completed.
+if [[ -n "${SIRSI_SIGN_CUSTODY_DIR:-}" ]]; then
+  /usr/bin/python3 -B - "$SIRSI_SIGN_CUSTODY_DIR" "$id" "$H" "$f" "$k" <<'PY'
+import hashlib, json, os, stat, sys
+directory, job, host, source, kind = sys.argv[1:]
+info = os.lstat(directory)
+if not os.path.isabs(directory) or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+    raise SystemExit('sirsi-sign: private owned custody directory required')
+source_info = os.lstat(source)
+if stat.S_ISLNK(source_info.st_mode) or not (stat.S_ISREG(source_info.st_mode) or stat.S_ISDIR(source_info.st_mode)):
+    raise SystemExit('sirsi-sign: unsupported signing input')
+digest = None
+if stat.S_ISREG(source_info.st_mode):
+    h = hashlib.sha256()
+    with open(source, 'rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            h.update(chunk)
+    digest = h.hexdigest()
+record = {'job': job, 'host': host, 'kind': kind, 'input_name': os.path.basename(source.rstrip('/')),
+          'input_sha256': digest, 'input_type': 'file' if digest else 'directory', 'state': 'enqueue-unknown'}
+fd = os.open(os.path.join(directory, job + '.json'), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, 'w') as out:
+    json.dump(record, out, sort_keys=True)
+    out.write('\n')
+    out.flush()
+    os.fsync(out.fileno())
+dir_fd = os.open(directory, os.O_RDONLY)
+try:
+    os.fsync(dir_fd)
+finally:
+    os.close(dir_fd)
+PY
+fi
 L=$(mktemp -d); trap 'rm -rf "$L"' EXIT
 print -r -- $k > "$L/kind"; print -r -- "$(id -un)@$(hostname -s)" > "$L/caller"
-ssh "${SSH_OPTIONS[@]}" "$H" "mkdir -p ~/sirsi-sign/inbox/.$id"
+# Refuse already-observed IDs and create hidden staging exclusively. This is
+# not an atomic cross-directory reservation; the admission authority's durable
+# exact-ID barrier must serialize custody before the client is invoked.
+ssh "${SSH_OPTIONS[@]}" "$H" "test ! -e ~/sirsi-sign/inbox/$id && test ! -e ~/sirsi-sign/work/$id && test ! -e ~/sirsi-sign/outbox/$id && mkdir ~/sirsi-sign/inbox/.$id"
 if [ -d "$f" ]; then rsync -a -e "$RSYNC_SSH" "$f/" "${H}:sirsi-sign/inbox/.$id/$n/"; else scp "${SSH_OPTIONS[@]}" -q "$f" "${H}:sirsi-sign/inbox/.$id/$n"; fi
 scp "${SSH_OPTIONS[@]}" -q "$L/kind" "$L/caller" "${H}:sirsi-sign/inbox/.$id/" && ssh "${SSH_OPTIONS[@]}" "$H" "mv ~/sirsi-sign/inbox/.$id ~/sirsi-sign/inbox/$id"
 echo "sirsi-sign: job $id queued on the signing Mac"
@@ -44,4 +88,4 @@ fi
 [ $vok = 1 ] || { rm -rf "$V"; echo "sirsi-sign: returned artifact failed Team verification" >&2; exit 5; }
 rm -rf "$d/signed-$o"; mv "$V/$o" "$d/signed-$o"; rm -rf "$V"
 cat "$d/signed-$o.receipt.txt" | sed -n '/--- verification/,$p'
-ssh "${SSH_OPTIONS[@]}" "$H" "test -e ~/sirsi-sign/outbox/$id/done" && { echo "sirsi-sign: verified artifact at $d/signed-$o"; ssh "${SSH_OPTIONS[@]}" "$H" "rm -rf ~/sirsi-sign/outbox/$id"; } || { echo "sirsi-sign: FAILED — see $d/signed-$o.receipt.txt" >&2; exit 1; }
+ssh "${SSH_OPTIONS[@]}" "$H" "test -e ~/sirsi-sign/outbox/$id/done" && { echo "sirsi-sign: verified artifact at $d/signed-$o; signer terminal retained for job $id"; } || { echo "sirsi-sign: FAILED — see $d/signed-$o.receipt.txt" >&2; exit 1; }

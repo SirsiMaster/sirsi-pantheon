@@ -4,7 +4,7 @@ Scope: `menubar-remediation-20261005`, native operator review → confirmation �
 one command → fresh diagnostic observation → retained bounded outcome. This is
 platform-foundation correction, not a new remediation catalog, privilege,
 installer, background service, or model workflow. Existing typed mappings and
-Go operational authority remain unchanged. Installed UX is not yet qualified.
+Go operational authority remain canonical. Installed UX is not yet qualified.
 
 ## Approval and invocation
 
@@ -26,6 +26,34 @@ Retry and post-action refresh must not replay the original invocation. Recheck
 is diagnostic-only. Another mutation requires another explicit intent and its
 own frozen confirmation. Retain the actual follow-up receipt, not an automatic
 rerun of the original action.
+
+## System One disabled-launchd recovery
+
+`sirsi maat repair launchd-disabled --json` is a read-only preview. The
+canonical Go launchd engine returns the sorted eligible managed labels, each
+plist filename and content digest, loaded state, and a SHA-256 binding over
+that exact target snapshot. Empty, unknown, quarantined, missing, or malformed
+target sets do not produce an actionable preview. The native Casebook shows
+each label and whether confirmation would enable it only or also bootstrap it.
+
+Confirmation calls the same closed repair with
+`--preview-binding <sha256> --confirm --json`. Before any state change, the Go
+engine rebuilds and validates the current preview, requires an exact binding
+match, and verifies every reviewed plist still exists as a regular
+non-symlink file with the same digest. Plist reads use a no-follow open and a
+1 MiB plus one byte cap, so concurrent file growth cannot cause an unbounded
+allocation. Every frozen target is validated before the first actuator.
+Recovery walks only the reviewed filenames, passes only those labels to the
+existing allowlist, and carries each reviewed loaded-state disposition through
+actuation without widening it with another launchd listing. Existing
+quarantine and managed-plist checks remain in force; the command then rechecks
+the same diagnostic and records the operation and preview binding. Callers
+cannot submit labels, plist paths, or launchctl commands as repair authority.
+
+Both System One finding entry paths and Ma'at Casebook use the same typed
+preview decoder and review controls. The older finding compatibility route
+does not issue an unbound `--confirm` command; it requires preview and explicit
+review before binding apply to that exact preview.
 
 ## Capture and honest limits
 

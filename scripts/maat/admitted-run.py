@@ -4,6 +4,7 @@ import argparse
 import ctypes
 from dataclasses import dataclass
 import datetime as dt
+import errno
 import hashlib
 import json
 import os
@@ -254,12 +255,17 @@ def _native_group_pids(group, listpids):
 
 
 def native_group_snapshot(group):
-    """Fresh Darwin group observation, never a ps-error-to-absence fallback.
+    """Fresh, bounded Darwin group observation, never a ps-error fallback.
 
     Same-executor positive control must enumerate our own known-live PID. The
     requested group is enumerated before and after exact BSD-info metadata,
     including zombies, without reading argv/environment or trusting a cache.
-    Denial, partial observation and membership drift retain cleanup debt.
+    Denial, partial observation and membership drift refuse that observation;
+    unresolved uncertainty retains cleanup debt. The kernel API does not
+    provide an atomic group snapshot: membership can change between the two
+    enumerations, and descendants that leave this process group are outside this
+    observation. The double enumeration bounds the race; it does not establish
+    complete descendant containment.
     """
     if (sys.platform != 'darwin' or type(group) is not int or not 1 < group <= 0x7fffffff
             or ctypes.sizeof(ctypes.c_int) != 4 or ctypes.sizeof(_BSDInfo) != 136):
@@ -340,6 +346,20 @@ class _LocalChildIdentity:
     start: str
 
 
+@dataclass
+class _FabricChildIdentity:
+    handle: object
+    pid: int
+    parent: int
+    uid: int
+    real_uid: int
+    group: int
+    start: str
+    signals_closed: bool = False
+    reap_started: bool = False
+    reaped: bool = False
+
+
 def local_bind_owned_child(child, birth):
     # Called on the actual Popen handle while its launch pipe still withholds
     # the payload. Capture credentials as well as start/parent from live libproc.
@@ -349,6 +369,40 @@ def local_bind_owned_child(child, birth):
             or row.pgid!=child.pid or _process_start(row)!=birth):
         raise Refused('Live owned child UID/start/parent/group binding differs before release')
     child._sirsi_local_identity=_LocalChildIdentity(child,child.pid,row.ppid,row.uid,row.ruid,row.pgid,birth)
+
+
+def fabric_bind_child(child):
+    """Bind the direct start-new-session child without borrowing local authority."""
+    if child.returncode is not None or type(child.pid) is not int or child.pid <= 1:
+        raise Refused('Fabric child is not an unreaped direct Popen child')
+    if sys.platform == 'darwin':
+        row = native_process_info(child.pid, include_zombies=True)
+        if (row.pid != child.pid or row.ppid != os.getpid() or row.uid != os.getuid()
+                or row.ruid != os.getuid() or row.pgid != child.pid):
+            raise Refused('Fabric child parent/UID/group binding differs')
+        identity = _FabricChildIdentity(child, child.pid, row.ppid, row.uid,
+                                        row.ruid, row.pgid, _process_start(row))
+    else:
+        try:
+            group = os.getpgid(child.pid)
+        except OSError as error:
+            raise Refused('Fabric child process group unavailable') from error
+        if group != child.pid:
+            raise Refused('Fabric child is not the new-session group leader')
+        uid = os.getuid()
+        identity = _FabricChildIdentity(child, child.pid, os.getpid(), uid, uid, group, '')
+    child._sirsi_fabric_identity = identity
+    return identity
+
+
+def fabric_owned_identity(child):
+    owned = getattr(child, '_sirsi_fabric_identity', None)
+    if (not isinstance(owned, _FabricChildIdentity) or owned.handle is not child
+            or owned.pid != child.pid or owned.parent != os.getpid()
+            or owned.group != child.pid or child.returncode is not None
+            or owned.signals_closed or owned.reap_started or owned.reaped):
+        raise Refused('Exact unreaped fabric child/group custody unavailable')
+    return owned
 
 
 def local_owned_identity(child):
@@ -361,8 +415,74 @@ def local_owned_identity(child):
     return owned
 
 
+def _nonreaping_child_terminal(child, owned, wait=None):
+    """Observe a bound direct child with WNOWAIT; never consume its PID anchor."""
+    if (owned.handle is not child or owned.pid != child.pid or child.returncode is not None
+            or type(child.pid) is not int or child.pid <= 1):
+        raise LocalWaitRefused('Direct-child wait custody unavailable',
+                               dict(expected_pid=getattr(owned, 'pid', None), pid=getattr(child, 'pid', None)))
+    if sys.platform == 'darwin':
+        if (ctypes.sizeof(ctypes.c_void_p) != 8 or ctypes.sizeof(_Siginfo) != 104
+                or _Siginfo.pid.offset != 12 or _Siginfo.status.offset != 20):
+            raise Refused('Owned child wait ABI unavailable')
+        if wait is None:
+            library = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
+            wait = library.waitid
+            wait.argtypes = [ctypes.c_int, ctypes.c_uint32, ctypes.POINTER(_Siginfo), ctypes.c_int]
+            wait.restype = ctypes.c_int
+        info = _Siginfo()
+        # P_PID=1; WNOHANG=1, WEXITED=4, WNOWAIT=0x20. Never consumes the child.
+        result = wait(1, child.pid, ctypes.byref(info), 1 | 4 | 0x20)
+        observation = dict(api='libSystem.waitid', result=result,
+                           errno=ctypes.get_errno() if result else 0,
+                           expected_pid=owned.pid, expected_uid=owned.uid,
+                           expected_signal=int(signal.SIGCHLD), pid=info.pid, uid=info.uid,
+                           signo=info.signo, error=info.error, code=info.code, status=info.status,
+                           abi_bytes=ctypes.sizeof(info), pid_offset=_Siginfo.pid.offset,
+                           status_offset=_Siginfo.status.offset)
+        if result != 0:
+            raise LocalWaitRefused('Owned child wait observation failed; no exit or absence inferred', observation)
+        if info.pid == 0:
+            if any((info.signo, info.error, info.code, info.uid, info.status)):
+                raise LocalWaitRefused('Malformed empty owned child wait observation', observation)
+            return None
+        # XNU's waitid path may leave si_uid zero; that is not a credential.
+        # Accept it only because the exact bound unreaped Popen is also required.
+        if info.pid != owned.pid or info.uid not in (0, owned.uid) or info.signo != signal.SIGCHLD or info.error:
+            raise LocalWaitRefused('Owned child wait PID/UID/signal differs', observation)
+        code, status = info.code, info.status
+    else:
+        wait = wait or getattr(os, 'waitid', None)
+        flags = (getattr(os, 'WEXITED', 0) | getattr(os, 'WNOHANG', 0) |
+                 getattr(os, 'WNOWAIT', 0))
+        if wait is None or not all((getattr(os, 'P_PID', 0), getattr(os, 'WEXITED', 0),
+                                    getattr(os, 'WNOHANG', 0), getattr(os, 'WNOWAIT', 0))):
+            raise Refused('Non-reaping child wait API unavailable')
+        try:
+            info = wait(os.P_PID, child.pid, flags)
+        except (ChildProcessError, OSError) as error:
+            raise LocalWaitRefused('Owned child wait observation failed; no exit or absence inferred',
+                                   dict(api='os.waitid', pid=child.pid, error=str(error))) from error
+        if info is None:
+            return None
+        pid = getattr(info, 'si_pid', None)
+        uid = getattr(info, 'si_uid', None)
+        signo = getattr(info, 'si_signo', None)
+        code = getattr(info, 'si_code', None)
+        status = getattr(info, 'si_status', None)
+        observation = dict(api='os.waitid', pid=pid, uid=uid, signo=signo, code=code,
+                           status=status, expected_pid=owned.pid, expected_uid=owned.uid)
+        if pid != owned.pid or uid != owned.uid or signo != signal.SIGCHLD:
+            raise LocalWaitRefused('Owned child wait PID/UID/signal differs', observation)
+    if code == 1 and 0 <= status <= 255:  # CLD_EXITED
+        return status
+    if code in (2, 3) and 0 < status < signal.NSIG:  # CLD_KILLED/DUMPED
+        return -status
+    raise LocalWaitRefused('Unknown owned child terminal status', observation)
+
+
 def local_child_terminal(child, wait=None):
-    """Non-reaping kernel receipt for our exact child; ECHILD is not absence.
+    """Non-reaping kernel receipt for our exact local child; ECHILD is not absence.
 
     Python's Darwin os module omits waitid, but libSystem exposes the public C
     interface. Constants/layout below are from SDK sys/wait.h and sys/signal.h.
@@ -370,42 +490,33 @@ def local_child_terminal(child, wait=None):
     WNOWAIT keeps this exact exited child waitable, preventing PID reuse before
     the controller's sole later wait/reap. No unavailable libproc read implies exit.
     """
-    if (sys.platform!='darwin' or type(child.pid) is not int or child.pid<=1
-            or ctypes.sizeof(ctypes.c_void_p)!=8 or ctypes.sizeof(_Siginfo)!=104
-            or _Siginfo.pid.offset!=12 or _Siginfo.status.offset!=20):
+    if (sys.platform != 'darwin' or type(child.pid) is not int or child.pid <= 1
+            or ctypes.sizeof(ctypes.c_void_p) != 8 or ctypes.sizeof(_Siginfo) != 104
+            or _Siginfo.pid.offset != 12 or _Siginfo.status.offset != 20):
         raise Refused('Owned child wait ABI unavailable')
-    owned=local_owned_identity(child)
-    if wait is None:
-        library=ctypes.CDLL('/usr/lib/libSystem.B.dylib',use_errno=True)
-        wait=library.waitid
-        wait.argtypes=[ctypes.c_int,ctypes.c_uint32,ctypes.POINTER(_Siginfo),ctypes.c_int]
-        wait.restype=ctypes.c_int
-    info=_Siginfo()
-    # P_PID=1; WNOHANG=1, WEXITED=4, WNOWAIT=0x20. Never consumes the child.
-    result=wait(1,child.pid,ctypes.byref(info),1|4|0x20)
-    observation=dict(api='libSystem.waitid',result=result,errno=ctypes.get_errno() if result else 0,
-                     expected_pid=owned.pid,expected_uid=owned.uid,expected_signal=int(signal.SIGCHLD),
-                     pid=info.pid,uid=info.uid,signo=info.signo,error=info.error,code=info.code,status=info.status,
-                     abi_bytes=ctypes.sizeof(info),pid_offset=_Siginfo.pid.offset,status_offset=_Siginfo.status.offset)
-    # Only defined scalar fields: no addresses, reserved bytes, argv or environment.
-    if result!=0:
-        raise LocalWaitRefused('Owned child wait observation failed; no exit or absence inferred',observation)
-    if info.pid==0:
-        if any((info.signo,info.error,info.code,info.uid,info.status)):
-            raise LocalWaitRefused('Malformed empty owned child wait observation',observation)
-        return None
-    # XNU kern_exit.c waitid_nocancel/SZOMB zeroes siginfo and does not assign
-    # si_uid. Zero is NOT a root credential or an ownership observation. Require
-    # exact unreaped direct-child custody above; group credentials are separately
-    # observed and checked before any signal/reap/release. Populated foreign UID
-    # remains a refusal, as do foreign PID/signal, ECHILD and unknown status.
-    if info.pid!=owned.pid or info.uid not in (0,owned.uid) or info.signo!=signal.SIGCHLD or info.error:
-        raise LocalWaitRefused('Owned child wait PID/UID/signal differs',observation)
-    if info.code==1 and 0<=info.status<=255:  # CLD_EXITED
-        return info.status
-    if info.code in (2,3) and 0<info.status<signal.NSIG:  # CLD_KILLED/DUMPED
-        return -info.status
-    raise LocalWaitRefused('Unknown owned child terminal status',observation)
+    owned = local_owned_identity(child)
+    return _nonreaping_child_terminal(child, owned, wait)
+
+
+def fabric_child_terminal(child, wait=None):
+    """Non-reaping status for the exact fabric Popen/group binding."""
+    owned = fabric_owned_identity(child)
+    return _nonreaping_child_terminal(child, owned, wait)
+
+
+def fabric_wait_terminal(child, timeout, observe=None, monotonic=None, sleep=None):
+    observe = observe or fabric_child_terminal
+    monotonic = monotonic or time.monotonic
+    sleep = sleep or time.sleep
+    deadline = monotonic() + timeout
+    while True:
+        status = observe(child)
+        if status is not None:
+            return status
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired('fabric child', timeout)
+        sleep(min(0.02, remaining))
 
 
 def local_anchor_matches(child, birth):
@@ -480,6 +591,58 @@ def retain_local_debt(root, folder, child, birth):
 
 def release_local_child(fd):
     if os.write(fd,b'1')!=1:raise Refused('Owned local launch handshake was not delivered')
+
+
+def release_fabric_child(fd):
+    if os.write(fd,b'1')!=1:raise Refused('Owned fabric launch handshake was not delivered')
+
+
+_FABRIC_GATE_ENV = 'SIRSI_MAAT_FABRIC_GATE_ENV'
+# Inline code avoids re-opening this mutable script. The Python executable and
+# its standard library remain external trust dependencies, not pinned identity.
+_FABRIC_GATE_PROGRAM = '''\
+import os, select, stat, sys
+fd = int(sys.argv[1])
+if len(sys.argv) < 3 or not stat.S_ISFIFO(os.fstat(fd).st_mode):
+    sys.exit(78)
+ready, _, _ = select.select([fd], [], [], 5)
+token = os.read(fd, 1) if ready else b''
+os.close(fd)
+if token != b'1':
+    sys.exit(78)
+import json
+saved = json.loads(os.environ.pop('SIRSI_MAAT_FABRIC_GATE_ENV'))
+os.environ.update(saved['loader'])
+if saved['prior'] is not None:
+    os.environ['SIRSI_MAAT_FABRIC_GATE_ENV'] = saved['prior']
+try:
+    os.execvpe(sys.argv[2], sys.argv[2:], os.environ.copy())
+except OSError as error:
+    print("Ma'at fabric payload exec failed: " + str(error), file=sys.stderr)
+    sys.exit(78)
+sys.exit(78)
+'''
+
+
+def fabric_gate_environment(env):
+    # The dynamic loader acts before Python can honor -I. Restore these only
+    # after release so the eventual payload receives its original environment.
+    result = env.copy()
+    loader = {key: result.pop(key) for key in list(result)
+              if key.startswith(('DYLD_', 'LD_'))}
+    prior = result.pop(_FABRIC_GATE_ENV, None)
+    result[_FABRIC_GATE_ENV] = json.dumps(dict(loader=loader, prior=prior))
+    return result
+
+
+def wait_unreleased_fabric_child(child):
+    # Popen.wait() can synthesize status 0 on ECHILD. Under the helper's
+    # interpreter trust assumption, accept only its explicit refusal status.
+    if type(child.pid) is not int or child.pid <= 1 or child.returncode is not None:
+        raise Refused('Unreleased fabric helper wait custody unavailable')
+    status = child.wait(timeout=6)
+    if status != 78 or child.returncode != 78:
+        raise Refused('Unreleased fabric helper exit receipt is ambiguous')
 
 
 def owned_local_child(fd,command):
@@ -1055,22 +1218,210 @@ class ProvenLease:
         self.deadline = started + row['lease_ttl_sec'] - max(0, age)
         if time.monotonic() >= self.deadline:
             raise Refused('Confirmed lease already exhausted')
+        try:
+            expiry = (stamp + dt.timedelta(seconds=row['lease_ttl_sec'])).isoformat()
+        except OverflowError:
+            expiry = None
+        self.last_confirmation = dict(heartbeat_at=row['heartbeat_at'],
+                                      lease_ttl_sec=row['lease_ttl_sec'],
+                                      heartbeat_plus_ttl=expiry,
+                                      authority=row.get('authority'), epoch=row.get('epoch'))
+        self.renewal_outcome = 'confirmed'
 
 
-def stop(child):
+def _signal_fabric_group(child, sig, observe=None, send_group=None, snapshot_group=None):
+    custody = fabric_owned_identity(child)
+    observe = observe or fabric_child_terminal
+    observe(child)  # WNOWAIT proves the leader remains waitable.
+    custody = fabric_owned_identity(child)
     try:
-        os.killpg(child.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
+        (send_group or os.killpg)(custody.group, sig)
+    except OSError as error:
+        if error.errno not in (errno.EPERM, errno.ESRCH):
+            raise
+        # A failed group signal is never itself proof of quiescence. Reobserve
+        # through WNOWAIT and the independent process-group observer; accept
+        # only the exact retained leader zombie with no other group members.
+        terminal = observe(child)
+        members = _checked_fabric_group_snapshot(child, snapshot_group)
+        if terminal is not None and members == {custody.pid: 'Z'}:
+            return False
+        raise
+    return True
+
+
+def _checked_fabric_group_snapshot(child, snapshot_group):
+    custody = fabric_owned_identity(child)
+    rows = (snapshot_group or local_group_snapshot)(custody.group)
+    if not isinstance(rows, list):
+        raise Refused('Fabric process-group observation malformed; cleanup remains debt')
+    by_pid = {}
+    for row in rows:
+        if (not isinstance(row, dict) or type(row.get('pid')) is not int
+                or row['pid'] <= 1 or row.get('pgid') != custody.group
+                or not isinstance(row.get('status'), str) or not row['status']):
+            raise Refused('Fabric process-group member malformed; cleanup remains debt')
+        pid = row['pid']
+        status = row['status'][0]
+        if pid in by_pid or status not in 'IRSDTUWZ':
+            raise Refused('Fabric process-group member duplicated or unknown; cleanup remains debt')
+        by_pid[pid] = status
+    if custody.pid not in by_pid:
+        raise Refused('Unreaped fabric leader missing from group observation; cleanup remains debt')
+    return by_pid
+
+
+def stop(child, observe=None, send_group=None, reap=None, monotonic=None, sleep=None,
+         snapshot_group=None):
+    custody = getattr(child, '_sirsi_fabric_identity', None)
+    observe = observe or fabric_child_terminal
+    monotonic = monotonic or time.monotonic
+    sleep = sleep or time.sleep
     try:
-        child.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-        pass
-    try:
-        os.killpg(child.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    child.wait()
+        custody = fabric_owned_identity(child)
+        group_snapshot = lambda: _checked_fabric_group_snapshot(child, snapshot_group)
+        # WNOWAIT retains the group-leader PID as the PGID reuse barrier while
+        # the pre-reap group membership and each signal decision are checked.
+        terminal = observe(child)
+        members = group_snapshot()
+        leader_status = members[custody.pid]
+        # The leader can exit after WNOWAIT returned no status but before the
+        # snapshot read its zombie state. Reobserve; never infer exit from Z.
+        if terminal is None and leader_status == 'Z':
+            terminal = observe(child)
+        if terminal is not None and leader_status != 'Z':
+            raise Refused('Terminal leader is not the retained group zombie; cleanup remains debt')
+
+        confirmed = False
+        # The only signal-free fast path is an exact singleton snapshot of the
+        # unreaped terminal leader. In particular, EPERM/ESRCH and empty or
+        # partial observations have already failed closed above.
+        if terminal is not None and members == {custody.pid: 'Z'}:
+            pass
+        else:
+            if terminal is None and leader_status == 'Z':
+                raise Refused('Live wait status conflicts with zombie group member; cleanup remains debt')
+            live = any(status != 'Z' for status in members.values())
+            if not live:
+                raise Refused('Signal-free reap requires the group to contain only its retained leader zombie')
+            else:
+                term_sent = _signal_fabric_group(
+                    child, signal.SIGTERM, observe, send_group, snapshot_group)
+                if term_sent:
+                    term_deadline = monotonic() + 2
+                    kill_sent = False
+                    kill_deadline = None
+                    singleton_seen = False
+                    snapshot_error = None
+                    while True:
+                        terminal = observe(child)
+                        try:
+                            members = group_snapshot()
+                        except (Refused, OSError, subprocess.TimeoutExpired) as error:
+                            # Membership drift, denial and malformed reads are
+                            # unknown, never absence. Keep the unreaped anchor
+                            # and retry; a fresh WNOWAIT gates later KILL.
+                            snapshot_error = error
+                            members = None
+                        if members is not None:
+                            snapshot_error = None
+                            leader_status = members[custody.pid]
+                            if terminal is None and leader_status == 'Z':
+                                terminal = observe(child)
+                                if terminal is None:
+                                    snapshot_error = Refused('Zombie leader has no terminal wait receipt')
+                                    members = None
+                            if members is not None and terminal is not None:
+                                if leader_status != 'Z':
+                                    raise Refused('Terminal leader absent from zombie state; cleanup remains debt')
+                                if members == {custody.pid: 'Z'}:
+                                    if singleton_seen:
+                                        confirmed = True
+                                        break
+                                    # A fresh second observation protects the
+                                    # final reap check from membership drift too.
+                                    singleton_seen = True
+                                    continue
+                                if all(status == 'Z' for status in members.values()):
+                                    raise Refused('Additional group zombies remain; cleanup remains debt')
+                        singleton_seen = False
+                        now = monotonic()
+                        if not kill_sent and now >= term_deadline:
+                            kill_sent = _signal_fabric_group(
+                                child, signal.SIGKILL, observe, send_group, snapshot_group)
+                            if not kill_sent:
+                                # The independent EPERM/ESRCH predicate saw the
+                                # exact singleton zombie; the final receipt below
+                                # must still confirm that state before reaping.
+                                break
+                            kill_deadline = monotonic() + 2
+                            # Reobserve immediately: the group may already have
+                            # exited when SIGKILL returns. Do not spend a poll
+                            # interval before checking the retained leader.
+                            continue
+                        elif kill_sent and now >= kill_deadline:
+                            if snapshot_error is not None:
+                                raise Refused(
+                                    'Fabric group observation uncertain after KILL; cleanup remains debt'
+                                ) from snapshot_error
+                            raise Refused('Live fabric group members remain after KILL; cleanup remains debt')
+                        sleep(min(0.05, max(0, (kill_deadline if kill_sent else term_deadline) - now)))
+        if not confirmed:
+            if terminal is None:
+                terminal = observe(child)
+            members = group_snapshot()
+            if terminal is None or members != {custody.pid: 'Z'}:
+                raise Refused('Exact singleton leader zombie is unconfirmed; cleanup remains debt')
+    finally:
+        # Includes initial observation/snapshot failures and signal failures.
+        if isinstance(custody, _FabricChildIdentity):
+            custody.signals_closed = True
+    custody.reap_started = True
+    reaped = (reap or (lambda target: target.wait(timeout=1)))(child)
+    if reaped != terminal or child.returncode != terminal:
+        raise Refused('Fabric child reap differs from terminal receipt')
+    custody.reaped = True
+
+
+def append_cleanup_debt(record, detail):
+    prior = record.get('cleanup_debt')
+    record['cleanup_debt'] = (prior + '; ' if prior else '') + detail
+
+
+def retain_fabric_cleanup_evidence(record, child, lease, owned, release_attempted, release_outcome, thread):
+    # This is an incident record for exact-ID read-only inspection, not a
+    # transferable Popen handle, a PID signal authority or a handback receipt.
+    identity = getattr(child, '_sirsi_fabric_identity', None)
+    binding = None
+    if isinstance(identity, _FabricChildIdentity):
+        binding = dict(handle_matches=identity.handle is child, pid=identity.pid,
+                       parent=identity.parent, uid=identity.uid, real_uid=identity.real_uid,
+                       group=identity.group, start=identity.start or None,
+                       signals_closed=identity.signals_closed,
+                       reap_started=identity.reap_started, reaped=identity.reaped)
+    record['unresolved_child_custody'] = dict(
+        supervisor_pid=os.getpid(), executor_thread=thread,
+        popen_pid=child.pid, popen_returncode=child.returncode,
+        bound_identity=binding, release_attempted=release_attempted,
+        release_outcome=release_outcome,
+        termination_confirmed=False, handle_transferable=False)
+    record['unresolved_reservation'] = dict(
+        scope=dict(lease.scope), owned=bool(owned),
+        last_confirmed=dict(lease.last_confirmation),
+        renewal_outcome=lease.renewal_outcome,
+        expiry_is_current_authority=False,
+        explicit_release='deferred' if owned else 'not_owned',
+        automatic_expiry_possible=True,
+        recovery='exact reservation ID read-only status; child custody and safe handback remain unresolved')
+
+
+def close_fabric_executor(backend, record):
+    if record.get('child_cleanup_unconfirmed'):
+        append_cleanup_debt(record, 'Executor close deferred: child termination unconfirmed')
+    elif record.get('reservation_outcome_unconfirmed'):
+        append_cleanup_debt(record, 'Executor close deferred: reservation outcome unconfirmed')
+    else:
+        backend.close_executor()
 
 
 def check_deadlines(execution_deadline, lease, started, timeout, record):
@@ -1109,6 +1460,9 @@ def refusal_details(reply):
 def supervise(command, resource, agent, thread, work, timeout, backend, record):
     owned = None
     child = None
+    gate_read = gate_write = None
+    release_attempted = False
+    release_outcome = 'not_attempted'
     code = 78
     reservation_requested = reservation_replied = False
     cpu_cores = getattr(backend, 'cpu_cores', None)
@@ -1205,13 +1559,30 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                         'VECLIB_MAXIMUM_THREADS','NUMEXPR_NUM_THREADS','BLIS_NUM_THREADS'):
                 child_env[key] = str(cpu_cores)
             record.update(cpu_cores=cpu_cores, share=before['share'])
-        child = subprocess.Popen(command, start_new_session=True, env=child_env)
-        record.update(pid=child.pid, status='running')
+        gate_read, gate_write = os.pipe()
+        launcher = [sys.executable, '-I', '-S', '-c', _FABRIC_GATE_PROGRAM,
+                    str(gate_read), *command]
+        child = subprocess.Popen(launcher, start_new_session=True,
+                                 env=fabric_gate_environment(child_env),
+                                 pass_fds=(gate_read,))
         started_at = time.monotonic()
         deadline = started_at + timeout
         if isinstance(job_deadline, (int, float)) and job_deadline <= deadline:
             deadline = job_deadline
             record['execution_bound'] = 'job_timeout'
+        os.close(gate_read)
+        gate_read = None
+        record.update(pid=child.pid, status='running')
+        fabric_bind_child(child)
+        check_deadlines(deadline, lease, started_at, timeout, record)
+        # A write can be delivered before an exception is observed. From this
+        # point onward cleanup must assume the payload may have been released.
+        release_attempted = True
+        release_outcome = 'unknown'
+        release_fabric_child(gate_write)
+        release_outcome = 'delivered'
+        os.close(gate_write)
+        gate_write = None
         control_at = time.monotonic() + min(30, max(0.001, (lease.deadline - time.monotonic()) / 3))
         backoff = 1
         if isinstance(backend, Native):
@@ -1227,9 +1598,11 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                     row = backend.lookup(resource)
                     lease.check(row)
                     check_deadlines(deadline, lease, started_at, timeout, record)
-                    if child.poll() is None:
+                    if fabric_child_terminal(child) is None:
                         if owned:
                             started = time.monotonic()
+                            # A transport failure can follow a committed heartbeat.
+                            lease.renewal_outcome = 'unknown'
                             renewed = backend.heartbeat(owned)
                             if time.monotonic() >= lease.deadline:
                                 raise Refused('Renewal arrived after proven deadline')
@@ -1249,7 +1622,8 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             if remaining <= 0:
                 check_deadlines(deadline, lease, started_at, timeout, record)
             try:
-                code = child.wait(timeout=min(2, remaining, max(0.001, control_at - time.monotonic())))
+                code = fabric_wait_terminal(
+                    child, timeout=min(2, remaining, max(0.001, control_at - time.monotonic())))
                 try:
                     after = backend.lookup(resource)
                     lease.check(after)
@@ -1270,20 +1644,45 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             code = 78
         if isinstance(backend, Native):
             backend.deadline = None  # cleanup must run even after lease expiry
+        for name, fd in (('gate_read', gate_read), ('gate_write', gate_write)):
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except (OSError, KeyboardInterrupt) as error:
+                    append_cleanup_debt(record, 'Fabric launch gate close unconfirmed: ' + str(error))
+                    code = 78
+                if name == 'gate_read':
+                    gate_read = None
+                else:
+                    gate_write = None
+        child_cleanup_confirmed = child is None
         if child is not None:
             try:
-                stop(child)
-            except Exception as error:
-                record.update(cleanup_debt='Child group cleanup unconfirmed: '+str(error))
+                if release_attempted:
+                    stop(child)
+                else:
+                    wait_unreleased_fabric_child(child)
+                child_cleanup_confirmed = True
+            except (Exception, KeyboardInterrupt) as error:
+                append_cleanup_debt(record, 'Child group cleanup unconfirmed: '+str(error))
+                record['child_cleanup_unconfirmed'] = True
+                retain_fabric_cleanup_evidence(record, child, lease, owned, release_attempted,
+                                               release_outcome, thread)
                 code = 78
-        if owned:
+        if owned and not child_cleanup_confirmed:
+            append_cleanup_debt(record, 'Owned reservation release deferred; lease may expire before child cleanup')
+        elif owned:
             try:
                 backend.release(owned)
-            except Exception as error:
-                record.update(cleanup_debt='Reservation release unconfirmed: '+str(error))
+            except (Exception, KeyboardInterrupt) as error:
+                append_cleanup_debt(record, 'Reservation release unconfirmed: '+str(error))
+                record['reservation_outcome_unconfirmed'] = True
                 code = 78
         elif reservation_requested and not reservation_replied:
             record['cleanup_debt'] = 'Reservation request outcome unknown; inspect own host/holder/work before retry. No child was launched.'
+            record['reservation_outcome_unconfirmed'] = True
+        if record.get('cleanup_debt'):
+            record['status'] = 'refused_or_stopped'
         record['exit_code'] = code
     return code
 
@@ -1315,6 +1714,10 @@ def supervise_iterations(command, resource, agent, thread, work, timeout, backen
         current = {'iteration': index + 1}
         code = supervise(command, resource, agent, thread, work, min(timeout, remaining), backend, current)
         record['iterations'].append(current)
+        if current.get('child_cleanup_unconfirmed'):
+            record['child_cleanup_unconfirmed'] = True
+        if current.get('reservation_outcome_unconfirmed'):
+            record['reservation_outcome_unconfirmed'] = True
         record.update(status='waiting' if code == 0 else 'refused_or_stopped', exit_code=code)
         if persist:
             persist()
@@ -1448,8 +1851,8 @@ def main():
         code = 78
     finally:
         try:
-            backend.close_executor()
-        except Exception as error:
+            close_fabric_executor(backend, record)
+        except (Exception, KeyboardInterrupt) as error:
             record['cleanup_debt'] = record.get('cleanup_debt', '') + '; Executor registration close unconfirmed: '+str(error)
             record['exit_code'] = 78
             code = 78
@@ -1476,16 +1879,27 @@ def check_tool_stop(payload):
     require_job_safe_command(['sh', '-c', command])
 
 
+MAX_HOOK_BYTES = 8 * 1024 * 1024
+
+
+def reject_nonfinite(value):
+    raise ValueError('non-finite JSON constant: ' + value)
+
+
+def check_stop_hook_bytes(raw):
+    if len(raw) > MAX_HOOK_BYTES:
+        raise Refused('Hook payload exceeds bound')
+    check_tool_stop(json.loads(raw.decode('utf-8'), parse_constant=reject_nonfinite))
+
+
 if __name__ == '__main__':
     if len(sys.argv)>3 and sys.argv[1]=='--owned-local-child':
         sys.exit(owned_local_child(int(sys.argv[2]),sys.argv[3:]))
     if sys.argv[1:] == ['--check-stop-command']:
         try:
-            raw = sys.stdin.read(65537)
-            if len(raw) > 65536:
-                raise Refused('Hook payload exceeds bound')
-            check_tool_stop(json.loads(raw))
-        except (ValueError, TypeError, Refused) as error:
+            raw = sys.stdin.buffer.read(MAX_HOOK_BYTES + 1)
+            check_stop_hook_bytes(raw)
+        except (ValueError, TypeError, RecursionError, Refused) as error:
             print(str(error), file=sys.stderr)
             sys.exit(2)
         sys.exit(0)

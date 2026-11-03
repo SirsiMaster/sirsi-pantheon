@@ -86,10 +86,10 @@ func TestTaskResumePreservesOriginalHistoryAndNormalCompletion(t *testing.T) {
 	if err != nil || !replay.Repeated || replay.Lease == nil || replay.Lease.Token != out.Lease.Token || replay.Attempts != 4 || taskResumeAuditCount(t, s) != 1 {
 		t.Fatal("exact retry created another attempt", err)
 	}
-	if err := s.CompleteTaskLease(req.Agent, req.TaskID, "old-expired-token", "forbidden-old-proof"); !errors.Is(err, ErrLeaseInvalid) {
+	if err := s.CompleteTaskLease(req.Agent, req.TaskID, "old-expired-token", "pr:SirsiMaster/fixture#17"); !errors.Is(err, ErrLeaseInvalid) {
 		t.Fatal("old lease revived", err)
 	}
-	if err := s.CompleteTaskLease(req.Agent, req.TaskID, out.Lease.Token, "evidence://normal-fenced-completion"); err != nil {
+	if err := s.CompleteTaskLease(req.Agent, req.TaskID, out.Lease.Token, "pr:SirsiMaster/fixture#18"); err != nil {
 		t.Fatal(err)
 	}
 	final := taskEvidenceRaw(t, s, req.Agent, req.TaskID)
@@ -182,7 +182,7 @@ func TestTaskResumeBlockedWithOrdinaryAttemptsRemaining(t *testing.T) {
 			if err != nil || !ok || json.Unmarshal([]byte(raw), &audit) != nil || audit.AttemptsBefore != attempts || audit.AttemptsAfter != attempts+1 || audit.BeforeVersion != inspect.RowVersion || audit.OldFailure != before["failure_reason"].String {
 				t.Fatal("remaining-attempt audit missing", err)
 			}
-			if err := s.CompleteTaskLease(req.Agent, req.TaskID, out.Lease.Token, "evidence://normal-completion"); err != nil {
+			if err := s.CompleteTaskLease(req.Agent, req.TaskID, out.Lease.Token, "pr:SirsiMaster/fixture#19"); err != nil {
 				t.Fatal(err)
 			}
 			final := taskEvidenceRaw(t, s, req.Agent, req.TaskID)
@@ -363,7 +363,7 @@ func TestTaskResumeHTTPActualOwnCallerAndRemintCompletion(t *testing.T) {
 	if _, err := other.ResumeTaskClaim(context.Background(), req); err == nil {
 		t.Fatal("another registered thread replayed recovery authority")
 	}
-	if err := other.CompleteTaskLease(req.Agent, req.TaskID, lease.Lease.Token, "forbidden-foreign-thread"); !errors.Is(err, ErrNotOwner) {
+	if err := other.CompleteTaskLease(req.Agent, req.TaskID, lease.Lease.Token, "pr:SirsiMaster/fixture#20"); !errors.Is(err, ErrNotOwner) {
 		t.Fatal("copied lease bypassed authenticated owner", err)
 	}
 	foreign := req
@@ -381,11 +381,11 @@ func TestTaskResumeHTTPActualOwnCallerAndRemintCompletion(t *testing.T) {
 	}
 	// Fresh session, same registered worker: existing CompleteTaskLease and
 	// sameWorkerAcrossRemint enforce ownership; no new completion authority.
-	if err := client(token).CompleteTaskLease(req.Agent, req.TaskID, lease.Lease.Token, "evidence://actual-remote-completion"); err != nil {
+	if err := client(token).CompleteTaskLease(req.Agent, req.TaskID, lease.Lease.Token, "pr:SirsiMaster/fixture#21"); err != nil {
 		t.Fatal(err)
 	}
 	final, err := s.GetTask(req.Agent, req.TaskID)
-	if err != nil || final.Status != "done" || final.ResultRef != "evidence://actual-remote-completion" {
+	if err != nil || final.Status != "done" || final.ResultRef != "pr:SirsiMaster/fixture#21" {
 		t.Fatal("normal authenticated completion missing", err)
 	}
 	if _, err := s.exec(`UPDATE threads SET status='closed' WHERE thread_id='fixture-thread'`); err != nil {

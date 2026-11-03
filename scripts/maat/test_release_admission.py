@@ -82,16 +82,27 @@ class ReleaseAdmissionContract(unittest.TestCase):
             # Capture arguments only; do not execute the build/signing payload.
             helper.write_text('#!/bin/bash\nprintf "<%s>" "$@"\nexit 63\n')
             helper.chmod(0o700)
+            repo = Path(home) / 'fixture-repo'
+            reviewed = repo / 'scripts/maat/admitted-run.py'
+            reviewed.parent.mkdir(parents=True)
+            reviewed.write_bytes(helper.read_bytes())
             env = dict(os.environ, HOME=home, GITHUB_RUN_ID='fixture',
                        GITHUB_RUN_ATTEMPT='1', DEVELOPER_ID_INSTALLER='fixture-only')
             result = subprocess.run(['/bin/bash', '-euo', 'pipefail', '-c', shell],
-                                    env=env, capture_output=True, text=True, timeout=5)
+                                    cwd=repo, env=env, capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 63, result.stderr)
             self.assertIn('<--register-executor>', result.stdout)
             self.assertIn('<--cpu-cores><1><--timeout><1500>', result.stdout)
             self.assertIn('<pantheon-release-fixture-1>', result.stdout)
             self.assertIn('scripts/build-dmg.sh', result.stdout)
             self.assertIn('scripts/build-pkg.sh', result.stdout)
+
+            reviewed.write_text('different reviewed supervisor\n')
+            result = subprocess.run(['/bin/bash', '-euo', 'pipefail', '-c', shell],
+                                    cwd=repo, env=env, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, '')
+            self.assertIn('does not match release source', result.stderr)
 
     def test_missing_installed_supervisor_never_runs_payload(self):
         source = (ROOT / '.github/workflows/release.yml').read_text()
@@ -104,6 +115,45 @@ class ReleaseAdmissionContract(unittest.TestCase):
                                     env=env, capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertEqual(result.stdout, '')
+
+    def test_custody_phases_invoke_bound_supervisor_before_payload(self):
+        source = (ROOT / '.github/workflows/release.yml').read_text()
+        phases = (
+            ('Preserve exact first-attempt publication inputs', 'pantheon-custody-create-fixture-1', 'create'),
+            ('Restore and verify retained inputs for publication', 'pantheon-custody-restore-fixture-1', 'restore'),
+        )
+        with tempfile.TemporaryDirectory(prefix='custody home with spaces ') as home:
+            root = Path(home)
+            repo = root / 'repo'
+            reviewed = repo / 'scripts/maat/admitted-run.py'
+            reviewed.parent.mkdir(parents=True)
+            helper = root / '.local/bin/sirsi-maat-run'
+            helper.parent.mkdir(parents=True)
+            capture = '#!/bin/bash\nprintf "<%s>" "$@"\nexit 63\n'
+            helper.write_text(capture)
+            helper.chmod(0o700)
+            reviewed.write_text(capture)
+            bindir = root / 'bin'
+            bindir.mkdir()
+            git = bindir / 'git'
+            git.write_text('#!/bin/bash\nprintf "%s\\n" 0123456789abcdef0123456789abcdef01234567\n')
+            git.chmod(0o700)
+            tmp = root / 'tmp'
+            tmp.mkdir()
+            env = dict(os.environ, HOME=home, PATH=str(bindir) + os.pathsep + os.environ.get('PATH', ''),
+                       RUNNER_TEMP=str(tmp), GITHUB_RUN_ID='fixture', GITHUB_RUN_ATTEMPT='1',
+                       GITHUB_SHA='fixture', GITHUB_WORKSPACE=str(repo), BUILD_VERSION='1.2.3',
+                       PANTHEON_GUARD_ATTEMPT=str(root / 'guard'), PANTHEON_RELEASE_CUSTODY=str(root / 'custody'))
+            for name, work, verb in phases:
+                with self.subTest(phase=name):
+                    block = source.split('      - name: ' + name, 1)[1].split('      - name:', 1)[0]
+                    shell = textwrap.dedent(block.split('        run: |\n', 1)[1])
+                    result = subprocess.run(['/bin/bash', '-euo', 'pipefail', '-c', shell],
+                                            cwd=repo, env=env, capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode, 63, result.stderr)
+                    self.assertIn('<--register-executor>', result.stdout)
+                    self.assertIn('<' + work + '>', result.stdout)
+                    self.assertIn('<' + verb + '>', result.stdout)
 
 
 if __name__ == '__main__':

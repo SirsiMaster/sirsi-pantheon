@@ -15,15 +15,22 @@ package router
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // launchdDeps are the OS seams (Rule A16) — tests stub these.
@@ -38,6 +45,7 @@ type launchdDeps struct {
 	// generalization of isQuarantined (which only ever covered quarantinedLabels).
 	// nil is treated as "not quarantined" so existing callers/tests are unaffected.
 	isFabricQuarantined func() bool
+	reviewedTargets     map[string]ManagedLaunchdPreviewTarget
 }
 
 // ManagedLaunchdRecovery is the factual result of one bounded recovery pass.
@@ -48,6 +56,229 @@ type launchdDeps struct {
 type ManagedLaunchdRecovery struct {
 	Enabled      []string
 	Bootstrapped []string
+}
+
+const managedLaunchdPreviewSchema = "sirsi.maat.launchd-disabled-preview.v1"
+const managedLaunchdPreviewMaxPlistBytes = 1 << 20
+
+func readManagedLaunchdPlist(path string) ([]byte, error) {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	file := os.NewFile(uintptr(fd), path)
+	if file == nil {
+		_ = unix.Close(fd)
+		return nil, fmt.Errorf("open managed plist: invalid file descriptor")
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("managed plist is not a regular file")
+	}
+	contents, err := io.ReadAll(io.LimitReader(file, managedLaunchdPreviewMaxPlistBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(contents) == 0 || len(contents) > managedLaunchdPreviewMaxPlistBytes {
+		return nil, fmt.Errorf("managed plist is empty or exceeds the 1 MiB review limit")
+	}
+	return contents, nil
+}
+
+var managedLaunchdLabelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$`)
+
+// ManagedLaunchdPreviewTarget is one exact eligible managed plist in a
+// read-only launchd repair preview. The plist digest and loaded state bind the
+// reviewed operation to both its file and the enable/bootstrap disposition.
+type ManagedLaunchdPreviewTarget struct {
+	Label     string `json:"label"`
+	Plist     string `json:"plist"`
+	SHA256    string `json:"sha256"`
+	WasLoaded bool   `json:"was_loaded"`
+}
+
+// ManagedLaunchdPreview is the canonical, read-only target set for one
+// operator-confirmed disabled-launchd recovery.
+type ManagedLaunchdPreview struct {
+	Schema  string                        `json:"schema"`
+	Targets []ManagedLaunchdPreviewTarget `json:"targets"`
+	Binding string                        `json:"binding"`
+}
+
+func (p ManagedLaunchdPreview) Validate() error {
+	if p.Schema != managedLaunchdPreviewSchema || len(p.Targets) == 0 || len(p.Targets) > 64 || !validLaunchdDigest(p.Binding) {
+		return fmt.Errorf("invalid managed launchd preview envelope")
+	}
+	previous := ""
+	for _, target := range p.Targets {
+		if target.Label <= previous || !managedLaunchdLabel(target.Label) || target.Plist != target.Label+".plist" || !managedPlist(target.Plist) || !validLaunchdDigest(target.SHA256) {
+			return fmt.Errorf("invalid or non-canonical managed launchd preview target")
+		}
+		previous = target.Label
+	}
+	binding, err := managedLaunchdPreviewBinding(p.Targets)
+	if err != nil || binding != p.Binding {
+		return fmt.Errorf("managed launchd preview binding does not match its targets")
+	}
+	return nil
+}
+
+func managedLaunchdLabel(label string) bool {
+	return (strings.HasPrefix(label, "ai.sirsi.") || strings.HasPrefix(label, "actions.runner.")) && managedLaunchdLabelPattern.MatchString(label)
+}
+
+func validLaunchdDigest(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func managedLaunchdPreviewBinding(targets []ManagedLaunchdPreviewTarget) (string, error) {
+	canonical := struct {
+		Schema  string                        `json:"schema"`
+		Targets []ManagedLaunchdPreviewTarget `json:"targets"`
+	}{Schema: managedLaunchdPreviewSchema, Targets: targets}
+	raw, err := json.Marshal(canonical)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// PreviewDisabledManagedLaunchAgents reads only current local launchd and
+// managed-plist state. It never enables, bootstraps, or changes a service.
+func PreviewDisabledManagedLaunchAgents() (ManagedLaunchdPreview, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview: resolve user home: %w", err)
+	}
+	return previewManagedLaunchd(filepath.Join(home, "Library", "LaunchAgents"), launchdOS)
+}
+
+func previewManagedLaunchd(agentsDir string, deps launchdDeps) (ManagedLaunchdPreview, error) {
+	if deps.isFabricQuarantined != nil && deps.isFabricQuarantined() {
+		return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview refused: the local fabric is quarantined")
+	}
+	disabled, err := managedDisabledSnapshot(deps.disabledLabels)
+	if err != nil {
+		return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview: %w", err)
+	}
+	if deps.listLabels == nil {
+		return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview: loaded-label probe unavailable")
+	}
+	loaded, err := deps.listLabels()
+	if err != nil || loaded == nil {
+		if err == nil {
+			err = fmt.Errorf("unknown loaded-label state")
+		}
+		return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview: read loaded labels: %w", err)
+	}
+	entries, err := os.ReadDir(agentsDir)
+	if err != nil {
+		return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview: read managed LaunchAgents: %w", err)
+	}
+	byLabel := make(map[string]os.DirEntry, len(entries))
+	for _, entry := range entries {
+		if managedPlist(entry.Name()) {
+			byLabel[labelForPlist(entry.Name())] = entry
+		}
+	}
+	quarantined := deps.isQuarantined != nil && deps.isQuarantined()
+	labels := make([]string, 0, len(disabled))
+	for label, isDisabled := range disabled {
+		if !isDisabled || (!strings.HasPrefix(label, "ai.sirsi.") && !strings.HasPrefix(label, "actions.runner.")) {
+			continue
+		}
+		if !managedLaunchdLabel(label) {
+			return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview refused: malformed disabled managed label")
+		}
+		if !(quarantined && quarantinedLabels[label]) {
+			labels = append(labels, label)
+		}
+	}
+	sort.Strings(labels)
+	if len(labels) == 0 || len(labels) > 64 {
+		return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview refused: eligible target set is empty or exceeds 64 labels")
+	}
+	preview := ManagedLaunchdPreview{Schema: managedLaunchdPreviewSchema}
+	for _, label := range labels {
+		entry, ok := byLabel[label]
+		if !ok || entry.IsDir() {
+			return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview refused: disabled managed label %q has no regular plist", label)
+		}
+		path := filepath.Join(agentsDir, label+".plist")
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			if err == nil {
+				err = fmt.Errorf("target is not a regular non-symlink file")
+			}
+			return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview refused: inspect target %q: %w", label, err)
+		}
+		if info.Size() <= 0 || info.Size() > managedLaunchdPreviewMaxPlistBytes {
+			return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview refused: target %q is empty or exceeds the 1 MiB review limit", label)
+		}
+		contents, err := readManagedLaunchdPlist(path)
+		if err != nil {
+			return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview: read target %q: %w", label, err)
+		}
+		sum := sha256.Sum256(contents)
+		preview.Targets = append(preview.Targets, ManagedLaunchdPreviewTarget{
+			Label: label, Plist: label + ".plist", SHA256: hex.EncodeToString(sum[:]), WasLoaded: loaded[label],
+		})
+	}
+	preview.Binding, err = managedLaunchdPreviewBinding(preview.Targets)
+	if err != nil {
+		return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview: bind exact target set: %w", err)
+	}
+	if err := preview.Validate(); err != nil {
+		return ManagedLaunchdPreview{}, fmt.Errorf("managed launchd preview: %w", err)
+	}
+	return preview, nil
+}
+
+// RestoreReviewedDisabledManagedLaunchAgents re-reads and validates the full
+// target snapshot before entering the existing managed recovery path. Only the
+// exact labels represented by the matching preview are passed as its allowlist.
+func RestoreReviewedDisabledManagedLaunchAgents(binding string) (ManagedLaunchdRecovery, error) {
+	if !validLaunchdDigest(binding) {
+		return ManagedLaunchdRecovery{}, fmt.Errorf("managed launchd recovery requires a valid preview binding")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ManagedLaunchdRecovery{}, fmt.Errorf("managed launchd recovery: resolve user home: %w", err)
+	}
+	return restoreReviewedManagedLaunchd(filepath.Join(home, "Library", "LaunchAgents"), launchdOS, binding)
+}
+
+func restoreReviewedManagedLaunchd(agentsDir string, deps launchdDeps, binding string) (ManagedLaunchdRecovery, error) {
+	preview, err := previewManagedLaunchd(agentsDir, deps)
+	if err != nil {
+		return ManagedLaunchdRecovery{}, err
+	}
+	if preview.Binding != binding {
+		return ManagedLaunchdRecovery{}, fmt.Errorf("managed launchd preview changed; no service state was changed")
+	}
+	targets := make(map[string]bool, len(preview.Targets))
+	reviewed := make(map[string]ManagedLaunchdPreviewTarget, len(preview.Targets))
+	loaded := make(map[string]bool, len(preview.Targets))
+	for _, target := range preview.Targets {
+		targets[target.Label] = true
+		reviewed[target.Label] = target
+		loaded[target.Label] = target.WasLoaded
+	}
+	deps.disabledLabels = func() (map[string]bool, error) { return targets, nil }
+	// Keep the reviewed enable/bootstrap disposition fixed through actuation;
+	// do not widen it with another launchd list after the binding check.
+	deps.listLabels = func() (map[string]bool, error) { return loaded, nil }
+	deps.reviewedTargets = reviewed
+	return recoverManagedLaunchd(agentsDir, deps, targets)
 }
 
 // quarantinedLabels are launchd labels this duty must never revive while the
@@ -190,12 +421,54 @@ func labelForPlist(name string) string {
 // revive another managed service. It never revives quarantined Gemma labels or
 // anything outside the managed filename allowlist.
 func recoverManagedLaunchd(agentsDir string, deps launchdDeps, targets map[string]bool) (ManagedLaunchdRecovery, error) {
-	entries, err := os.ReadDir(agentsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return ManagedLaunchdRecovery{}, nil
+	var names []string
+	if targets != nil && deps.reviewedTargets != nil {
+		if len(targets) == 0 || len(deps.reviewedTargets) != len(targets) {
+			return ManagedLaunchdRecovery{}, fmt.Errorf("reviewed managed launchd target set is empty or inconsistent")
 		}
-		return ManagedLaunchdRecovery{}, err
+		for label, selected := range targets {
+			if !selected || !managedLaunchdLabel(label) {
+				return ManagedLaunchdRecovery{}, fmt.Errorf("reviewed managed launchd target %q is invalid", label)
+			}
+			names = append(names, label+".plist")
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			label := labelForPlist(name)
+			path := filepath.Join(agentsDir, name)
+			info, statErr := os.Lstat(path)
+			if statErr != nil || info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+				if statErr == nil {
+					statErr = fmt.Errorf("target is not a regular non-symlink file")
+				}
+				return ManagedLaunchdRecovery{}, fmt.Errorf("reviewed managed launchd target %q is missing or malformed: %w", label, statErr)
+			}
+			expected, ok := deps.reviewedTargets[label]
+			if !ok || info.Size() <= 0 || info.Size() > managedLaunchdPreviewMaxPlistBytes {
+				return ManagedLaunchdRecovery{}, fmt.Errorf("reviewed managed launchd target %q is missing or exceeds the review limit", label)
+			}
+			contents, readErr := readManagedLaunchdPlist(path)
+			if readErr != nil {
+				return ManagedLaunchdRecovery{}, fmt.Errorf("read reviewed managed launchd target %q: %w", label, readErr)
+			}
+			sum := sha256.Sum256(contents)
+			if hex.EncodeToString(sum[:]) != expected.SHA256 {
+				return ManagedLaunchdRecovery{}, fmt.Errorf("reviewed managed launchd target %q changed before recovery", label)
+			}
+		}
+	} else {
+		entries, err := os.ReadDir(agentsDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return ManagedLaunchdRecovery{}, nil
+			}
+			return ManagedLaunchdRecovery{}, err
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				names = append(names, entry.Name())
+			}
+		}
 	}
 	// Fabric-wide stand-down (R7/G6): honored BEFORE touching launchd at all,
 	// so a quarantined fabric reads as zero revivals rather than "everything
@@ -227,9 +500,8 @@ func recoverManagedLaunchd(agentsDir string, deps launchdDeps, targets map[strin
 
 	var recovery ManagedLaunchdRecovery
 	var firstErr error
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !managedPlist(name) {
+	for _, name := range names {
+		if !managedPlist(name) {
 			continue
 		}
 		plistPath := filepath.Join(agentsDir, name)

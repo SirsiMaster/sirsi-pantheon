@@ -53,6 +53,21 @@ Statuses are `pending`, `in-progress`, `blocked`, and `done`.
 `--blocked-by <task-id>` when a task has a prerequisite; pass an empty
 `--blocked-by` on update to clear it.
 
+## Turn a router item into ledger work
+
+```sh
+sirsi router convert <item-id>                      # task on your ledger, id = item id
+sirsi router convert <item-id> --agent claude-nexus --task sne-02
+```
+
+One transaction: the item closes with the result `converted to task <agent>/<task-id> by
+<you>` and a `pending` task appears, with the item title as its subject and its sender and
+instructions in the outline. If anything fails, neither happens. Running it again on the same
+item returns the same task. An item already closed some other way is refused. Converting an
+item addressed to another lane needs `close:any`, the same as `router close`. Over the router
+service, a lane-scoped token may convert only items addressed to itself, onto its own ledger,
+and the close result names the authenticated session.
+
 ## Declare item dependencies
 
 ```sh
@@ -71,3 +86,48 @@ has no usable heartbeat or its newest heartbeat is older than that window.
 “Picked” is stricter: a non-terminal thread must name the exact item as its
 `current_item`. A fresh session that has not selected the item remains
 unpicked.
+
+## Finish a task: receipts
+
+A task becomes `done` only on a receipt the router checks itself. Free text
+("fixed it", a path, a URL) is refused.
+
+```bash
+sirsi router task complete <agent> <task-id> --lease <token> --receipt pr:SirsiMaster/sirsi-pantheon#1337
+```
+
+| Receipt | What the router checks |
+|---|---|
+| `pr:owner/repo#N` | GitHub says the PR is merged and its merge commit is on the default branch |
+| `ci:owner/repo#RUN@SHA` | the Actions run finished `success`, on exactly that 40-character commit |
+| `tag:owner/repo@TAG` | the tag exists; every check run on its commit (all pages) finished, none failed, and at least one succeeded — skipped/neutral alone is not enough |
+| `maat:RESERVATION-ID` | the router's own Ma'at ledger shows that a host-token holder released, with exit 0, a reservation held under the task agent's name. **Not proof the run happened**: the exit code is what the releaser reported, and any host token can release in an agent's name (scoped cloud tokens cannot reserve or release). `maat:<run-dir>` naming a local `~/.sirsi/evidence/maat-runs/<run-dir>` is translated to its reservation id for convenience; the file is never the proof |
+
+- **Bound.** Repos must belong to an allowed GitHub owner (`SirsiMaster` by
+  default, `routerstore.ReceiptRepoOwners`); empty, `.` and `..` path segments are
+  refused; and one receipt proves one task — a receipt already recorded for
+  another task is refused.
+- **Ma'at exit outcome.** A release only carries an exit status when it is made
+  with `sirsi maat release <id> --exit-code N`. Until the launcher
+  (`sirsi-maat-run`) passes it, `maat:` receipts are refused as unverifiable.
+- **Fails closed.** If the router cannot reach GitHub or has no token, the task
+  stays not-done and the error says the receipt is unverifiable. The service
+  reads a read-only GitHub token from `SIRSI_ROUTER_GITHUB_TOKEN`; the owner
+  provisions it into Secret Manager. Agents never create tokens.
+- **Re-checked.** `sirsi router task recheck-receipts [--older-than 24h]` (and the
+  supervisor's `receipt-recheck` duty, every 6 hours) re-verifies PR, CI and tag
+  receipts. Only a receipt positively proven false reopens its task to `pending`
+  with a timeline note `receipt no longer valid: …`: a PR no longer merged or
+  whose merge commit left the default branch (history rewrite), a tag deleted
+  from a repo the token can still read, a run whose conclusion changed. A network
+  or token failure, or a bare 404 (expired Actions runs, token scope), never
+  reopens anything: unknown is not invalid. A revert *commit* leaves the original
+  merge reachable, so it is not detected. Ma'at receipts are ledger facts and are
+  not re-checked. Reopen and refresh only apply to the exact receipt that was read.
+- **Owner sign-off and cancel.** Work with nothing to build (a decision, a read)
+  is closed by the owner with a required reason, recorded as tier `owner`. A task
+  that will not be done is `canceled` with a reason; canceled never counts as done.
+  Both are owner-only and are not served to lanes over the router.
+- `--result-ref` is a deprecated alias of `--receipt`; it accepts only a valid receipt.
+- No other path reaches `done`: `task add` cannot create a done or canceled task,
+  and `task update` cannot set either status.

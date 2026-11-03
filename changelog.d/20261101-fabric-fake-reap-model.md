@@ -1,0 +1,1 @@
+Make fake fabric children mark their bound identity reaped when successful poll/wait consumes terminal status, while timeout and nonterminal observations preserve custody. Retain the exact cadence assertion and PGID-reuse negative control. Refs: `scripts/maat/test_admitted_run.py`, `scripts/maat/admitted-run.py`, `scripts/maat/README.md`

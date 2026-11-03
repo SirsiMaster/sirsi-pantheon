@@ -14,6 +14,8 @@ Workspace navigation belongs to `WorkspaceSession` and `Nav`: Back and Forward r
 
 `Tests/SirsiMenubarTests` contains inert parser, navigation, capture, layout and resource-lifetime fixtures. Use the existing Ma’at-admitted native build/test route with isolated scratch storage. Run changed suites before the normal protected CI and release pipeline. Native version identity, successful source tests and viewport fixtures do not certify a signed installed release.
 
+The mounted workspace viewport fixture passes its UUID-scoped `UserDefaults` suite through `.defaultAppStorage`, keeping `@AppStorage` normalization inside the test suite instead of the host app preferences.
+
 The normal release workflow builds this target and the canonical Go engine as one payload. SSA owns signing, notarization, publication and supported installation; never patch an installed bundle. After normal installation, verify the loaded app identity and the affected workflows on the actual app.
 
 See `../docs/user-guides/native-workspace-navigation.md`, `../contracts/stacklab/pantheon-native-workspace-v1.json` and `../docs/stacklab/pantheon-pt/canon/CERTIFICATION.md` for user behavior, replaceable recipe boundaries and release acceptance.

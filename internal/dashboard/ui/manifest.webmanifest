@@ -1,0 +1,17 @@
+{
+  "name": "Ra — Sirsi work fabric",
+  "short_name": "Ra",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d1512",
+  "theme_color": "#0d1512",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230d1512'/%3E%3Ccircle cx='32' cy='32' r='11' fill='none' stroke='%23cdad5a' stroke-width='4'/%3E%3Cg stroke='%23cdad5a' stroke-width='4' stroke-linecap='round'%3E%3Cpath d='M32 9v6M32 49v6M9 32h6M49 32h6M16 16l4 4M44 44l4 4M48 16l-4 4M20 44l-4 4'/%3E%3C/g%3E%3C/svg%3E",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

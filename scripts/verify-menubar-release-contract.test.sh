@@ -9,7 +9,10 @@ trap 'rm -rf "$FIXTURE"' EXIT
 mkdir -p "$FIXTURE/.github/workflows" "$FIXTURE/scripts/maat" "$FIXTURE/macapp"
 cp "$ROOT/.github/workflows/release.yml" "$FIXTURE/.github/workflows/release.yml"
 cp "$ROOT/scripts/build-dmg.sh" "$ROOT/scripts/verify-menubar-release-contract.sh" \
-   "$ROOT/scripts/test_release_publication.py" "$ROOT/scripts/publish-release-assets.py" "$FIXTURE/scripts/"
+   "$ROOT/scripts/test_release_publication.py" "$ROOT/scripts/test_release_publication_guard.py" \
+   "$ROOT/scripts/publish-release-assets.py" "$ROOT/scripts/release-custody.py" \
+   "$ROOT/scripts/build-release-pretoolguard.sh" "$ROOT/scripts/check-release-run-custody.py" \
+   "$ROOT/scripts/reserve-release-draft.py" "$FIXTURE/scripts/"
 cp "$ROOT/scripts/maat/test_release_admission.py" "$FIXTURE/scripts/maat/"
 
 WORKFLOW="$FIXTURE/.github/workflows/release.yml"

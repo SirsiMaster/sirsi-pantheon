@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -95,6 +96,136 @@ func TestRemoteSentinelErrorsSurviveTheWire(t *testing.T) {
 	}
 }
 
+func TestRemoteLocalExportHonorsPerCallAndParentCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		perCall    time.Duration
+		parentWait time.Duration
+		cancel     bool
+	}{
+		{name: "per-call ceiling", perCall: 200 * time.Millisecond, parentWait: time.Second},
+		{name: "earlier parent deadline", perCall: time.Second, parentWait: 200 * time.Millisecond},
+		{name: "parent cancellation", perCall: time.Second, cancel: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := openBackendStore(t, filepath.Join(t.TempDir(), "router.db"))
+			t.Cleanup(func() { _ = backend.Close() })
+			h, err := Handler(backend, ServerOptions{Token: "t0k"})
+			if err != nil {
+				t.Fatalf("Handler: %v", err)
+			}
+			getStarted := make(chan struct{}, 1)
+			getHandlerDone := make(chan struct{})
+			releaseGetHandler := make(chan struct{})
+			var gets, sends, exports atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch filepath.Base(r.URL.Path) {
+				case "Get":
+					defer close(getHandlerDone)
+					_, drainErr := io.Copy(io.Discard, r.Body)
+					closeErr := r.Body.Close()
+					if drainErr != nil {
+						t.Errorf("drain stalled Get request body: %v", drainErr)
+						return
+					}
+					if closeErr != nil {
+						t.Errorf("close stalled Get request body: %v", closeErr)
+						return
+					}
+					gets.Add(1)
+					select {
+					case getStarted <- struct{}{}:
+					default:
+					}
+					select {
+					case <-r.Context().Done():
+					case <-releaseGetHandler:
+					}
+					return
+				case "SendGuarded":
+					sends.Add(1)
+				case "ExportItem":
+					exports.Add(1)
+				}
+				h.ServeHTTP(w, r)
+			}))
+			t.Cleanup(func() {
+				close(releaseGetHandler)
+				server.Close()
+			})
+			rs := NewMemoryOnlyRemoteStore(server.URL, "t0k")
+			// Seed directly in the isolated backend; only the projection path is
+			// under test, and the sender is authorized to read this item.
+			id, _, err := backend.SendGuarded(SendReq{From: rs.agent, To: "recipient", Title: "bounded projection", Instructions: "fixture"})
+			if err != nil {
+				t.Fatalf("seed committed item: %v", err)
+			}
+			if _, err := rs.ensureSession(context.Background()); err != nil {
+				t.Fatalf("prepare authenticated session: %v", err)
+			}
+			rs.perCall = tc.perCall
+
+			parentCtx := context.Background()
+			var cancel context.CancelFunc
+			if tc.cancel {
+				parentCtx, cancel = context.WithCancel(parentCtx)
+			} else {
+				parentCtx, cancel = context.WithTimeout(parentCtx, tc.parentWait)
+			}
+			defer cancel()
+			itemsDir := filepath.Join(t.TempDir(), "items")
+			result := make(chan error, 1)
+			started := time.Now()
+			go func() {
+				_, exportErr := rs.ExportItemLocalContext(parentCtx, itemsDir, id)
+				result <- exportErr
+			}()
+			select {
+			case <-getStarted:
+			case <-time.After(1500 * time.Millisecond):
+				cancel()
+				t.Fatal("export did not reach the stalled authenticated Get")
+			}
+			if tc.cancel {
+				cancel()
+			}
+			var exportErr error
+			select {
+			case exportErr = <-result:
+			case <-time.After(time.Second):
+				cancel()
+				t.Fatal("bounded export did not return after its context ended")
+			}
+			select {
+			case <-getHandlerDone:
+			case <-time.After(time.Second):
+				t.Fatal("stalled Get handler did not exit after the client request was canceled")
+			}
+			if tc.cancel {
+				if !errors.Is(exportErr, context.Canceled) {
+					t.Fatalf("parent cancellation error = %v, want context.Canceled", exportErr)
+				}
+			} else {
+				if !errors.Is(exportErr, context.DeadlineExceeded) {
+					t.Fatalf("deadline error = %v, want context.DeadlineExceeded", exportErr)
+				}
+				if elapsed := time.Since(started); elapsed >= 800*time.Millisecond {
+					t.Fatalf("per-call budget took %v, want well below the parent deadline", elapsed)
+				}
+			}
+			if gets.Load() != 1 || sends.Load() != 0 || exports.Load() != 0 {
+				t.Fatalf("projection RPC counts: Get=%d SendGuarded=%d ExportItem=%d", gets.Load(), sends.Load(), exports.Load())
+			}
+			if _, err := os.Stat(filepath.Join(itemsDir, id+".md")); !os.IsNotExist(err) {
+				t.Fatalf("canceled projection wrote an audit file: stat err=%v", err)
+			}
+			if item, err := backend.Get(id); err != nil || item.ID != id {
+				t.Fatalf("stalled projection changed the canonical row: item=%+v err=%v", item, err)
+			}
+		})
+	}
+}
+
 func TestRemoteWaitIsALongPollThatWakesOnSend(t *testing.T) {
 	_, rs := remoteHarness(t)
 	done := make(chan bool, 1)
@@ -149,10 +280,10 @@ func TestRemoteRejectsBadTokenAndUnknownMethod(t *testing.T) {
 // Every sentinel the package exports must be in the wire table, or a client
 // loses errors.Is on it silently. Pins the closed set in remote.go.
 func TestSentinelsRoundTrip(t *testing.T) {
-	all := []error{ErrTaskResumeInput, ErrNotComplete, ErrBreakerOpen, ErrOverQuota, ErrIdentifierTaken, ErrNoWork, ErrLanePaused,
+	all := []error{ErrTaskResumeInput, ErrNotComplete, ErrBreakerOpen, ErrOverQuota, ErrRecipientSaturated, ErrIdentifierTaken, ErrNoWork, ErrLanePaused,
 		ErrNoClaimableTask, ErrLeaseInvalid, ErrTerminal, ErrBudgetExceeded, ErrReasonRequired,
 		ErrIncompleteEvidence, ErrNotFound, ErrAlreadyClosed, ErrConcurrentTaskUpdate, ErrTaskExists,
-		ErrSessionUnknown, ErrSessionRevoked, ErrNotOwner, ErrTokenUnknown, ErrTokenRevoked, ErrHostMismatch, ErrServiceUnavailable, ErrUnregistered, ErrThreadUnknown, ErrThreadAuthority, ErrWorkerAnswers}
+		ErrSessionUnknown, ErrSessionRevoked, ErrNotOwner, ErrTokenUnknown, ErrTokenRevoked, ErrHostMismatch, ErrServiceUnavailable, ErrUnregistered, ErrThreadUnknown, ErrThreadAuthority, ErrWorkerAnswers, ErrReceiptInvalid, ErrReceiptUnverifiable}
 	if len(all) != len(sentinelErrors) {
 		t.Fatalf("sentinel table has %d entries, package exports %d", len(sentinelErrors), len(all))
 	}

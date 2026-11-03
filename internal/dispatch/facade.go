@@ -152,6 +152,9 @@ type SendResult struct {
 	To        string // the validated recipient after retired-name resolution
 	Deduped   bool   // an idempotent duplicate — the existing item was returned
 	AuditPath string // the items/<id>.md audit view (empty if its write failed)
+	// Warning is set when the recipient is in the backlog warn band
+	// (routerstore.RecipientWarnAt): the send landed, but the lane is not draining.
+	Warning string
 }
 
 // Send is THE write path (§2b axiom 4). Guards run before dispatch:
@@ -198,20 +201,33 @@ func (f *Facade) SendContext(ctx context.Context, from, to, title, msgType, inst
 	if err != nil {
 		return SendResult{}, err // refused: no store row, no dispatch (§2b axiom 8)
 	}
+	res := SendResult{ID: id, To: to, Deduped: deduped}
+	// Advisory only: an unreadable load never fails a send that already landed.
+	if load, lerr := f.store.RecipientLoad(to); lerr == nil {
+		res.Warning = load.Warning(to)
+	}
 	// After the cutover the store row IS the record — no items/<id>.md audit view
 	// is written, consumers wake via `router wait`, and Show/Close read the store.
 	if routercfg.StoreWake() {
-		return SendResult{ID: id, To: to, Deduped: deduped}, nil
+		return res, nil
 	}
-	path, err := f.store.ExportItem(filepath.Join(f.root, "items"), id)
+	itemsDir := filepath.Join(f.root, "items")
+	var path string
+	if exporter, ok := f.store.(interface {
+		ExportItemLocalContext(context.Context, string, string) (string, error)
+	}); ok {
+		path, err = exporter.ExportItemLocalContext(ctx, itemsDir, id)
+	} else if err = ctx.Err(); err == nil {
+		path, err = f.store.ExportItem(itemsDir, id)
+	}
 	if err != nil {
 		// The dispatch HAPPENED (store row committed); the audit view failed.
 		// Loud, not fatal — the sweep flags store-only items, and ExportMarkdown
 		// can regenerate every audit file from the store.
-		return SendResult{ID: id, To: to, Deduped: deduped},
-			fmt.Errorf("dispatch: item %s dispatched but audit file write failed: %w", id, err)
+		return res, fmt.Errorf("dispatch: item %s dispatched but local audit projection failed: %w", id, err)
 	}
-	return SendResult{ID: id, To: to, Deduped: deduped, AuditPath: path}, nil
+	res.AuditPath = path
+	return res, nil
 }
 
 // RegistryPath picks the agents.json this host reads for a router root. The default is
@@ -625,6 +641,45 @@ func (f *Facade) CloseItem(actor, id, result string) error {
 		result = fmt.Sprintf("Closed by declared actor %s on behalf of recipient %s.\n\n%s", actor, item.To, result)
 	}
 	return f.closeRaw(id, result)
+}
+
+// ConvertItemToTask closes an open item and turns it into a task on agent's ledger in one store
+// transaction (routerstore.ConvertItemToTask). Same authority as CloseItem: an owner-addressed item is
+// refused, and converting another lane's item needs close:any. Store first, then the best-effort file
+// mirror, like completeRaw, so a refused convert never leaves a file marked closed.
+func (f *Facade) ConvertItemToTask(actor, id, agent, taskID string) (routerstore.Task, error) {
+	if err := f.ValidateAgent("acting agent", actor); err != nil {
+		return routerstore.Task{}, err
+	}
+	if err := f.ValidateAgent("ledger agent", agent); err != nil {
+		return routerstore.Task{}, err
+	}
+	item, err := f.Get(id)
+	if err != nil {
+		return routerstore.Task{}, err
+	}
+	if work.IsOwnerRecipient(item.To) {
+		return routerstore.Task{}, fmt.Errorf("dispatch: item %s is addressed to the owner (%q) and cannot be converted by an agent", id, item.To)
+	}
+	if item.To != actor {
+		allowed, capabilityErr := f.agentHasCapability(actor, "close:any")
+		if capabilityErr != nil {
+			return routerstore.Task{}, fmt.Errorf("dispatch: verify delegated-close authority: %w", capabilityErr)
+		}
+		if !allowed {
+			return routerstore.Task{}, fmt.Errorf("dispatch: acting agent %q cannot convert item %s addressed to %q without capability close:any", actor, id, item.To)
+		}
+	}
+	t, err := f.store.ConvertItemToTask(id, agent, taskID, actor)
+	if err != nil {
+		return routerstore.Task{}, fmt.Errorf("dispatch: item %s convert failed: %w", id, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(f.root, "items", id+".md")); statErr == nil {
+		if err := work.Close(f.root, id, "converted to task "+t.Agent+"/"+t.TaskID); err != nil && !errors.Is(err, work.ErrAlreadyClosed) {
+			return t, fmt.Errorf("dispatch: item %s converted in the store but file mirror failed: %w", id, err)
+		}
+	}
+	return t, nil
 }
 
 // CompleteItem finishes a CLAIMED item (status claimed/working) under its

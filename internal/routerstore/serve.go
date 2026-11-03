@@ -48,6 +48,9 @@ var (
 
 // notServed are Store methods that exist for the service's own use and must
 // never be reachable from a node.
+// ownerTerminals end a task on the owner's word (receipts.go ownerTerminal). Served to @ledger-editor only.
+var ownerTerminals = map[string]bool{"CompleteTaskByOwner": true, "CancelTask": true}
+
 var notServed = map[string]bool{
 	"GetSession": true, "RevokeSession": true, "TouchSession": true,
 	"BindItemSession": true, "ItemSession": true, "BindTaskSession": true, "TaskSession": true,
@@ -118,7 +121,7 @@ var ruleOfRaExempt = map[string]bool{
 	"Heartbeat": true, "RegisterAgent": true, "ListThreads": true, "GetThreadRecord": true, "AdoptTokenMachineID": true,
 	"Get": true, "Inbox": true, "ListAll": true, "ListPage": true, "ListTasks": true, "GetTask": true, "GetAgent": true, "ListAgents": true,
 	"GetState": true, "Counters": true, "Breakers": true, "Render": true, "ListWakeEvents": true, "ListIdentifiers": true,
-	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "OperationalAgents": true,
+	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "RecipientLoad": true, "OperationalAgents": true,
 	"Wait": true, "ListenNotify": true, "NotifyAgent": true, "NotifyPath": true, "ExportItem": true,
 	"ForceOwner": true, "AudienceSince": true, "TaskLeaseEventsSince": true,
 }
@@ -361,6 +364,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// retry, not conclude its credentials died (rs-13 outage finding — every
 	// call during a 30 s Postgres outage came back "invalid bearer token").
 	tokenHost, tokenScope, ok, lookupErr := s.hostForBearer(r)
+	tokenScope, observer, editor := splitCapabilities(tokenScope)
 	if lookupErr != nil {
 		writeErr(w, http.StatusServiceUnavailable, "", "ledger unavailable: "+lookupErr.Error())
 		return
@@ -376,6 +380,12 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	m, ok := storeType.MethodByName(name)
 	if !ok || notServed[name] {
 		writeErr(w, http.StatusNotFound, "", "no such store method: "+name)
+		return
+	}
+	// Owner sign-off and cancel are the owner's, never a lane's: only the IAP board's @ledger-editor token may
+	// call them, and an unscoped host or bootstrap token is refused too (it would let a lane sign off itself).
+	if ownerTerminals[name] && !editor {
+		writeErr(w, http.StatusForbidden, "ErrLaneScope", ErrLaneScope.Error()+": "+name+" is owner-only, served to the @ledger-editor board token alone")
 		return
 	}
 	bodyLimit := int64(64 << 20)
@@ -551,7 +561,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// 6a. lane scope (schema v25): a token confined to listed agents may only call the lane API, as those
 	// agents. Checked on EVERY call including mint, before any ownership or thread rule, and deny-by-default.
 	if tokenScope != nil {
-		if lerr := s.laneScope(tokenScope, sess, name, in); lerr != nil {
+		if lerr := s.laneScope(tokenScope, observer, editor, sess, name, in); lerr != nil {
 			// A refusal is evidence of an attempt to step outside a lane (a cloud sandbox probing, or a compromised
 			// session): record who tried what, best-effort, so the owner can see it in `router audience`.
 			s.logf("lane-scope: REFUSED %s from %s@%s (token host %s): %v", name, sess.Agent, sess.Host, tokenHost, lerr)
@@ -601,6 +611,17 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		in[0] = reflect.ValueOf(machine)
+	}
+	// The convert's close result names who did it: the authenticated session, never a client-supplied name.
+	if name == "ConvertItemToTask" && sess.Agent != "" {
+		in[3] = reflect.ValueOf(sess.Agent + "@" + sess.Host)
+	}
+	// The board names the signed-in account it verified through IAP; anything else is not an owner actor.
+	if ownerTerminals[name] {
+		if a := in[2].String(); !strings.HasPrefix(a, "board:") || !strings.Contains(a, "@") {
+			writeErr(w, http.StatusForbidden, "ErrLaneScope", ErrLaneScope.Error()+": "+name+" actor must be board:<signed-in email>")
+			return
+		}
 	}
 	// 6. ownership — before the call, against the session bound at claim time.
 	if idx, ok := itemOwnership[name]; ok && idx < len(in) {
@@ -752,12 +773,18 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// readable (liveness is needed to see where a send will land), but the unfiltered row carries each
 	// thread's full continuation payload (ResumePrompt, OwnedOpenItems, …), not just liveness (SSA PR
 	// #1079 review, P1).
+	// A read-only observer (the hosted board) needs every lane's thread for lane verdicts, so it gets every
+	// row — projected to the observer contract (observerThreadView), never the continuation payload. Its own
+	// agent's rows stay whole: its register/heartbeat CAS compares against the stored payload.
 	if tokenScope != nil && name == "ListThreads" && len(results) == 1 {
 		if recs, ok := results[0].Interface().([]ThreadRecord); ok {
 			kept := make([]ThreadRecord, 0, len(recs))
 			for _, r := range recs {
-				if tokenScope[r.Agent] {
+				switch {
+				case tokenScope[r.Agent]:
 					kept = append(kept, r)
+				case observer:
+					kept = append(kept, observerThreadView(r))
 				}
 			}
 			results[0] = reflect.ValueOf(kept)

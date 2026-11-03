@@ -101,6 +101,9 @@ func (s *SQLiteStore) SetState(key, value string) error {
 	if strings.HasPrefix(key, "task-resume:") {
 		return errors.New("task resume: generic state writes cannot replace provenance")
 	}
+	if strings.HasPrefix(key, receiptStatePrefix) || key == receiptLockKey {
+		return errors.New("task receipt: generic state writes cannot create or replace completion proof")
+	}
 	if strings.HasPrefix(key, "task-evidence-relocation:") {
 		return errors.New("task evidence: generic state writes cannot create or replace provenance")
 	}
@@ -109,6 +112,9 @@ func (s *SQLiteStore) SetState(key, value string) error {
 	}
 	if strings.HasPrefix(key, "mailbox-reconciliation:") {
 		return errors.New("mailbox reconciliation: generic state writes cannot create or replace approvals or audits")
+	}
+	if strings.HasPrefix(key, convertLinkPrefix) {
+		return errors.New("item convert: generic state writes cannot create or replace convert links")
 	}
 	if key == desktopSleepKey {
 		return errors.New("sleep custody: generic state writes cannot create or replace authority")
@@ -150,6 +156,9 @@ func (s *SQLiteStore) CompareAndSwapState(key, expected string, exists bool, val
 	if strings.HasPrefix(key, "task-resume:") {
 		return false, errors.New("task resume: generic CAS cannot replace provenance")
 	}
+	if strings.HasPrefix(key, receiptStatePrefix) || key == receiptLockKey {
+		return false, errors.New("task receipt: generic CAS cannot create or replace completion proof")
+	}
 	if strings.HasPrefix(key, "task-evidence-relocation:") {
 		return false, errors.New("task evidence: generic CAS cannot create or replace provenance")
 	}
@@ -183,6 +192,9 @@ func (s *SQLiteStore) CompareAndSwapState(key, expected string, exists bool, val
 	}
 	if strings.HasPrefix(key, "mailbox-reconciliation:") {
 		return false, errors.New("mailbox reconciliation: generic CAS cannot create or replace approvals or audits")
+	}
+	if strings.HasPrefix(key, convertLinkPrefix) {
+		return false, errors.New("item convert: generic CAS cannot create or replace convert links")
 	}
 	if key == desktopSleepKey {
 		return false, errors.New("sleep custody: generic CAS cannot create or replace authority")

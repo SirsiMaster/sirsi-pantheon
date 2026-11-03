@@ -57,10 +57,16 @@ var ErrTaskExists = errors.New("routerstore: task already exists")
 
 func validTaskStatus(status string) bool {
 	switch status {
-	case "pending", "in-progress", "blocked", "done":
+	case "pending", "in-progress", "blocked", "done", "canceled":
 		return true
 	}
 	return false
+}
+
+// terminalTaskStatus: done (verified receipt) or canceled (owner, with reason).
+// Neither is reachable through AddTask or UpdateTask.
+func terminalTaskStatus(status string) bool {
+	return status == "done" || status == "canceled"
 }
 
 func validTestState(state string) bool {
@@ -86,7 +92,7 @@ func validateTask(t Task) error {
 		return fmt.Errorf("routerstore: task agent, task-id, and subject are required")
 	}
 	if !validTaskStatus(t.Status) {
-		return fmt.Errorf("routerstore: invalid task status %q (want pending, in-progress, blocked, or done)", t.Status)
+		return fmt.Errorf("routerstore: invalid task status %q (want pending, in-progress, blocked, done or canceled)", t.Status)
 	}
 	if strings.TrimSpace(t.ResponsibleParty) == "" {
 		return fmt.Errorf("routerstore: task responsible-party is required")
@@ -163,7 +169,10 @@ func deriveTaskLiveness(t Task, now time.Time) string {
 	return "unknown"
 }
 
-func (s *SQLiteStore) AddTask(t Task) error {
+func (s *SQLiteStore) AddTask(t Task) error { return s.insertTask(s.exec, t) }
+
+// insertTask is AddTask over any executor, so ConvertItemToTask can run it inside its transaction.
+func (s *SQLiteStore) insertTask(exec func(string, ...any) (sql.Result, error), t Task) error {
 	if t.Status == "" {
 		t.Status = "pending"
 	}
@@ -198,6 +207,9 @@ func (s *SQLiteStore) AddTask(t Task) error {
 	if err := validateTask(t); err != nil {
 		return err
 	}
+	if terminalTaskStatus(t.Status) {
+		return fmt.Errorf("routerstore: a task cannot be created %s; done needs a verified receipt (task complete) and cancel is owner-only", t.Status)
+	}
 	timeline, err := json.Marshal(t.Timeline)
 	if err != nil {
 		return fmt.Errorf("routerstore: encode timeline: %w", err)
@@ -206,7 +218,7 @@ func (s *SQLiteStore) AddTask(t Task) error {
 	if err != nil {
 		return fmt.Errorf("routerstore: encode links: %w", err)
 	}
-	_, err = s.exec(`INSERT INTO tasks(agent,task_id,subject,status,phase,responsible_party,blocked_by,created,updated,charter,commissioned_at,commissioned_by,outline,timeline,links,test_state,stage,tokens_consumed,duration_seconds) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);`,
+	_, err = exec(`INSERT INTO tasks(agent,task_id,subject,status,phase,responsible_party,blocked_by,created,updated,charter,commissioned_at,commissioned_by,outline,timeline,links,test_state,stage,tokens_consumed,duration_seconds) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);`,
 		t.Agent, t.TaskID, strings.TrimSpace(t.Subject), t.Status, strings.TrimSpace(t.Phase), t.ResponsibleParty, strings.TrimSpace(t.BlockedBy), t.Created, t.Updated, t.Charter, t.CommissionedAt, t.CommissionedBy, t.Outline, string(timeline), string(links), t.TestState, t.Stage, t.TokensConsumed, t.DurationSeconds)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
@@ -317,7 +329,7 @@ func (s *SQLiteStore) updateTaskOnce(agent, taskID string, u TaskUpdate) (Task, 
 		// now. A task stuck "in-progress" with no lease or an expired one is not
 		// held by anyone — refusing to relabel it leaves a correctly-blocked
 		// task's status permanently wrong (rs-43).
-		if u.Status == "done" || u.Status == "in-progress" || (t.Status == "in-progress" && leaseLive) {
+		if terminalTaskStatus(u.Status) || u.Status == "in-progress" || (t.Status == "in-progress" && leaseLive) {
 			return Task{}, fmt.Errorf("routerstore: executable task transition %q -> %q requires a fenced task lease", t.Status, u.Status)
 		}
 	}

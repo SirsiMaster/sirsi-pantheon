@@ -60,7 +60,7 @@ func TestRunnableForThreeSourcesAndAuditedEmpty(t *testing.T) {
 	if reconcile.WakeEventsCreated != 0 {
 		t.Fatalf("leased task caused duplicate wake backfill: %+v", reconcile)
 	}
-	if ifErr4 := s.CompleteTaskLease(agent, "T1", lease.Token, "proof://T1"); ifErr4 != nil {
+	if ifErr4 := s.CompleteTaskLease(agent, "T1", lease.Token, "pr:SirsiMaster/fixture#11"); ifErr4 != nil {
 		t.Fatal(ifErr4)
 	}
 
@@ -177,9 +177,8 @@ func TestRunnableForDispatchableTasks(t *testing.T) {
 	add("owner-step", "owner", "")           // only the owner can do it
 	add("other-party", "codex-pantheon", "") // another party's work
 	add("blocked", "self", "waiting-on-owner-decision")
-	if err := s.AddTask(Task{Agent: agent, TaskID: "finished", Subject: "finished", Status: "done", ResponsibleParty: "self"}); err != nil {
-		t.Fatalf("add finished: %v", err)
-	}
+	add("finished", "self", "")
+	markDoneFixture(t, s, agent, "finished")
 
 	st, err := s.RunnableFor(agent)
 	if err != nil {

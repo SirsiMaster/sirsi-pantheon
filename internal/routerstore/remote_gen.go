@@ -88,11 +88,22 @@ func (rs *RemoteStore) ClassifyLane(agent string, wakeRoutable bool, recentWithi
 func (rs *RemoteStore) CloseItem(id, result string) error {
 	return rs.call("CloseItem", []any{id, result})
 }
+func (rs *RemoteStore) ConvertItemToTask(itemID, agent, taskID, actor string) (Task, error) {
+	var o0 Task
+	err := rs.call("ConvertItemToTask", []any{itemID, agent, taskID, actor}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) Complete(id, token, result string) error {
 	return rs.call("Complete", []any{id, token, result})
 }
 func (rs *RemoteStore) CompleteTaskLease(agent, taskID, token, resultRef string) error {
 	return rs.call("CompleteTaskLease", []any{agent, taskID, token, resultRef})
+}
+func (rs *RemoteStore) CompleteTaskByOwner(agent, taskID, actor, reason string) error {
+	return rs.call("CompleteTaskByOwner", []any{agent, taskID, actor, reason})
+}
+func (rs *RemoteStore) CancelTask(agent, taskID, actor, reason string) error {
+	return rs.call("CancelTask", []any{agent, taskID, actor, reason})
 }
 func (rs *RemoteStore) Counters() (DispatchCounters, error) {
 	var o0 DispatchCounters
@@ -247,6 +258,11 @@ func (rs *RemoteStore) ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseRecl
 	err := rs.call("ReclaimExpiredTaskLeases", []any{dryRun}, &o0)
 	return o0, err
 }
+func (rs *RemoteStore) RecheckTaskReceipts(olderThan time.Duration) ([]ReceiptRecheck, error) {
+	var o0 []ReceiptRecheck
+	err := rs.call("RecheckTaskReceipts", []any{olderThan}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) ReconcileOperationalState(agent string, wakeRoutable bool) (ReconcileReport, error) {
 	var o0 ReconcileReport
 	err := rs.call("ReconcileOperationalState", []any{agent, wakeRoutable}, &o0)
@@ -299,6 +315,11 @@ func (rs *RemoteStore) SendGuarded(r SendReq) (string, bool, error) {
 	var o1 bool
 	err := rs.call("SendGuarded", []any{r}, &o0, &o1)
 	return o0, o1, err
+}
+func (rs *RemoteStore) RecipientLoad(agent string) (RecipientLoad, error) {
+	var o0 RecipientLoad
+	err := rs.call("RecipientLoad", []any{agent}, &o0)
+	return o0, err
 }
 func (rs *RemoteStore) ReopenItem(id, note string) error {
 	return rs.call("ReopenItem", []any{id, note})

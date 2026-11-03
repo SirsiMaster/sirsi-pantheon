@@ -179,7 +179,7 @@ func TestExpiredInProgressStillReclaims(t *testing.T) {
 	if err := s.RenewTaskLease("codex-home", "E1", first.Token, time.Minute); err == nil {
 		t.Fatal("the fenced-out worker must not be able to renew")
 	}
-	if err := s.CompleteTaskLease("codex-home", "E1", first.Token, "proof://E1"); err == nil {
+	if err := s.CompleteTaskLease("codex-home", "E1", first.Token, "pr:SirsiMaster/fixture#13"); err == nil {
 		t.Fatal("the fenced-out worker must not be able to complete")
 	}
 }

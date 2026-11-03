@@ -55,12 +55,19 @@ type Store interface {
 	ClassifyLane(agent string, wakeRoutable bool, recentWithin time.Duration) (LaneOperationalState, error)
 	Close() error
 	CloseItem(id, result string) error
+	// ConvertItemToTask closes an open item and adds it to agent's ledger in one transaction (convert.go).
+	// actor is overwritten server-side with the authenticated session over the wire.
+	ConvertItemToTask(itemID, agent, taskID, actor string) (Task, error)
 	ReconcileMailboxNotice(ctx context.Context, req MailboxReconcileRequest) (MailboxReconcileResult, error)
 	// RelocateTaskEvidence only relocates exact references on the authenticated
 	// actor's own rows; never a task lifecycle/completion or generic update.
 	RelocateTaskEvidence(ctx context.Context, req TaskEvidenceRequest) (TaskEvidenceResult, error)
 	Complete(id, token, result string) error
 	CompleteTaskLease(agent, taskID, token, resultRef string) error
+	// CompleteTaskByOwner and CancelTask are owner sign-off and cancel (receipts.go). Over the wire they are
+	// served ONLY to an @ledger-editor token (the IAP board) acting for a board:<email> actor (serve.go ownerTerminals).
+	CompleteTaskByOwner(agent, taskID, actor, reason string) error
+	CancelTask(agent, taskID, actor, reason string) error
 	Counters() (DispatchCounters, error)
 	// DeleteThreadCAS retires the exact ordinary row to a retained pruned key
 	// with empty user payload. Existing fences remain unchanged. True means
@@ -127,6 +134,9 @@ type Store interface {
 	PublishIdentifier(namespace string, number int, slug string) error
 	Put(it Item) error
 	ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseReclaim, error)
+	// RecheckTaskReceipts re-verifies done tasks' pr/ci/tag receipts on the
+	// service (which holds the verifier) and reopens any now proven false.
+	RecheckTaskReceipts(olderThan time.Duration) ([]ReceiptRecheck, error)
 	ReconcileOperationalState(agent string, wakeRoutable bool) (ReconcileReport, error)
 	RecordEvidence(reqID string, ev Evidence) error
 	RegisterAgent(id string, pid int) error
@@ -143,6 +153,7 @@ type Store interface {
 	Satisfy(reqID string) error
 	Send(from, to, title, msgType, instructions string) (string, error)
 	SendGuarded(r SendReq) (string, bool, error)
+	RecipientLoad(agent string) (RecipientLoad, error)
 	// ReopenItem returns a closed item to open, preserving its close result in the
 	// body (inverse of CloseItem). Authorization is dispatch's.
 	ReopenItem(id, note string) error

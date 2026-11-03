@@ -1,12 +1,18 @@
 package dispatch
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -153,6 +159,235 @@ func TestSendCommitsStoreThenAuditFile(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].ID != res.ID {
 		t.Fatalf("file router does not see the dispatched item: %+v", items)
+	}
+}
+
+func TestRemoteSendProjectsAuditLocallyAfterSingleCommit(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		failGet    bool
+		blockWrite bool
+		duplicate  bool
+		warnLoad   bool
+		cancelGet  bool
+		mismatch   bool
+		storeWake  bool
+	}{
+		{name: "canonical local projection"},
+		{name: "parent canceled after commit", cancelGet: true, warnLoad: true},
+		{name: "mismatched canonical item", mismatch: true},
+		{name: "store wake skips remote projection", storeWake: true},
+		{name: "projection failure preserves backlog warning", failGet: true, warnLoad: true},
+		{name: "Get failure preserves committed row", failGet: true},
+		{name: "local write failure preserves committed row", blockWrite: true},
+		{name: "duplicate Get failure preserves deduped result", failGet: true, duplicate: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SIRSI_ROUTER_URL", "")
+			wake := "0"
+			if tc.storeWake {
+				wake = "1"
+			}
+			t.Setenv(routercfg.StoreWakeEnv, wake)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			// Do not let the handler return an empty success response while
+			// cancellation is still propagating to the HTTP client.
+			releaseCanceledGet := make(chan struct{})
+			defer close(releaseCanceledGet)
+			root := filepath.Join(t.TempDir(), "idea-router")
+			backend, err := routerstore.OpenPath(filepath.Join(t.TempDir(), "router.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = backend.Close() })
+			h, err := routerstore.Handler(backend, routerstore.ServerOptions{Token: "test-token"})
+			if err != nil {
+				t.Fatalf("Handler: %v", err)
+			}
+			var mu sync.Mutex
+			calls := make(map[string]int)
+			callerPathSent := false
+			var blockerErr error
+			failGetNow := tc.failGet && !tc.duplicate
+			setBlockerErr := func(err error) {
+				mu.Lock()
+				blockerErr = err
+				mu.Unlock()
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				method := filepath.Base(r.URL.Path)
+				requestBody, readErr := io.ReadAll(r.Body)
+				if readErr != nil {
+					http.Error(w, "read request body", http.StatusBadRequest)
+					return
+				}
+				r.Body = io.NopCloser(bytes.NewReader(requestBody))
+				mu.Lock()
+				calls[method]++
+				callerPathSent = callerPathSent || bytes.Contains(requestBody, []byte(root))
+				failGet := failGetNow && method == "Get"
+				mu.Unlock()
+				if method == "Get" && tc.cancelGet {
+					cancel()
+					<-releaseCanceledGet
+					return
+				}
+				if method == "Get" && tc.mismatch {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"result":[{"ID":"wrong-id"}]}`))
+					return
+				}
+				if failGet {
+					http.Error(w, "inert Get failure", http.StatusServiceUnavailable)
+					return
+				}
+				if tc.warnLoad && method == "RecipientLoad" {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"result":[{"unacked":50,"stalled":0}]}`))
+					return
+				}
+				// Keep the test response uncompressed so this inert wrapper can
+				// install a write blocker after the real SendGuarded commit.
+				r.Header.Del("Accept-Encoding")
+				if !tc.blockWrite || method != "SendGuarded" {
+					h.ServeHTTP(w, r)
+					return
+				}
+				recorded := httptest.NewRecorder()
+				h.ServeHTTP(recorded, r)
+				var response struct {
+					Result []json.RawMessage `json:"result"`
+				}
+				if err := json.Unmarshal(recorded.Body.Bytes(), &response); err != nil {
+					setBlockerErr(fmt.Errorf("decode SendGuarded response: %w", err))
+				} else if len(response.Result) == 0 {
+					setBlockerErr(errors.New("SendGuarded response has no results"))
+				} else {
+					var id string
+					if err := json.Unmarshal(response.Result[0], &id); err != nil {
+						setBlockerErr(fmt.Errorf("decode committed id: %w", err))
+					} else {
+						setBlockerErr(os.Mkdir(filepath.Join(root, "items", id+".md"), 0o755))
+					}
+				}
+				for key, values := range recorded.Header() {
+					for _, value := range values {
+						w.Header().Add(key, value)
+					}
+				}
+				w.WriteHeader(recorded.Code)
+				_, _ = w.Write(recorded.Body.Bytes())
+			}))
+			t.Cleanup(server.Close)
+			remote := routerstore.NewMemoryOnlyRemoteStore(server.URL, "test-token")
+			f := New(root, remote)
+			writeTestRegistry(t, root)
+
+			var priorID string
+			if tc.duplicate {
+				first, firstErr := f.Send("a", "b", "audit locally", "review", "preserve the committed row")
+				if firstErr != nil || first.ID == "" || first.Deduped {
+					t.Fatalf("initial send before duplicate projection failure: result=%+v err=%v", first, firstErr)
+				}
+				priorID = first.ID
+				mu.Lock()
+				failGetNow = true
+				mu.Unlock()
+			}
+			res, sendErr := f.SendContext(ctx, "a", "b", "audit locally", "review", "preserve the committed row")
+			mu.Lock()
+			gotCalls := make(map[string]int, len(calls))
+			for method, count := range calls {
+				gotCalls[method] = count
+			}
+			gotBlockerErr := blockerErr
+			gotCallerPathSent := callerPathSent
+			mu.Unlock()
+			wantSends := 1
+			if tc.duplicate {
+				wantSends = 2
+			}
+			if gotCalls["SendGuarded"] != wantSends || gotCalls["ExportItem"] != 0 || gotCallerPathSent {
+				t.Fatalf("remote calls/path = calls:%+v callerPathSent:%t, want %d SendGuarded calls, no ExportItem RPC, and no caller directory on wire", gotCalls, gotCallerPathSent, wantSends)
+			}
+			if tc.warnLoad && !strings.Contains(res.Warning, "backlogged") {
+				t.Fatalf("projection failure lost backlog warning: %+v", res)
+			}
+			if res.ID == "" || res.To != "b" || res.Deduped != tc.duplicate || (tc.duplicate && res.ID != priorID) {
+				t.Fatalf("committed send result lost identity: %+v", res)
+			}
+			item, getErr := backend.Get(res.ID)
+			if getErr != nil || item.ID != res.ID {
+				t.Fatalf("canonical row was not retained after Send: item=%+v err=%v", item, getErr)
+			}
+			assertNoAuditFiles := func() {
+				t.Helper()
+				entries, err := os.ReadDir(filepath.Join(root, "items"))
+				if err != nil && !os.IsNotExist(err) {
+					t.Fatalf("read audit directory: %v", err)
+				}
+				if len(entries) != 0 {
+					t.Fatalf("unexpected audit entries: %v", entries)
+				}
+			}
+			if tc.storeWake {
+				if sendErr != nil || res.AuditPath != "" || gotCalls["Get"] != 0 {
+					t.Fatalf("store wake projected audit: result=%+v calls=%+v err=%v", res, gotCalls, sendErr)
+				}
+				assertNoAuditFiles()
+				return
+			}
+			if tc.cancelGet || tc.mismatch {
+				if sendErr == nil || res.AuditPath != "" || gotCalls["Get"] != 1 {
+					t.Fatalf("projection failure lost: result=%+v calls=%+v err=%v", res, gotCalls, sendErr)
+				}
+				if tc.cancelGet && !errors.Is(sendErr, context.Canceled) {
+					t.Fatalf("cancellation lost: %v", sendErr)
+				}
+				if tc.mismatch && !strings.Contains(sendErr.Error(), "canonical Get returned item") {
+					t.Fatalf("mismatch lost: %v", sendErr)
+				}
+				assertNoAuditFiles()
+				return
+			}
+			if tc.failGet || tc.blockWrite {
+				if sendErr == nil || !strings.Contains(sendErr.Error(), "local audit projection failed") || res.AuditPath != "" {
+					t.Fatalf("projection failure was hidden: result=%+v err=%v", res, sendErr)
+				}
+				if tc.failGet && !strings.Contains(sendErr.Error(), "get canonical item") {
+					t.Fatalf("Get failure context was lost: %v", sendErr)
+				}
+				if tc.blockWrite && !strings.Contains(sendErr.Error(), "ExportItem") {
+					t.Fatalf("local write failure context was lost: %v", sendErr)
+				}
+				wantGets := 1
+				if tc.duplicate {
+					wantGets = 2
+				}
+				if tc.failGet && gotCalls["Get"] != wantGets {
+					t.Fatalf("Get calls = %d, want %d", gotCalls["Get"], wantGets)
+				}
+				if tc.blockWrite && (gotCalls["Get"] != 1 || gotBlockerErr != nil) {
+					t.Fatalf("write-failure fixture did not follow the commit: calls=%+v blockerErr=%v", gotCalls, gotBlockerErr)
+				}
+				return
+			}
+			if sendErr != nil {
+				t.Fatalf("Send: %v", sendErr)
+			}
+			want, err := backend.Render(res.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(res.AuditPath)
+			if err != nil || string(got) != want {
+				t.Fatalf("client audit bytes differ from canonical renderer: err=%v", err)
+			}
+			if gotCalls["Get"] != 1 || res.AuditPath != filepath.Join(root, "items", res.ID+".md") {
+				t.Fatalf("local projection used unexpected calls/path: calls=%+v result=%+v", gotCalls, res)
+			}
+		})
 	}
 }
 

@@ -16,6 +16,10 @@ func signingFixture(t *testing.T, source []byte, app bool, mode string) (string,
 }
 
 func signingFixtureWithHosts(t *testing.T, source []byte, app bool, mode string, hosts *string) (string, string, string, error) {
+	return signingFixtureWithHostsAndID(t, source, app, mode, hosts, "11111111-2222-4333-8444-555555555555")
+}
+
+func signingFixtureWithHostsAndID(t *testing.T, source []byte, app bool, mode string, hosts *string, jobID string) (string, string, string, error) {
 	t.Helper()
 	zsh, err := exec.LookPath("zsh")
 	if err != nil {
@@ -52,6 +56,7 @@ for required in ConnectTimeout=10 BatchMode=yes StrictHostKeyChecking=yes Passwo
   case " $* " in *"-o $required "*) ;; *) echo "UNSAFE_TRANSPORT $op $required" >> "$SIGN_FIXTURE_LOG"; exit 93;; esac
 done
 [ "$SIGN_FIXTURE_MODE" != deny ] || exit 255
+case "$op:$*" in ssh:*"mv ~/sirsi-sign/inbox/"*) [ "$SIGN_FIXTURE_MODE" != ambiguous-enqueue ] || exit 255;; esac
 for last; do :; done
 case "$op:$*" in
   ssh:*"ls ~/sirsi-sign/outbox/"*) printf '%s\n' "$SIGN_FIXTURE_NAME";;
@@ -72,6 +77,10 @@ fi
 	client := filepath.Join(root, "sirsi-sign")
 	write(client, string(source), 0o700)
 	log := filepath.Join(root, "transport.log")
+	custody := filepath.Join(root, "custody")
+	if err := os.Mkdir(custody, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.Command(zsh, "-f", client, input)
 	// A closed fixture environment prevents inherited real signing host or
 	// transport configuration from crossing the test boundary.
@@ -79,6 +88,8 @@ fi
 		"PATH=" + bin + ":/usr/bin:/bin:/usr/sbin:/sbin", "TMPDIR=" + root,
 		"HOME=" + root, "ZDOTDIR=" + root,
 		"SIRSI_SIGN_TIMEOUT=5",
+		"SIRSI_SIGN_JOB_ID=" + jobID,
+		"SIRSI_SIGN_CUSTODY_DIR=" + custody,
 		"SIGN_FIXTURE_LOG=" + log, "SIGN_FIXTURE_NAME=" + name, "SIGN_FIXTURE_MODE=" + mode,
 	}
 	if hosts != nil {
@@ -90,6 +101,44 @@ fi
 		t.Fatal(err)
 	}
 	return string(out), string(logged), filepath.Join(root, "signed-"+name), runErr
+}
+
+func TestSignerAmbiguousEnqueueRetainsExactIntent(t *testing.T) {
+	source, err := os.ReadFile("sirsi-sign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, log, signed, runErr := signingFixture(t, source, false, "ambiguous-enqueue")
+	if runErr == nil || !strings.Contains(log, "mv ~/sirsi-sign/inbox/") {
+		t.Fatalf("fixture did not reach ambiguous enqueue: %v %s", runErr, log)
+	}
+	intent := filepath.Join(filepath.Dir(signed), "custody", "11111111-2222-4333-8444-555555555555.json")
+	data, err := os.ReadFile(intent)
+	if err != nil || !strings.Contains(string(data), `"state": "enqueue-unknown"`) || !strings.Contains(string(data), `"input_sha256":`) {
+		t.Fatalf("exact intent not retained: %v %s", err, data)
+	}
+	if strings.Contains(log, "rm -rf ~/sirsi-sign/outbox/") {
+		t.Fatalf("uncertain outcome was deleted: %s", log)
+	}
+}
+
+func TestSignerRejectsInvalidCallerJobIDBeforeEnqueue(t *testing.T) {
+	source, err := os.ReadFile("sirsi-sign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hosts := "fixture@signer.invalid"
+	out, log, signed, runErr := signingFixtureWithHostsAndID(t, source, false, "ok", &hosts, "../not-a-job")
+	exit, ok := runErr.(*exec.ExitError)
+	if !ok || exit.ExitCode() != 2 || !strings.Contains(out, "invalid canonical job UUID") {
+		t.Fatalf("invalid job ID was not refused: %v %s", runErr, out)
+	}
+	if strings.Contains(log, "mkdir ~/sirsi-sign/inbox/") || strings.Contains(log, "scp ") || strings.Contains(log, "rsync ") {
+		t.Fatalf("invalid ID reached enqueue: %s", log)
+	}
+	if _, err := os.Stat(signed); !os.IsNotExist(err) {
+		t.Fatalf("invalid ID produced signed output: %v", err)
+	}
 }
 
 func signerSelectionMatches(log string, hosts []string) bool {
@@ -126,7 +175,7 @@ func TestSignerDefaultAliasesAndExplicitOverrides(t *testing.T) {
 			if !ok || exit.ExitCode() != 4 || !signerSelectionMatches(log, tc.want) {
 				t.Fatalf("wrong ordered strict signer selection: %v\n%s\n%s", runErr, out, log)
 			}
-			if strings.Contains(log, "mkdir -p") || strings.Contains(log, "scp ") || strings.Contains(log, "rsync ") {
+			if strings.Contains(log, "mkdir ~/sirsi-sign/inbox/") || strings.Contains(log, "scp ") || strings.Contains(log, "rsync ") {
 				t.Fatalf("unreachable signer started a job: %s", log)
 			}
 			if _, err := os.Stat(signed); !os.IsNotExist(err) {
@@ -169,10 +218,13 @@ func TestAllSigningTransportPhasesArePinnedAndNoninteractive(t *testing.T) {
 			if _, err := os.Stat(signed); err != nil {
 				t.Fatal("verified fixture result not returned", err)
 			}
-			for _, phase := range []string{"ssh ", "scp ", "rsync ", "mkdir -p", "mv ~/sirsi-sign/inbox/", "ls ~/sirsi-sign/outbox/", "rm -rf ~/sirsi-sign/outbox/"} {
+			for _, phase := range []string{"ssh ", "scp ", "rsync ", "mkdir ~/sirsi-sign/inbox/", "mv ~/sirsi-sign/inbox/", "ls ~/sirsi-sign/outbox/", "11111111-2222-4333-8444-555555555555"} {
 				if !strings.Contains(log, phase) {
 					t.Errorf("missing exercised phase %q: %s", phase, log)
 				}
+			}
+			if strings.Contains(log, "rm -rf ~/sirsi-sign/outbox/") {
+				t.Fatalf("terminal evidence was deleted: %s", log)
 			}
 		})
 	}
@@ -184,7 +236,7 @@ func TestSignerRefusalDoesNotPublishOrLearnKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, log, signed, err := signingFixture(t, source, false, "deny")
-	if err == nil || strings.Contains(log, "mkdir -p") || strings.Contains(log, "scp ") || strings.Contains(log, "rsync ") {
+	if err == nil || strings.Contains(log, "mkdir ~/sirsi-sign/inbox/") || strings.Contains(log, "scp ") || strings.Contains(log, "rsync ") {
 		t.Fatalf("refused signer reached publication: %v %s", err, log)
 	}
 	if _, err := os.Stat(signed); !os.IsNotExist(err) {

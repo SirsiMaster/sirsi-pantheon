@@ -10,6 +10,7 @@ package routerstore
 // (messaging is the point), read and work only what is addressed to it, and see only items it is a party to.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -55,28 +56,32 @@ var laneAPI = map[string]laneRule{
 	"GetAgent":             {item: noItem},
 	"OperationalAgents":    {item: noItem},
 	"ClassifyLane":         {item: noItem}, // read-only liveness of any lane: needed to see where a send will land
+	"RecipientLoad":        {item: noItem}, // read-only backlog counts of any lane: the sender's warn band
 	"UpsertThreadCAS":      {item: noItem, custom: threadRecordsInScope},
 	"UpsertThreads":        {item: noItem, custom: threadRecordsInScope},
 	"ResumeThreadCAS":      {item: noItem, custom: threadRecordsInScope},
 	"DeleteThreadCAS":      {item: noItem, custom: deleteThreadInScope},
 	// messaging: send to anyone, read and work only what is yours
-	"Send":         {agents: []int{0}, item: noItem},
-	"SendGuarded":  {item: noItem, custom: sendReqInScope},
-	"Inbox":        {agents: []int{0}, item: noItem},
-	"Get":          {item: 0},
-	"Render":       {item: 0},
-	"AckItem":      {item: 0, toOnly: true},
-	"CloseItem":    {item: 0, toOnly: true},
-	"ClaimItem":    {agents: []int{0}, item: 1, toOnly: true},
-	"ClaimNext":    {agents: []int{0}, item: noItem},
-	"Complete":     {item: 0, toOnly: true},
-	"Fail":         {item: 0, toOnly: true},
-	"Block":        {item: 0, toOnly: true},
-	"StartWork":    {item: 0, toOnly: true},
-	"RenewLease":   {item: 0, toOnly: true},
-	"VerifyLease":  {item: 0, toOnly: true},
-	"SetBlockedBy": {item: 0, toOnly: true},
-	"ReassignItem": {agents: []int{1}, item: 0, toOnly: true},
+	"Send":        {agents: []int{0}, item: noItem},
+	"SendGuarded": {item: noItem, custom: sendReqInScope},
+	"Inbox":       {agents: []int{0}, item: noItem},
+	"Get":         {item: 0},
+	"Render":      {item: 0},
+	"AckItem":     {item: 0, toOnly: true},
+	"CloseItem":   {item: 0, toOnly: true},
+	// Convert only an item addressed to you, onto your own ledger. A fabric-wide @ledger-editor
+	// capability (board PR) is meant to bypass this rule for ConvertItemToTask; until it lands, no token does.
+	"ConvertItemToTask": {agents: []int{1}, item: 0, toOnly: true},
+	"ClaimItem":         {agents: []int{0}, item: 1, toOnly: true},
+	"ClaimNext":         {agents: []int{0}, item: noItem},
+	"Complete":          {item: 0, toOnly: true},
+	"Fail":              {item: 0, toOnly: true},
+	"Block":             {item: 0, toOnly: true},
+	"StartWork":         {item: 0, toOnly: true},
+	"RenewLease":        {item: 0, toOnly: true},
+	"VerifyLease":       {item: 0, toOnly: true},
+	"SetBlockedBy":      {item: 0, toOnly: true},
+	"ReassignItem":      {agents: []int{1}, item: 0, toOnly: true},
 	// waiting and nudging
 	"Wait":         {agents: []int{1}, item: noItem},
 	"ListenNotify": {agents: []int{1}, item: noItem},
@@ -99,8 +104,116 @@ var laneAPI = map[string]laneRule{
 	"RunnableFor":          {agents: []int{0}, item: noItem},
 }
 
+// ObserverScope is a reserved scope entry (no agent id starts with "@"). A token whose scope includes it is a
+// read-only observer — the hosted router board: it may read the whole ledger through observerReads, and may
+// register and heartbeat only its own listed agent's thread (the Rule of Ra applies to it like any thread).
+// Every other method is refused, including the lane API's messaging and work verbs for its own agent.
+const ObserverScope = "@observer"
+
+// Observer data contract (SSA PR #1310 review, 20261102-050808). The board is the owner's console for sirsi.ai
+// accounts behind IAP, so it sees the work: item titles, senders, recipients, types, ages and instructions, and
+// task subjects and status — that drill-down is what the owner asked for. It never sees a thread's continuation
+// or session state: ListThreads returns each row projected to observerThreadKeys, exactly the fields lane
+// verdicts read (router.PingLane, betterWorker), so suspend payloads (ResumePrompt, OwnedOpenItems, ThothRef),
+// current item, last error, repo, session id and process identity stay on the Macs.
+var observerThreadKeys = []string{
+	"thread_id", "agent_id", "surface", "status", "started_at", "last_seen_at", "watches",
+	"wake_mechanism", "consumer_capable", "lane", "host", "machine_id",
+}
+
+// observerThreadView projects one thread row to the observer contract. A payload that does not decode is
+// dropped to "{}" rather than passed through: an unreadable row must never leak by failing to parse.
+func observerThreadView(r ThreadRecord) ThreadRecord {
+	var full map[string]json.RawMessage
+	kept := map[string]json.RawMessage{}
+	if json.Unmarshal(r.Payload, &full) == nil {
+		for _, k := range observerThreadKeys {
+			if v, ok := full[k]; ok {
+				kept[k] = v
+			}
+		}
+	}
+	r.Payload, _ = json.Marshal(kept)
+	return r
+}
+
+// observerReads are the whole-ledger reads an observer may make, regardless of agent. Each is a read: adding a
+// method here grants every observer token a view of it, so a new entry needs the same review as laneAPI.
+var observerReads = map[string]bool{
+	"ClassifyLane": true, "ListThreads": true, "ListActive": true, "CountClosed": true,
+	"OperationalAgents": true, "ListTasks": true, "Inbox": true,
+}
+
+// observerOwnThread are the lane-API methods an observer keeps, for its own agent only: identity and thread
+// registration, so it can satisfy the Rule of Ra. Their laneAPI rules still apply.
+var observerOwnThread = map[string]bool{
+	"MintSession": true, "MintSessionForThread": true, "RegisterAgent": true, "Heartbeat": true,
+	"ThreadBinding": true, "GetThreadRecord": true, "UpsertThreadCAS": true, "UpsertThreads": true,
+	"ResumeThreadCAS": true,
+}
+
+// LedgerEditorScope is the second reserved capability (owner decision 2026-11-02, "full ledger edit"): the
+// hosted board edits the ledger on behalf of the signed-in sirsi.ai account. It permits exactly ledgerEdits,
+// on any agent's items and tasks, and nothing else — never Send, thread control for another lane, token or
+// session administration, or deletion. Like ObserverScope it is a capability, never an identity. The board
+// records its actor ("board:<email>") in each result, reason or timeline entry it writes.
+const LedgerEditorScope = "@ledger-editor"
+
+// ledgerEdits are the ledger mutations (and the reads they need) a ledger editor may make fabric-wide.
+// ConvertItemToTask is the atomic item→task RPC; it is allowed here so the capability covers it the moment
+// the store serves it. Adding a method here grants every editor token that write on every lane.
+//
+// Task leases (ClaimTask/Renew/Release/CompleteTaskLease) are deliberately absent: a lease is bound to the
+// claiming agent's own authenticated thread (serve.go task-claim binding), so an editor claiming another
+// lane's task would be impersonating that lane. UpdateTask likewise still refuses in-progress/done without
+// a fenced lease; the editor relabels (pending/blocked), reassigns and rewrites, it does not execute.
+//
+// CompleteTaskByOwner/CancelTask are the owner's sign-off and cancel; serve.go additionally refuses them to
+// every token without this capability, scoped or not, and to any actor that is not board:<email>.
+var ledgerEdits = map[string]bool{
+	"Get": true, "GetTask": true, "CloseItem": true, "ReassignItem": true, "ConvertItemToTask": true,
+	"AddTask": true, "UpdateTask": true, "CompleteTaskByOwner": true, "CancelTask": true,
+}
+
+// splitCapabilities separates the reserved capability markers from a token's agent scope. A marker is a
+// capability, never an identity: the returned scope never contains one, so nothing may mint, register or act
+// as "@observer" or "@ledger-editor".
+func splitCapabilities(scope map[string]bool) (agents map[string]bool, observer, editor bool) {
+	observer, editor = scope[ObserverScope], scope[LedgerEditorScope]
+	if !observer && !editor {
+		return scope, false, false
+	}
+	agents = make(map[string]bool, len(scope))
+	for a := range scope {
+		if a != ObserverScope && a != LedgerEditorScope {
+			agents[a] = true
+		}
+	}
+	return agents, observer, editor
+}
+
 // laneScope returns nil when the call is inside the token's scope, ErrLaneScope otherwise.
-func (s *server) laneScope(scope map[string]bool, sess Session, name string, in []reflect.Value) error {
+func (s *server) laneScope(scope map[string]bool, observer, editor bool, sess Session, name string, in []reflect.Value) error {
+	if editor && ledgerEdits[name] {
+		if sess.Agent != "" && !scope[sess.Agent] {
+			return fmt.Errorf("%w: session agent %q is outside the token's scope", ErrLaneScope, sess.Agent)
+		}
+		return nil
+	}
+	// A capability token is confined to its capabilities: ledgerEdits (editor), observerReads (observer), and
+	// its own agent's thread registration. It never falls through to the lane API's messaging or work verbs,
+	// so an editor-only token cannot Send even as its own listed agent.
+	if observer || editor {
+		if sess.Agent != "" && !scope[sess.Agent] {
+			return fmt.Errorf("%w: session agent %q is outside the token's scope", ErrLaneScope, sess.Agent)
+		}
+		if observer && observerReads[name] {
+			return nil
+		}
+		if !observerOwnThread[name] {
+			return fmt.Errorf("%w: %s is not permitted for an observer or ledger-editor token", ErrLaneScope, name)
+		}
+	}
 	rule, ok := laneAPI[name]
 	if !ok {
 		return fmt.Errorf("%w: %s is not part of the lane API", ErrLaneScope, name)

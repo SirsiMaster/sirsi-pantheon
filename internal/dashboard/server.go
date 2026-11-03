@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,7 +28,28 @@ type Config struct {
 	// MercuryFn supplies the same bounded read-only dashboard projection as CLI/native.
 	MercuryFn func(context.Context) mercury.Read
 	Port      int
-	NotifyDB  *notify.Store
+	// ListenHost is the bind address. Empty means 127.0.0.1: the workstation
+	// dashboard never listens beyond the loopback interface.
+	ListenHost string
+	// CloudBoard serves only the read-only router surface (cloudBoardPaths)
+	// and 404s everything else, so a hosted board can never reach the
+	// workstation's run/clean/slay/vault endpoints. It also skips the
+	// single-dashboard host lock, which belongs to a workstation.
+	CloudBoard bool
+	// TailnetPort, when set, adds a second loopback listener that serves the
+	// same console only to signed-in tailnet users in TailnetDomains (default
+	// sirsi.ai). It is the sole target of `tailscale serve`; the keyboard port
+	// never faces the tailnet.
+	TailnetPort int
+	// TailnetSocket serves the same entrance on a Unix socket (0600, private
+	// directory) instead of a port, so only this user and tailscaled can reach
+	// the handler that trusts the identity header. Exclusive with TailnetPort.
+	TailnetSocket  string
+	TailnetDomains []string
+	// Macs lists the Mac consoles a hosted board links to (name → https URL),
+	// for the Mac picker and the offline fallback. The board never calls them.
+	Macs     map[string]string
+	NotifyDB *notify.Store
 	// StatsFn returns the current system stats as JSON bytes.
 	// The menubar marshals its own StatsSnapshot; we pass it through.
 	StatsFn func() ([]byte, error)
@@ -113,6 +135,10 @@ type Config struct {
 	// session sample. The dashboard does not inspect SNE endpoints or calculate
 	// derived throughput; it presents this typed read verbatim.
 	ApolloTelemetryFn ApolloTelemetryProducer
+	// BoardActFn enables the hosted board's ledger-edit API (boardActPrefix); nil leaves it unmounted.
+	// BoardIAPAudience is the IAP JWT audience it requires; empty refuses every edit (fail closed).
+	BoardActFn       BoardActFn
+	BoardIAPAudience string
 }
 
 // MaatDecisionProducer supplies the most recent recorded Ma'at decisions.
@@ -145,6 +171,7 @@ type Server struct {
 	confirm        *ConfirmGuard
 	fleet          *FleetTracker
 	surfaceOrigins map[string]struct{}
+	iap            *iapVerifier
 }
 
 // New creates a dashboard server with all routes registered.
@@ -187,6 +214,20 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/horus", s.handleHorus)
 	mux.HandleFunc("/vault", s.handleVault)
 	mux.HandleFunc("/router", s.handleRouterSurface)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
+	mux.HandleFunc("/api/macs", s.apiMacs)
+	mux.HandleFunc("/offline.html", func(w http.ResponseWriter, _ *http.Request) {
+		s.serveEmbedded(w, "ui/offline.html", "text/html; charset=utf-8")
+	})
+	mux.HandleFunc("/consoleprobe.js", func(w http.ResponseWriter, _ *http.Request) {
+		s.serveEmbedded(w, "ui/consoleprobe.js", "application/javascript; charset=utf-8")
+	})
+	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, _ *http.Request) {
+		s.serveEmbedded(w, "ui/sw.js", "application/javascript; charset=utf-8")
+	})
+	mux.HandleFunc("/manifest.webmanifest", func(w http.ResponseWriter, _ *http.Request) {
+		s.serveEmbedded(w, "ui/manifest.webmanifest", "application/manifest+json")
+	})
 
 	// JSON API endpoints
 	mux.HandleFunc("/api/stats", s.apiStats)
@@ -228,11 +269,22 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/maat/casebook", s.apiMaatCasebook)
 	mux.HandleFunc("/api/maat/knowledge", s.apiMaatKnowledge)
 	mux.HandleFunc("/api/apollo/telemetry", s.apiApolloTelemetry)
+	if cfg.BoardActFn != nil {
+		s.iap = newIAPVerifier(cfg.BoardIAPAudience, "sirsi.ai")
+		mux.HandleFunc(boardActPrefix, s.apiBoardAct)
+	}
 
 	s.handler = mux
+	if cfg.CloudBoard {
+		s.handler = cloudBoardOnly(mux)
+	}
+	if cfg.ListenHost == "" {
+		cfg.ListenHost = "127.0.0.1"
+		s.cfg.ListenHost = cfg.ListenHost
+	}
 	s.srv = &http.Server{
-		Addr:         fmt.Sprintf("127.0.0.1:%d", cfg.Port),
-		Handler:      mux,
+		Addr:         net.JoinHostPort(cfg.ListenHost, strconv.Itoa(cfg.Port)),
+		Handler:      s.handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 0, // SSE connections are long-lived
 	}
@@ -251,14 +303,34 @@ func (s *Server) Start() error {
 		return nil
 	}
 
-	unlock, err := platform.TryLock("dashboard")
-	if err != nil {
-		return fmt.Errorf("dashboard: %w", err)
+	tailnet := !s.cfg.CloudBoard && (s.cfg.TailnetPort != 0 || s.cfg.TailnetSocket != "")
+	if tailnet {
+		if err := tailnetConfigErr(s.cfg); err != nil {
+			return fmt.Errorf("dashboard: %w", err)
+		}
+	}
+
+	unlock := func() {}
+	if !s.cfg.CloudBoard {
+		var err error
+		if unlock, err = platform.TryLock("dashboard"); err != nil {
+			return fmt.Errorf("dashboard: %w", err)
+		}
 	}
 	listener, err := net.Listen("tcp", s.srv.Addr)
 	if err != nil {
 		unlock()
 		return fmt.Errorf("dashboard: bind %s: %w", s.srv.Addr, err)
+	}
+	// The tailnet entrance is bound here, before anything serves: unlike the
+	// alias ports, a console asked to face the tailnet must not start without it.
+	var tl net.Listener
+	if tailnet {
+		if tl, err = listenTailnet(s.cfg); err != nil {
+			_ = listener.Close()
+			unlock()
+			return fmt.Errorf("dashboard: tailnet entrance: %w", err)
+		}
 	}
 	s.unlock = unlock
 
@@ -274,22 +346,35 @@ func (s *Server) Start() error {
 		if p == 0 || p == s.cfg.Port {
 			continue
 		}
-		alt := &http.Server{
-			Addr:         fmt.Sprintf("127.0.0.1:%d", p),
-			Handler:      s.handler,
-			ReadTimeout:  10 * time.Second,
-			WriteTimeout: 0,
-		}
-		s.alt = append(s.alt, alt)
-		go func(a *http.Server) {
-			if err := a.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				fmt.Printf("dashboard: alt listener %s: %v\n", a.Addr, err)
+		s.serveAlt(p, s.handler)
+	}
+	if tl != nil {
+		t := &http.Server{Handler: tailnetOnly(s.handler, s.cfg.TailnetDomains, s.cfg.TailnetSocket == ""), ReadTimeout: 10 * time.Second}
+		s.alt = append(s.alt, t)
+		go func() {
+			if err := t.Serve(tl); err != nil && err != http.ErrServerClosed {
+				fmt.Printf("dashboard: tailnet entrance: %v\n", err)
 			}
-		}(alt)
+		}()
 	}
 
 	s.running = true
 	return nil
+}
+
+func (s *Server) serveAlt(port int, h http.Handler) {
+	alt := &http.Server{
+		Addr:         fmt.Sprintf("127.0.0.1:%d", port),
+		Handler:      h,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 0,
+	}
+	s.alt = append(s.alt, alt)
+	go func(a *http.Server) {
+		if err := a.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("dashboard: alt listener %s: %v\n", a.Addr, err)
+		}
+	}(alt)
 }
 
 // Stop gracefully shuts down the dashboard server.

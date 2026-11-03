@@ -53,6 +53,28 @@ func SetAutoHealFn(fn func(routerRoot, repoRoot string) error) {
 	}
 }
 
+// receiptRecheckFn is the injected completion-receipt re-check (Rule A16/A21);
+// wired by cmd/sirsi, inert by default.
+var (
+	receiptRecheckMu sync.RWMutex
+	receiptRecheckFn = func(routerRoot, repoRoot string) error { return nil }
+)
+
+// SetReceiptRecheckFn installs the pass the receipt-recheck duty runs.
+func SetReceiptRecheckFn(fn func(routerRoot, repoRoot string) error) {
+	receiptRecheckMu.Lock()
+	defer receiptRecheckMu.Unlock()
+	if fn != nil {
+		receiptRecheckFn = fn
+	}
+}
+
+func getReceiptRecheckFn() func(string, string) error {
+	receiptRecheckMu.RLock()
+	defer receiptRecheckMu.RUnlock()
+	return receiptRecheckFn
+}
+
 // SupervisorDuty describes one folded duty pass.
 type SupervisorDuty struct {
 	Name      string                                  // duty id, stable (used for the cadence stamp file)
@@ -118,6 +140,11 @@ func supervisorDuties() []SupervisorDuty {
 		{Name: "spotlight-markers", GoRun: func(routerRoot, repoRoot string) error {
 			return getSpotlightMarkersFn()(routerRoot, repoRoot)
 		}, Cadence: 30 * time.Minute},
+		// Completion receipts (owner decision 2026-11-02): re-verify done tasks'
+		// PR/CI/tag receipts so a revert reopens the task. See routerstore/receipts.go.
+		{Name: "receipt-recheck", GoRun: func(routerRoot, repoRoot string) error {
+			return getReceiptRecheckFn()(routerRoot, repoRoot)
+		}, Cadence: 6 * time.Hour},
 	}
 }
 

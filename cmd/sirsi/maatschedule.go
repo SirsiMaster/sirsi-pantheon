@@ -372,6 +372,14 @@ var maatExtendCmd = &cobra.Command{
 	},
 }
 
+// maatReleaseExitCode is the guarded run's exit status, recorded on release so a
+// `maat:<reservation-id>` completion receipt can be verified by the router.
+var maatReleaseExitCode int
+
+func init() {
+	maatReleaseCmd.Flags().IntVar(&maatReleaseExitCode, "exit-code", 0, "Record the guarded run's exit status on the reservation")
+}
+
 var maatReleaseCmd = &cobra.Command{
 	Use: "release <id>", Short: "End a reservation, freeing the resource now", Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -379,7 +387,12 @@ var maatReleaseCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		r, err := l.Release(args[0])
+		var r *schedule.Reservation
+		if cmd.Flags().Changed("exit-code") {
+			r, err = l.ReleaseExit(args[0], maatReleaseExitCode)
+		} else {
+			r, err = l.Release(args[0])
+		}
 		if err != nil {
 			return err
 		}

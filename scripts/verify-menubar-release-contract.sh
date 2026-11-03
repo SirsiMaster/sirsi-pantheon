@@ -173,5 +173,6 @@ reject 'macapp/\.build/release/SirsiMenubar.*fallback|go build.*fallback' "$DMG_
 # signing or resource workload and catches payloads moved outside supervision.
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/maat/test_release_admission.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_release_publication.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/test_release_publication_guard.py"
 
 echo "menubar_release_contract accepted=true native_swift=required go_cli=required inventory=required signing=required"

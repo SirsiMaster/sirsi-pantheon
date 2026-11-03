@@ -47,7 +47,7 @@ func TestLaneClaimBarrierOwnershipSettlement(t *testing.T) {
 	if err = s.Complete(id, l.Token, "done"); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.CompleteTaskLease("gemma-pantheon", "task", tl.Token, "evidence"); err != nil {
+	if err = s.CompleteTaskLease("gemma-pantheon", "task", tl.Token, "pr:SirsiMaster/fixture#7"); err != nil {
 		t.Fatal(err)
 	}
 	st, err := s.LaneClaimBarrier(ctx, LaneClaimBarrierRequest{"status", "gemma-pantheon", b.Token, ""})

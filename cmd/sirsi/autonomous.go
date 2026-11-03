@@ -220,4 +220,16 @@ func init() {
 	router.SetSpotlightMarkersFn(func(_, _ string) error {
 		return guard.RunMarkerDuty()
 	})
+	// Wire the completion-receipt re-check: the RPC runs on the router service,
+	// which holds the GitHub verifier, so a reverted PR or a deleted tag
+	// reopens its task. Unverifiable receipts are left alone.
+	router.SetReceiptRecheckFn(func(_, _ string) error {
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = f.Store().RecheckTaskReceipts(receiptRecheckAge)
+		return err
+	})
 }
