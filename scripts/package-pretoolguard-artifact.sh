@@ -47,7 +47,10 @@ LC_ALL=C /usr/bin/codesign -d --verbose=4 "$dir/payload/sirsi-display-power-guar
 LC_ALL=C /usr/bin/codesign -d --verbose=4 "$dir/payload/sirsi-pretoolguard-install" > "$dir/installer-signature-details.txt" 2>&1
 /usr/bin/grep -q '^Timestamp=' "$dir/installer-signature-details.txt" || { echo 'installer secure timestamp not reported' >&2; exit 1; }
 /usr/bin/grep -E -q '^CodeDirectory .*flags=.*\(.*runtime.*\)' "$dir/installer-signature-details.txt" || { echo 'installer hardened runtime flag not reported' >&2; exit 1; }
-/usr/bin/hdiutil create -quiet -format UDZO -srcfolder "$dir/payload" "$dir/pretoolguard.dmg"
+# Pin a single HFS+ filesystem without a partition map. The attachment custody
+# check below deliberately refuses synthesized multi-root layouts (e.g. APFS)
+# rather than guessing which device is safe to detach.
+/usr/bin/hdiutil create -quiet -format UDZO -layout NONE -fs HFS+ -srcfolder "$dir/payload" "$dir/pretoolguard.dmg"
 "$PANTHEON_SIGN_CLIENT" "$dir/pretoolguard.dmg" dmg
 signed="$dir/signed-pretoolguard.dmg"
 [[ -f "$signed" && ! -L "$signed" && -f "$signed.receipt.txt" && ! -L "$signed.receipt.txt" ]] || { echo 'signed image or receipt missing' >&2; exit 1; }
@@ -57,15 +60,57 @@ LC_ALL=C /usr/bin/codesign -d --verbose=4 "$signed" > "$dir/image-signature-deta
 /usr/bin/xcrun stapler validate "$signed"
 mkdir "$dir/mount"
 mounted=0
+device=''
 cleanup_mount() {
   if [[ "$mounted" == 1 ]]; then
     mounted=0
-    /usr/bin/hdiutil detach "$dir/mount" || echo "WARNING: detach failed; inspect mount at $dir/mount" >&2
+    /usr/bin/hdiutil detach "$device" || echo "WARNING: detach failed; inspect $device and mount at $dir/mount" >&2
   fi
 }
 trap cleanup_mount EXIT
-/usr/bin/hdiutil attach -quiet -readonly -nobrowse -mountpoint "$dir/mount" "$signed"
-mounted=1
+if ! /usr/bin/hdiutil attach -plist -readonly -nobrowse -mountpoint "$dir/mount" "$signed" > "$dir/attach.plist"; then
+  echo "attach outcome unknown; inspect $dir/mount and $dir/attach.plist" >&2
+  exit 1
+fi
+topology_ok=1
+/usr/bin/python3 -B - "$dir/attach.plist" "$dir/mount" "$dir/device.txt" <<'PY' || topology_ok=0
+import os, plistlib, re, sys
+source, mount, output = sys.argv[1:]
+with open(source, 'rb') as f:
+    data = f.read(1024 * 1024 + 1)
+if len(data) > 1024 * 1024:
+    raise SystemExit('attachment metadata too large')
+entities = plistlib.loads(data)['system-entities']
+if not isinstance(entities, list) or not entities or any(not isinstance(x, dict) for x in entities):
+    raise SystemExit('invalid attachment entities')
+devices = [x['dev-entry'] for x in entities if x.get('dev-entry')]
+matches = [re.fullmatch(r'(/dev/disk[0-9]+)(?:s[0-9]+)*', x) for x in devices]
+if not matches or any(x is None for x in matches) or len({x.group(1) for x in matches}) != 1:
+    raise SystemExit('ambiguous attachment devices; manual custody required')
+matching = [x for x in entities if x.get('mount-point') == mount]
+if len(matching) != 1 or matching[0].get('dev-entry') not in devices:
+    raise SystemExit('mount/device association unknown; manual custody required')
+mounted = matching[0]['dev-entry']
+# Publish only complete, flushed device identity. A failed partial write must
+# never leave a syntactically plausible prefix at the path the shell trusts.
+partial = output + '.partial'
+with open(partial, 'x') as f:
+    f.write(matches[0].group(1))
+    f.flush()
+    os.fsync(f.fileno())
+os.link(partial, output, follow_symlinks=False)
+mounts = [x['mount-point'] for x in entities if 'mount-point' in x]
+if mounts != [mount]:
+    raise SystemExit('unexpected image mount topology')
+if mounted not in devices or set(devices) != {matches[0].group(1), mounted}:
+    raise SystemExit('unexpected unmounted image device entities')
+PY
+if [[ -f "$dir/device.txt" && ! -L "$dir/device.txt" ]]; then
+  device=$(< "$dir/device.txt")
+  [[ "$device" =~ ^/dev/disk[0-9]+$ ]] || { echo 'invalid attachment device' >&2; exit 1; }
+  mounted=1
+fi
+[[ "$topology_ok" == 1 && "$mounted" == 1 ]] || { echo "attachment topology not qualified; inspect $dir" >&2; exit 1; }
 /usr/bin/python3 - "$dir/mount" <<'PY'
 import os, stat, sys
 p = sys.argv[1]
@@ -82,7 +127,7 @@ PY
 [[ $(/usr/bin/shasum -a 256 "$dir/mount/sirsi-pretoolguard-install" | /usr/bin/awk '{print $1}') == "$installer_expected" ]] || { echo 'returned image installer differs' >&2; exit 1; }
 /usr/bin/codesign --verify --strict -R "$installer_requirement" "$dir/mount/sirsi-pretoolguard-install"
 mounted=0
-if ! /usr/bin/hdiutil detach "$dir/mount"; then
+if ! /usr/bin/hdiutil detach "$device"; then
   echo "detach failed; inspect mount at $dir/mount" >&2
   exit 1
 fi

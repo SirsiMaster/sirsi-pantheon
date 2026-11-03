@@ -120,8 +120,10 @@ done
     exit 1
 }
 for required in \
-    'test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"' \
-    'test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"' \
+    'test -f "${PANTHEON_RELEASE_INPUTS:?}/bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"' \
+    'test -f "${PANTHEON_RELEASE_INPUTS:?}/bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"' \
+    'scripts/build-release-pretoolguard.sh' \
+    '--include-guard --guard-manifest' \
     'python3 -B scripts/publish-release-assets.py'; do
     /usr/bin/grep -Fq -- "$required" "$workflow" || {
         echo "release workflow does not require both native release artifacts: $required" >&2
@@ -132,7 +134,7 @@ done
 # that response's validated identity. Retired CLI option strings are not proof
 # of the executing route. These source checks complement its inert behavioral
 # fixtures; they do not establish live GitHub or Apple acceptance.
-for required in '"--method", "POST"' '"-F", "draft=true"' \
+for required in '"--include", "--method", "POST"' '"-F", "draft=true"' \
     '"--jq", "{id,tag_name,draft}"' '"tag_name=" + tag' \
     '"target_commitish=" + expected_commit' 'selected_id = identity["id"]' \
     'identity.get("draft") is not True' \
@@ -343,11 +345,9 @@ for forbidden in 'windows-installer:' 'windows-latest' 'ENABLE_WINDOWS_BUILD' 'm
     fi
 done
 
-# The source runner can validate portable Go packages, but it must never mint a
-# partial release. The release record and every published product asset are
-# created only after the macOS job has successfully built the commercial DMG
-# and PKG from the same Pantheon.app bundle.
-/usr/bin/grep -Fq 'Stage draft and verify exact signed pair before publication' "$workflow" || {
+# The native job reserves a source-bound private draft before signing. Only
+# after all exact retained assets are verified may that draft become public.
+/usr/bin/grep -Fq 'Stage draft and verify exact signed release assets before publication' "$workflow" || {
     echo "release workflow does not create the release record after native packaging" >&2; exit 1;
 }
 /usr/bin/grep -Fq -- '--expected-commit "$EXPECTED_COMMIT"' "$workflow" || {

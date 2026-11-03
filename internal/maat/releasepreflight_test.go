@@ -109,9 +109,10 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	root := t.TempDir()
 	// The notary helper retains published v0.24.130 bytes
 	// (60b9963d73f66ed497e90fa127263cc1113f506a).
-	// The signing client deliberately imports independently accepted donor
-	// 3a0ac70862acc87025ac27364ccdbdf8ee6f49e5/tree d6a03de268d3efcf451bae17898ee9106411192b:
-	// only default host aliases change; its exact SHA is pinned below.
+	// PR1353 d6079f900332d9a627ce9e8072cf562fb6ea5a17 deliberately
+	// composes the reviewed exact-ID custody-aware signing client and release
+	// workflow. Their exact bytes are pinned below; the client record does not
+	// itself establish host-wide admission or prove remote job completion.
 	// The builders deliberately bind the reviewed corrective134 mode/upgrade
 	// source at6364a72f58847744716d3168f34b8d53d92e9f0c, not private-mode133.
 	// The workflow pin adds draft-first publication on released132 base
@@ -123,7 +124,7 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	// inert source bytes, never executed by this release source preflight.
 	// The builder pins bind v149's explicit Apollo capability and shared
 	// pre-sign receipt route, including its checked Bash 3.2 receipt reader.
-	// Unchanged signing, notary and retained-app owner pins remain independent.
+	// Notary and retained-app owner pins remain independent.
 	// No copied script is executed. Future route changes must deliberately
 	// update this provenance and the observer together.
 	pinned := map[string]string{
@@ -132,12 +133,10 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 		"scripts/build-dmg.sh":                 "2eae7c74a88e62f47a184d510974c1463baf139e63f9e40614f5d15fcdbe9385",
 		"scripts/build-pkg.sh":                 "82fd6b3377bf42d3be3ea68381f01067f75f7a91a8a470be5f71159be1cc66d6",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
-		// The reviewed 155 workflow selects the enrolled M1 signer, rejects
-		// unqualified runner bindings before checkout, and fences keychain cleanup
-		// to an accepted binding after keychain mutation. Keep its exact source
-		// digest pinned so deliberate workflow changes update this provenance.
-		".github/workflows/release.yml": "37712d0ff98feed52b28d6bc0782ef493b39dc374254ab45b98d4a59bb14e6b7",
-		"tools/signing/sirsi-sign":      "95db0601b45c56604e77b4b1d8ef6ecca2bbc165570889e9ec46d63b16288605",
+		// Keep both reviewed source digests exact; changes require deliberate
+		// provenance review while the negative contract controls remain in force.
+		".github/workflows/release.yml": "7805e1145a123497dfc613bb94a7cef3117670eb423cddeeef33c8f9f66833e3",
+		"tools/signing/sirsi-sign":      "22d5d6811eb38549a31524cd4e27e707e9e884421f485090b1829fefc1593c77",
 	}
 	for _, requirement := range releaseContractRequirements {
 		relative := requirement.Path

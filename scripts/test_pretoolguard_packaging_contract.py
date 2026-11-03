@@ -9,6 +9,7 @@ import plistlib
 import runpy
 import subprocess
 import os
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -114,11 +115,13 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
             "'guard hardened runtime flag not reported' >&2; exit 1;",
             "'installer secure timestamp not reported' >&2; exit 1;",
             "'installer hardened runtime flag not reported' >&2; exit 1;",
+            '/usr/bin/hdiutil create -quiet -format UDZO -layout NONE -fs HFS+ -srcfolder "$dir/payload" "$dir/pretoolguard.dmg"',
             '"$PANTHEON_SIGN_CLIENT" "$dir/pretoolguard.dmg" dmg',
             '"$signed.receipt.txt"',
             '/usr/bin/xcrun stapler validate "$signed"',
             'trap cleanup_mount EXIT',
-            '/usr/bin/hdiutil attach -quiet -readonly -nobrowse -mountpoint "$dir/mount" "$signed"',
+            '/usr/bin/hdiutil attach -plist -readonly -nobrowse -mountpoint "$dir/mount" "$signed"',
+            "unexpected unmounted image device entities",
             'mounted=1',
             "names = {'sirsi-display-power-guard', 'sirsi-pretoolguard-install'}",
             'if set(os.listdir(p)) != names:',
@@ -131,7 +134,7 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
             '"$dir/mount/sirsi-pretoolguard-install" | /usr/bin/awk',
             '== "$installer_expected" ]] || { echo \'returned image installer differs\' >&2; exit 1; }',
             '/usr/bin/codesign --verify --strict -R "$installer_requirement" "$dir/mount/sirsi-pretoolguard-install"',
-            'if ! /usr/bin/hdiutil detach "$dir/mount"; then',
+            'if ! /usr/bin/hdiutil detach "$device"; then',
             'exit 1\nfi',
             'printf \'%s\\n\' "$expected" > "$dir/guard.sha256"',
             'printf \'%s\\n\' "$installer_expected" > "$dir/installer.sha256"',
@@ -148,9 +151,40 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
             self.package,
             'cleanup_mount() {',
             'if [[ "$mounted" == 1 ]]; then',
-            '/usr/bin/hdiutil detach "$dir/mount" || echo "WARNING: detach failed;',
+            '/usr/bin/hdiutil detach "$device" || echo "WARNING: detach failed;',
             'trap cleanup_mount EXIT',
         )
+
+    def test_packaging_device_receipt_requires_proven_mount_association(self):
+        marker = '<<\'PY\' || topology_ok=0\n'
+        parser = self.package.split(marker, 1)[1].split('\nPY\n', 1)[0]
+        for kind in ('missing', 'mismatched', 'exact', 'write-failure'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                mount = str(root / 'mount')
+                entity = {'mount-point': mount}
+                if kind == 'mismatched':
+                    entity['dev-entry'] = '/dev/disk124s1'
+                elif kind in ('exact', 'write-failure'):
+                    entity['dev-entry'] = '/dev/disk123'
+                source = root / 'attach.plist'
+                source.write_bytes(plistlib.dumps({'system-entities': [
+                    {'dev-entry': '/dev/disk123'}, entity]}))
+                output = root / 'device.txt'
+                program = parser
+                if kind == 'write-failure':
+                    program = "import os\ndef fail_fsync(fd): raise OSError('inert fsync failure')\nos.fsync = fail_fsync\n" + parser
+                result = subprocess.run([sys.executable, '-B', '-c', program,
+                                         str(source), mount, str(output)],
+                                        capture_output=True, timeout=5)
+                if kind == 'exact':
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(output.read_text(), '/dev/disk123')
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(output.exists(), 'ambiguous mount must not authorize detach')
+                    if kind == 'write-failure':
+                        self.assertTrue(Path(str(output) + '.partial').exists())
 
     def test_restrictive_umask_staged_modes_normalized(self):
         with tempfile.TemporaryDirectory() as tmp:
