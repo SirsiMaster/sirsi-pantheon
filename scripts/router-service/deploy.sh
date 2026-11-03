@@ -11,7 +11,7 @@ export VERSION=${VERSION:-$(git describe --tags --always)}
   --service-account="$SA_EMAIL" --allow-unauthenticated \
   --add-cloudsql-instances="$PROJECT:$REGION:$INSTANCE" \
   --network=default --subnet=default --vpc-egress=private-ranges-only \
-  --set-secrets="SIRSI_ROUTER_SERVE_TOKEN=sirsi-router-bootstrap-token:latest,SIRSI_ROUTER_STORE=sirsi-router-service-dsn:latest" \
+  --set-secrets="SIRSI_ROUTER_SERVE_TOKEN=sirsi-router-bootstrap-token:latest,SIRSI_ROUTER_STORE=sirsi-router-service-dsn:latest,SIRSI_ROUTER_GITHUB_TOKEN=ADMIN_GITHUB_PAT:latest" \
   --args="router,serve" \
   --min-instances=0 --max-instances=2 --cpu=1 --memory=512Mi --concurrency=80 --timeout=90 \
   --labels=adr=062,workstream=router-service
