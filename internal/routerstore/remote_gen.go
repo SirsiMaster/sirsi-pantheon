@@ -99,6 +99,12 @@ func (rs *RemoteStore) Complete(id, token, result string) error {
 func (rs *RemoteStore) CompleteTaskLease(agent, taskID, token, resultRef string) error {
 	return rs.call("CompleteTaskLease", []any{agent, taskID, token, resultRef})
 }
+func (rs *RemoteStore) CompleteTaskByOwner(agent, taskID, actor, reason string) error {
+	return rs.call("CompleteTaskByOwner", []any{agent, taskID, actor, reason})
+}
+func (rs *RemoteStore) CancelTask(agent, taskID, actor, reason string) error {
+	return rs.call("CancelTask", []any{agent, taskID, actor, reason})
+}
 func (rs *RemoteStore) Counters() (DispatchCounters, error) {
 	var o0 DispatchCounters
 	err := rs.call("Counters", nil, &o0)

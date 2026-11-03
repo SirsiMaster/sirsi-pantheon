@@ -252,13 +252,43 @@ func TestOwnerSignOffAndCancel(t *testing.T) {
 	}
 }
 
-// The owner and cancel paths are not on the Store interface, so the router
-// service can never serve them to a remote caller.
-func TestOwnerPathsAreNotServed(t *testing.T) {
-	for _, m := range []string{"CompleteTaskByOwner", "CancelTask"} {
-		if _, ok := storeType.MethodByName(m); ok {
-			t.Fatalf("%s is on the Store interface and would be served remotely", m)
+// Owner sign-off and cancel are served to the IAP board's @ledger-editor token for a board:<email> actor,
+// and refused to every other caller: a lane's own scoped token, an observer, and the unscoped bootstrap token.
+func TestOwnerPathsServedOnlyToTheBoardToken(t *testing.T) {
+	f := newScopedFixture(t, []string{"router-board", ObserverScope, LedgerEditorScope})
+	for _, id := range []string{"sign", "drop", "lane-try", "boot-try", "no-actor"} {
+		if err := f.backend.AddTask(Task{Agent: "ra", TaskID: id, Subject: id}); err != nil {
+			t.Fatal(err)
 		}
+	}
+	board := f.client("router-board")
+	if err := board.CompleteTaskByOwner("ra", "sign", "board:owner@sirsi.ai", "verified in the browser"); err != nil {
+		t.Fatalf("board sign-off refused: %v", err)
+	}
+	if err := board.CancelTask("ra", "drop", "board:owner@sirsi.ai", "superseded"); err != nil {
+		t.Fatalf("board cancel refused: %v", err)
+	}
+	wantLaneScope(t, "board actor without board: prefix", board.CompleteTaskByOwner("ra", "no-actor", "ra", "self sign-off"))
+
+	lane := newScopedFixture(t, []string{"ra"})
+	if err := lane.backend.AddTask(Task{Agent: "ra", TaskID: "lane-try", Subject: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	wantLaneScope(t, "lane signs off its own task", lane.client("ra").CompleteTaskByOwner("ra", "lane-try", "board:owner@sirsi.ai", "x"))
+	observer := newScopedFixture(t, []string{"router-board", ObserverScope})
+	wantLaneScope(t, "observer-only cancel", observer.client("router-board").CancelTask("ra", "x", "board:owner@sirsi.ai", "x"))
+
+	boot := NewRemoteStore(f.url, "t0k")
+	boot.sessionDir, boot.host, boot.agent = "", f.host, "ra"
+	wantLaneScope(t, "unscoped bootstrap token", boot.CompleteTaskByOwner("ra", "boot-try", "board:owner@sirsi.ai", "x"))
+
+	for id, want := range map[string]string{"sign": "done", "drop": "canceled", "lane-try": "pending", "boot-try": "pending", "no-actor": "pending"} {
+		if got, _ := f.backend.GetTask("ra", id); got.Status != want {
+			t.Errorf("%s = %s, want %s", id, got.Status, want)
+		}
+	}
+	if raw, _, _ := f.backend.GetState(receiptKey("ra", "sign")); !strings.Contains(raw, `"actor":"board:owner@sirsi.ai"`) {
+		t.Fatalf("owner receipt %q", raw)
 	}
 }
 

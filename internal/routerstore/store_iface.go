@@ -64,6 +64,10 @@ type Store interface {
 	RelocateTaskEvidence(ctx context.Context, req TaskEvidenceRequest) (TaskEvidenceResult, error)
 	Complete(id, token, result string) error
 	CompleteTaskLease(agent, taskID, token, resultRef string) error
+	// CompleteTaskByOwner and CancelTask are owner sign-off and cancel (receipts.go). Over the wire they are
+	// served ONLY to an @ledger-editor token (the IAP board) acting for a board:<email> actor (serve.go ownerTerminals).
+	CompleteTaskByOwner(agent, taskID, actor, reason string) error
+	CancelTask(agent, taskID, actor, reason string) error
 	Counters() (DispatchCounters, error)
 	// DeleteThreadCAS retires the exact ordinary row to a retained pruned key
 	// with empty user payload. Existing fences remain unchanged. True means

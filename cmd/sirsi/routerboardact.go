@@ -21,11 +21,14 @@ type boardLedger interface {
 	AddTask(t routerstore.Task) error
 	GetTask(agent, taskID string) (routerstore.Task, error)
 	UpdateTask(agent, taskID string, u routerstore.TaskUpdate) (routerstore.Task, error)
+	CompleteTaskByOwner(agent, taskID, actor, reason string) error
+	CancelTask(agent, taskID, actor, reason string) error
 }
 
 // boardAct is the request body every verb reads; each verb uses the fields it needs. There is no claim,
-// renew, release or complete: a task lease belongs to the lane's own authenticated thread, so the board
-// cannot hold one for another lane (routerstore ledgerEdits).
+// renew, release or lease complete: a task lease belongs to the lane's own authenticated thread, so the
+// board cannot hold one for another lane (routerstore ledgerEdits). sign-off and cancel-task are the owner's
+// own terminal word on a task, with a required reason; sign-off records an owner receipt, cancel never counts as done.
 type boardAct struct {
 	ID          string  `json:"id"`          // router item id
 	To          string  `json:"to"`          // reassign-item target agent
@@ -96,6 +99,14 @@ func runBoardAct(st boardLedger, actor, verb string, body []byte) (any, error) {
 		}
 		return ok(st.AddTask(routerstore.Task{Agent: a.Agent, TaskID: a.TaskID, Subject: a.Subject,
 			ResponsibleParty: a.Responsible, CommissionedBy: actor}))
+	case "sign-off", "cancel-task":
+		if err := need("agent", a.Agent, "task_id", a.TaskID, "note", a.Note); err != nil {
+			return nil, err
+		}
+		if verb == "sign-off" {
+			return ok(st.CompleteTaskByOwner(a.Agent, a.TaskID, actor, a.Note))
+		}
+		return ok(st.CancelTask(a.Agent, a.TaskID, actor, a.Note))
 	case "update-task", "reassign-task":
 		if err := need("agent", a.Agent, "task_id", a.TaskID); err != nil {
 			return nil, err

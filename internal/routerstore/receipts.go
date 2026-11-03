@@ -13,9 +13,10 @@ package routerstore
 //	                            reserve or release.
 //
 // Repos are bound to ReceiptRepoOwners and a receipt proves one task only.
-// Owner sign-off is not a receipt string; it is CompleteTaskByOwner, which is
-// not served remotely. Every path that can write status='done' routes through
-// verifyReceipt or that method — nothing else sets done.
+// Owner sign-off is not a receipt string; it is CompleteTaskByOwner, served
+// remotely only to the IAP board's @ledger-editor token (serve.go ownerTerminals).
+// Every path that can write status='done' routes through verifyReceipt or that
+// method — nothing else sets done.
 
 import (
 	"context"
@@ -370,16 +371,15 @@ func (g *githubVerifier) verifyTag(ctx context.Context, value string) error {
 	return nil
 }
 
-// CompleteTaskByOwner is owner sign-off for work with nothing to build. It is
-// deliberately NOT on the Store interface, so the router service never serves
-// it to a remote caller; the board reaches it only through its own owner-auth
-// path. Any live lease is released.
+// CompleteTaskByOwner is owner sign-off for work with nothing to build. Over the
+// wire only the @ledger-editor board token may call it, for a board:<email>
+// actor its IAP check verified. Any live lease is released.
 func (s *SQLiteStore) CompleteTaskByOwner(agent, taskID, actor, reason string) error {
 	return s.ownerTerminal(agent, taskID, actor, reason, "done")
 }
 
 // CancelTask ends a task that will not be done. Canceled never counts as done.
-// Like CompleteTaskByOwner it is owner-only and not served remotely.
+// Like CompleteTaskByOwner it is owner-only: served to the board token alone.
 func (s *SQLiteStore) CancelTask(agent, taskID, actor, reason string) error {
 	return s.ownerTerminal(agent, taskID, actor, reason, "canceled")
 }
