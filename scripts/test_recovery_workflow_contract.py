@@ -7,6 +7,13 @@ from pathlib import Path
 
 
 class RecoveryWorkflowContractTests(unittest.TestCase):
+    def assert_late_sidecar_preflight_before_build(self, workflow):
+        late = '      - name: Refuse preexisting signing sidecars\n'
+        build = '      - name: Build and sign exact original source once\n'
+        self.assertEqual(workflow.count(late), 1)
+        self.assertEqual(workflow.count(build), 1)
+        self.assertLess(workflow.index(late), workflow.index(build))
+
     def test_exact_one_shot_workflow_orders_custody_before_publish(self):
         workflow = (Path(__file__).parent.parent / '.github/workflows/recover-v163-release.yml').read_text()
         for required in ('pantheon-release-refs/tags/v0.24.163',
@@ -60,7 +67,19 @@ class RecoveryWorkflowContractTests(unittest.TestCase):
         self.assertIn('Refuse preexisting signing sidecars', workflow)
         self.assertLess(workflow.index('Refuse preexisting signing sidecars before claim'), workflow.index('claim-release-recovery.py'))
         self.assertLess(workflow.index('claim-release-recovery.py'), workflow.index('      - name: Refuse preexisting signing sidecars\n'))
-        self.assertLess(workflow.index('Refuse preexisting signing sidecars'), workflow.index('Build and sign exact original source once'))
+        self.assert_late_sidecar_preflight_before_build(workflow)
+
+    def test_late_sidecar_order_rejects_moved_preflight(self):
+        workflow = (Path(__file__).parent.parent / '.github/workflows/recover-v163-release.yml').read_text()
+        late = '      - name: Refuse preexisting signing sidecars\n'
+        build = '      - name: Build and sign exact original source once\n'
+        # Negative control: leave the earlier pre-claim preflight in place,
+        # but move the exact late step marker after the build marker.
+        self.assertEqual(workflow.count(late), 1)
+        self.assertEqual(workflow.count(build), 1)
+        bad_order = workflow.replace(late, '', 1).replace(build, build + late, 1)
+        with self.assertRaises(AssertionError):
+            self.assert_late_sidecar_preflight_before_build(bad_order)
 
     def test_sidecar_preflights_refuse_stale_files_and_dangling_symlinks(self):
         workflow = (Path(__file__).parent.parent / '.github/workflows/recover-v163-release.yml').read_text()
