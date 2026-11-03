@@ -281,12 +281,22 @@ separate SHA observation at45.289seconds, against the old eight-second deadline.
 These are cooperative operational controls, not an OS security sandbox against same-user tampering, deliberately hidden workloads, escaped descendant sessions or supervisor SIGKILL. A native tool hook and per-runtime adoption must be proven separately. The execution timeout begins at child spawn; metadata and cleanup calls have their separate bounds. Do not mistake a receipt file's existence for live admission.
 
 The fabric supervisor uses a separate Popen/session-group binding. It observes
-the direct leader with non-reaping `waitid(WNOWAIT)`, keeps that leader
-waitable while sending TERM/KILL to its exact process group, then performs one
-final `Popen.wait()` reap. The leader's unreaped PID prevents reuse of the
-group identifier between cleanup signals; if custody or wait observation is
-uncertain, cleanup remains debt and no later group signal is attempted. This
-does not prove containment of descendants that escape the session/group.
+the direct leader with non-reaping `waitid(WNOWAIT)` and takes a fresh
+process-group snapshot before any reap (native libproc on Darwin). A terminal
+leader whose snapshot contains exactly that retained zombie is reaped without
+signaling. If live group members remain, cleanup sends TERM, observes both
+leader status and group membership, escalates to KILL after the grace interval,
+and requires the exact singleton leader zombie before the single final
+`Popen.wait()`. Additional zombie members retain cleanup debt. The leader's
+unreaped PID prevents reuse of the group identifier while any signal can be
+sent. Snapshot denial, malformed or changing membership, and signal errors
+retain cleanup debt. For EPERM or ESRCH from a group signal, cleanup performs
+an independent WNOWAIT and group snapshot; it accepts the failed signal only
+when that predicate proves the exact singleton leader zombie. `proc_listpids`
+with before/after enumeration and per-PID metadata is a bounded, non-atomic
+observation: a process can join or leave between reads, and descendants that
+escape the session/group are outside its scope. This is not a proof of complete
+descendant containment.
 
 ### Long runs, transport uncertainty and recurring jobs
 

@@ -1358,23 +1358,38 @@ class RecoveryTests(unittest.TestCase):
             stop.assert_called_once()
 
     def test_fabric_stop_signals_before_the_only_reap_and_never_after_pgid_reuse(self):
-        child = FakeChild(Clock(), 0, exit_code=17)
+        clock = Clock()
+        child = FakeChild(clock, 0, exit_code=17)
         child.returncode = None
         identity = bind_fake_fabric_child(child)
         events = []
-        observations = iter([None, 17, 17, 17])
+        killed = False
         pgid_reassigned = False
 
         def observe(target):
             self.assertIs(target, child)
             events.append(('observe', identity.reaped, pgid_reassigned))
-            return next(observations)
+            return 17
+
+        def snapshot(group):
+            self.assertEqual(group, child.pid)
+            events.append(('snapshot', identity.reaped, pgid_reassigned))
+            rows = [dict(pid=child.pid, pgid=group, status='Z')]
+            if not killed:
+                rows.append(dict(pid=424243, pgid=group, status='S'))
+            return rows
 
         def send_group(group, sig):
+            nonlocal killed
             self.assertEqual(group, child.pid)
             self.assertFalse(identity.reaped, 'group signal after direct-child reap')
             self.assertFalse(pgid_reassigned, 'reaped PID/PGID may now name another group')
+            self.assertFalse(identity.signals_closed)
             events.append(('signal', sig, identity.reaped, pgid_reassigned))
+            if sig == runner.signal.SIGTERM:
+                clock.now = 2
+            else:
+                killed = True
 
         def reap(target):
             nonlocal pgid_reassigned
@@ -1386,14 +1401,222 @@ class RecoveryTests(unittest.TestCase):
             pgid_reassigned = True  # Model immediate reuse after wait() consumes the leader.
             return 17
 
-        runner.stop(child, observe=observe, send_group=send_group, reap=reap)
+        runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                    monotonic=clock.monotonic, sleep=clock.advance,
+                    snapshot_group=snapshot)
         self.assertEqual(child.returncode, 17)
         self.assertEqual([event[0:2] for event in events if event[0] in ('signal', 'reap')],
                          [('signal', runner.signal.SIGTERM), ('signal', runner.signal.SIGKILL), ('reap',)])
         self.assertTrue(identity.reaped)
+        self.assertTrue(identity.signals_closed)
         with self.assertRaises(runner.Refused):
             runner._signal_fabric_group(child, runner.signal.SIGTERM, observe, send_group)
         self.assertEqual(len([event for event in events if event[0] == 'signal']), 2)
+
+    def test_fabric_terminal_singleton_zombie_reaps_without_signaling(self):
+        child = FakeChild(Clock(), 0, exit_code=17)
+        identity = bind_fake_fabric_child(child)
+        events = []
+        def observe(target):
+            events.append(('observe', identity.reaped))
+            return 17
+        def snapshot(group):
+            events.append(('snapshot', identity.reaped))
+            return [dict(pid=child.pid, pgid=group, status='Z')]
+        def send_group(*args):
+            self.fail('terminal-only group must not be signaled')
+        def reap(target):
+            events.append(('reap', identity.reaped, identity.signals_closed))
+            target._record_reap()
+            return 17
+        runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                    snapshot_group=snapshot)
+        self.assertEqual(child.returncode, 17)
+        self.assertEqual(events[-1], ('reap', False, True))
+        self.assertTrue(identity.reaped)
+        self.assertTrue(identity.signals_closed)
+
+    def test_fabric_group_snapshot_errors_keep_live_or_unknown_group_as_debt(self):
+        for failure in [PermissionError(1, 'operation not permitted'),
+                        ProcessLookupError(3, 'no such process'),
+                        runner.Refused('membership unknown')]:
+            with self.subTest(error=type(failure).__name__):
+                child = FakeChild(Clock(), 0)
+                identity = bind_fake_fabric_child(child)
+                send = mock.Mock()
+                reap = mock.Mock()
+                with self.assertRaises(type(failure)):
+                    runner.stop(child, observe=lambda target: 0, send_group=send,
+                                reap=reap, snapshot_group=mock.Mock(side_effect=failure))
+                self.assertTrue(identity.signals_closed)
+                self.assertFalse(identity.reaped)
+                self.assertIsNone(child.returncode)
+                send.assert_not_called()
+                reap.assert_not_called()
+
+    def test_fabric_signals_close_on_initial_observer_and_checked_reap_errors(self):
+        child = FakeChild(Clock(), 0)
+        identity = bind_fake_fabric_child(child)
+        reap = mock.Mock()
+        with self.assertRaisesRegex(runner.Refused, 'initial wait unavailable'):
+            runner.stop(child, observe=mock.Mock(side_effect=runner.Refused('initial wait unavailable')),
+                        snapshot_group=mock.Mock(), reap=reap)
+        self.assertTrue(identity.signals_closed)
+        self.assertFalse(identity.reap_started)
+        reap.assert_not_called()
+
+        child = FakeChild(Clock(), 0)
+        identity = bind_fake_fabric_child(child)
+        with self.assertRaisesRegex(TimeoutError, 'checked reap unavailable'):
+            runner.stop(child, observe=lambda target: 4,
+                        snapshot_group=lambda group: [dict(pid=child.pid, pgid=group, status='Z')],
+                        reap=mock.Mock(side_effect=TimeoutError('checked reap unavailable')))
+        self.assertTrue(identity.signals_closed)
+        self.assertTrue(identity.reap_started)
+        self.assertFalse(identity.reaped)
+
+    def test_fabric_terminal_leader_with_live_member_gets_term_observation_then_kill(self):
+        child = FakeChild(Clock(), 0, exit_code=9)
+        identity = bind_fake_fabric_child(child)
+        clock = Clock()
+        events = []
+        killed = False
+        def observe(target):
+            self.assertFalse(identity.reaped)
+            return 9
+        def snapshot(group):
+            events.append(('snapshot', clock.now))
+            rows = [dict(pid=child.pid, pgid=group, status='Z')]
+            if not killed:
+                rows.append(dict(pid=424243, pgid=group, status='S'))
+            return rows
+        def send_group(group, sig):
+            nonlocal killed
+            self.assertEqual(group, child.pid)
+            self.assertFalse(identity.reaped)
+            events.append(('signal', sig, clock.now))
+            if sig == runner.signal.SIGTERM:
+                clock.now = 2
+            else:
+                killed = True
+        def reap(target):
+            self.assertTrue(identity.signals_closed)
+            events.append(('reap', clock.now))
+            target._record_reap()
+            return 9
+        runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                    monotonic=clock.monotonic, sleep=clock.advance,
+                    snapshot_group=snapshot)
+        self.assertEqual([event[1] for event in events if event[0] == 'signal'],
+                         [runner.signal.SIGTERM, runner.signal.SIGKILL])
+        self.assertEqual(events[-1][0], 'reap')
+        self.assertTrue(identity.reaped)
+
+    def test_fabric_additional_zombie_after_kill_remains_cleanup_debt(self):
+        child = FakeChild(Clock(), 0, exit_code=6)
+        identity = bind_fake_fabric_child(child)
+        clock = Clock()
+        events = []
+        killed = False
+        def observe(target):
+            return 6
+        def snapshot(group):
+            status = 'Z' if killed else 'S'
+            return [dict(pid=child.pid, pgid=group, status='Z'),
+                    dict(pid=424243, pgid=group, status=status)]
+        def send_group(group, sig):
+            nonlocal killed
+            events.append(sig)
+            if sig == runner.signal.SIGTERM:
+                clock.now = 2
+            else:
+                killed = True
+        reap = mock.Mock()
+        with self.assertRaisesRegex(runner.Refused, 'Additional group zombies remain'):
+            runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                        monotonic=clock.monotonic, sleep=clock.advance,
+                        snapshot_group=snapshot)
+        self.assertEqual(events, [runner.signal.SIGTERM, runner.signal.SIGKILL])
+        self.assertTrue(identity.signals_closed)
+        self.assertFalse(identity.reaped)
+        reap.assert_not_called()
+
+    def test_fabric_eperm_and_esrch_require_independent_singleton_reobservation(self):
+        for error in [PermissionError(1, 'operation not permitted'),
+                      ProcessLookupError(3, 'no such process')]:
+            with self.subTest(error=type(error).__name__):
+                child = FakeChild(Clock(), 0, exit_code=12)
+                identity = bind_fake_fabric_child(child)
+                observations = iter([None, None, 12, 12])
+                snapshots = iter([
+                    [dict(pid=child.pid, pgid=child.pid, status='S')],
+                    [dict(pid=child.pid, pgid=child.pid, status='Z')],
+                    [dict(pid=child.pid, pgid=child.pid, status='Z')],
+                ])
+                def observe(target):
+                    return next(observations)
+                def snapshot(group):
+                    return next(snapshots)
+                def send_group(group, sig):
+                    raise error
+                def reap(target):
+                    target._record_reap()
+                    return 12
+                runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                            snapshot_group=snapshot)
+                self.assertTrue(identity.reaped)
+                self.assertTrue(identity.signals_closed)
+
+    def test_fabric_eperm_or_esrch_without_independent_singleton_proof_is_debt(self):
+        scenarios = [
+            (PermissionError(runner.errno.EPERM, 'operation not permitted'), 'live', PermissionError),
+            (ProcessLookupError(runner.errno.ESRCH, 'no such process'), 'unknown', runner.Refused),
+        ]
+        for error, second_state, expected in scenarios:
+            with self.subTest(error=type(error).__name__):
+                child = FakeChild(Clock(), 0)
+                identity = bind_fake_fabric_child(child)
+                initial = True
+                def snapshot(group):
+                    nonlocal initial
+                    if initial:
+                        initial = False
+                        return [dict(pid=child.pid, pgid=group, status='S')]
+                    if second_state == 'live':
+                        return [dict(pid=child.pid, pgid=group, status='S')]
+                    raise runner.Refused('independent snapshot unknown')
+                def send_group(group, sig):
+                    raise error
+                reap = mock.Mock()
+                with self.assertRaises(expected):
+                    runner.stop(child, observe=lambda target: None, send_group=send_group,
+                                reap=reap, snapshot_group=snapshot)
+                self.assertTrue(identity.signals_closed)
+                self.assertFalse(identity.reaped)
+                reap.assert_not_called()
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX process-group integration')
+    def test_naturally_short_lived_real_child_reaps_singleton_zombie_without_signal(self):
+        child = subprocess.Popen([sys.executable, '-c', 'pass'], start_new_session=True,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+        try:
+            identity = runner.fabric_bind_child(child)
+            deadline = runner.time.monotonic() + 5
+            while runner.fabric_child_terminal(child) is None:
+                if runner.time.monotonic() >= deadline:
+                    self.fail('short-lived child did not reach a WNOWAIT terminal state')
+                runner.time.sleep(0.01)
+            signals = mock.Mock(side_effect=AssertionError('terminal-only group was signaled'))
+            runner.stop(child, send_group=signals)
+            self.assertTrue(identity.reaped)
+            self.assertTrue(identity.signals_closed)
+            self.assertEqual(child.returncode, 0)
+            signals.assert_not_called()
+        finally:
+            if child.returncode is None:
+                child.kill()
+                child.wait(timeout=2)
 
     def test_fabric_signal_failure_retains_unreaped_custody(self):
         child = FakeChild(Clock(), 0)
@@ -1404,8 +1627,10 @@ class RecoveryTests(unittest.TestCase):
             raise PermissionError('fixture signal refusal')
         reap = mock.Mock()
         with self.assertRaisesRegex(PermissionError, 'fixture signal refusal'):
-            runner.stop(child, observe=lambda target: None, send_group=send_group, reap=reap)
+            runner.stop(child, observe=lambda target: None, send_group=send_group, reap=reap,
+                        snapshot_group=lambda group: [dict(pid=child.pid, pgid=group, status='S')])
         self.assertEqual(sent, [(child.pid, runner.signal.SIGTERM)])
+        self.assertTrue(identity.signals_closed)
         self.assertFalse(identity.reaped)
         self.assertIsNone(child.returncode)
         reap.assert_not_called()
@@ -1413,15 +1638,20 @@ class RecoveryTests(unittest.TestCase):
     def test_fabric_final_terminal_uncertainty_never_reaps(self):
         child = FakeChild(Clock(), 0)
         identity = bind_fake_fabric_child(child)
-        observations = iter([None, 0, 0, runner.Refused('terminal receipt unavailable')])
+        clock = Clock()
+        observations = iter([None, None, runner.Refused('terminal receipt unavailable')])
         def observe(target):
             result = next(observations)
             if isinstance(result, Exception):
                 raise result
             return result
         reap = mock.Mock()
+        def send_group(group, sig):
+            clock.now = 2
         with self.assertRaisesRegex(runner.Refused, 'terminal receipt unavailable'):
-            runner.stop(child, observe=observe, send_group=mock.Mock(), reap=reap)
+            runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                        monotonic=clock.monotonic, sleep=clock.advance,
+                        snapshot_group=lambda group: [dict(pid=child.pid, pgid=group, status='S')])
         self.assertTrue(identity.signals_closed)
         self.assertFalse(identity.reaped)
         reap.assert_not_called()
@@ -1431,13 +1661,20 @@ class RecoveryTests(unittest.TestCase):
         identity = bind_fake_fabric_child(child)
         clock = Clock()
         events = []
+        killed = False
         def observe(target):
             self.assertIs(target, child)
-            return 0 if events and events[-1][0:2] == ('signal', runner.signal.SIGKILL) else None
+            return 0 if killed else None
+        def snapshot(group):
+            status = 'Z' if killed else 'S'
+            return [dict(pid=child.pid, pgid=group, status=status)]
         def send_group(group, sig):
+            nonlocal killed
             self.assertEqual(group, child.pid)
             self.assertFalse(identity.reaped)
             events.append(('signal', sig, clock.now))
+            if sig == runner.signal.SIGKILL:
+                killed = True
         def reap(target):
             self.assertGreaterEqual(clock.now, 2)
             self.assertLess(clock.now, 2.001)
@@ -1446,7 +1683,7 @@ class RecoveryTests(unittest.TestCase):
             target._record_reap()
             return target.returncode
         runner.stop(child, observe=observe, send_group=send_group, reap=reap,
-                    monotonic=clock.monotonic,
+                    monotonic=clock.monotonic, snapshot_group=snapshot,
                     sleep=clock.advance)
         self.assertEqual(events[0][0:2], ('signal', runner.signal.SIGTERM))
         self.assertEqual(events[-1][0], 'reap')
@@ -1478,15 +1715,15 @@ class RecoveryTests(unittest.TestCase):
                 mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
                 mock.patch.object(runner, 'release_fabric_child'), \
                 mock.patch.object(runner.os, 'killpg') as kill_group, \
-                mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda target: target.terminal_status()):
+                mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda target: target.terminal_status()), \
+                mock.patch.object(runner, 'local_group_snapshot',
+                                  side_effect=lambda group: [dict(pid=child.pid, pgid=group, status='Z')]):
             code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 30, backend, record)
         self.assertEqual(code, 17)
         self.assertEqual(record['status'], 'child_failed')
         self.assertEqual(backend.released, [])
         self.assertEqual(child.returncode, 17)
-        self.assertEqual(kill_group.call_args_list,
-                         [mock.call(child.pid, runner.signal.SIGTERM),
-                          mock.call(child.pid, runner.signal.SIGKILL)])
+        kill_group.assert_not_called()
 
     def test_fabric_terminal_observation_uses_nonreaping_waitid(self):
         child = FakeChild(Clock(), 0, exit_code=17)

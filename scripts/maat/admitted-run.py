@@ -4,6 +4,7 @@ import argparse
 import ctypes
 from dataclasses import dataclass
 import datetime as dt
+import errno
 import hashlib
 import json
 import os
@@ -254,12 +255,16 @@ def _native_group_pids(group, listpids):
 
 
 def native_group_snapshot(group):
-    """Fresh Darwin group observation, never a ps-error-to-absence fallback.
+    """Fresh, bounded Darwin group observation, never a ps-error fallback.
 
     Same-executor positive control must enumerate our own known-live PID. The
     requested group is enumerated before and after exact BSD-info metadata,
     including zombies, without reading argv/environment or trusting a cache.
-    Denial, partial observation and membership drift retain cleanup debt.
+    Denial, partial observation and membership drift retain cleanup debt. The
+    kernel API does not provide an atomic group snapshot: membership can change
+    between the two enumerations, and descendants that leave this process group
+    are outside this observation. The double enumeration bounds the race; it
+    does not establish complete descendant containment.
     """
     if (sys.platform != 'darwin' or type(group) is not int or not 1 < group <= 0x7fffffff
             or ctypes.sizeof(ctypes.c_int) != 4 or ctypes.sizeof(_BSDInfo) != 136):
@@ -1223,31 +1228,115 @@ class ProvenLease:
         self.renewal_outcome = 'confirmed'
 
 
-def _signal_fabric_group(child, sig, observe=None, send_group=None):
+def _signal_fabric_group(child, sig, observe=None, send_group=None, snapshot_group=None):
     custody = fabric_owned_identity(child)
-    (observe or fabric_child_terminal)(child)  # WNOWAIT proves the leader remains waitable.
+    observe = observe or fabric_child_terminal
+    observe(child)  # WNOWAIT proves the leader remains waitable.
     custody = fabric_owned_identity(child)
-    (send_group or os.killpg)(custody.group, sig)
+    try:
+        (send_group or os.killpg)(custody.group, sig)
+    except OSError as error:
+        if error.errno not in (errno.EPERM, errno.ESRCH):
+            raise
+        # A failed group signal is never itself proof of quiescence. Reobserve
+        # through WNOWAIT and the independent process-group observer; accept
+        # only the exact retained leader zombie with no other group members.
+        terminal = observe(child)
+        members = _checked_fabric_group_snapshot(child, snapshot_group)
+        if terminal is not None and members == {custody.pid: 'Z'}:
+            return False
+        raise
+    return True
 
 
-def stop(child, observe=None, send_group=None, reap=None, monotonic=None, sleep=None):
+def _checked_fabric_group_snapshot(child, snapshot_group):
     custody = fabric_owned_identity(child)
+    rows = (snapshot_group or local_group_snapshot)(custody.group)
+    if not isinstance(rows, list):
+        raise Refused('Fabric process-group observation malformed; cleanup remains debt')
+    by_pid = {}
+    for row in rows:
+        if (not isinstance(row, dict) or type(row.get('pid')) is not int
+                or row['pid'] <= 1 or row.get('pgid') != custody.group
+                or not isinstance(row.get('status'), str) or not row['status']):
+            raise Refused('Fabric process-group member malformed; cleanup remains debt')
+        pid = row['pid']
+        status = row['status'][0]
+        if pid in by_pid or status not in 'IRSDTUWZ':
+            raise Refused('Fabric process-group member duplicated or unknown; cleanup remains debt')
+        by_pid[pid] = status
+    if custody.pid not in by_pid:
+        raise Refused('Unreaped fabric leader missing from group observation; cleanup remains debt')
+    return by_pid
+
+
+def stop(child, observe=None, send_group=None, reap=None, monotonic=None, sleep=None,
+         snapshot_group=None):
+    custody = getattr(child, '_sirsi_fabric_identity', None)
+    observe = observe or fabric_child_terminal
+    monotonic = monotonic or time.monotonic
+    sleep = sleep or time.sleep
     try:
-        _signal_fabric_group(child, signal.SIGTERM, observe, send_group)
-    except ProcessLookupError:
-        pass
-    try:
-        fabric_wait_terminal(child, 2, observe, monotonic, sleep)
-    except subprocess.TimeoutExpired:
-        pass
-    try:
-        try:
-            _signal_fabric_group(child, signal.SIGKILL, observe, send_group)
-        except ProcessLookupError:
+        custody = fabric_owned_identity(child)
+        group_snapshot = lambda: _checked_fabric_group_snapshot(child, snapshot_group)
+        # WNOWAIT retains the group-leader PID as the PGID reuse barrier while
+        # the pre-reap group membership and each signal decision are checked.
+        terminal = observe(child)
+        members = group_snapshot()
+        leader_status = members[custody.pid]
+        if terminal is not None and leader_status != 'Z':
+            raise Refused('Terminal leader is not the retained group zombie; cleanup remains debt')
+
+        # The only signal-free fast path is an exact singleton snapshot of the
+        # unreaped terminal leader. In particular, EPERM/ESRCH and empty or
+        # partial observations have already failed closed above.
+        if terminal is not None and members == {custody.pid: 'Z'}:
             pass
-        terminal = fabric_wait_terminal(child, 2, observe, monotonic, sleep)
+        else:
+            if terminal is None and leader_status == 'Z':
+                raise Refused('Live wait status conflicts with zombie group member; cleanup remains debt')
+            live = any(status != 'Z' for status in members.values())
+            if not live:
+                raise Refused('Signal-free reap requires the group to contain only its retained leader zombie')
+            else:
+                term_sent = _signal_fabric_group(
+                    child, signal.SIGTERM, observe, send_group, snapshot_group)
+                if term_sent:
+                    term_deadline = monotonic() + 2
+                    kill_sent = False
+                    kill_deadline = None
+                    while True:
+                        terminal = observe(child)
+                        members = group_snapshot()
+                        leader_status = members[custody.pid]
+                        if terminal is not None and leader_status != 'Z':
+                            raise Refused('Terminal leader absent from zombie state; cleanup remains debt')
+                        if terminal is not None and members == {custody.pid: 'Z'}:
+                            break
+                        if terminal is not None and all(status == 'Z' for status in members.values()):
+                            raise Refused('Additional group zombies remain; cleanup remains debt')
+                        now = monotonic()
+                        if not kill_sent and now >= term_deadline:
+                            kill_sent = _signal_fabric_group(
+                                child, signal.SIGKILL, observe, send_group, snapshot_group)
+                            if not kill_sent:
+                                # The independent EPERM/ESRCH predicate saw the
+                                # exact singleton zombie; the final receipt below
+                                # must still confirm that state before reaping.
+                                break
+                            kill_deadline = monotonic() + 2
+                        elif kill_sent and now >= kill_deadline:
+                            raise Refused('Live fabric group members remain after KILL; cleanup remains debt')
+                        sleep(min(0.05, max(0, (kill_deadline if kill_sent else term_deadline) - now)))
+        if terminal is None:
+            terminal = observe(child)
+        members = group_snapshot()
+        if terminal is None or members != {custody.pid: 'Z'}:
+            raise Refused('Exact singleton leader zombie is unconfirmed; cleanup remains debt')
     finally:
-        custody.signals_closed = True
+        # Includes initial observation/snapshot failures and signal failures.
+        if isinstance(custody, _FabricChildIdentity):
+            custody.signals_closed = True
     custody.reap_started = True
     reaped = (reap or (lambda target: target.wait(timeout=1)))(child)
     if reaped != terminal or child.returncode != terminal:
