@@ -80,7 +80,7 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
             'if /usr/bin/codesign -d "$norm/input"',
             '/usr/bin/codesign --remove-signature "$norm/input"',
             '/usr/bin/codesign --remove-signature "$norm/output"',
-            '/usr/bin/cmp -s "$norm/input" "$norm/output" ||',
+            '/usr/bin/python3 -B "$root/scripts/compare-pretoolguard-macho.py" "$norm/input" "$norm/output" "$dir/normalization.json" ||',
             '/usr/bin/shasum -a 256 "$signed" > "$dir/signed.sha256"',
             'mv "$dir/INCOMPLETE" "$dir/ACCEPTED"',
         )
