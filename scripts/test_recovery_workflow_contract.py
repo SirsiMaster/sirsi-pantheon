@@ -38,6 +38,19 @@ class RecoveryWorkflowContractTests(unittest.TestCase):
                                 capture_output=True, check=True)
         self.assertEqual(result.stdout.strip(), 'a' * 64)
 
+    def test_guard_globs_require_allocated_attempt_and_signing_sidecars_are_exact(self):
+        workflow = (Path(__file__).parent.parent / '.github/workflows/recover-v163-release.yml').read_text()
+        guard_step = workflow.split('      - name: Retain guard attempt evidence when allocated\n', 1)[1]
+        guard_step = guard_step.split('      - name:', 1)[0]
+        self.assertIn("if: always() && env.PANTHEON_GUARD_ATTEMPT != ''", guard_step)
+        guard_lines = [line for line in workflow.splitlines() if 'PANTHEON_GUARD_ATTEMPT }}/' in line]
+        self.assertTrue(guard_lines)
+        self.assertTrue(all(line in guard_step for line in guard_lines))
+        for sidecar in ('source/signed-Pantheon.app.receipt.txt',
+                        'source/bin/signed-SirsiPantheon-0.24.163-arm64.dmg.receipt.txt',
+                        'source/bin/signed-SirsiPantheon-0.24.163-arm64.pkg.receipt.txt'):
+            self.assertIn(sidecar, workflow)
+
 
 if __name__ == '__main__':
     unittest.main()

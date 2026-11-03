@@ -141,7 +141,7 @@ jobs:
               --directory "${PANTHEON_RELEASE_INPUTS:?}/bin" --app "$PANTHEON_RELEASE_INPUTS/Pantheon.app" \
               --include-guard --guard-manifest "${PANTHEON_RELEASE_CUSTODY:?}/payload-manifest.json" \
               --reservation "$RUNNER_TEMP/v163-recovery-reservation.json" --receipt "$RUNNER_TEMP/v163-recovery-publication.json"
-      - name: Retain recovery evidence
+      - name: Retain recovery reservation and publication evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -151,7 +151,13 @@ jobs:
             ${{ runner.temp }}/v163-recovery-publication.json
             ${{ runner.temp }}/pantheon-guard-attach-*.plist
             ${{ runner.temp }}/pantheon-guard-attach-*.plist.stderr
-            ${{ env.PANTHEON_RELEASE_CUSTODY }}
+          if-no-files-found: warn
+      - name: Retain guard attempt evidence when allocated
+        if: always() && env.PANTHEON_GUARD_ATTEMPT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: v163-recovery-guard-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/signer-jobs/*.json
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/ACCEPTED
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/INCOMPLETE
@@ -160,6 +166,23 @@ jobs:
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*signature-details.txt
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.receipt.txt
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.sha256
+          if-no-files-found: warn
+      - name: Retain exact app, DMG and PKG signing sidecars
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v163-recovery-signing-sidecars-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ github.workspace }}/source/signed-Pantheon.app.receipt.txt
+            ${{ github.workspace }}/source/bin/signed-SirsiPantheon-0.24.163-arm64.dmg.receipt.txt
+            ${{ github.workspace }}/source/bin/signed-SirsiPantheon-0.24.163-arm64.pkg.receipt.txt
+          if-no-files-found: warn
+      - name: Retain frozen Apollo digest when allocated
+        if: always() && env.PANTHEON_APOLLO_DIGEST_RECEIPT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: v163-recovery-apollo-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
             ${{ env.PANTHEON_APOLLO_DIGEST_RECEIPT }}
           if-no-files-found: warn
 
