@@ -34,7 +34,7 @@ class PublisherSourceContract(unittest.TestCase):
 
     def test_each_creation_identity_requirement_is_enforced(self):
         mutations = [
-            ('"--method", "POST"', '"--method", "GET"'),
+            ('"--include", "--method", "POST"', '"--include", "--method", "GET"'),
             ('"-F", "draft=true"', '"-F", "draft=false"'),
             ('"--jq", "{id,tag_name,draft}"', '"--jq", "{id}"'),
             ('"tag_name=" + tag', '"tag_name=unbound"'),

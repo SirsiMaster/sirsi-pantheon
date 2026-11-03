@@ -118,7 +118,8 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
             '"$signed.receipt.txt"',
             '/usr/bin/xcrun stapler validate "$signed"',
             'trap cleanup_mount EXIT',
-            '/usr/bin/hdiutil attach -quiet -readonly -nobrowse -mountpoint "$dir/mount" "$signed"',
+            '/usr/bin/hdiutil attach -plist -readonly -nobrowse -mountpoint "$dir/mount" "$signed"',
+            "unexpected unmounted image device entities",
             'mounted=1',
             "names = {'sirsi-display-power-guard', 'sirsi-pretoolguard-install'}",
             'if set(os.listdir(p)) != names:',
@@ -131,7 +132,7 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
             '"$dir/mount/sirsi-pretoolguard-install" | /usr/bin/awk',
             '== "$installer_expected" ]] || { echo \'returned image installer differs\' >&2; exit 1; }',
             '/usr/bin/codesign --verify --strict -R "$installer_requirement" "$dir/mount/sirsi-pretoolguard-install"',
-            'if ! /usr/bin/hdiutil detach "$dir/mount"; then',
+            'if ! /usr/bin/hdiutil detach "$device"; then',
             'exit 1\nfi',
             'printf \'%s\\n\' "$expected" > "$dir/guard.sha256"',
             'printf \'%s\\n\' "$installer_expected" > "$dir/installer.sha256"',
@@ -148,7 +149,7 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
             self.package,
             'cleanup_mount() {',
             'if [[ "$mounted" == 1 ]]; then',
-            '/usr/bin/hdiutil detach "$dir/mount" || echo "WARNING: detach failed;',
+            '/usr/bin/hdiutil detach "$device" || echo "WARNING: detach failed;',
             'trap cleanup_mount EXIT',
         )
 

@@ -462,8 +462,8 @@ class ReleasePublicationTests(unittest.TestCase):
                 fake.fail = defect
                 receipt = self.directory / (defect + ".json")
 
-                def inert_publish(version, head, directory, app, record):
-                    return original_publish(version, head, directory, app, record, run=fake)
+                def inert_publish(version, head, directory, app, record, **kwargs):
+                    return original_publish(version, head, directory, app, record, run=fake, **kwargs)
 
                 argv = ["publish-release-assets.py", "--version", VERSION,
                         "--expected-commit", HEAD, "--directory", str(self.directory),
@@ -618,7 +618,7 @@ class ReleasePublicationTests(unittest.TestCase):
         for assets in ({}, {NAMES[0]: PAYLOADS[NAMES[0]]}):
             with self.subTest(assets=list(assets)):
                 fake = FakeGH(False, assets)
-                with self.assertRaisesRegex(publication.Refusal, "complete pair"):
+                with self.assertRaisesRegex(publication.Refusal, "exact complete asset set"):
                     self.publish(fake)
                 self.assertEqual(fake.mutations(), [])
 
@@ -684,8 +684,8 @@ class ReleasePublicationTests(unittest.TestCase):
                 fake.fail = defect
                 receipt = self.directory / (defect + ".json")
 
-                def inert_publish(version, head, directory, app, record):
-                    return original_publish(version, head, directory, app, record, run=fake)
+                def inert_publish(version, head, directory, app, record, **kwargs):
+                    return original_publish(version, head, directory, app, record, run=fake, **kwargs)
 
                 argv = ["publish-release-assets.py", "--version", VERSION, "--expected-commit", HEAD,
                         "--directory", str(self.directory), "--app", str(self.directory / "inert.app"),

@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
   id-token: write
 
 # Serialize retries of the same tag; never interrupt signing/publication midway.
@@ -92,8 +93,40 @@ jobs:
           TAG_NAME="${GITHUB_REF_NAME}"
           echo "VERSION=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Check cross-run tag custody before signing or retry
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 -B scripts/check-release-run-custody.py "$(git rev-parse "${GITHUB_SHA}^{commit}")"
+
+      - name: Reserve exact source-bound release draft
+        if: github.run_attempt == 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          python3 -B scripts/reserve-release-draft.py --version "$BUILD_VERSION" \
+            --expected-commit "$(git rev-parse "${GITHUB_SHA}^{commit}")" \
+            --receipt "$RUNNER_TEMP/pantheon-reservation-${GITHUB_RUN_ID}.json"
+
+      - name: Retain reservation outcome including uncertainty
+        if: always() && github.run_attempt == 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: pantheon-reservation-${{ github.run_id }}
+          path: ${{ runner.temp }}/pantheon-reservation-${{ github.run_id }}.json
+          if-no-files-found: warn
+
+      - name: Restore exact original reservation on retry
+        if: github.run_attempt != 1
+        uses: actions/download-artifact@v4
+        with:
+          name: pantheon-reservation-${{ github.run_id }}
+          path: ${{ runner.temp }}
+
       - name: Import Developer ID signing identities
         id: keychain_setup
+        if: github.run_attempt == 1
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -139,6 +172,7 @@ jobs:
           fi
 
       - name: Resolve enrolled or imported Developer ID identity
+        if: github.run_attempt == 1
         run: |
           set -euo pipefail
           KEYCHAIN="${PANTHEON_SIGNING_KEYCHAIN:?Signing keychain was not selected}"
@@ -154,6 +188,7 @@ jobs:
           echo "Resolved Developer ID Application identity using ${PANTHEON_SIGNING_MODE}."
 
       - name: Preflight imported Developer ID Installer identity
+        if: github.run_attempt == 1
         env:
           DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
         run: |
@@ -180,6 +215,7 @@ jobs:
           echo "Developer ID Installer identity preflight passed."
 
       - name: Build + sign + notarize DMG and PKG (arm64 — Apple silicon)
+        if: github.run_attempt == 1
         env:
           # Use the enrolled M1 signer only; never fall back to the M5 measurement host.
           SIRSI_SIGN_HOSTS: sirsi-m1
@@ -203,27 +239,118 @@ jobs:
           # does not implement yet (125's --cores versus installed124).
           # Admission remains mandatory; a missing installed pair fails closed.
           test -x "$HOME/.local/bin/sirsi-maat-run"
+          # Do not silently substitute an older installed supervisor for the
+          # reviewed source. Installation/rollout remains a separate operation.
+          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || {
+            echo 'installed Ma’at supervisor does not match release source' >&2; exit 1;
+          }
           "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon \
             --register-executor --work "pantheon-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --cpu-cores 1 --timeout 1500 -- /bin/bash -euo pipefail -c '
               PANTHEON_APOLLO_DIGEST_RECEIPT="$(bash scripts/new-apollo-digest-receipt.sh "$RUNNER_TEMP")"
               printf "PANTHEON_APOLLO_DIGEST_RECEIPT=%s\n" "$PANTHEON_APOLLO_DIGEST_RECEIPT" >> "$GITHUB_ENV"
               export PANTHEON_APOLLO_DIGEST_RECEIPT
+              PANTHEON_GUARD_ATTEMPT="$(mktemp -d "$RUNNER_TEMP/pantheon-guard-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.XXXXXXXX")"
+              printf "PANTHEON_GUARD_ATTEMPT=%s\n" "$PANTHEON_GUARD_ATTEMPT" >> "$GITHUB_ENV"
+              export SIRSI_SIGN_CUSTODY_DIR="$PANTHEON_GUARD_ATTEMPT/signer-jobs"
+              mkdir -m 700 "$SIRSI_SIGN_CUSTODY_DIR"
+              export PANTHEON_SIGN_CLIENT="$GITHUB_WORKSPACE/tools/signing/sirsi-sign"
+              EXPECTED_COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+              bash scripts/ci-private-sdk.sh bash scripts/build-release-pretoolguard.sh "$EXPECTED_COMMIT" "$BUILD_VERSION" "$PANTHEON_GUARD_ATTEMPT"
               bash scripts/ci-private-sdk.sh scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
               bash scripts/ci-private-sdk.sh scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app "$GITHUB_WORKSPACE/Pantheon.app"
             '
 
-      - name: Stage draft and verify exact signed pair before publication
+      - name: Preserve exact first-attempt publication inputs
+        if: github.run_attempt == 1
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          CUSTODY="$(mktemp -d "$RUNNER_TEMP/pantheon-release-custody-${GITHUB_RUN_ID}.XXXXXXXX")"
+          test -x "$HOME/.local/bin/sirsi-maat-run"
+          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || { echo 'installed Ma’at supervisor does not match release source' >&2; exit 1; }
+          "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon --register-executor \
+            --work "pantheon-custody-create-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --cpu-cores 1 --timeout 600 -- \
+            python3 -B scripts/release-custody.py create "$CUSTODY" "$BUILD_VERSION" "$(git rev-parse "${GITHUB_SHA}^{commit}")" "${PANTHEON_GUARD_ATTEMPT:?}/payload-manifest.json"
+          echo "PANTHEON_RELEASE_CUSTODY=$CUSTODY" >> "$GITHUB_ENV"
+
+      - name: Upload exact first-attempt publication inputs
+        if: github.run_attempt == 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: pantheon-release-custody-${{ github.run_id }}
+          path: ${{ env.PANTHEON_RELEASE_CUSTODY }}
+          if-no-files-found: error
+
+      - name: Restore exact prior-attempt publication inputs
+        if: github.run_attempt != 1
+        uses: actions/download-artifact@v4
+        with:
+          name: pantheon-release-custody-${{ github.run_id }}
+          path: ${{ runner.temp }}/pantheon-release-restore-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Identify previous publication attempt
+        if: github.run_attempt != 1
+        id: previous_attempt
+        run: echo "number=$((GITHUB_RUN_ATTEMPT - 1))" >> "$GITHUB_OUTPUT"
+
+      - name: Retrieve previous mount custody receipt
+        if: github.run_attempt != 1
+        uses: actions/download-artifact@v4
+        with:
+          name: pantheon-publication-${{ github.run_id }}-${{ steps.previous_attempt.outputs.number }}
+          path: ${{ runner.temp }}/pantheon-prior-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Verify restored custody without rebuilding or signing
+        if: github.run_attempt != 1
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          CUSTODY="$RUNNER_TEMP/pantheon-release-restore-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          PRIOR="$RUNNER_TEMP/pantheon-prior-receipt-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python3 -B scripts/release-custody.py check-receipt "$PRIOR" "$BUILD_VERSION" "$(git rev-parse "${GITHUB_SHA}^{commit}")" ignored
+          echo "PANTHEON_RELEASE_CUSTODY=$CUSTODY" >> "$GITHUB_ENV"
+
+      - name: Restore and verify retained inputs for publication
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          CUSTODY="${PANTHEON_RELEASE_CUSTODY:?}"
+          RESTORED="$(mktemp -d "$RUNNER_TEMP/pantheon-release-inputs-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.XXXXXXXX")"
+          COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          test -x "$HOME/.local/bin/sirsi-maat-run"
+          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || { echo 'installed Ma’at supervisor does not match release source' >&2; exit 1; }
+          "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon --register-executor \
+            --work "pantheon-custody-restore-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --cpu-cores 1 --timeout 600 -- \
+            /bin/bash -euo pipefail -c 'cd "$1"; shift; exec python3 -B "$@"' fixture \
+            "$RESTORED" "$GITHUB_WORKSPACE/scripts/release-custody.py" restore "$CUSTODY" "$BUILD_VERSION" "$COMMIT" "$CUSTODY/payload-manifest.json"
+          echo "PANTHEON_RELEASE_INPUTS=$RESTORED" >> "$GITHUB_ENV"
+
+      - name: Stage draft and verify exact signed release assets before publication
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           set -euo pipefail
           EXPECTED_COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
-          test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"
-          test -f "bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
-          python3 -B scripts/publish-release-assets.py \
+          test -f "${PANTHEON_RELEASE_INPUTS:?}/bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"
+          test -f "${PANTHEON_RELEASE_INPUTS:?}/bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
+          test -x "$HOME/.local/bin/sirsi-maat-run"
+          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || {
+            echo 'installed Ma’at supervisor does not match release source' >&2; exit 1;
+          }
+          # This is a separate actual workload (including read-only image
+          # attachment), not covered by the earlier build's released grant.
+          "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon \
+            --register-executor --work "pantheon-publish-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --cpu-cores 1 --timeout 600 -- python3 -B scripts/publish-release-assets.py \
             --version "$BUILD_VERSION" --expected-commit "$EXPECTED_COMMIT" \
+            --directory "${PANTHEON_RELEASE_INPUTS:?}/bin" --app "$PANTHEON_RELEASE_INPUTS/Pantheon.app" \
+            --include-guard --guard-manifest "${PANTHEON_RELEASE_CUSTODY:?}/payload-manifest.json" \
+            --reservation "$RUNNER_TEMP/pantheon-reservation-${GITHUB_RUN_ID}.json" \
             --receipt "$RUNNER_TEMP/pantheon-publication-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
 
       - name: Retain exact publication verification receipt (always)
@@ -233,7 +360,26 @@ jobs:
           name: pantheon-publication-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/pantheon-publication-${{ github.run_id }}-${{ github.run_attempt }}.json
+            ${{ runner.temp }}/pantheon-guard-attach-${{ github.run_id }}-${{ github.run_attempt }}-*.plist
+            ${{ runner.temp }}/pantheon-guard-attach-${{ github.run_id }}-${{ github.run_attempt }}-*.plist.stderr
             ${{ env.PANTHEON_APOLLO_DIGEST_RECEIPT }}
+          if-no-files-found: warn
+
+      - name: Retain guard custody receipts (always after attempt creation)
+        if: always() && env.PANTHEON_GUARD_ATTEMPT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pantheon-guard-custody-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/payload-manifest.json
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/signer-jobs/*.json
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/ACCEPTED
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/INCOMPLETE
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.sha256
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/attach.plist
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/device.txt
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*signature-details.txt
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.receipt.txt
           if-no-files-found: warn
 
       - name: Restore login keychain as default (always)

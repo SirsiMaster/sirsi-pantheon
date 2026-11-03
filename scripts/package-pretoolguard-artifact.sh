@@ -57,15 +57,48 @@ LC_ALL=C /usr/bin/codesign -d --verbose=4 "$signed" > "$dir/image-signature-deta
 /usr/bin/xcrun stapler validate "$signed"
 mkdir "$dir/mount"
 mounted=0
+device=''
 cleanup_mount() {
   if [[ "$mounted" == 1 ]]; then
     mounted=0
-    /usr/bin/hdiutil detach "$dir/mount" || echo "WARNING: detach failed; inspect mount at $dir/mount" >&2
+    /usr/bin/hdiutil detach "$device" || echo "WARNING: detach failed; inspect $device and mount at $dir/mount" >&2
   fi
 }
 trap cleanup_mount EXIT
-/usr/bin/hdiutil attach -quiet -readonly -nobrowse -mountpoint "$dir/mount" "$signed"
-mounted=1
+if ! /usr/bin/hdiutil attach -plist -readonly -nobrowse -mountpoint "$dir/mount" "$signed" > "$dir/attach.plist"; then
+  echo "attach outcome unknown; inspect $dir/mount and $dir/attach.plist" >&2
+  exit 1
+fi
+topology_ok=1
+/usr/bin/python3 -B - "$dir/attach.plist" "$dir/mount" "$dir/device.txt" <<'PY' || topology_ok=0
+import plistlib, re, sys
+source, mount, output = sys.argv[1:]
+with open(source, 'rb') as f:
+    data = f.read(1024 * 1024 + 1)
+if len(data) > 1024 * 1024:
+    raise SystemExit('attachment metadata too large')
+entities = plistlib.loads(data)['system-entities']
+if not isinstance(entities, list) or not entities or any(not isinstance(x, dict) for x in entities):
+    raise SystemExit('invalid attachment entities')
+devices = [x['dev-entry'] for x in entities if x.get('dev-entry')]
+matches = [re.fullmatch(r'(/dev/disk[0-9]+)(?:s[0-9]+)*', x) for x in devices]
+if not matches or any(x is None for x in matches) or len({x.group(1) for x in matches}) != 1:
+    raise SystemExit('ambiguous attachment devices; manual custody required')
+with open(output, 'x') as f:
+    f.write(matches[0].group(1))
+mounts = [x['mount-point'] for x in entities if 'mount-point' in x]
+if mounts != [mount]:
+    raise SystemExit('unexpected image mount topology')
+mounted = next(x for x in entities if x.get('mount-point') == mount).get('dev-entry')
+if mounted not in devices or set(devices) != {matches[0].group(1), mounted}:
+    raise SystemExit('unexpected unmounted image device entities')
+PY
+if [[ -f "$dir/device.txt" && ! -L "$dir/device.txt" ]]; then
+  device=$(< "$dir/device.txt")
+  [[ "$device" =~ ^/dev/disk[0-9]+$ ]] || { echo 'invalid attachment device' >&2; exit 1; }
+  mounted=1
+fi
+[[ "$topology_ok" == 1 && "$mounted" == 1 ]] || { echo "attachment topology not qualified; inspect $dir" >&2; exit 1; }
 /usr/bin/python3 - "$dir/mount" <<'PY'
 import os, stat, sys
 p = sys.argv[1]
@@ -82,7 +115,7 @@ PY
 [[ $(/usr/bin/shasum -a 256 "$dir/mount/sirsi-pretoolguard-install" | /usr/bin/awk '{print $1}') == "$installer_expected" ]] || { echo 'returned image installer differs' >&2; exit 1; }
 /usr/bin/codesign --verify --strict -R "$installer_requirement" "$dir/mount/sirsi-pretoolguard-install"
 mounted=0
-if ! /usr/bin/hdiutil detach "$dir/mount"; then
+if ! /usr/bin/hdiutil detach "$device"; then
   echo "detach failed; inspect mount at $dir/mount" >&2
   exit 1
 fi
