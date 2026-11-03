@@ -78,6 +78,10 @@ func sneModel() (string, error) {
 	if perr != nil {
 		return "", fmt.Errorf("local model selection: %w", perr)
 	}
+	// Same precedence as liveness.resolveModel and the worker/CLI: GEMMA_MODEL, then the conf file.
+	if m := strings.TrimSpace(os.Getenv("GEMMA_MODEL")); m != "" {
+		return m, nil
+	}
 	b, rerr := os.ReadFile(filepath.Join(home, ".sirsi", "gemma-model.conf"))
 	if rerr == nil {
 		if m := strings.TrimSpace(string(b)); m != "" {

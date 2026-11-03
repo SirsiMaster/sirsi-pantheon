@@ -23,10 +23,14 @@ func TestApolloDashboardSelectedModel(t *testing.T) {
 	cases := []struct {
 		name    string
 		conf    *string // nil = no file
+		env     string  // GEMMA_MODEL
 		apollo  os.FileMode
 		want    string
 		wantErr string
 	}{
+		{name: "GEMMA_MODEL beats the conf file", conf: strPtr("mlx-community/gemma-4-12B-it-8bit\n"), env: "mlx-community/gemma-4-12B-it-4bit", apollo: 0o755, want: "mlx-community/gemma-4-12B-it-4bit"},
+		{name: "GEMMA_MODEL on a legacy host beats local", env: "mlx-community/gemma-4-12B-it-4bit", want: "mlx-community/gemma-4-12B-it-4bit"},
+		{name: "GEMMA_MODEL never bypasses an invalid Apollo marker", env: "mlx-community/gemma-4-12B-it-4bit", apollo: 0o644, wantErr: "regular executable"},
 		{name: "selected model is used as-is", conf: strPtr("mlx-community/gemma-4-12B-it-8bit\n"), apollo: 0o755, want: "mlx-community/gemma-4-12B-it-8bit"},
 		{name: "legacy broker without Apollo keeps local", conf: nil, want: "local"},
 		{name: "legacy broker, blank selection keeps local", conf: strPtr("  \n"), want: "local"},
@@ -40,6 +44,7 @@ func TestApolloDashboardSelectedModel(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
+			t.Setenv("GEMMA_MODEL", c.env)
 			if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
 				t.Fatal(err)
 			}
