@@ -77,6 +77,15 @@ jobs:
           INST=$(/usr/bin/security find-identity -v "$KEYCHAIN" | awk -F '"' '/Developer ID Installer:.*\(9D382WV988\)/{print $2; exit}')
           [[ "$INST" == "$DEVELOPER_ID_INSTALLER" ]]
           printf 'DEVELOPER_ID_APPLICATION=%s\nPANTHEON_SIGNING_KEYCHAIN=%s\nPANTHEON_SIGNING_MODE=enrolled-login-keychain\nPANTHEON_SIGNING_EXECUTION=remote-service\n' "$ID" "$KEYCHAIN" >> "$GITHUB_ENV"
+      - name: Refuse preexisting signing sidecars
+        working-directory: source
+        run: |
+          set -euo pipefail
+          for file in signed-Pantheon.app.receipt.txt signed-.receipt.txt \
+            bin/signed-SirsiPantheon-0.24.163-arm64.dmg.receipt.txt \
+            bin/signed-SirsiPantheon-0.24.163-arm64.pkg.receipt.txt bin/signed-.receipt.txt; do
+            [[ ! -e "$file" && ! -L "$file" ]] || { echo "stale sidecar: $file" >&2; exit 1; }
+          done
       - name: Build and sign exact original source once
         working-directory: source
         env:
@@ -149,8 +158,8 @@ jobs:
           path: |
             ${{ runner.temp }}/v163-recovery-reservation.json
             ${{ runner.temp }}/v163-recovery-publication.json
-            ${{ runner.temp }}/pantheon-guard-attach-*.plist
-            ${{ runner.temp }}/pantheon-guard-attach-*.plist.stderr
+            ${{ runner.temp }}/pantheon-guard-attach-${{ github.run_id }}-${{ github.run_attempt }}-*.plist
+            ${{ runner.temp }}/pantheon-guard-attach-${{ github.run_id }}-${{ github.run_attempt }}-*.plist.stderr
           if-no-files-found: warn
       - name: Retain guard attempt evidence when allocated
         if: always() && env.PANTHEON_GUARD_ATTEMPT != ''
@@ -168,14 +177,16 @@ jobs:
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.sha256
           if-no-files-found: warn
       - name: Retain exact app, DMG and PKG signing sidecars
-        if: always()
+        if: always() && env.PANTHEON_GUARD_ATTEMPT != ''
         uses: actions/upload-artifact@v4
         with:
           name: v163-recovery-signing-sidecars-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ github.workspace }}/source/signed-Pantheon.app.receipt.txt
+            ${{ github.workspace }}/source/signed-.receipt.txt
             ${{ github.workspace }}/source/bin/signed-SirsiPantheon-0.24.163-arm64.dmg.receipt.txt
             ${{ github.workspace }}/source/bin/signed-SirsiPantheon-0.24.163-arm64.pkg.receipt.txt
+            ${{ github.workspace }}/source/bin/signed-.receipt.txt
           if-no-files-found: warn
       - name: Retain frozen Apollo digest when allocated
         if: always() && env.PANTHEON_APOLLO_DIGEST_RECEIPT != ''

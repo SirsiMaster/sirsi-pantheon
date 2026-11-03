@@ -17,7 +17,7 @@ class RecoveryWorkflowContractTests(unittest.TestCase):
                          'scripts/build-dmg.sh', 'scripts/build-pkg.sh',
                          'scripts/release-custody.py', 'scripts/publish-release-assets.py',
                          'PANTHEON_GUARD_ATTEMPT }}/signer-jobs/*.json',
-                         'pantheon-guard-attach-*.plist.stderr',
+                         'pantheon-guard-attach-${{ github.run_id }}-${{ github.run_attempt }}-*.plist.stderr',
                          'cask-release verify'):
             self.assertIn(required, workflow)
         ordered = ('claim-release-recovery.py', 'Build and sign exact original source once',
@@ -47,9 +47,16 @@ class RecoveryWorkflowContractTests(unittest.TestCase):
         self.assertTrue(guard_lines)
         self.assertTrue(all(line in guard_step for line in guard_lines))
         for sidecar in ('source/signed-Pantheon.app.receipt.txt',
+                        'source/signed-.receipt.txt',
                         'source/bin/signed-SirsiPantheon-0.24.163-arm64.dmg.receipt.txt',
-                        'source/bin/signed-SirsiPantheon-0.24.163-arm64.pkg.receipt.txt'):
+                        'source/bin/signed-SirsiPantheon-0.24.163-arm64.pkg.receipt.txt',
+                        'source/bin/signed-.receipt.txt'):
             self.assertIn(sidecar, workflow)
+        sidecar_step = workflow.split('      - name: Retain exact app, DMG and PKG signing sidecars\n', 1)[1]
+        sidecar_step = sidecar_step.split('      - name:', 1)[0]
+        self.assertIn("if: always() && env.PANTHEON_GUARD_ATTEMPT != ''", sidecar_step)
+        self.assertIn('Refuse preexisting signing sidecars', workflow)
+        self.assertLess(workflow.index('Refuse preexisting signing sidecars'), workflow.index('Build and sign exact original source once'))
 
 
 if __name__ == '__main__':
