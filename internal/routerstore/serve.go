@@ -48,6 +48,9 @@ var (
 
 // notServed are Store methods that exist for the service's own use and must
 // never be reachable from a node.
+// ownerTerminals end a task on the owner's word (receipts.go ownerTerminal). Served to @ledger-editor only.
+var ownerTerminals = map[string]bool{"CompleteTaskByOwner": true, "CancelTask": true}
+
 var notServed = map[string]bool{
 	"GetSession": true, "RevokeSession": true, "TouchSession": true,
 	"BindItemSession": true, "ItemSession": true, "BindTaskSession": true, "TaskSession": true,
@@ -373,6 +376,12 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "", "no such store method: "+name)
 		return
 	}
+	// Owner sign-off and cancel are the owner's, never a lane's: only the IAP board's @ledger-editor token may
+	// call them, and an unscoped host or bootstrap token is refused too (it would let a lane sign off itself).
+	if ownerTerminals[name] && !editor {
+		writeErr(w, http.StatusForbidden, "ErrLaneScope", ErrLaneScope.Error()+": "+name+" is owner-only, served to the @ledger-editor board token alone")
+		return
+	}
 	bodyLimit := int64(64 << 20)
 	if name == "RelocateTaskEvidence" {
 		// Bound raw wire bytes too: encoding/json strips leading whitespace
@@ -600,6 +609,13 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// The convert's close result names who did it: the authenticated session, never a client-supplied name.
 	if name == "ConvertItemToTask" && sess.Agent != "" {
 		in[3] = reflect.ValueOf(sess.Agent + "@" + sess.Host)
+	}
+	// The board names the signed-in account it verified through IAP; anything else is not an owner actor.
+	if ownerTerminals[name] {
+		if a := in[2].String(); !strings.HasPrefix(a, "board:") || !strings.Contains(a, "@") {
+			writeErr(w, http.StatusForbidden, "ErrLaneScope", ErrLaneScope.Error()+": "+name+" actor must be board:<signed-in email>")
+			return
+		}
 	}
 	// 6. ownership — before the call, against the session bound at claim time.
 	if idx, ok := itemOwnership[name]; ok && idx < len(in) {
