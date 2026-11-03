@@ -92,6 +92,12 @@ inert tool JSON to that chain: it executes none of the supplied command text.
 Test on each host under CPU-only admission. Do not replace an active recurring
 job's hash-bound helper or restart any job to install the hook policy.
 
+The wrapper, heavy-launch classifier, and stop-policy entry point accept a
+complete UTF-8 JSON envelope up to 8 MiB; oversized, malformed, and non-finite
+JSON is refused. The stop policy's separate shell-command length limit still
+applies. This source change does not establish the installed legacy guard's
+input limit or the timing and behavior of the complete installed chain.
+
 ### Foreground command whitespace
 
 `heavy-launch.py` is the versioned source for the existing

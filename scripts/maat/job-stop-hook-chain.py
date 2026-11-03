@@ -1,13 +1,25 @@
 #!/usr/bin/python3
 """Preserve the existing guard, then apply Ma'at at its already-loaded path."""
 from pathlib import Path
+import json
 import subprocess
 import sys
 
+MAX_HOOK_BYTES = 8 * 1024 * 1024
+
+
+def reject_nonfinite(value):
+    raise ValueError('non-finite JSON constant: ' + value)
+
 
 def check(payload, folder):
-    if len(payload) > 65536:
+    if len(payload) > MAX_HOOK_BYTES:
         print('Ma\'at: hook payload exceeds bound', file=sys.stderr)
+        return 2
+    try:
+        json.loads(payload.decode('utf-8'), parse_constant=reject_nonfinite)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        print('Ma\'at: malformed UTF-8 hook input', file=sys.stderr)
         return 2
     legacy = folder/'guard-pretool.original-20261016'
     gate = folder/'maat-heavy-launch.py'
@@ -43,4 +55,4 @@ def check(payload, folder):
 
 
 if __name__ == '__main__':
-    sys.exit(check(sys.stdin.buffer.read(65537), Path(__file__).resolve().parent))
+    sys.exit(check(sys.stdin.buffer.read(MAX_HOOK_BYTES + 1), Path(__file__).resolve().parent))

@@ -1476,16 +1476,27 @@ def check_tool_stop(payload):
     require_job_safe_command(['sh', '-c', command])
 
 
+MAX_HOOK_BYTES = 8 * 1024 * 1024
+
+
+def reject_nonfinite(value):
+    raise ValueError('non-finite JSON constant: ' + value)
+
+
+def check_stop_hook_bytes(raw):
+    if len(raw) > MAX_HOOK_BYTES:
+        raise Refused('Hook payload exceeds bound')
+    check_tool_stop(json.loads(raw.decode('utf-8'), parse_constant=reject_nonfinite))
+
+
 if __name__ == '__main__':
     if len(sys.argv)>3 and sys.argv[1]=='--owned-local-child':
         sys.exit(owned_local_child(int(sys.argv[2]),sys.argv[3:]))
     if sys.argv[1:] == ['--check-stop-command']:
         try:
-            raw = sys.stdin.read(65537)
-            if len(raw) > 65536:
-                raise Refused('Hook payload exceeds bound')
-            check_tool_stop(json.loads(raw))
-        except (ValueError, TypeError, Refused) as error:
+            raw = sys.stdin.buffer.read(MAX_HOOK_BYTES + 1)
+            check_stop_hook_bytes(raw)
+        except (ValueError, TypeError, RecursionError, Refused) as error:
             print(str(error), file=sys.stderr)
             sys.exit(2)
         sys.exit(0)
