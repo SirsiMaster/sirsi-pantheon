@@ -261,11 +261,18 @@ def command_substitution(command):
             return True
     return False
 
+MAX_HOOK_BYTES = 8 * 1024 * 1024
+
+
+def reject_nonfinite(value):
+    raise ValueError('non-finite JSON constant: ' + value)
+
+
 def main():
     try:
-        raw = sys.stdin.read(65537)
-        reason = "Hook input exceeds 64 KiB" if len(raw) > 65536 else denial(json.loads(raw))
-    except (ValueError, TypeError):
+        raw = sys.stdin.buffer.read(MAX_HOOK_BYTES + 1)
+        reason = "Hook input exceeds 8 MiB" if len(raw) > MAX_HOOK_BYTES else denial(json.loads(raw.decode('utf-8'), parse_constant=reject_nonfinite))
+    except (ValueError, TypeError, RecursionError):
         reason = "Malformed hook input"
     if reason:
         print(reason, file=sys.stderr)
