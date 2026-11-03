@@ -99,6 +99,13 @@ class HandoffTests(unittest.TestCase):
         with self.assertRaises(RuntimeError): self.invoke()
         self.assertFalse(self.output.exists())
 
+    def test_directory_fsync_failure_can_leave_unusable_handoff_file(self):
+        # The workflow must require prepare's success even if a complete-looking
+        # reservation remains after the exclusive link but before directory fsync.
+        with mock.patch.object(handoff.os, 'fsync', side_effect=[None, OSError('directory sync failed')]):
+            with self.assertRaises(OSError): self.invoke()
+        self.assertEqual(json.loads(self.output.read_text())['status'], 'reserved')
+
 
 if __name__ == '__main__':
     unittest.main()
