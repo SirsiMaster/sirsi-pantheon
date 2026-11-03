@@ -64,6 +64,9 @@ func (s *SQLiteStore) withMaatTransaction(fn func(*txHandle, *schedule.Ledger) e
 				return err
 			}
 		}
+		if err := s.archiveMaatHistory(tx); err != nil {
+			return err
+		}
 		return fn(tx, schedule.NewLedger(maatTransactionState{tx}).WithClock(s.clock))
 	})
 }
