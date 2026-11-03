@@ -11,8 +11,11 @@ export VERSION=${VERSION:-$(git describe --tags --always)}
 # service is refused: a stale size here once shrank the router to 512Mi and OOMed every
 # instance (2026-11-03). To resize on purpose, change SIZE and deploy with RESIZE=1.
 SIZE="cpu=2 memory=2Gi concurrency=8 min=3 max=12"
-LIVE=$(gcloud --project="$PROJECT" run services describe sirsi-router --region="$REGION" --format=json 2>/dev/null |
-  jq -r '.spec.template | "cpu=\(.spec.containers[0].resources.limits.cpu) memory=\(.spec.containers[0].resources.limits.memory) concurrency=\(.spec.containerConcurrency) min=\(.metadata.annotations["autoscaling.knative.dev/minScale"]) max=\(.metadata.annotations["autoscaling.knative.dev/maxScale"])"') || LIVE=""
+# "Live" is the revision serving traffic, not the service template (a rolled-back deploy leaves its own template).
+SERVING=$(gcloud --project="$PROJECT" run services describe sirsi-router --region="$REGION" --format=json 2>/dev/null |
+  jq -r '[.status.traffic[]? | select((.percent // 0) > 0)] | max_by(.percent) | .revisionName // empty') || SERVING=""
+LIVE=$([ -n "$SERVING" ] && gcloud --project="$PROJECT" run revisions describe "$SERVING" --region="$REGION" --format=json 2>/dev/null |
+  jq -r '. |"cpu=\(.spec.containers[0].resources.limits.cpu) memory=\(.spec.containers[0].resources.limits.memory) concurrency=\(.spec.containerConcurrency) min=\(.metadata.annotations["autoscaling.knative.dev/minScale"]) max=\(.metadata.annotations["autoscaling.knative.dev/maxScale"])"') || LIVE=""
 if [ -n "$LIVE" ] && [ "$LIVE" != "$SIZE" ] && [ "${RESIZE:-0}" != 1 ]; then
   echo "deploy: live size is '$LIVE' but deploy.sh says '$SIZE'; refusing (update SIZE, or RESIZE=1 to resize)" >&2; exit 1
 fi
