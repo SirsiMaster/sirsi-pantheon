@@ -53,6 +53,15 @@ jobs:
         with:
           go-version-file: source/go.mod
           cache: false
+      - name: Refuse preexisting signing sidecars before claim
+        working-directory: source
+        run: |
+          set -euo pipefail
+          for file in signed-Pantheon.app.receipt.txt signed-.receipt.txt \
+            bin/signed-SirsiPantheon-0.24.163-arm64.dmg.receipt.txt \
+            bin/signed-SirsiPantheon-0.24.163-arm64.pkg.receipt.txt bin/signed-.receipt.txt; do
+            [[ ! -e "$file" && ! -L "$file" ]] || { echo "stale sidecar: $file" >&2; exit 1; }
+          done
       - name: Validate source and claim exactly one continuation
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

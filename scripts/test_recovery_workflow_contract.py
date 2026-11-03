@@ -1,6 +1,8 @@
 import unittest
 import json
 import subprocess
+import tempfile
+import textwrap
 from pathlib import Path
 
 
@@ -56,7 +58,26 @@ class RecoveryWorkflowContractTests(unittest.TestCase):
         sidecar_step = sidecar_step.split('      - name:', 1)[0]
         self.assertIn("if: always() && env.PANTHEON_GUARD_ATTEMPT != ''", sidecar_step)
         self.assertIn('Refuse preexisting signing sidecars', workflow)
+        self.assertLess(workflow.index('Refuse preexisting signing sidecars before claim'), workflow.index('claim-release-recovery.py'))
+        self.assertLess(workflow.index('claim-release-recovery.py'), workflow.index('      - name: Refuse preexisting signing sidecars\n'))
         self.assertLess(workflow.index('Refuse preexisting signing sidecars'), workflow.index('Build and sign exact original source once'))
+
+    def test_sidecar_preflights_refuse_stale_files_and_dangling_symlinks(self):
+        workflow = (Path(__file__).parent.parent / '.github/workflows/recover-v163-release.yml').read_text()
+        names = ('Refuse preexisting signing sidecars before claim', 'Refuse preexisting signing sidecars')
+        for name in names:
+            step = workflow.split('      - name: ' + name + '\n', 1)[1].split('      - name:', 1)[0]
+            command = textwrap.dedent(step.split('        run: |\n', 1)[1])
+            with self.subTest(step=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'bin').mkdir()
+                self.assertEqual(subprocess.run(['/bin/bash', '-c', command], cwd=root, capture_output=True).returncode, 0)
+                stale = root / 'bin/signed-.receipt.txt'
+                stale.symlink_to('missing-target')
+                self.assertNotEqual(subprocess.run(['/bin/bash', '-c', command], cwd=root, capture_output=True).returncode, 0)
+                stale.unlink()
+                (root / 'signed-Pantheon.app.receipt.txt').write_text('stale')
+                self.assertNotEqual(subprocess.run(['/bin/bash', '-c', command], cwd=root, capture_output=True).returncode, 0)
 
 
 if __name__ == '__main__':
