@@ -1,0 +1,3 @@
+- **Router lane status: an idle interactive session is no longer reported as unregistered.**
+  - **What was wrong.** `PingLane` reported "a session that is not registered" whenever the deferred-to session's heartbeat was older than 5 minutes. A session that is between turns (waiting on its owner) is registered and alive, and it reads its inbox on its next turn. Peers repeated the old wording as "that agent has no live session".
+  - **What changed.** The detail now names the registered idle session: thread, last heartbeat and host. Verdicts, `Workable` and dispatch behaviour are unchanged. Suspended and closed sessions keep the old wording.

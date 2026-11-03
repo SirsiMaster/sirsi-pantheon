@@ -69,6 +69,41 @@ func TestPingLaneVerdicts(t *testing.T) {
 	}
 }
 
+// TestPingLaneIdleSessionIsNotUnregistered: an interactive session between turns (heartbeat older
+// than the fresh window) keeps every verdict as before, but the detail must say it is registered and
+// idle, never "not registered" — that wording made peers report live sessions as gone.
+func TestPingLaneIdleSessionIsNotUnregistered(t *testing.T) {
+	idle := func() *Thread {
+		return &Thread{ThreadID: "thr-idle", AgentID: "a", Surface: "claude", Status: ThreadStatusActive,
+			Host: "m5", LastSeenAt: pingNow.Add(-25 * time.Minute)}
+	}
+	cases := []struct {
+		name    string
+		reg     *ThreadRegistry
+		verdict string
+	}{
+		{"no_grant hold", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldNoGrant}, time.Minute), idle()), VerdictHeld},
+		{"attended hold", regWith(worker("a", false, &LaneState{Hold: HoldAttended}, time.Minute), idle()), VerdictHeld},
+		{"watch-only loop", regWith(worker("a", false, &LaneState{}, time.Minute), idle()), VerdictWatchOnly},
+		{"only the idle session", regWith(idle()), VerdictUnreachable},
+	}
+	for _, c := range cases {
+		got := PingLane(c.reg, AgentConfig{}, "a", pingNow)
+		if got.Verdict != c.verdict || got.Workable {
+			t.Errorf("%s: verdict %s workable=%v, want %s not workable (wording only, no dispatch change)", c.name, got.Verdict, got.Workable, c.verdict)
+		}
+		if !strings.Contains(got.Detail, "thr-idle is registered but idle") || strings.Contains(got.Detail, "not registered") {
+			t.Errorf("%s: detail %q must name the idle registered session and not call it unregistered", c.name, got.Detail)
+		}
+	}
+	// A suspended or closed session is still not counted as idle-registered.
+	s := idle()
+	s.Status = ThreadStatusSuspended
+	if got := PingLane(regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldNoGrant}, time.Minute), s), AgentConfig{}, "a", pingNow); !strings.Contains(got.Detail, "not registered") {
+		t.Errorf("suspended session must keep the not-registered wording: %q", got.Detail)
+	}
+}
+
 // TestPingLaneWatchesAnotherInbox: a thread that WATCHES the lane counts for it,
 // not only a thread registered under its own id.
 func TestPingLaneWatchesAnotherInbox(t *testing.T) {
