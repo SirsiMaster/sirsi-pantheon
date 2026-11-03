@@ -7,13 +7,23 @@ export PROJECT=${PROJECT:-sirsi-nexus-live} REGION=${REGION:-us-central1}
 INSTANCE=${INSTANCE:-sirsi-router}
 SA_EMAIL="sirsi-router-svc@$PROJECT.iam.gserviceaccount.com"
 export VERSION=${VERSION:-$(git describe --tags --always)}
+# The service size lives here and nowhere else. A deploy whose size differs from the live
+# service is refused: a stale size here once shrank the router to 512Mi and OOMed every
+# instance (2026-11-03). To resize on purpose, change SIZE and deploy with RESIZE=1.
+SIZE="cpu=2 memory=2Gi concurrency=8 max=12"
+LIVE=$(gcloud --project="$PROJECT" run services describe sirsi-router --region="$REGION" --format=json 2>/dev/null |
+  jq -r '.spec.template | "cpu=\(.spec.containers[0].resources.limits.cpu) memory=\(.spec.containers[0].resources.limits.memory) concurrency=\(.spec.containerConcurrency) max=\(.metadata.annotations["autoscaling.knative.dev/maxScale"])"') || LIVE=""
+if [ -n "$LIVE" ] && [ "$LIVE" != "$SIZE" ] && [ "${RESIZE:-0}" != 1 ]; then
+  echo "deploy: live size is '$LIVE' but deploy.sh says '$SIZE'; refusing (update SIZE, or RESIZE=1 to resize)" >&2; exit 1
+fi
+read -r CPU MEM CONC MAX <<<"$(sed 's/[a-z]*=//g' <<<"$SIZE")"
 "$(dirname "$0")/stage.sh" \
   --service-account="$SA_EMAIL" --allow-unauthenticated \
   --add-cloudsql-instances="$PROJECT:$REGION:$INSTANCE" \
   --network=default --subnet=default --vpc-egress=private-ranges-only \
   --set-secrets="SIRSI_ROUTER_SERVE_TOKEN=sirsi-router-bootstrap-token:latest,SIRSI_ROUTER_STORE=sirsi-router-service-dsn:latest,SIRSI_ROUTER_GITHUB_TOKEN=ADMIN_GITHUB_PAT:latest" \
   --args="router,serve" \
-  --min-instances=0 --max-instances=12 --cpu=2 --memory=2Gi --concurrency=8 --timeout=90 \
+  --min-instances=0 --max-instances="$MAX" --cpu="$CPU" --memory="$MEM" --concurrency="$CONC" --timeout=90 \
   --labels=adr=062,workstream=router-service
 # --allow-unauthenticated: nodes authenticate with per-host bearer tokens inside the service (rs-10/11);
 # Cloud Run IAM would require a Google identity on every Mac, which the design rejects.
