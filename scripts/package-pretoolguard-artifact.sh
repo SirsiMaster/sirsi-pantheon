@@ -87,12 +87,15 @@ devices = [x['dev-entry'] for x in entities if x.get('dev-entry')]
 matches = [re.fullmatch(r'(/dev/disk[0-9]+)(?:s[0-9]+)*', x) for x in devices]
 if not matches or any(x is None for x in matches) or len({x.group(1) for x in matches}) != 1:
     raise SystemExit('ambiguous attachment devices; manual custody required')
+matching = [x for x in entities if x.get('mount-point') == mount]
+if len(matching) != 1 or matching[0].get('dev-entry') not in devices:
+    raise SystemExit('mount/device association unknown; manual custody required')
+mounted = matching[0]['dev-entry']
 with open(output, 'x') as f:
     f.write(matches[0].group(1))
 mounts = [x['mount-point'] for x in entities if 'mount-point' in x]
 if mounts != [mount]:
     raise SystemExit('unexpected image mount topology')
-mounted = next(x for x in entities if x.get('mount-point') == mount).get('dev-entry')
 if mounted not in devices or set(devices) != {matches[0].group(1), mounted}:
     raise SystemExit('unexpected unmounted image device entities')
 PY

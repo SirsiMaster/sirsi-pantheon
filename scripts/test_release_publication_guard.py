@@ -389,6 +389,26 @@ class GuardImageVerificationTests(unittest.TestCase):
             self.assertEqual(len(calls), 1)
             self.assertTrue(mount.is_dir())
 
+    def test_mount_without_matching_device_never_detaches(self):
+        for kind in ('missing', 'mismatched'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                mount = Path(temporary) / 'mount'
+                mount.mkdir()
+                calls = []
+                def run(argv):
+                    calls.append(list(argv))
+                    self.assertEqual(argv[:2], ['/usr/bin/hdiutil', 'attach'])
+                    entity = {'mount-point': str(mount)}
+                    if kind == 'mismatched':
+                        entity['dev-entry'] = '/dev/disk124s1'
+                    topology = {'system-entities': [{'dev-entry': '/dev/disk123'}, entity]}
+                    return subprocess.CompletedProcess(argv, 0, plistlib.dumps(topology), b'')
+                with mock.patch.object(publication.tempfile, 'mkdtemp', return_value=str(mount)):
+                    with self.assertRaises(publication.Refusal):
+                        publication.verify_guard_image(Path('inert.dmg'), MANIFEST, run)
+                self.assertEqual(len(calls), 1, 'ambiguous association must not detach')
+                self.assertTrue(mount.is_dir())
+
     def test_extra_mounted_volume_is_refused_and_known_device_detached(self):
         with tempfile.TemporaryDirectory() as temporary:
             mount = Path(temporary) / "mount"

@@ -184,13 +184,16 @@ def verify_guard_image(path, expected, run=execute):
                      for entry in devices}
             if not devices or len(roots) != 1:
                 raise ValueError("ambiguous image devices")
-            device = roots.pop()
+            candidate = roots.pop()
+            matching = [entity for entity in entities if entity.get("mount-point") == str(mount)]
+            if len(matching) != 1 or matching[0].get("dev-entry") not in devices:
+                raise Refusal("guard image mount/device association unknown; inspect " + str(mount) + " and " + str(metadata_path))
+            mounted_device = matching[0]["dev-entry"]
+            device = candidate
             mounts = [entity["mount-point"] for entity in entities
                       if isinstance(entity, dict) and "mount-point" in entity]
             if mounts != [str(mount)]:
                 raise Refusal("guard image has unexpected mounted volumes")
-            mounted_entity = next(entity for entity in entities if entity.get("mount-point") == str(mount))
-            mounted_device = mounted_entity.get("dev-entry")
             if mounted_device not in devices or set(devices) != {device, mounted_device}:
                 raise Refusal("guard image has unexpected unmounted device entities")
         except (ValueError, TypeError, KeyError, AttributeError, plistlib.InvalidFileException) as error:

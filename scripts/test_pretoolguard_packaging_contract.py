@@ -9,6 +9,7 @@ import plistlib
 import runpy
 import subprocess
 import os
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -153,6 +154,32 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
             '/usr/bin/hdiutil detach "$device" || echo "WARNING: detach failed;',
             'trap cleanup_mount EXIT',
         )
+
+    def test_packaging_device_receipt_requires_proven_mount_association(self):
+        marker = '<<\'PY\' || topology_ok=0\n'
+        parser = self.package.split(marker, 1)[1].split('\nPY\n', 1)[0]
+        for kind in ('missing', 'mismatched', 'exact'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                mount = str(root / 'mount')
+                entity = {'mount-point': mount}
+                if kind == 'mismatched':
+                    entity['dev-entry'] = '/dev/disk124s1'
+                elif kind == 'exact':
+                    entity['dev-entry'] = '/dev/disk123'
+                source = root / 'attach.plist'
+                source.write_bytes(plistlib.dumps({'system-entities': [
+                    {'dev-entry': '/dev/disk123'}, entity]}))
+                output = root / 'device.txt'
+                result = subprocess.run([sys.executable, '-B', '-c', parser,
+                                         str(source), mount, str(output)],
+                                        capture_output=True, timeout=5)
+                if kind == 'exact':
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(output.read_text(), '/dev/disk123')
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(output.exists(), 'ambiguous mount must not authorize detach')
 
     def test_restrictive_umask_staged_modes_normalized(self):
         with tempfile.TemporaryDirectory() as tmp:
