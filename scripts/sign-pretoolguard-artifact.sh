@@ -48,7 +48,10 @@ if /usr/bin/codesign -d "$norm/input" >/dev/null 2>&1; then
   /usr/bin/codesign --remove-signature "$norm/input"
 fi
 /usr/bin/codesign --remove-signature "$norm/output"
-/usr/bin/cmp -s "$norm/input" "$norm/output" || { echo 'signed payload differs after signature normalization' >&2; exit 1; }
+# Normalized Go Mach-O executables may differ only by the platform's observed
+# __LINKEDIT virtual-size page rounding. The bounded parser checks exact other
+# bytes and retains a fresh diagnostic report even when refusing the candidate.
+/usr/bin/python3 -B "$root/scripts/compare-pretoolguard-macho.py" "$norm/input" "$norm/output" "$dir/normalization.json" || { echo 'signed payload identity could not be established' >&2; exit 1; }
 /usr/bin/shasum -a 256 "$signed" > "$dir/signed.sha256"
 printf '%s\n' 'ACCEPTED: local signing checks completed' > "$dir/INCOMPLETE"
 mv "$dir/INCOMPLETE" "$dir/ACCEPTED"

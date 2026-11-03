@@ -183,6 +183,10 @@ jobs:
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/device.txt
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*signature-details.txt
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.receipt.txt
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/normalization.json
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/normalized.*/input
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/normalized.*/output
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/controller-provenance.json
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.sha256
           if-no-files-found: warn
       - name: Retain exact app, DMG and PKG signing sidecars

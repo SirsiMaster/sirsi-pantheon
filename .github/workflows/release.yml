@@ -380,6 +380,9 @@ jobs:
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/device.txt
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*signature-details.txt
             ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.receipt.txt
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/normalization.json
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/normalized.*/input
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/normalized.*/output
           if-no-files-found: warn
 
       - name: Restore login keychain as default (always)
