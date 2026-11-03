@@ -1,0 +1,1 @@
+- Ma'at front door stays fast: finished reservations older than 48 hours move out of the shared `maat:reservations` row into per-day `maat:reservations-archive:<date>` rows (every field kept, nothing deleted), at most every 10 minutes under the existing lock.
