@@ -1317,7 +1317,7 @@ def stop(child, observe=None, send_group=None, reap=None, monotonic=None, sleep=
                         terminal = observe(child)
                         try:
                             members = group_snapshot()
-                        except (Refused, OSError) as error:
+                        except (Refused, OSError, subprocess.TimeoutExpired) as error:
                             # Membership drift, denial and malformed reads are
                             # unknown, never absence. Keep the unreaped anchor
                             # and retry; a fresh WNOWAIT gates later KILL.

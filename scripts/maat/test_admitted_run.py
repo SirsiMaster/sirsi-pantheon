@@ -1484,7 +1484,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertTrue(identity.reaped)
 
     def test_fabric_drifting_snapshots_after_term_escalate_with_retained_custody(self):
-        for failure, recovers in (('drift', True), ('drift', False), ('denied', False)):
+        for failure, recovers in (('drift', True), ('drift', False), ('denied', False), ('timeout', False)):
             with self.subTest(failure=failure, recovery_after_kill=recovers):
                 clock = Clock()
                 child = FakeChild(clock, 0)
@@ -1501,6 +1501,8 @@ class RecoveryTests(unittest.TestCase):
                         return [dict(pid=child.pid, pgid=group, status='Z')]
                     if failure == 'denied':
                         raise PermissionError(runner.errno.EPERM, 'group observation denied')
+                    if failure == 'timeout':
+                        raise subprocess.TimeoutExpired('ps', 2)
                     raise runner.Refused('Native process-group membership changed during observation')
                 def send(group, sig):
                     nonlocal killed
