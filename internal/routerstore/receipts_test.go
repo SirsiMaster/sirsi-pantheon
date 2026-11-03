@@ -256,7 +256,7 @@ func TestOwnerSignOffAndCancel(t *testing.T) {
 // and refused to every other caller: a lane's own scoped token, an observer, and the unscoped bootstrap token.
 func TestOwnerPathsServedOnlyToTheBoardToken(t *testing.T) {
 	f := newScopedFixture(t, []string{"router-board", ObserverScope, LedgerEditorScope})
-	for _, id := range []string{"sign", "drop", "lane-try", "boot-try", "no-actor"} {
+	for _, id := range []string{"sign", "drop", "boot-try", "no-actor"} {
 		if err := f.backend.AddTask(Task{Agent: "ra", TaskID: id, Subject: id}); err != nil {
 			t.Fatal(err)
 		}
@@ -270,19 +270,12 @@ func TestOwnerPathsServedOnlyToTheBoardToken(t *testing.T) {
 	}
 	wantLaneScope(t, "board actor without board: prefix", board.CompleteTaskByOwner("ra", "no-actor", "ra", "self sign-off"))
 
-	lane := newScopedFixture(t, []string{"ra"})
-	if err := lane.backend.AddTask(Task{Agent: "ra", TaskID: "lane-try", Subject: "x"}); err != nil {
-		t.Fatal(err)
-	}
-	wantLaneScope(t, "lane signs off its own task", lane.client("ra").CompleteTaskByOwner("ra", "lane-try", "board:owner@sirsi.ai", "x"))
-	observer := newScopedFixture(t, []string{"router-board", ObserverScope})
-	wantLaneScope(t, "observer-only cancel", observer.client("router-board").CancelTask("ra", "x", "board:owner@sirsi.ai", "x"))
-
 	boot := NewRemoteStore(f.url, "t0k")
 	boot.sessionDir, boot.host, boot.agent = "", f.host, "ra"
 	wantLaneScope(t, "unscoped bootstrap token", boot.CompleteTaskByOwner("ra", "boot-try", "board:owner@sirsi.ai", "x"))
 
-	for id, want := range map[string]string{"sign": "done", "drop": "canceled", "lane-try": "pending", "boot-try": "pending", "no-actor": "pending"} {
+	// Assert before the next fixture: under the PostgreSQL CI leg every fixture shares, and resets, one database.
+	for id, want := range map[string]string{"sign": "done", "drop": "canceled", "boot-try": "pending", "no-actor": "pending"} {
 		if got, _ := f.backend.GetTask("ra", id); got.Status != want {
 			t.Errorf("%s = %s, want %s", id, got.Status, want)
 		}
@@ -290,6 +283,17 @@ func TestOwnerPathsServedOnlyToTheBoardToken(t *testing.T) {
 	if raw, _, _ := f.backend.GetState(receiptKey("ra", "sign")); !strings.Contains(raw, `"actor":"board:owner@sirsi.ai"`) {
 		t.Fatalf("owner receipt %q", raw)
 	}
+
+	lane := newScopedFixture(t, []string{"ra"})
+	if err := lane.backend.AddTask(Task{Agent: "ra", TaskID: "lane-try", Subject: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	wantLaneScope(t, "lane signs off its own task", lane.client("ra").CompleteTaskByOwner("ra", "lane-try", "board:owner@sirsi.ai", "x"))
+	if got, _ := lane.backend.GetTask("ra", "lane-try"); got.Status != "pending" {
+		t.Errorf("lane-try = %s, want pending", got.Status)
+	}
+	observer := newScopedFixture(t, []string{"router-board", ObserverScope})
+	wantLaneScope(t, "observer-only cancel", observer.client("router-board").CancelTask("ra", "x", "board:owner@sirsi.ai", "x"))
 }
 
 func TestRecheckReopensOnlyProvenFalseReceipts(t *testing.T) {
