@@ -1,0 +1,284 @@
+name: Recover v163 after consumed claim (one shot)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_controller_sha:
+        description: Exact independently reviewed controller commit on main
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+# Exactly the same group as release.yml's push of refs/tags/v0.24.163.
+concurrency:
+  group: pantheon-release-refs/tags/v0.24.163
+  cancel-in-progress: false
+
+env:
+  BUILD_VERSION: 0.24.163
+  RELEASE_COMMIT: a5967913c68c03be435ab009f24df01e908681b3
+  APOLLO_CI_INFERENCE_READ_KEY: ${{ secrets.APOLLO_CI_INFERENCE_READ_KEY }}
+  APOLLO_CI_MERCURY_READ_KEY: ${{ secrets.APOLLO_CI_MERCURY_READ_KEY }}
+
+jobs:
+  recovery_successor:
+    name: recovery-successor
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: [self-hosted, macOS, ARM64, m1]
+    timeout-minutes: 30
+    steps:
+      - name: Bind native release runner
+        env:
+          RUNNER_IDENTITY: ${{ runner.name }}
+          REVIEWED_CONTROLLER: ${{ inputs.reviewed_controller_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$REVIEWED_CONTROLLER" =~ ^[0-9a-f]{40}$ && "$GITHUB_SHA" == "$REVIEWED_CONTROLLER" ]]
+          [[ "$RUNNER_IDENTITY" == m1-pantheon && "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]
+          [[ "$(/usr/sbin/sysctl -n hw.model)" == MacBookPro18,1 ]]
+      - name: Checkout reviewed recovery controller
+        uses: actions/checkout@v4
+        with:
+          path: controller
+          fetch-depth: 0
+      - name: Checkout exact original release source
+        uses: actions/checkout@v4
+        with:
+          ref: a5967913c68c03be435ab009f24df01e908681b3
+          path: source
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: source/go.mod
+          cache: false
+      - name: Refuse preexisting signing sidecars before claim
+        working-directory: source
+        run: |
+          set -euo pipefail
+          for file in signed-Pantheon.app.receipt.txt signed-.receipt.txt \
+            bin/signed-SirsiPantheon-0.24.163-arm64.dmg.receipt.txt \
+            bin/signed-SirsiPantheon-0.24.163-arm64.pkg.receipt.txt bin/signed-.receipt.txt; do
+            [[ ! -e "$file" && ! -L "$file" ]] || { echo "stale sidecar: $file" >&2; exit 1; }
+          done
+      - name: Preflight exact controller bridge before claim
+        run: |
+          set -euo pipefail
+          [[ "$(git -C source rev-parse 'HEAD^{commit}')" == "$RELEASE_COMMIT" ]]
+          [[ "$(git -C controller rev-parse 'HEAD^{commit}')" == "$GITHUB_SHA" ]]
+          [[ -z "$(git -C source status --porcelain --untracked-files=normal)" ]]
+          [[ -z "$(git -C controller status --porcelain --untracked-files=normal)" ]]
+          cmp -s source/tools/signing/sirsi-sign controller/tools/signing/sirsi-sign
+          cmp -s source/scripts/verify-pretoolguard-entitlements.py controller/scripts/verify-pretoolguard-entitlements.py
+      - name: Allocate private successor evidence
+        run: |
+          set -euo pipefail
+          custody="$(mktemp -d "$RUNNER_TEMP/v163-successor-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.XXXXXXXX")"
+          [[ -d "$custody" && ! -L "$custody" && "$(stat -f '%u:%Lp' "$custody")" == "$(id -u):700" ]]
+          printf 'PANTHEON_SUCCESSOR_CUSTODY=%s\n' "$custody" >> "$GITHUB_ENV"
+      - name: Claim reviewed successor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: controller
+        run: |
+          set -euo pipefail
+          [[ "$(git -C ../source rev-parse HEAD)" == "$RELEASE_COMMIT" ]]
+          python3 -B scripts/claim-v163-recovery-successor.py --run-id "$GITHUB_RUN_ID" \
+            --controller-sha "$GITHUB_SHA" --receipt "$PANTHEON_SUCCESSOR_CUSTODY/claim"
+      - name: Prepare successor publisher handoff
+        id: successor_handoff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: controller
+        run: |
+          set -euo pipefail
+          python3 -B scripts/prepare-v163-successor-publication.py --run-id "$GITHUB_RUN_ID" \
+            --controller-sha "$GITHUB_SHA" --claim-path "$PANTHEON_SUCCESSOR_CUSTODY/claim" \
+            --output "$PANTHEON_SUCCESSOR_CUSTODY/reservation.json"
+      - name: Resolve enrolled identities without exporting keys
+        working-directory: source
+        env:
+          DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+          test -f "$KEYCHAIN"
+          ID=$(/usr/bin/security find-identity -v -p codesigning "$KEYCHAIN" | awk -F '"' '/Developer ID Application:.*\(9D382WV988\)/{print $2; exit}')
+          test -n "$ID"
+          case "$DEVELOPER_ID_INSTALLER" in "Developer ID Installer: "*"(9D382WV988)") ;; *) exit 1;; esac
+          INST=$(/usr/bin/security find-identity -v "$KEYCHAIN" | awk -F '"' '/Developer ID Installer:.*\(9D382WV988\)/{print $2; exit}')
+          [[ "$INST" == "$DEVELOPER_ID_INSTALLER" ]]
+          printf 'DEVELOPER_ID_APPLICATION=%s\nPANTHEON_SIGNING_KEYCHAIN=%s\nPANTHEON_SIGNING_MODE=enrolled-login-keychain\nPANTHEON_SIGNING_EXECUTION=remote-service\n' "$ID" "$KEYCHAIN" >> "$GITHUB_ENV"
+      - name: Refuse preexisting signing sidecars
+        working-directory: source
+        run: |
+          set -euo pipefail
+          for file in signed-Pantheon.app.receipt.txt signed-.receipt.txt \
+            bin/signed-SirsiPantheon-0.24.163-arm64.dmg.receipt.txt \
+            bin/signed-SirsiPantheon-0.24.163-arm64.pkg.receipt.txt bin/signed-.receipt.txt; do
+            [[ ! -e "$file" && ! -L "$file" ]] || { echo "stale sidecar: $file" >&2; exit 1; }
+          done
+      - name: Build and sign exact original source once
+        working-directory: source
+        env:
+          SIRSI_SIGN_HOSTS: sirsi-m1
+          GOMAXPROCS: '1'
+          GOFLAGS: -p=1
+          PANTHEON_BUILD_JOBS: '1'
+          PANTHEON_APOLLO_CAPABILITY: disabled
+          DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -x "$HOME/.local/bin/sirsi-maat-run"
+          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py
+          export PANTHEON_SIGN_CLIENT="$GITHUB_WORKSPACE/controller/tools/signing/sirsi-sign"
+          "$HOME/.local/bin/sirsi-maat-run" --agent sirsi-software-admin --register-executor \
+            --work "pantheon-v163-recovery-build-${GITHUB_RUN_ID}" --cpu-cores 1 --timeout 1500 -- /bin/bash -euo pipefail -c '
+              PANTHEON_APOLLO_DIGEST_RECEIPT="$(bash scripts/new-apollo-digest-receipt.sh "$RUNNER_TEMP")"
+              printf "PANTHEON_APOLLO_DIGEST_RECEIPT=%s\n" "$PANTHEON_APOLLO_DIGEST_RECEIPT" >> "$GITHUB_ENV"
+              export PANTHEON_APOLLO_DIGEST_RECEIPT
+              PANTHEON_GUARD_ATTEMPT="$(mktemp -d "$RUNNER_TEMP/v163-recovery-guard.XXXXXXXX")"
+              printf "PANTHEON_GUARD_ATTEMPT=%s\n" "$PANTHEON_GUARD_ATTEMPT" >> "$GITHUB_ENV"
+              export SIRSI_SIGN_CUSTODY_DIR="$PANTHEON_GUARD_ATTEMPT/signer-jobs"
+              mkdir -m 700 "$SIRSI_SIGN_CUSTODY_DIR"
+              bash scripts/ci-private-sdk.sh bash "$GITHUB_WORKSPACE/controller/scripts/build-release-pretoolguard-controller.sh" "$RELEASE_COMMIT" "$BUILD_VERSION" "$PANTHEON_GUARD_ATTEMPT" "$GITHUB_WORKSPACE/controller" "$GITHUB_SHA"
+              export PANTHEON_SIGN_CLIENT="$GITHUB_WORKSPACE/source/tools/signing/sirsi-sign"
+              bash scripts/ci-private-sdk.sh scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
+              bash scripts/ci-private-sdk.sh scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app "$GITHUB_WORKSPACE/source/Pantheon.app"
+            '
+      - name: Preserve exact signed inputs
+        working-directory: source
+        run: |
+          set -euo pipefail
+          CUSTODY="$(mktemp -d "$RUNNER_TEMP/v163-recovery-custody.XXXXXXXX")"
+          printf 'PANTHEON_RELEASE_CUSTODY=%s\n' "$CUSTODY" >> "$GITHUB_ENV"
+          "$HOME/.local/bin/sirsi-maat-run" --agent sirsi-software-admin --register-executor --work "v163-recovery-custody-${GITHUB_RUN_ID}" --cpu-cores 1 --timeout 600 -- \
+            python3 -B scripts/release-custody.py create "$CUSTODY" "$BUILD_VERSION" "$RELEASE_COMMIT" "${PANTHEON_GUARD_ATTEMPT:?}/payload-manifest.json"
+      - name: Upload exact signed custody before publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: v163-recovery-custody-${{ github.run_id }}
+          path: ${{ env.PANTHEON_RELEASE_CUSTODY }}
+          if-no-files-found: error
+      - name: Restore and verify exact signed inputs
+        working-directory: source
+        run: |
+          set -euo pipefail
+          CUSTODY="${PANTHEON_RELEASE_CUSTODY:?}"
+          RESTORED="$(mktemp -d "$RUNNER_TEMP/v163-recovery-inputs.XXXXXXXX")"
+          printf 'PANTHEON_RELEASE_INPUTS=%s\n' "$RESTORED" >> "$GITHUB_ENV"
+          "$HOME/.local/bin/sirsi-maat-run" --agent sirsi-software-admin --register-executor --work "v163-recovery-restore-${GITHUB_RUN_ID}" --cpu-cores 1 --timeout 600 -- \
+            /bin/bash -euo pipefail -c 'cd "$1"; shift; exec python3 -B "$@"' fixture "$RESTORED" "$GITHUB_WORKSPACE/source/scripts/release-custody.py" restore "$CUSTODY" "$BUILD_VERSION" "$RELEASE_COMMIT" "$CUSTODY/payload-manifest.json"
+      - name: Publish only the bound draft
+        if: success() && steps.successor_handoff.outcome == 'success'
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          "$HOME/.local/bin/sirsi-maat-run" --agent sirsi-software-admin --register-executor --work "v163-recovery-publish-${GITHUB_RUN_ID}" --cpu-cores 1 --timeout 600 -- \
+            python3 -B scripts/publish-release-assets.py --version "$BUILD_VERSION" --expected-commit "$RELEASE_COMMIT" \
+              --directory "${PANTHEON_RELEASE_INPUTS:?}/bin" --app "$PANTHEON_RELEASE_INPUTS/Pantheon.app" \
+              --include-guard --guard-manifest "${PANTHEON_RELEASE_CUSTODY:?}/payload-manifest.json" \
+              --reservation "$PANTHEON_SUCCESSOR_CUSTODY/reservation.json" --receipt "$PANTHEON_SUCCESSOR_CUSTODY/publication.json"
+      - name: Retain recovery reservation and publication evidence
+        if: always() && env.PANTHEON_SUCCESSOR_CUSTODY != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: v163-successor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.PANTHEON_SUCCESSOR_CUSTODY }}/claim.*
+            ${{ env.PANTHEON_SUCCESSOR_CUSTODY }}/reservation.json
+            ${{ env.PANTHEON_SUCCESSOR_CUSTODY }}/publication.json
+            ${{ runner.temp }}/pantheon-guard-attach-${{ github.run_id }}-${{ github.run_attempt }}-*.plist
+            ${{ runner.temp }}/pantheon-guard-attach-${{ github.run_id }}-${{ github.run_attempt }}-*.plist.stderr
+          if-no-files-found: warn
+      - name: Retain guard attempt evidence when allocated
+        if: always() && env.PANTHEON_GUARD_ATTEMPT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: v163-recovery-guard-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/signer-jobs/*.json
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/ACCEPTED
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/INCOMPLETE
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/attach.plist
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/device.txt
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*signature-details.txt
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.receipt.txt
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/normalization.json
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/normalized.*/input
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/normalized.*/output
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/controller-provenance.json
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.sha256
+          if-no-files-found: warn
+      - name: Retain exact app, DMG and PKG signing sidecars
+        if: always() && env.PANTHEON_GUARD_ATTEMPT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: v163-recovery-signing-sidecars-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ github.workspace }}/source/signed-Pantheon.app.receipt.txt
+            ${{ github.workspace }}/source/signed-.receipt.txt
+            ${{ github.workspace }}/source/bin/signed-SirsiPantheon-0.24.163-arm64.dmg.receipt.txt
+            ${{ github.workspace }}/source/bin/signed-SirsiPantheon-0.24.163-arm64.pkg.receipt.txt
+            ${{ github.workspace }}/source/bin/signed-.receipt.txt
+          if-no-files-found: warn
+      - name: Retain frozen Apollo digest when allocated
+        if: always() && env.PANTHEON_APOLLO_DIGEST_RECEIPT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: v163-recovery-apollo-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.PANTHEON_APOLLO_DIGEST_RECEIPT }}
+          if-no-files-found: warn
+
+  cask:
+    needs: recovery_successor
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@v4
+        with:
+          ref: a5967913c68c03be435ab009f24df01e908681b3
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Download retained exact publication receipt
+        uses: actions/download-artifact@v4
+        with:
+          name: v163-successor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: recovery-evidence
+      - name: Download exact published DMG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t RECEIPTS < <(find recovery-evidence -name publication.json -type f)
+          [[ ${#RECEIPTS[@]} -eq 1 ]]
+          RECEIPT="${RECEIPTS[0]}"
+          jq -e '.release_id == 432359892 and .tag == "v0.24.163" and .commit == "a5967913c68c03be435ab009f24df01e908681b3" and .published == true and .status == "published_verified_set"' "$RECEIPT" >/dev/null
+          EXPECTED="$(jq -er '.assets["SirsiPantheon-0.24.163-arm64.dmg"].sha256 | select(type == "string" and test("^[0-9a-f]{64}$"))' "$RECEIPT")"
+          ASSET="$(gh api repos/SirsiMaster/sirsi-pantheon/releases/432359892 --jq '[.assets[] | select(.name == "SirsiPantheon-0.24.163-arm64.dmg") | .id] | if length == 1 then .[0] else error("asset identity ambiguous") end')"
+          gh api -H 'Accept: application/octet-stream' "repos/SirsiMaster/sirsi-pantheon/releases/assets/$ASSET" > SirsiPantheon-0.24.163-arm64.dmg
+          ACTUAL="$(sha256sum SirsiPantheon-0.24.163-arm64.dmg | awk '{print $1}')"
+          [[ "$ACTUAL" == "$EXPECTED" ]]
+          printf 'DMG_SHA=%s\n' "$ACTUAL" >> "$GITHUB_ENV"
+      - name: Render, publish and verify canonical cask
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA="${DMG_SHA:?}"
+          bash scripts/ci-private-sdk.sh go run ./cmd/sirsi cask-release render --version 0.24.163 --dmg-sha256 "$SHA" > sirsi-pantheon.rb
+          bash scripts/ci-private-sdk.sh go run ./cmd/sirsi cask-release verify --version 0.24.163 --dmg-sha256 "$SHA" --file sirsi-pantheon.rb
+          BLOB="$(gh api repos/SirsiMaster/homebrew-tools/contents/Casks/sirsi-pantheon.rb --jq .sha)"
+          CONTENT="$(base64 -w0 sirsi-pantheon.rb)"
+          gh api repos/SirsiMaster/homebrew-tools/contents/Casks/sirsi-pantheon.rb -X PUT -f message='chore: bump cask to v0.24.163' -f content="$CONTENT" -f sha="$BLOB"
+          gh api repos/SirsiMaster/homebrew-tools/contents/Casks/sirsi-pantheon.rb --jq .content | base64 --decode > published-cask.rb
+          bash scripts/ci-private-sdk.sh go run ./cmd/sirsi cask-release verify --version 0.24.163 --dmg-sha256 "$SHA" --file published-cask.rb
