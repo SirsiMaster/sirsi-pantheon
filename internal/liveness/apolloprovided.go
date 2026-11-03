@@ -6,9 +6,14 @@ import (
 	"path/filepath"
 )
 
+// ApolloAppPath is the installed Apollo.app bundle.
+func ApolloAppPath(home string) string {
+	return filepath.Join(home, "Applications", "Apollo.app")
+}
+
 // ApolloRouterPath is the router helper inside the installed Apollo.app.
 func ApolloRouterPath(home string) string {
-	return filepath.Join(home, "Applications", "Apollo.app", "Contents", "Helpers", "apollo-router")
+	return filepath.Join(ApolloAppPath(home), "Contents", "Helpers", "apollo-router")
 }
 
 // ApolloProvidesGemma reports whether local Gemma is provided by Apollo.app
@@ -32,7 +37,16 @@ func CheckApolloGemmaProvider(home string) (bool, error) {
 	}
 	fi, err := os.Lstat(ApolloRouterPath(home))
 	if os.IsNotExist(err) {
-		return false, nil
+		// Only a wholly absent Apollo.app means "not provided". An app bundle
+		// that exists without its helper (e.g. mid-upgrade) fails closed.
+		_, appErr := os.Lstat(ApolloAppPath(home))
+		if os.IsNotExist(appErr) {
+			return false, nil
+		}
+		if appErr != nil {
+			return false, fmt.Errorf("inspect installed Apollo.app: %w", appErr)
+		}
+		return false, fmt.Errorf("installed Apollo.app is incomplete: router helper missing")
 	}
 	if err != nil {
 		return false, fmt.Errorf("inspect installed Apollo router: %w", err)

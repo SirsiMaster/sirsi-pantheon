@@ -7,14 +7,23 @@ import (
 )
 
 func TestApolloProvidesGemmaMarkerKinds(t *testing.T) {
-	for _, kind := range []string{"missing", "executable", "non-executable", "directory", "symlink", "dangling-symlink"} {
+	// "absent" = no Apollo.app at all (the only not-provided, no-error case).
+	// "app-only" and "missing" = app present but incomplete: fail closed.
+	for _, kind := range []string{"absent", "app-only", "missing", "executable", "non-executable", "directory", "symlink", "dangling-symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			home := t.TempDir()
 			path := ApolloRouterPath(home)
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			var err error
+			switch kind {
+			case "absent":
+			case "app-only":
+				err = os.MkdirAll(ApolloAppPath(home), 0o755)
+			default:
+				err = os.MkdirAll(filepath.Dir(path), 0o755)
+			}
+			if err != nil {
 				t.Fatal(err)
 			}
-			var err error
 			switch kind {
 			case "executable":
 				err = os.WriteFile(path, []byte("fixture"), 0o755)
@@ -37,7 +46,7 @@ func TestApolloProvidesGemmaMarkerKinds(t *testing.T) {
 				t.Fatalf("kind=%s provided=%v", kind, got)
 			}
 			provided, checkErr := CheckApolloGemmaProvider(home)
-			if provided != (kind == "executable") || (checkErr != nil) != (kind != "missing" && kind != "executable") {
+			if provided != (kind == "executable") || (checkErr != nil) != (kind != "absent" && kind != "executable") {
 				t.Fatalf("kind=%s provided=%v error=%v", kind, provided, checkErr)
 			}
 		})

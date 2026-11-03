@@ -56,13 +56,17 @@ func TestApolloStandDownInvalidMarkerFailsClosed(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("darwin only")
 	}
-	for _, kind := range []string{"directory", "non-executable", "symlink", "dangling-symlink"} {
+	for _, kind := range []string{"incomplete-app", "missing-helper", "directory", "non-executable", "symlink", "dangling-symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
 			fakeSNERuntime(t, home)
 			path := liveness.ApolloRouterPath(home)
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			mk := filepath.Dir(path)
+			if kind == "incomplete-app" {
+				mk = liveness.ApolloAppPath(home)
+			}
+			if err := os.MkdirAll(mk, 0o755); err != nil {
 				t.Fatal(err)
 			}
 			var err error

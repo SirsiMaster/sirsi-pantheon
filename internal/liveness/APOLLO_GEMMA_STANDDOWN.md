@@ -5,8 +5,18 @@ healer must not launch a second broker when that installation provides Gemma.
 The check uses only the fixed installed helper path under the user's
 Applications/Apollo.app, requiring a regular executable leaf, not a directory,
 non-executable file, or symlink. An invalid marker returns an error before any
-legacy lifecycle action. An absent installation retains existing non-Apollo
-behavior, including quarantine/disabled-label protections.
+legacy lifecycle action. An Apollo.app that exists without its helper (for
+example mid-upgrade) is incomplete and also returns an error. Only a wholly
+absent Apollo.app retains existing non-Apollo behavior, including
+quarantine/disabled-label protections.
+
+Scope: this stands down only the legacy broker install/restore paths (setup
+and router healer). The read-only liveness watch (`probeGemma`) is unchanged
+and still issues its existing single chat-completion probe, which can wake an
+idle Apollo model. A provider-aware non-generating watch is separate work.
+
+The dashboard's local ask request refuses HTTP redirects, so the question and
+diagnostic grounding cannot be redirected off the machine.
 
 This is stand-down only. No endpoint, model profile, or gemma-server.port is
 created or rewritten. The selected host route remains authoritative: M5's
