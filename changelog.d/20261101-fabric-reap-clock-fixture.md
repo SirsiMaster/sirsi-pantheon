@@ -1,0 +1,1 @@
+Keep the fabric supervisor cadence fixture's exact terminal timestamp while exercising 20 ms non-reaping polls by advancing its fake monotonic clock on a nanosecond grid. Preserve the existing remote-read schedule assertion. Refs: `scripts/maat/admitted-run.py`, `scripts/maat/test_admitted_run.py`, `scripts/maat/README.md`

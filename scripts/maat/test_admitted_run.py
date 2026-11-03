@@ -102,7 +102,7 @@ class RegistryDeadlineTests(unittest.TestCase):
                 self.assertEqual(backend.released, ['fresh-quiet'])
                 self.assertEqual(record['requested_regime'], 'quiet')
                 if reply_regime == 'quiet' and share == 'full':
-                    self.assertEqual(code, 0)
+                    self.assertEqual(code, 0, record)
                     self.assertEqual(record['admission'], 'fresh-quiet')
                     self.assertFalse(record['borrowed'])
                     spawn.assert_called_once()
@@ -131,9 +131,10 @@ class RegistryDeadlineTests(unittest.TestCase):
                        'import os,json; p=os.environ["SIRSI_MAAT_EXECUTION_RECEIPT"]; '
                        'r=json.load(open(p)); assert r["supervisor_pid"]==os.getppid(); '
                        'assert r["work"]=="work"; assert os.stat(p).st_mode & 0o777 == 0o600']
+            record = {}
             with mock.patch.object(runner, 'process_identity', return_value=(1, 'actual-parent-birth')):
-                code = runner.supervise(command, 'm5', 'lane', 'thread', 'work', 10, backend, {})
-            self.assertEqual(code, 0)
+                code = runner.supervise(command, 'm5', 'lane', 'thread', 'work', 10, backend, record)
+            self.assertEqual(code, 0, record)
             files = list(Path(directory).glob('execution-*.json'))
             self.assertEqual(len(files), 1)
             data = json.loads(files[0].read_text())
@@ -189,7 +190,7 @@ class RegistryDeadlineTests(unittest.TestCase):
         native.call = mock.Mock(side_effect=[runner.TransientTransport('HTTP 502'), {'thread_id': 'own'}])
         clock = Clock()
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)):
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance):
             self.assertEqual(native.registration_observation('own'), {'thread_id': 'own'})
         self.assertEqual(native.call.call_count, 2)
         self.assertEqual(native.deadline, 75)
@@ -214,7 +215,7 @@ class RegistryDeadlineTests(unittest.TestCase):
             return dict(agent_id='lane', pid=os.getpid(), status='active', thread_id=identity)
         native.call = call
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)):
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance):
             identity = native.register_executor('lane')
         self.assertEqual([c[:2] for c in calls], [('thread', 'register'), ('thread', 'heartbeat'), ('thread', 'heartbeat')])
         self.assertTrue(all(c[c.index('--thread') + 1] == identity for c in calls))
@@ -247,7 +248,7 @@ class RegistryDeadlineTests(unittest.TestCase):
             "Control call ('thread', 'heartbeat') failed: thread \"own\" not registered: heartbeat registration unavailable"))
         clock = Clock()
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)), \
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
                 self.assertRaises(runner.TransientTransport):
             native.registration_observation('own', pending_registration=True)
         self.assertEqual(clock.now, 3)
@@ -270,7 +271,7 @@ class RegistryDeadlineTests(unittest.TestCase):
                 native.call = mock.Mock(side_effect=runner.Refused(message))
                 clock = Clock()
                 with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                        mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)) as sleep, \
+                        mock.patch.object(runner.time, 'sleep', side_effect=clock.advance) as sleep, \
                         self.assertRaises(runner.Refused):
                     native.registration_observation('own', pending_registration=True)
                 self.assertEqual(native.call.call_count, 1)
@@ -281,7 +282,7 @@ class RegistryDeadlineTests(unittest.TestCase):
         native.call = mock.Mock(side_effect=runner.TransientTransport('HTTP 502'))
         clock = Clock()
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)), \
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
                 self.assertRaises(runner.TransientTransport):
             native.registration_observation('own')
         self.assertEqual(clock.now, 120)
@@ -447,7 +448,7 @@ class RegistryDeadlineTests(unittest.TestCase):
         with mock.patch.object(runner.subprocess, 'run', side_effect=subprocess.TimeoutExpired('sirsi',30)), \
                 mock.patch.object(runner.subprocess, 'check_output') as process, \
                 mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)):
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance):
             with self.assertRaises(runner.TransientTransport):
                 native.registered('lane','thread')
             process.assert_not_called()
@@ -466,6 +467,9 @@ class SupervisorTests(unittest.TestCase):
         clock = Clock()
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
                 mock.patch.object(runner.subprocess, 'Popen', return_value=FakeChild(clock, 0)), \
+                mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
+                mock.patch.object(runner, 'release_fabric_child'), \
+                mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda child: child.terminal_status()), \
                 mock.patch.object(runner, 'stop'):
             code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 30, backend, record)
         self.assertEqual(code, 0)
@@ -485,6 +489,9 @@ class SupervisorTests(unittest.TestCase):
         clock = Clock()
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
                 mock.patch.object(runner.subprocess, 'Popen', return_value=FakeChild(clock, 0)), \
+                mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
+                mock.patch.object(runner, 'release_fabric_child'), \
+                mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda child: child.terminal_status()), \
                 mock.patch.object(runner, 'stop'):
             code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 30, backend, record)
         self.assertEqual(code, 0)
@@ -505,7 +512,7 @@ class SupervisorTests(unittest.TestCase):
         backend.cpu_cores = 2
         code, record = self.run_case(backend,command=[sys.executable,'-c',
             'import os; assert os.environ["GOMAXPROCS"] == "2"; assert os.environ["OMP_NUM_THREADS"] == "2"'])
-        self.assertEqual(code,0)
+        self.assertEqual(code, 0, record)
         self.assertEqual(record['share'],'floor')
 
     def test_owned_lookup_uses_exact_id_query_without_resource(self):
@@ -526,14 +533,14 @@ class SupervisorTests(unittest.TestCase):
     def test_borrowed_admission_success_does_not_release_others_hold(self):
         backend = Backend(admission())
         code, record = self.run_case(backend)
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 0, record)
         self.assertTrue(record['borrowed'])
         self.assertEqual(backend.released, [])
 
     def test_own_admission_is_acquired_and_released(self):
         backend = Backend(None)
         code, record = self.run_case(backend)
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 0, record)
         self.assertFalse(record['borrowed'])
         self.assertEqual(backend.released, ['fixture-id'])
 
@@ -577,7 +584,7 @@ class SupervisorTests(unittest.TestCase):
     def test_timeout_reaps_only_owned_harmless_child(self):
         code, record = self.run_case(Backend(admission()), [sys.executable, '-c', 'import time;time.sleep(60)'], timeout=.05)
         self.assertEqual(code, 78)
-        with self.assertRaises(ProcessLookupError):
+        with self.assertRaises(ProcessLookupError, msg=f"owned timeout child was not reaped: {record}"):
             os.kill(record['pid'], 0)
 
     def test_admission_loss_is_observed_at_bounded_remote_tick(self):
@@ -591,7 +598,11 @@ class SupervisorTests(unittest.TestCase):
         record = {}
         child = FakeChild(clock, 1000)
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
                 mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
+                mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
+                mock.patch.object(runner, 'release_fabric_child'), \
+                mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda target: target.terminal_status()), \
                 mock.patch.object(runner, 'stop') as stop:
             code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 120, backend, record)
         self.assertEqual(code, 78)
@@ -619,6 +630,7 @@ class SupervisorTests(unittest.TestCase):
             code, record = self.run_case(backend)
             self.assertEqual(code, 78)
             self.assertIn('outcome unknown', record['cleanup_debt'])
+            self.assertTrue(record['reservation_outcome_unconfirmed'])
             spawn.assert_not_called()
 
     def test_registered_foreign_thread_anchor_is_refused(self):
@@ -685,22 +697,366 @@ class Clock:
         self.now = 0
     def monotonic(self):
         return self.now
+    def advance(self, seconds):
+        # Keep repeated subsecond poll steps on a deterministic nanosecond grid.
+        self.now = round(self.now + seconds, 9)
 
 
 class FakeChild:
     pid = 424242
-    def __init__(self, clock, finish):
+    def __init__(self, clock, finish, exit_code=0):
         self.clock, self.finish = clock, finish
+        self.exit_code = exit_code
+        self.returncode = None
         self.wait_timeouts = []
+        self.poll_calls = 0
+        self.terminal_calls = 0
+    def _record_reap(self):
+        self.returncode = self.exit_code
+        identity = getattr(self, '_sirsi_fabric_identity', None)
+        if identity is not None:
+            identity.reaped = True
     def poll(self):
-        return 0 if self.clock.now >= self.finish else None
+        self.poll_calls += 1
+        if self.returncode is not None:
+            return self.returncode
+        if self.clock.now >= self.finish:
+            self._record_reap()
+            return self.returncode
+        return None
+    def terminal_status(self):
+        self.terminal_calls += 1
+        return self.exit_code if self.clock.now >= self.finish else None
     def wait(self, timeout=None):
         self.wait_timeouts.append(timeout)
+        if self.returncode is not None:
+            return self.returncode
         if timeout is not None and self.clock.now + timeout < self.finish:
-            self.clock.now += timeout
+            self.clock.advance(timeout)
             raise subprocess.TimeoutExpired('fixture', timeout)
         self.clock.now = max(self.clock.now, self.finish)
-        return 0
+        self._record_reap()
+        return self.returncode
+
+
+def bind_fake_fabric_child(child):
+    identity = runner._FabricChildIdentity(child, child.pid, os.getpid(), os.getuid(),
+                                           os.getuid(), child.pid, 'fixture')
+    child._sirsi_fabric_identity = identity
+    return identity
+
+
+class FakeChildReapModelTests(unittest.TestCase):
+    def test_poll_and_wait_consume_only_when_child_is_terminal(self):
+        clock = Clock()
+        child = FakeChild(clock, finish=2, exit_code=17)
+        identity = bind_fake_fabric_child(child)
+        self.assertIsNone(child.poll())
+        with self.assertRaises(subprocess.TimeoutExpired):
+            child.wait(timeout=1)
+        self.assertIsNone(child.returncode)
+        self.assertFalse(identity.reaped)
+        clock.advance(1)
+        self.assertEqual(child.poll(), 17)
+        self.assertEqual(child.returncode, 17)
+        self.assertTrue(identity.reaped)
+
+        clock = Clock()
+        child = FakeChild(clock, finish=0, exit_code=23)
+        identity = bind_fake_fabric_child(child)
+        self.assertEqual(child.wait(), 23)
+        self.assertEqual(child.returncode, 23)
+        self.assertTrue(identity.reaped)
+
+
+class FabricLaunchGateTests(unittest.TestCase):
+    def invoke_gate(self, ready, token, environment, exec_error=None):
+        with mock.patch.object(runner.sys, 'argv', ['-c', '41', 'payload', 'arg']), \
+                mock.patch.dict(runner.os.environ, environment, clear=True), \
+                mock.patch.object(runner.os, 'fstat', return_value=mock.Mock(st_mode=runner.stat.S_IFIFO)), \
+                mock.patch('select.select', return_value=(ready, [], [])), \
+                mock.patch.object(runner.os, 'read', return_value=token) as read, \
+                mock.patch.object(runner.os, 'close') as close, \
+                mock.patch.object(runner.os, 'execvpe', side_effect=exec_error) as execute:
+            with self.assertRaises(SystemExit) as exited:
+                exec(runner._FABRIC_GATE_PROGRAM, {})
+        self.assertEqual(exited.exception.code, 78)
+        close.assert_called_once_with(41)
+        return read, execute
+
+    def test_parent_death_eof_and_missing_release_timeout_never_exec(self):
+        for ready, token in [([41], b''), ([], b'')]:
+            with self.subTest(ready=ready):
+                read, execute = self.invoke_gate(ready, token, runner.fabric_gate_environment({}))
+                if ready:
+                    read.assert_called_once_with(41, 1)  # EOF after the parent's writer closes.
+                else:
+                    read.assert_not_called()
+                execute.assert_not_called()
+
+    def test_isolated_gate_restores_payload_loader_environment_after_release(self):
+        original = {'DYLD_INSERT_LIBRARIES': 'fixture-dylib', 'LD_PRELOAD': 'fixture-so',
+                    'PYTHONPATH': 'fixture-path', runner._FABRIC_GATE_ENV: 'prior-value'}
+        environment = runner.fabric_gate_environment(original)
+        self.assertNotIn('DYLD_INSERT_LIBRARIES', environment)
+        self.assertNotIn('LD_PRELOAD', environment)
+        read, execute = self.invoke_gate([41], b'1', environment)
+        read.assert_called_once_with(41, 1)
+        execute.assert_called_once_with('payload', ['payload', 'arg'], original)
+
+    def test_payload_exec_failure_refuses_without_a_second_exec(self):
+        environment = runner.fabric_gate_environment({})
+        _, execute = self.invoke_gate([41], b'1', environment,
+                                      FileNotFoundError('fixture missing payload'))
+        execute.assert_called_once_with('payload', ['payload', 'arg'], {})
+
+    def run_bind_failure(self, wait_result, release_error=None, close_error=None):
+        child = mock.Mock(pid=424242, returncode=None)
+        backend = Backend(None)
+        events = []
+        def wait(timeout):
+            events.append(('wait', timeout))
+            if isinstance(wait_result, BaseException):
+                raise wait_result
+            child.returncode = wait_result
+            return wait_result
+        child.wait.side_effect = wait
+        def release_reservation(identity):
+            events.append(('release', identity))
+            if release_error:
+                raise release_error
+        backend.release = mock.Mock(side_effect=release_reservation)
+        record = {}
+        def close(fd):
+            events.append(('close', fd))
+            if fd == 42 and close_error:
+                raise close_error
+        with mock.patch.object(runner.os, 'pipe', return_value=(41, 42)), \
+                mock.patch.object(runner.os, 'close', side_effect=close), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=child) as spawn, \
+                mock.patch.object(runner, 'fabric_bind_child', side_effect=runner.Refused('fixture bind refusal')), \
+                mock.patch.object(runner, 'release_fabric_child') as release, \
+                mock.patch.object(runner.os, 'killpg') as signal_group:
+            code = runner.supervise(['payload', 'arg'], 'm5', 'lane', 'thread', 'work', 30,
+                                    backend, record)
+
+        self.assertEqual(code, 78)
+        argv = spawn.call_args.args[0]
+        self.assertEqual(argv[1:5], ['-I', '-S', '-c', runner._FABRIC_GATE_PROGRAM])
+        self.assertEqual(argv[5], '41')
+        self.assertEqual(argv[-2:], ['payload', 'arg'])
+        self.assertEqual(spawn.call_args.kwargs['pass_fds'], (41,))
+        release.assert_not_called()
+        signal_group.assert_not_called()
+        self.assertLess(events.index(('close', 42)), events.index(('wait', 6)))
+        return record, backend, events
+
+    def test_bind_failure_releases_only_after_refusal_exit_is_reaped(self):
+        record, backend, events = self.run_bind_failure(78)
+        self.assertLess(events.index(('wait', 6)), events.index(('release', 'fixture-id')))
+        backend.release.assert_called_once_with('fixture-id')
+        self.assertNotIn('cleanup_debt', record)
+
+    def test_bind_failure_retains_grant_on_timeout_echild_or_unexpected_status(self):
+        for result in (subprocess.TimeoutExpired('gate', 6), ChildProcessError('ECHILD'), 0):
+            with self.subTest(result=result):
+                record, backend, _ = self.run_bind_failure(result)
+                backend.release.assert_not_called()
+                self.assertTrue(record['child_cleanup_unconfirmed'])
+                self.assertIn('Owned reservation release deferred', record['cleanup_debt'])
+                reservation = record['unresolved_reservation']
+                confirmation = reservation['last_confirmed']
+                self.assertEqual(reservation['scope']['id'], 'fixture-id')
+                self.assertTrue(reservation['owned'])
+                self.assertFalse(reservation['expiry_is_current_authority'])
+                self.assertEqual(reservation['explicit_release'], 'deferred')
+                self.assertTrue(reservation['automatic_expiry_possible'])
+                stamp = dt.datetime.fromisoformat(confirmation['heartbeat_at'].replace('Z', '+00:00'))
+                self.assertEqual(confirmation['heartbeat_plus_ttl'],
+                                 (stamp + dt.timedelta(seconds=confirmation['lease_ttl_sec'])).isoformat())
+                custody = record['unresolved_child_custody']
+                self.assertEqual(custody['popen_pid'], 424242)
+                self.assertIsNone(custody['bound_identity'])
+                self.assertFalse(custody['release_attempted'])
+                self.assertEqual(custody['release_outcome'], 'not_attempted')
+                self.assertFalse(custody['termination_confirmed'])
+                self.assertFalse(custody['handle_transferable'])
+
+    def test_pipe_close_failure_does_not_substitute_for_exit_receipt(self):
+        failure = OSError('fixture close failure')
+        record, backend, _ = self.run_bind_failure(subprocess.TimeoutExpired('gate', 6), close_error=failure)
+        backend.release.assert_not_called()
+        self.assertIn('Fabric launch gate close unconfirmed', record['cleanup_debt'])
+        self.assertTrue(record['child_cleanup_unconfirmed'])
+        record, backend, _ = self.run_bind_failure(78, close_error=failure)
+        backend.release.assert_called_once_with('fixture-id')  # Exact exit receipt, not close, permits release.
+        self.assertIn('Fabric launch gate close unconfirmed', record['cleanup_debt'])
+
+    def test_previously_reaped_helper_status_is_not_a_fresh_receipt(self):
+        child = mock.Mock(pid=424242, returncode=78)
+        with self.assertRaisesRegex(runner.Refused, 'wait custody unavailable'):
+            runner.wait_unreleased_fabric_child(child)
+        child.wait.assert_not_called()
+
+    def test_reaped_helper_release_failure_records_debt(self):
+        record, backend, events = self.run_bind_failure(78, runner.Refused('release outcome unknown'))
+        self.assertLess(events.index(('wait', 6)), events.index(('release', 'fixture-id')))
+        backend.release.assert_called_once_with('fixture-id')
+        self.assertIn('Reservation release unconfirmed: release outcome unknown', record['cleanup_debt'])
+        backend.close_executor = mock.Mock()
+        runner.close_fabric_executor(backend, record)
+        backend.close_executor.assert_not_called()
+        self.assertIn('Executor close deferred: reservation outcome unconfirmed', record['cleanup_debt'])
+
+    def test_deadline_expired_during_bind_keeps_gate_closed(self):
+        clock = Clock()
+        child = FakeChild(clock, 0, exit_code=78)
+        backend = Backend(None)
+        record = {}
+        def bind(target):
+            bind_fake_fabric_child(target)
+            clock.now = 30
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.os, 'pipe', return_value=(41, 42)), \
+                mock.patch.object(runner.os, 'close'), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
+                mock.patch.object(runner, 'fabric_bind_child', side_effect=bind), \
+                mock.patch.object(runner, 'release_fabric_child') as release, \
+                mock.patch.object(runner, 'stop') as stop:
+            self.assertEqual(runner.supervise(['payload'], 'm5', 'lane', 'thread', 'work', 30,
+                                              backend, record), 78)
+        release.assert_not_called()
+        stop.assert_not_called()
+        self.assertEqual(child.wait_timeouts, [6])
+        self.assertEqual(backend.released, ['fixture-id'])
+        self.assertEqual(record['stop_cause'], 'execution_timeout')
+
+    def test_success_binds_before_release_and_cleans_before_grant_release(self):
+        clock = Clock()
+        child = FakeChild(clock, 0)
+        backend = Backend(None)
+        events = []
+        backend.release = mock.Mock(side_effect=lambda identity: events.append('grant release'))
+        backend.close_executor = mock.Mock(side_effect=lambda: events.append('executor close'))
+        def bind(target):
+            events.append('bind')
+            return bind_fake_fabric_child(target)
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.os, 'pipe', return_value=(41, 42)), \
+                mock.patch.object(runner.os, 'close'), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
+                mock.patch.object(runner, 'fabric_bind_child', side_effect=bind), \
+                mock.patch.object(runner, 'release_fabric_child', side_effect=lambda fd: events.append('gate release')), \
+                mock.patch.object(runner, 'fabric_child_terminal', return_value=0), \
+                mock.patch.object(runner, 'stop', side_effect=lambda target: events.append('cleanup')):
+            record = {}
+            self.assertEqual(runner.supervise(['payload'], 'm5', 'lane', 'thread', 'work', 30,
+                                              backend, record), 0)
+            runner.close_fabric_executor(backend, record)
+        self.assertEqual(events, ['bind', 'gate release', 'cleanup', 'grant release', 'executor close'])
+
+    def test_payload_exec_failure_is_reaped_before_grant_release(self):
+        clock = Clock()
+        child = FakeChild(clock, 0, exit_code=78)
+        child.wait = mock.Mock(wraps=child.wait)
+        backend = Backend(None)
+        backend.release = mock.Mock(side_effect=lambda identity: self.assertEqual(child.returncode, 78))
+        record = {}
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.os, 'pipe', return_value=(41, 42)), \
+                mock.patch.object(runner.os, 'close'), \
+                mock.patch.object(runner.os, 'killpg') as kill_group, \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
+                mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
+                mock.patch.object(runner, 'release_fabric_child'), \
+                mock.patch.object(runner, 'fabric_child_terminal', return_value=78), \
+                mock.patch.object(runner, 'local_group_snapshot',
+                                  side_effect=lambda group: [dict(pid=child.pid, pgid=group, status='Z')]):
+            self.assertEqual(runner.supervise(['missing-payload'], 'm5', 'lane', 'thread', 'work', 30,
+                                              backend, record), 78)
+        child.wait.assert_called_once_with(timeout=1)
+        kill_group.assert_not_called()
+        backend.release.assert_called_once_with('fixture-id')
+        self.assertNotIn('cleanup_debt', record)
+
+    def test_uncertain_release_and_failed_bound_cleanup_retain_grant(self):
+        child = FakeChild(Clock(), 0)
+        backend = Backend(None)
+        backend.close_executor = mock.Mock()
+        record = {}
+        with mock.patch.object(runner.os, 'pipe', return_value=(41, 42)), \
+                mock.patch.object(runner.os, 'close'), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
+                mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
+                mock.patch.object(runner, 'release_fabric_child', side_effect=OSError('write uncertain')), \
+                mock.patch.object(runner, 'stop', side_effect=runner.Refused('custody uncertain')) as stop:
+            self.assertEqual(runner.supervise(['payload'], 'm5', 'lane', 'thread', 'work', 30,
+                                              backend, record), 78)
+        stop.assert_called_once_with(child)
+        self.assertEqual(backend.released, [])
+        runner.close_fabric_executor(backend, record)
+        backend.close_executor.assert_not_called()
+        self.assertIn('custody uncertain', record['cleanup_debt'])
+        self.assertIn('Owned reservation release deferred', record['cleanup_debt'])
+        self.assertIn('Executor close deferred', record['cleanup_debt'])
+        self.assertTrue(record['unresolved_child_custody']['release_attempted'])
+        self.assertEqual(record['unresolved_child_custody']['release_outcome'], 'unknown')
+        self.assertEqual(record['unresolved_child_custody']['bound_identity']['pid'], child.pid)
+        self.assertEqual(record['unresolved_reservation']['scope']['id'], 'fixture-id')
+
+    def test_gate_short_write_or_interruption_never_implies_safe_handback(self):
+        for result in (0, InterruptedError('fixture write interrupted')):
+            with self.subTest(result=result):
+                child = FakeChild(Clock(), 0)
+                backend = Backend(None)
+                record = {}
+                write = mock.Mock(side_effect=result) if isinstance(result, BaseException) else mock.Mock(return_value=result)
+                with mock.patch.object(runner.os, 'pipe', return_value=(41, 42)), \
+                        mock.patch.object(runner.os, 'close'), \
+                        mock.patch.object(runner.os, 'write', write), \
+                        mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
+                        mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
+                        mock.patch.object(runner, 'stop', side_effect=runner.Refused('cleanup uncertain')) as stop:
+                    self.assertEqual(runner.supervise(['payload'], 'm5', 'lane', 'thread', 'work', 30,
+                                                      backend, record), 78)
+                write.assert_called_once_with(42, b'1')
+                stop.assert_called_once_with(child)
+                self.assertEqual(backend.released, [])
+                self.assertTrue(record['unresolved_child_custody']['release_attempted'])
+                self.assertEqual(record['unresolved_child_custody']['release_outcome'], 'unknown')
+                self.assertFalse(record['unresolved_child_custody']['termination_confirmed'])
+
+    def test_unknown_renewal_keeps_only_last_confirmed_expiry(self):
+        clock = Clock()
+        child = FakeChild(clock, 1000)
+        backend = Backend(None)
+        backend.heartbeat = mock.Mock(side_effect=runner.TransientTransport('fixture renewal outcome unknown'))
+        record = {}
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
+                mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
+                mock.patch.object(runner, 'release_fabric_child'), \
+                mock.patch.object(runner, 'fabric_child_terminal', return_value=None), \
+                mock.patch.object(runner, 'stop', side_effect=runner.Refused('cleanup uncertain')):
+            self.assertEqual(runner.supervise(['payload'], 'm5', 'lane', 'thread', 'work', 31,
+                                              backend, record), 78)
+        backend.heartbeat.assert_called_once_with('fixture-id')
+        self.assertEqual(backend.released, [])
+        reservation = record['unresolved_reservation']
+        self.assertEqual(reservation['scope']['id'], 'fixture-id')
+        self.assertEqual(reservation['renewal_outcome'], 'unknown')
+        self.assertFalse(reservation['expiry_is_current_authority'])
+        self.assertIsNotNone(reservation['last_confirmed']['heartbeat_plus_ttl'])
+        self.assertEqual(record['unresolved_child_custody']['release_outcome'], 'delivered')
+
+    def test_executor_close_is_deferred_when_child_cleanup_is_unknown(self):
+        backend = mock.Mock()
+        record = {'child_cleanup_unconfirmed': True, 'cleanup_debt': 'child uncertain'}
+        runner.close_fabric_executor(backend, record)
+        backend.close_executor.assert_not_called()
+        self.assertIn('child uncertain', record['cleanup_debt'])
+        self.assertIn('Executor close deferred', record['cleanup_debt'])
 
 
 class RecurringTests(unittest.TestCase):
@@ -720,7 +1076,7 @@ class RecurringTests(unittest.TestCase):
             clock.now += 5
             return code
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
-                mock.patch.object(runner.time, 'sleep', side_effect=lambda seconds: setattr(clock, 'now', clock.now + seconds)), \
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
                 mock.patch.object(runner, 'supervise', side_effect=iteration) as supervise:
             code = runner.supervise_iterations(['fixture'], 'm5', 'lane', 'thr-real',
                                                'work', 60, backend, record, 3, interval, lifetime,
@@ -765,6 +1121,19 @@ class RecurringTests(unittest.TestCase):
         with self.assertRaisesRegex(runner.Refused, 'own registered executor'):
             runner.supervise_iterations(['fixture'], 'm5', 'lane', 'thread', 'work', 60,
                                         Backend(None), {}, 2, 30, 120)
+
+    def test_recurring_propagates_unknown_child_cleanup(self):
+        for field in ('child_cleanup_unconfirmed', 'reservation_outcome_unconfirmed'):
+            with self.subTest(field=field):
+                backend = mock.Mock(executor_thread='thr-real')
+                record = {}
+                def iteration(*args):
+                    args[-1][field] = True
+                    return 78
+                with mock.patch.object(runner, 'supervise', side_effect=iteration):
+                    self.assertEqual(runner.supervise_iterations(['fixture'], 'm5', 'lane', 'thread',
+                                                                'work', 30, backend, record, 2, 0, 120), 78)
+                self.assertTrue(record[field])
 
     def test_job_budget_includes_iteration_setup_before_child_spawn(self):
         backend = Backend(None)
@@ -821,7 +1190,11 @@ class RecoveryTests(unittest.TestCase):
         backend.child = child
         record = {}
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
                 mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
+                mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
+                mock.patch.object(runner, 'release_fabric_child'), \
+                mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda target: target.terminal_status()), \
                 mock.patch.object(runner, 'stop') as stop:
             code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', timeout, backend, record)
             stop.assert_called_once_with(child)
@@ -832,14 +1205,16 @@ class RecoveryTests(unittest.TestCase):
     def test_healthy_run_bounds_remote_reads_without_slowing_child_monitoring(self):
         code, record, backend, clock, events = self.run_case(finish=95)
         self.assertEqual(code, 0)
+        self.assertEqual(clock.now, 95)
         reads = [at for kind,at in events if kind == 'read']
         renewals = [at for kind,at in events if kind == 'renew']
         # Initial observation + pre-spawn + three healthy checks + terminal.
         self.assertEqual(reads, [0, 0, 30, 60, 90, 95])
         self.assertEqual(renewals, [30, 60, 90])
         self.assertEqual(backend.reserve_calls, 1)
-        self.assertGreater(len(backend.child.wait_timeouts), 40)
-        self.assertTrue(all(0 < wait <= 2 for wait in backend.child.wait_timeouts))
+        self.assertGreater(backend.child.terminal_calls, 40)
+        self.assertEqual(backend.child.poll_calls, 0)
+        self.assertEqual(backend.child.wait_timeouts, [])
 
     def test_three_minute_outage_recovers_only_with_sufficient_confirmed_grant(self):
         code, record, backend, clock, events = self.run_case(
@@ -972,7 +1347,11 @@ class RecoveryTests(unittest.TestCase):
             backend.heartbeat = mock.Mock()
             record = {}
             with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                    mock.patch.object(runner.time, 'sleep', side_effect=clock.advance), \
                     mock.patch.object(runner.subprocess, 'Popen', return_value=FakeChild(clock, 1000)), \
+                    mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
+                    mock.patch.object(runner, 'release_fabric_child'), \
+                    mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda child: child.terminal_status()), \
                     mock.patch.object(runner, 'stop') as stop:
                 code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 300, backend, record)
             self.assertEqual(code, 78)
@@ -981,14 +1360,547 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(backend.released, ['fixture-id'])
             stop.assert_called_once()
 
-    def test_stop_terminates_group_escalates_and_reaps(self):
-        child = mock.Mock(pid=424242)
-        child.wait.side_effect = [subprocess.TimeoutExpired('fixture', 2), 0]
-        with mock.patch.object(runner.os, 'killpg') as kill:
-            runner.stop(child)
-        self.assertEqual(kill.call_args_list, [mock.call(child.pid, runner.signal.SIGTERM),
-                                              mock.call(child.pid, runner.signal.SIGKILL)])
-        self.assertEqual(child.wait.call_args_list, [mock.call(timeout=2), mock.call()])
+    def test_fabric_stop_signals_before_the_only_reap_and_never_after_pgid_reuse(self):
+        clock = Clock()
+        child = FakeChild(clock, 0, exit_code=17)
+        child.returncode = None
+        identity = bind_fake_fabric_child(child)
+        events = []
+        killed = False
+        pgid_reassigned = False
+
+        def observe(target):
+            self.assertIs(target, child)
+            events.append(('observe', identity.reaped, pgid_reassigned))
+            return 17
+
+        def snapshot(group):
+            self.assertEqual(group, child.pid)
+            events.append(('snapshot', identity.reaped, pgid_reassigned))
+            rows = [dict(pid=child.pid, pgid=group, status='Z')]
+            if not killed:
+                rows.append(dict(pid=424243, pgid=group, status='S'))
+            return rows
+
+        def send_group(group, sig):
+            nonlocal killed
+            self.assertEqual(group, child.pid)
+            self.assertFalse(identity.reaped, 'group signal after direct-child reap')
+            self.assertFalse(pgid_reassigned, 'reaped PID/PGID may now name another group')
+            self.assertFalse(identity.signals_closed)
+            events.append(('signal', sig, identity.reaped, pgid_reassigned))
+            if sig == runner.signal.SIGTERM:
+                clock.now = 2
+            else:
+                killed = True
+
+        def reap(target):
+            nonlocal pgid_reassigned
+            self.assertIs(target, child)
+            self.assertEqual([event[0:2] for event in events if event[0] == 'signal'][-1],
+                             ('signal', runner.signal.SIGKILL))
+            events.append(('reap',))
+            target._record_reap()
+            pgid_reassigned = True  # Model immediate reuse after wait() consumes the leader.
+            return 17
+
+        runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                    monotonic=clock.monotonic, sleep=clock.advance,
+                    snapshot_group=snapshot)
+        self.assertEqual(child.returncode, 17)
+        self.assertEqual([event[0:2] for event in events if event[0] in ('signal', 'reap')],
+                         [('signal', runner.signal.SIGTERM), ('signal', runner.signal.SIGKILL), ('reap',)])
+        self.assertTrue(identity.reaped)
+        self.assertTrue(identity.signals_closed)
+        with self.assertRaises(runner.Refused):
+            runner._signal_fabric_group(child, runner.signal.SIGTERM, observe, send_group)
+        self.assertEqual(len([event for event in events if event[0] == 'signal']), 2)
+
+    def test_fabric_terminal_singleton_zombie_reaps_without_signaling(self):
+        child = FakeChild(Clock(), 0, exit_code=17)
+        identity = bind_fake_fabric_child(child)
+        events = []
+        def observe(target):
+            events.append(('observe', identity.reaped))
+            return 17
+        def snapshot(group):
+            events.append(('snapshot', identity.reaped))
+            return [dict(pid=child.pid, pgid=group, status='Z')]
+        def send_group(*args):
+            self.fail('terminal-only group must not be signaled')
+        def reap(target):
+            events.append(('reap', identity.reaped, identity.signals_closed))
+            target._record_reap()
+            return 17
+        runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                    snapshot_group=snapshot)
+        self.assertEqual(child.returncode, 17)
+        self.assertEqual(events[-1], ('reap', False, True))
+        self.assertTrue(identity.reaped)
+        self.assertTrue(identity.signals_closed)
+
+    def test_fabric_exit_between_wait_and_initial_snapshot_is_reobserved(self):
+        child = FakeChild(Clock(), 0, exit_code=17)
+        identity = bind_fake_fabric_child(child)
+        observations = iter([None, 17])
+        send = mock.Mock()
+        def reap(target):
+            target._record_reap()
+            return 17
+        runner.stop(child, observe=lambda target: next(observations), send_group=send, reap=reap,
+                    snapshot_group=lambda group: [dict(pid=child.pid, pgid=group, status='Z')])
+        self.assertEqual(child.returncode, 17)
+        self.assertTrue(identity.reaped)
+        send.assert_not_called()
+
+    def test_fabric_zombie_without_terminal_wait_receipt_stays_debt(self):
+        child = FakeChild(Clock(), 0)
+        identity = bind_fake_fabric_child(child)
+        send, reap = mock.Mock(), mock.Mock()
+        with self.assertRaisesRegex(runner.Refused, 'Live wait status conflicts'):
+            runner.stop(child, observe=lambda target: None, send_group=send, reap=reap,
+                        snapshot_group=lambda group: [dict(pid=child.pid, pgid=group, status='Z')])
+        self.assertTrue(identity.signals_closed)
+        self.assertFalse(identity.reaped)
+        send.assert_not_called()
+        reap.assert_not_called()
+
+    def test_fabric_exit_between_wait_and_post_term_snapshot_is_reobserved(self):
+        child = FakeChild(Clock(), 0)
+        identity = bind_fake_fabric_child(child)
+        observations = iter([None, None, None, 0, 0])
+        signals = []
+        def snapshot(group):
+            return [dict(pid=child.pid, pgid=group, status='Z' if signals else 'S')]
+        def send(group, sig):
+            self.assertFalse(identity.reaped)
+            signals.append(sig)
+        def reap(target):
+            target._record_reap()
+            return 0
+        runner.stop(child, observe=lambda target: next(observations), send_group=send, reap=reap,
+                    snapshot_group=snapshot)
+        self.assertEqual(signals, [runner.signal.SIGTERM])
+        self.assertTrue(identity.reaped)
+
+    def test_fabric_drifting_snapshots_after_term_escalate_with_retained_custody(self):
+        for failure, recovers in (('drift', True), ('drift', False), ('denied', False), ('timeout', False)):
+            with self.subTest(failure=failure, recovery_after_kill=recovers):
+                clock = Clock()
+                child = FakeChild(clock, 0)
+                identity = bind_fake_fabric_child(child)
+                signals = []
+                killed = False
+                def observe(target):
+                    self.assertFalse(identity.reaped)
+                    return 0 if killed else None
+                def snapshot(group):
+                    if not signals:
+                        return [dict(pid=child.pid, pgid=group, status='S')]
+                    if killed and recovers:
+                        return [dict(pid=child.pid, pgid=group, status='Z')]
+                    if failure == 'denied':
+                        raise PermissionError(runner.errno.EPERM, 'group observation denied')
+                    if failure == 'timeout':
+                        raise subprocess.TimeoutExpired('ps', 2)
+                    raise runner.Refused('Native process-group membership changed during observation')
+                def send(group, sig):
+                    nonlocal killed
+                    self.assertEqual(group, child.pid)
+                    self.assertFalse(identity.reaped)
+                    self.assertFalse(identity.signals_closed)
+                    signals.append((sig, clock.now))
+                    if sig == runner.signal.SIGKILL:
+                        killed = True
+                def reap(target):
+                    target._record_reap()
+                    return 0
+                reap_call = mock.Mock(side_effect=reap)
+                if recovers:
+                    runner.stop(child, observe=observe, send_group=send, reap=reap_call,
+                                monotonic=clock.monotonic, sleep=clock.advance, snapshot_group=snapshot)
+                    self.assertTrue(identity.reaped)
+                    reap_call.assert_called_once_with(child)
+                else:
+                    with self.assertRaisesRegex(runner.Refused, 'observation uncertain after KILL'):
+                        runner.stop(child, observe=observe, send_group=send, reap=reap_call,
+                                    monotonic=clock.monotonic, sleep=clock.advance, snapshot_group=snapshot)
+                    self.assertFalse(identity.reaped)
+                    reap_call.assert_not_called()
+                    self.assertGreaterEqual(clock.now, 4)
+                    self.assertLess(clock.now, 4.001)
+                self.assertEqual([sig for sig, _ in signals], [runner.signal.SIGTERM, runner.signal.SIGKILL])
+                self.assertGreaterEqual(signals[1][1], 2)
+                self.assertLess(signals[1][1], 2.001)
+                self.assertTrue(identity.signals_closed)
+                if recovers:
+                    with self.assertRaises(runner.Refused):
+                        runner._signal_fabric_group(child, runner.signal.SIGKILL, observe, send, snapshot)
+                    self.assertEqual(len(signals), 2)
+
+    def test_fabric_drift_during_final_confirmation_still_escalates(self):
+        clock = Clock()
+        child = FakeChild(clock, 0)
+        identity = bind_fake_fabric_child(child)
+        signals = []
+        post_term_reads = 0
+        killed = False
+        def observe(target):
+            return 0 if signals else None
+        def snapshot(group):
+            nonlocal post_term_reads
+            leader = dict(pid=child.pid, pgid=group, status='Z' if signals else 'S')
+            if not signals or killed:
+                return [leader]
+            post_term_reads += 1
+            if post_term_reads == 1:
+                return [leader]
+            if post_term_reads == 2:
+                raise runner.Refused('Native process-group membership changed during observation')
+            return [leader, dict(pid=424243, pgid=group, status='S')]
+        def send(group, sig):
+            nonlocal killed
+            self.assertFalse(identity.reaped)
+            signals.append(sig)
+            if sig == runner.signal.SIGKILL:
+                killed = True
+        def reap(target):
+            target._record_reap()
+            return 0
+        runner.stop(child, observe=observe, send_group=send, reap=reap,
+                    monotonic=clock.monotonic, sleep=clock.advance, snapshot_group=snapshot)
+        self.assertEqual(signals, [runner.signal.SIGTERM, runner.signal.SIGKILL])
+        self.assertTrue(identity.reaped)
+
+    def test_fabric_drift_with_uncertain_wait_custody_never_escalates_or_reaps(self):
+        clock = Clock()
+        child = FakeChild(clock, 0)
+        identity = bind_fake_fabric_child(child)
+        signals = []
+        def observe(target):
+            if clock.now >= 2:
+                raise runner.Refused('wait custody unavailable')
+            return None
+        def snapshot(group):
+            if not signals:
+                return [dict(pid=child.pid, pgid=group, status='S')]
+            raise runner.Refused('membership changed during observation')
+        def send(group, sig):
+            signals.append(sig)
+        reap = mock.Mock()
+        with self.assertRaisesRegex(runner.Refused, 'wait custody unavailable'):
+            runner.stop(child, observe=observe, send_group=send, reap=reap,
+                        monotonic=clock.monotonic, sleep=clock.advance, snapshot_group=snapshot)
+        self.assertEqual(signals, [runner.signal.SIGTERM])
+        self.assertTrue(identity.signals_closed)
+        self.assertFalse(identity.reaped)
+        reap.assert_not_called()
+
+    def test_fabric_group_snapshot_errors_keep_live_or_unknown_group_as_debt(self):
+        for failure in [PermissionError(1, 'operation not permitted'),
+                        ProcessLookupError(3, 'no such process'),
+                        runner.Refused('membership unknown')]:
+            with self.subTest(error=type(failure).__name__):
+                child = FakeChild(Clock(), 0)
+                identity = bind_fake_fabric_child(child)
+                send = mock.Mock()
+                reap = mock.Mock()
+                with self.assertRaises(type(failure)):
+                    runner.stop(child, observe=lambda target: 0, send_group=send,
+                                reap=reap, snapshot_group=mock.Mock(side_effect=failure))
+                self.assertTrue(identity.signals_closed)
+                self.assertFalse(identity.reaped)
+                self.assertIsNone(child.returncode)
+                send.assert_not_called()
+                reap.assert_not_called()
+
+    def test_fabric_signals_close_on_initial_observer_and_checked_reap_errors(self):
+        child = FakeChild(Clock(), 0)
+        identity = bind_fake_fabric_child(child)
+        reap = mock.Mock()
+        with self.assertRaisesRegex(runner.Refused, 'initial wait unavailable'):
+            runner.stop(child, observe=mock.Mock(side_effect=runner.Refused('initial wait unavailable')),
+                        snapshot_group=mock.Mock(), reap=reap)
+        self.assertTrue(identity.signals_closed)
+        self.assertFalse(identity.reap_started)
+        reap.assert_not_called()
+
+        child = FakeChild(Clock(), 0)
+        identity = bind_fake_fabric_child(child)
+        with self.assertRaisesRegex(TimeoutError, 'checked reap unavailable'):
+            runner.stop(child, observe=lambda target: 4,
+                        snapshot_group=lambda group: [dict(pid=child.pid, pgid=group, status='Z')],
+                        reap=mock.Mock(side_effect=TimeoutError('checked reap unavailable')))
+        self.assertTrue(identity.signals_closed)
+        self.assertTrue(identity.reap_started)
+        self.assertFalse(identity.reaped)
+
+    def test_fabric_terminal_leader_with_live_member_gets_term_observation_then_kill(self):
+        child = FakeChild(Clock(), 0, exit_code=9)
+        identity = bind_fake_fabric_child(child)
+        clock = Clock()
+        events = []
+        killed = False
+        def observe(target):
+            self.assertFalse(identity.reaped)
+            return 9
+        def snapshot(group):
+            events.append(('snapshot', clock.now))
+            rows = [dict(pid=child.pid, pgid=group, status='Z')]
+            if not killed:
+                rows.append(dict(pid=424243, pgid=group, status='S'))
+            return rows
+        def send_group(group, sig):
+            nonlocal killed
+            self.assertEqual(group, child.pid)
+            self.assertFalse(identity.reaped)
+            events.append(('signal', sig, clock.now))
+            if sig == runner.signal.SIGTERM:
+                clock.now = 2
+            else:
+                killed = True
+        def reap(target):
+            self.assertTrue(identity.signals_closed)
+            events.append(('reap', clock.now))
+            target._record_reap()
+            return 9
+        runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                    monotonic=clock.monotonic, sleep=clock.advance,
+                    snapshot_group=snapshot)
+        self.assertEqual([event[1] for event in events if event[0] == 'signal'],
+                         [runner.signal.SIGTERM, runner.signal.SIGKILL])
+        self.assertEqual(events[-1][0], 'reap')
+        self.assertTrue(identity.reaped)
+
+    def test_fabric_additional_zombie_after_kill_remains_cleanup_debt(self):
+        child = FakeChild(Clock(), 0, exit_code=6)
+        identity = bind_fake_fabric_child(child)
+        clock = Clock()
+        events = []
+        killed = False
+        def observe(target):
+            return 6
+        def snapshot(group):
+            status = 'Z' if killed else 'S'
+            return [dict(pid=child.pid, pgid=group, status='Z'),
+                    dict(pid=424243, pgid=group, status=status)]
+        def send_group(group, sig):
+            nonlocal killed
+            events.append(sig)
+            if sig == runner.signal.SIGTERM:
+                clock.now = 2
+            else:
+                killed = True
+        reap = mock.Mock()
+        with self.assertRaisesRegex(runner.Refused, 'Additional group zombies remain'):
+            runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                        monotonic=clock.monotonic, sleep=clock.advance,
+                        snapshot_group=snapshot)
+        self.assertEqual(events, [runner.signal.SIGTERM, runner.signal.SIGKILL])
+        self.assertTrue(identity.signals_closed)
+        self.assertFalse(identity.reaped)
+        reap.assert_not_called()
+
+    def test_fabric_eperm_and_esrch_require_independent_singleton_reobservation(self):
+        for error in [PermissionError(1, 'operation not permitted'),
+                      ProcessLookupError(3, 'no such process')]:
+            with self.subTest(error=type(error).__name__):
+                child = FakeChild(Clock(), 0, exit_code=12)
+                identity = bind_fake_fabric_child(child)
+                observations = iter([None, None, 12, 12])
+                snapshots = iter([
+                    [dict(pid=child.pid, pgid=child.pid, status='S')],
+                    [dict(pid=child.pid, pgid=child.pid, status='Z')],
+                    [dict(pid=child.pid, pgid=child.pid, status='Z')],
+                ])
+                def observe(target):
+                    return next(observations)
+                def snapshot(group):
+                    return next(snapshots)
+                def send_group(group, sig):
+                    raise error
+                def reap(target):
+                    target._record_reap()
+                    return 12
+                runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                            snapshot_group=snapshot)
+                self.assertTrue(identity.reaped)
+                self.assertTrue(identity.signals_closed)
+
+    def test_fabric_eperm_or_esrch_without_independent_singleton_proof_is_debt(self):
+        scenarios = [
+            (PermissionError(runner.errno.EPERM, 'operation not permitted'), 'live', PermissionError),
+            (ProcessLookupError(runner.errno.ESRCH, 'no such process'), 'unknown', runner.Refused),
+        ]
+        for error, second_state, expected in scenarios:
+            with self.subTest(error=type(error).__name__):
+                child = FakeChild(Clock(), 0)
+                identity = bind_fake_fabric_child(child)
+                initial = True
+                def snapshot(group):
+                    nonlocal initial
+                    if initial:
+                        initial = False
+                        return [dict(pid=child.pid, pgid=group, status='S')]
+                    if second_state == 'live':
+                        return [dict(pid=child.pid, pgid=group, status='S')]
+                    raise runner.Refused('independent snapshot unknown')
+                def send_group(group, sig):
+                    raise error
+                reap = mock.Mock()
+                with self.assertRaises(expected):
+                    runner.stop(child, observe=lambda target: None, send_group=send_group,
+                                reap=reap, snapshot_group=snapshot)
+                self.assertTrue(identity.signals_closed)
+                self.assertFalse(identity.reaped)
+                reap.assert_not_called()
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX process-group integration')
+    def test_naturally_short_lived_real_child_reaps_singleton_zombie_without_signal(self):
+        child = subprocess.Popen([sys.executable, '-c', 'pass'], start_new_session=True,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+        try:
+            identity = runner.fabric_bind_child(child)
+            deadline = runner.time.monotonic() + 5
+            while runner.fabric_child_terminal(child) is None:
+                if runner.time.monotonic() >= deadline:
+                    self.fail('short-lived child did not reach a WNOWAIT terminal state')
+                runner.time.sleep(0.01)
+            signals = mock.Mock(side_effect=AssertionError('terminal-only group was signaled'))
+            runner.stop(child, send_group=signals)
+            self.assertTrue(identity.reaped)
+            self.assertTrue(identity.signals_closed)
+            self.assertEqual(child.returncode, 0)
+            signals.assert_not_called()
+        finally:
+            if child.returncode is None:
+                child.kill()
+                child.wait(timeout=2)
+
+    def test_fabric_signal_failure_retains_unreaped_custody(self):
+        child = FakeChild(Clock(), 0)
+        identity = bind_fake_fabric_child(child)
+        sent = []
+        def send_group(group, sig):
+            sent.append((group, sig))
+            raise PermissionError('fixture signal refusal')
+        reap = mock.Mock()
+        with self.assertRaisesRegex(PermissionError, 'fixture signal refusal'):
+            runner.stop(child, observe=lambda target: None, send_group=send_group, reap=reap,
+                        snapshot_group=lambda group: [dict(pid=child.pid, pgid=group, status='S')])
+        self.assertEqual(sent, [(child.pid, runner.signal.SIGTERM)])
+        self.assertTrue(identity.signals_closed)
+        self.assertFalse(identity.reaped)
+        self.assertIsNone(child.returncode)
+        reap.assert_not_called()
+
+    def test_fabric_final_terminal_uncertainty_never_reaps(self):
+        child = FakeChild(Clock(), 0)
+        identity = bind_fake_fabric_child(child)
+        clock = Clock()
+        observations = iter([None, None, runner.Refused('terminal receipt unavailable')])
+        def observe(target):
+            result = next(observations)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        reap = mock.Mock()
+        def send_group(group, sig):
+            clock.now = 2
+        with self.assertRaisesRegex(runner.Refused, 'terminal receipt unavailable'):
+            runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                        monotonic=clock.monotonic, sleep=clock.advance,
+                        snapshot_group=lambda group: [dict(pid=child.pid, pgid=group, status='S')])
+        self.assertTrue(identity.signals_closed)
+        self.assertFalse(identity.reaped)
+        reap.assert_not_called()
+
+    def test_fabric_grace_expiry_escalates_before_final_reap(self):
+        child = FakeChild(Clock(), 0)
+        identity = bind_fake_fabric_child(child)
+        clock = Clock()
+        events = []
+        killed = False
+        def observe(target):
+            self.assertIs(target, child)
+            return 0 if killed else None
+        def snapshot(group):
+            status = 'Z' if killed else 'S'
+            return [dict(pid=child.pid, pgid=group, status=status)]
+        def send_group(group, sig):
+            nonlocal killed
+            self.assertEqual(group, child.pid)
+            self.assertFalse(identity.reaped)
+            events.append(('signal', sig, clock.now))
+            if sig == runner.signal.SIGKILL:
+                killed = True
+        def reap(target):
+            self.assertGreaterEqual(clock.now, 2)
+            self.assertLess(clock.now, 2.001)
+            self.assertEqual(events[-1][0:2], ('signal', runner.signal.SIGKILL))
+            events.append(('reap', clock.now))
+            target._record_reap()
+            return target.returncode
+        runner.stop(child, observe=observe, send_group=send_group, reap=reap,
+                    monotonic=clock.monotonic, snapshot_group=snapshot,
+                    sleep=clock.advance)
+        self.assertEqual(events[0][0:2], ('signal', runner.signal.SIGTERM))
+        self.assertEqual(events[-1][0], 'reap')
+        self.assertGreaterEqual(events[-1][1], 2)
+        self.assertLess(events[-1][1], 2.001)
+
+    def test_fabric_echild_is_not_inferred_as_terminal_or_safe_custody(self):
+        child = FakeChild(Clock(), 0)
+        bind_fake_fabric_child(child)
+        wait = mock.Mock(side_effect=ChildProcessError('fixture ECHILD'))
+        with mock.patch.object(runner.sys, 'platform', 'linux'), \
+                mock.patch.object(runner.os, 'P_PID', 1, create=True), \
+                mock.patch.object(runner.os, 'WEXITED', 4, create=True), \
+                mock.patch.object(runner.os, 'WNOHANG', 1, create=True), \
+                mock.patch.object(runner.os, 'WNOWAIT', 0x01000000, create=True):
+            with self.assertRaises(runner.LocalWaitRefused):
+                runner.fabric_child_terminal(child, wait)
+        self.assertIsNone(child.returncode)
+        self.assertEqual(child.poll_calls, 0)
+        self.assertEqual(child.wait_timeouts, [])
+
+    def test_nonzero_payload_status_survives_fabric_cleanup(self):
+        clock = Clock()
+        backend = Backend(admission())
+        child = FakeChild(clock, 0, exit_code=17)
+        record = {}
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
+                mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
+                mock.patch.object(runner, 'release_fabric_child'), \
+                mock.patch.object(runner.os, 'killpg') as kill_group, \
+                mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda target: target.terminal_status()), \
+                mock.patch.object(runner, 'local_group_snapshot',
+                                  side_effect=lambda group: [dict(pid=child.pid, pgid=group, status='Z')]):
+            code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 30, backend, record)
+        self.assertEqual(code, 17)
+        self.assertEqual(record['status'], 'child_failed')
+        self.assertEqual(backend.released, [])
+        self.assertEqual(child.returncode, 17)
+        kill_group.assert_not_called()
+
+    def test_fabric_terminal_observation_uses_nonreaping_waitid(self):
+        child = FakeChild(Clock(), 0, exit_code=17)
+        child.returncode = None
+        bind_fake_fabric_child(child)
+        info = mock.Mock(si_pid=child.pid, si_uid=os.getuid(), si_signo=runner.signal.SIGCHLD,
+                         si_code=1, si_status=17)
+        wait = mock.Mock(return_value=info)
+        with mock.patch.object(runner.sys, 'platform', 'linux'), \
+                mock.patch.object(runner.os, 'P_PID', 1, create=True), \
+                mock.patch.object(runner.os, 'WEXITED', 4, create=True), \
+                mock.patch.object(runner.os, 'WNOHANG', 1, create=True), \
+                mock.patch.object(runner.os, 'WNOWAIT', 0x01000000, create=True):
+            self.assertEqual(runner.fabric_child_terminal(child, wait), 17)
+        wait.assert_called_once_with(1, child.pid, 4 | 1 | 0x01000000)
+        self.assertEqual(child.poll_calls, 0)
+        self.assertEqual(child.wait_timeouts, [])
 
     def test_actual_accepted_ttl_and_request_start_bound(self):
         row = admission(lease_ttl_sec=7)
@@ -1004,6 +1916,24 @@ class RecoveryTests(unittest.TestCase):
             clock.now = 8
             with self.assertRaises(runner.Refused):
                 lease.confirm(row, 0)
+
+    def test_confirmed_renewal_replaces_last_recorded_expiry_but_readback_does_not(self):
+        clock = Clock()
+        initial = admission(lease_ttl_sec=120)
+        renewed = admission(lease_ttl_sec=240)
+        with mock.patch.object(runner.time, 'monotonic', clock.monotonic):
+            lease = runner.ProvenLease(initial, 0, 'm5', 'lane', 'work', None, True)
+            lease.renewal_outcome = 'unknown'
+            clock.now = 1
+            lease.confirm(renewed, 1)
+            last = dict(lease.last_confirmation)
+            lease.check(admission(lease_ttl_sec=300))
+        self.assertEqual(lease.renewal_outcome, 'confirmed')
+        self.assertEqual(last['heartbeat_at'], renewed['heartbeat_at'])
+        self.assertEqual(last['lease_ttl_sec'], 240)
+        self.assertEqual(lease.last_confirmation, last)
+        stamp = dt.datetime.fromisoformat(renewed['heartbeat_at'].replace('Z', '+00:00'))
+        self.assertEqual(last['heartbeat_plus_ttl'], (stamp + dt.timedelta(seconds=240)).isoformat())
 
     def test_slow_success_after_old_deadline_is_refused(self):
         def renewal(backend, clock):
