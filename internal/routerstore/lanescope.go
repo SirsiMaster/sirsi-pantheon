@@ -167,9 +167,12 @@ const LedgerEditorScope = "@ledger-editor"
 // claiming agent's own authenticated thread (serve.go task-claim binding), so an editor claiming another
 // lane's task would be impersonating that lane. UpdateTask likewise still refuses in-progress/done without
 // a fenced lease; the editor relabels (pending/blocked), reassigns and rewrites, it does not execute.
+//
+// CompleteTaskByOwner/CancelTask are the owner's sign-off and cancel; serve.go additionally refuses them to
+// every token without this capability, scoped or not, and to any actor that is not board:<email>.
 var ledgerEdits = map[string]bool{
 	"Get": true, "GetTask": true, "CloseItem": true, "ReassignItem": true, "ConvertItemToTask": true,
-	"AddTask": true, "UpdateTask": true,
+	"AddTask": true, "UpdateTask": true, "CompleteTaskByOwner": true, "CancelTask": true,
 }
 
 // splitCapabilities separates the reserved capability markers from a token's agent scope. A marker is a

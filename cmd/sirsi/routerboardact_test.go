@@ -61,6 +61,20 @@ func TestBoardActEditsAreAttributedToTheSignedInAccount(t *testing.T) {
 		t.Error("board marked a task done without a lease")
 	}
 
+	// The owner's terminal word: sign-off needs a reason and records an owner receipt; cancel is not done.
+	if _, err := runBoardAct(st, actor, "sign-off", []byte(`{"agent":"codex-pantheon","task_id":"t2"}`)); err == nil {
+		t.Error("sign-off without a reason accepted")
+	}
+	run("sign-off", `{"agent":"codex-pantheon","task_id":"t2","note":"seen working in the browser"}`)
+	run("add-task", `{"agent":"ra","task_id":"t3","subject":"drop me"}`)
+	run("cancel-task", `{"agent":"ra","task_id":"t3","note":"superseded"}`)
+	if t2, _ = st.GetTask("codex-pantheon", "t2"); t2.Status != "done" || t2.ResultRef != "owner:"+actor {
+		t.Fatalf("sign-off = %+v", t2)
+	}
+	if t3, _ := st.GetTask("ra", "t3"); t3.Status != "canceled" {
+		t.Fatalf("cancel-task = %+v", t3)
+	}
+
 	// Refusals: no verb for sending, deleting or holding a lease; required fields enforced.
 	for _, verb := range []string{"send", "delete", "token-mint", "claim", "complete"} {
 		if _, err := runBoardAct(st, actor, verb, []byte(`{}`)); !errors.Is(err, dashboard.ErrBoardVerb) {

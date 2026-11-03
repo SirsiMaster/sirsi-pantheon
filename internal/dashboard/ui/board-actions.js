@@ -26,7 +26,9 @@
     button('Set status',function(){var s=ask('Status for '+agent+'/'+id+' (pending or blocked; claiming and completing stay with the lane):','blocked');if(s)act('update-task',Object.assign({status:s},k))}),
     button('Blocked by',function(){var b=ask('Blocked by (task id or reason; empty clears):');if(b!==null)act('update-task',Object.assign({blocked_by:b},k))}),
     button('Rename',function(){var s=ask('New subject:');if(s)act('update-task',Object.assign({subject:s},k))}),
-    button('Reassign',function(){var r=ask('Responsible party:');if(r)act('reassign-task',Object.assign({responsible:r},k))})
+    button('Reassign',function(){var r=ask('Responsible party:');if(r)act('reassign-task',Object.assign({responsible:r},k))}),
+    button('Sign off as done',function(){var n=ask('Sign off '+agent+'/'+id+' as done — why (recorded as your receipt):');if(n)act('sign-off',Object.assign({note:n},k))}),
+    button('Cancel task',function(){var n=ask('Cancel '+agent+'/'+id+' — reason (canceled never counts as done):');if(n)act('cancel-task',Object.assign({note:n},k))})
   ])}
   function addTask(){
     var agent=ask('Add a ledger task — agent:');if(!agent)return;
