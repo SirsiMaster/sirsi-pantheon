@@ -31,9 +31,10 @@ installer_requirement="=identifier \"$installer_identifier\" and anchor apple ge
 dir=$(mktemp -d "$output/pretoolguard-package.XXXXXXXX")
 echo "Retaining package directory: $dir"
 printf '%s\n' 'INCOMPLETE: do not use; signing or mount outcome may be ambiguous' > "$dir/INCOMPLETE"
-mkdir "$dir/payload"
+mkdir -m 700 "$dir/payload"
 /bin/cp -p "$binary" "$dir/payload/sirsi-display-power-guard"
 /bin/cp -p "$installer" "$dir/payload/sirsi-pretoolguard-install"
+/bin/bash "$root/scripts/normalize-pretoolguard-payload-modes.sh" "$dir/payload"
 [[ $(/usr/bin/shasum -a 256 "$dir/payload/sirsi-display-power-guard" | /usr/bin/awk '{print $1}') == "$expected" ]] || { echo 'staged guard digest mismatch' >&2; exit 1; }
 /usr/bin/codesign --verify --strict -R "$requirement" "$dir/payload/sirsi-display-power-guard"
 [[ $(/usr/bin/shasum -a 256 "$dir/payload/sirsi-pretoolguard-install" | /usr/bin/awk '{print $1}') == "$installer_expected" ]] || { echo 'staged installer digest mismatch' >&2; exit 1; }

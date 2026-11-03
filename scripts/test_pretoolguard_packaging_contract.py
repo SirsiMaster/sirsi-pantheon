@@ -8,6 +8,8 @@ from pathlib import Path
 import plistlib
 import runpy
 import subprocess
+import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -101,6 +103,7 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
             "'INCOMPLETE: do not use; signing or mount outcome may be ambiguous'",
             '/bin/cp -p "$binary" "$dir/payload/sirsi-display-power-guard"',
             '/bin/cp -p "$installer" "$dir/payload/sirsi-pretoolguard-install"',
+            '/bin/bash "$root/scripts/normalize-pretoolguard-payload-modes.sh" "$dir/payload"',
             "'staged guard digest mismatch' >&2; exit 1;",
             '/usr/bin/codesign --verify --strict -R "$requirement" "$dir/payload/sirsi-display-power-guard"',
             "'staged installer digest mismatch' >&2; exit 1;",
@@ -148,6 +151,52 @@ class PretoolguardPackagingContractTests(unittest.TestCase):
             '/usr/bin/hdiutil detach "$dir/mount" || echo "WARNING: detach failed;',
             'trap cleanup_mount EXIT',
         )
+
+    def test_restrictive_umask_staged_modes_normalized(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            src = root / "source"
+            src.mkdir(mode=0o700)
+            payload = root / "payload"
+            names = ("sirsi-display-power-guard", "sirsi-pretoolguard-install")
+            for name, mode in zip(names, (0o700, 0o750)):
+                (src / name).write_bytes(b"inert fixture")
+                (src / name).chmod(mode)
+            begin = self.package.index('mkdir -m 700 "$dir/payload"')
+            end = self.package.index('\n', self.package.index(
+                '/bin/bash "$root/scripts/normalize-pretoolguard-payload-modes.sh" "$dir/payload"', begin))
+            staging = self.package[begin:end]
+            subprocess.run(
+                ["/bin/bash", "-c", 'set -e; umask 077; dir="$1"; binary="$2"; installer="$3"; root="$4"; ' + staging,
+                 "fixture", str(root), str(src / names[0]), str(src / names[1]), str(SCRIPTS.parent)],
+                check=True, timeout=10,
+            )
+            self.assertEqual(payload.stat().st_mode & 0o7777, 0o700)
+            for name, original_mode in zip(names, (0o700, 0o750)):
+                self.assertEqual((payload / name).stat().st_mode & 0o7777, 0o755)
+                self.assertEqual((src / name).stat().st_mode & 0o7777, original_mode)
+
+    def test_normalizer_refuses_hard_link_without_chmod(self):
+        names = ("sirsi-display-power-guard", "sirsi-pretoolguard-install")
+        for link_name, other_name in (names, names[::-1]):
+            with self.subTest(link_name=link_name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                payload = root / "payload"
+                payload.mkdir(mode=0o700)
+                original = root / "outside"
+                original.write_bytes(b"inert fixture")
+                original.chmod(0o700)
+                os.link(original, payload / link_name)
+                other = payload / other_name
+                other.write_bytes(b"inert fixture")
+                other.chmod(0o700)
+                result = subprocess.run(
+                    ["/bin/bash", str(SCRIPTS / "normalize-pretoolguard-payload-modes.sh"), str(payload)],
+                    capture_output=True, timeout=10, check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(original.stat().st_mode & 0o7777, 0o700)
+                self.assertEqual(other.stat().st_mode & 0o7777, 0o700)
 
 
 class EntitlementHelperTests(unittest.TestCase):
