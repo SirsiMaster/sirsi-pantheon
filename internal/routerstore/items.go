@@ -198,7 +198,7 @@ func (s *SQLiteStore) Send(from, to, title, msgType, instructions string) (strin
 	// SendGuarded; without this any lane token could route around it.
 	// ponytail: read outside the insert tx, so a burst can overshoot the limit by
 	// its concurrency; the singleton escalation lives on the SendGuarded path.
-	if from != "routerstore" {
+	if !recipientLimitExempt(from, to) {
 		load, err := s.RecipientLoad(to)
 		if err != nil {
 			return "", err
