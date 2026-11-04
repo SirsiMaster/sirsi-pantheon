@@ -822,8 +822,9 @@ func TestReapDeadThreads_SessionKeyed_UsesLeaseTTL(t *testing.T) {
 	}
 }
 
-// TestReapDeadThreads_SessionKeyed_ExpiresAfterLease verifies that a
-// session-keyed record IS reaped once LeaseSessionTTL elapses without renewal.
+// TestReapDeadThreads_SessionKeyed_ExpiresAfterLease verifies that a session-keyed
+// record on a non-attended surface IS reaped once LeaseSessionTTL elapses without
+// renewal. Attended sessions are perpetual: see TestAttendedRegistrationIsPerpetual.
 func TestReapDeadThreads_SessionKeyed_ExpiresAfterLease(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -832,7 +833,7 @@ func TestReapDeadThreads_SessionKeyed_ExpiresAfterLease(t *testing.T) {
 	reg.Threads["thr-expired-sess"] = &Thread{
 		ThreadID:   "thr-expired-sess",
 		AgentID:    "claude-home",
-		Surface:    "claude",
+		Surface:    "mcp",
 		SessionID:  "dead-session-abc",
 		Status:     ThreadStatusActive,
 		StartedAt:  expired,

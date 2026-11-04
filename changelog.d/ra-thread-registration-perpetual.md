@@ -1,0 +1,1 @@
+- Claude and Codex session registrations no longer expire: a quiet session keeps its thread id, and its next heartbeat or re-register renews it. Only an explicit close or a newer live session of the same agent on that Mac ends it. Workers and other surfaces keep their existing expiry rules.

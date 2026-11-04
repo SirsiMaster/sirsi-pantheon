@@ -54,10 +54,10 @@ func TestReapDeadThreads_AttendedSessionSurvivesPIDDeathAndResumes(t *testing.T)
 	}
 }
 
-// A quiet session whose process still runs keeps its thread however long the
-// quiet lasts: its next heartbeat lands on the same id. A recycled PID does not
-// count as alive, so that record still expires on the lease.
-func TestReapDeadThreads_LiveSessionOutlivesLease(t *testing.T) {
+// An attended session keeps its registration however long it is quiet and
+// whatever became of its process: neither sweep ends it, and its next heartbeat
+// renews the same thread id. Only an explicit close ends it.
+func TestAttendedRegistrationIsPerpetual(t *testing.T) {
 	oldCmd := getPIDCommandFn()
 	setPIDCommandFn(func(int) string { return "claude" })
 	defer setPIDCommandFn(oldCmd)
@@ -65,16 +65,23 @@ func TestReapDeadThreads_LiveSessionOutlivesLease(t *testing.T) {
 	root := t.TempDir()
 	reg, _ := LoadThreadRegistry(root)
 	pid := os.Getpid()
-	quiet := time.Now().UTC().Add(-(LeaseSessionTTL + time.Hour))
-	reg.Threads["thr-quiet"] = &Thread{
-		ThreadID: "thr-quiet", AgentID: "ra", Surface: surfaceClaude, SessionID: "conv-quiet",
-		Status: ThreadStatusActive, PID: pid, StartTime: PIDStartTimeOf(pid), StartedAt: quiet, LastSeenAt: quiet,
-		MachineID: MachineID(),
-	}
-	reg.Threads["thr-recycled"] = &Thread{
-		ThreadID: "thr-recycled", AgentID: "ra", Surface: surfaceClaude, SessionID: "conv-recycled",
-		Status: ThreadStatusActive, PID: pid, StartTime: "Thu Jan  1 00:00:00 1970", StartedAt: quiet, LastSeenAt: quiet,
-		MachineID: MachineID(),
+	quiet := time.Now().UTC().Add(-30 * 24 * time.Hour)
+	for id, tc := range map[string]struct {
+		surface string
+		pid     int
+		start   string
+	}{
+		"thr-live":     {surfaceClaude, pid, PIDStartTimeOf(pid)},
+		"thr-recycled": {surfaceClaude, pid, "Thu Jan  1 00:00:00 1970"},
+		"thr-exited":   {surfaceClaude, exitedPID(t), ""},
+		"thr-no-pid":   {surfaceClaude, 0, ""},
+		"thr-codex":    {surfaceCodex, 0, ""},
+	} {
+		reg.Threads[id] = &Thread{
+			ThreadID: id, AgentID: "ra", Surface: tc.surface, SessionID: "conv-" + id,
+			Status: ThreadStatusActive, PID: tc.pid, StartTime: tc.start, StartedAt: quiet, LastSeenAt: quiet,
+			MachineID: MachineID(),
+		}
 	}
 	if err := SaveThreadRegistry(root, reg); err != nil {
 		t.Fatal(err)
@@ -84,17 +91,31 @@ func TestReapDeadThreads_LiveSessionOutlivesLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(reaped) != 1 || reaped[0].ThreadID != "thr-recycled" {
-		t.Fatalf("want only the recycled PID reaped, got %+v", reaped)
+	if len(reaped) != 0 {
+		t.Fatalf("attended sessions reaped: %+v", reaped)
 	}
-	if _, err := Heartbeat(root, "thr-quiet", HeartbeatUpdate{}); err != nil {
-		t.Fatalf("quiet live session lost its thread: %v", err)
+
+	reg, err = LoadThreadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retro := func(*Thread) (*SuspendPayload, bool) { return &SuspendPayload{}, true }
+	for _, o := range ReconcileExits(reg, "", "", time.Now().UTC(), DefaultThreadStaleAfter, retro) {
+		if o.Action == ReconcileSuspendedStale {
+			t.Fatalf("attended session suspended: %+v", o)
+		}
+	}
+
+	for id := range reg.Threads {
+		if _, err := Heartbeat(root, id, HeartbeatUpdate{}); err != nil {
+			t.Errorf("%s did not renew: %v", id, err)
+		}
 	}
 }
 
-// Outside the lease it is still reaped, and a worker with a session id keeps
-// the OS-truth rule: only an attended session resumes across processes.
-func TestReapDeadThreads_SessionPIDDeathStillReapsWorkersAndExpiredLeases(t *testing.T) {
+// The renewal rule is for attended sessions. A worker keeps the OS-truth rule and
+// is reaped when its process dies, and is suspended by reconcile when it goes quiet.
+func TestWorkerRegistrationIsNotPerpetual(t *testing.T) {
 	root := t.TempDir()
 	reg, _ := LoadThreadRegistry(root)
 	now := time.Now().UTC()
@@ -102,11 +123,6 @@ func TestReapDeadThreads_SessionPIDDeathStillReapsWorkersAndExpiredLeases(t *tes
 		ThreadID: "thr-worker", AgentID: "gemma", Surface: surfaceWorker, SessionID: "w-1",
 		Status: ThreadStatusActive, PID: exitedPID(t), StartedAt: now, LastSeenAt: now, MachineID: MachineID(),
 	}
-	reg.Threads["thr-expired"] = &Thread{
-		ThreadID: "thr-expired", AgentID: "ra", Surface: surfaceClaude, SessionID: "conv-old",
-		Status: ThreadStatusActive, PID: exitedPID(t), StartedAt: now, LastSeenAt: now.Add(-(LeaseSessionTTL + time.Minute)),
-		MachineID: MachineID(),
-	}
 	if err := SaveThreadRegistry(root, reg); err != nil {
 		t.Fatal(err)
 	}
@@ -115,11 +131,18 @@ func TestReapDeadThreads_SessionPIDDeathStillReapsWorkersAndExpiredLeases(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := map[string]bool{}
-	for _, r := range reaped {
-		seen[r.ThreadID] = true
+	if len(reaped) != 1 || reaped[0].ThreadID != "thr-worker" {
+		t.Fatalf("want worker reaped, got %+v", reaped)
 	}
-	if !seen["thr-worker"] || !seen["thr-expired"] {
-		t.Fatalf("want worker and expired-lease session reaped, got %+v", reaped)
+
+	quiet := now.Add(-time.Hour)
+	reg = &ThreadRegistry{Threads: map[string]*Thread{"thr-quiet-worker": {
+		ThreadID: "thr-quiet-worker", AgentID: "gemma", Surface: surfaceWorker, SessionID: "w-2",
+		Status: ThreadStatusActive, StartedAt: quiet, LastSeenAt: quiet, MachineID: MachineID(),
+	}}}
+	retro := func(*Thread) (*SuspendPayload, bool) { return &SuspendPayload{}, true }
+	outcomes := ReconcileExits(reg, "", "", now, DefaultThreadStaleAfter, retro)
+	if len(outcomes) != 1 || outcomes[0].Action != ReconcileSuspendedStale {
+		t.Fatalf("want quiet worker suspended, got %+v", outcomes)
 	}
 }
