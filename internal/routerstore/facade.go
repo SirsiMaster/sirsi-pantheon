@@ -151,6 +151,14 @@ func (s *SQLiteStore) SendGuarded(r SendReq) (string, bool, error) {
 	return id, deduped, nil
 }
 
+// recipientLimitExempt names the sends a saturated recipient still takes. The router's
+// own senders are exempt so an escalation to a saturated owner still lands. Ra reaches
+// SSA because releases only go through SSA, and a lane over the limit could otherwise
+// never be asked for one (owner decision, 2026-11-04).
+func recipientLimitExempt(from, to string) bool {
+	return from == "routerstore" || (from == "ra" && to == "sirsi-software-admin")
+}
+
 // sendGuardedOnce is one attempt of SendGuarded. Never call it directly —
 // callers must go through SendGuarded so contention is retried.
 func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
@@ -185,9 +193,8 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 		return existing, true, nil
 	}
 
-	// Recipient admission: a saturated recipient refuses new work. Router-internal
-	// senders are exempt so an escalation to a saturated owner still lands.
-	if r.From != "routerstore" {
+	// Recipient admission: a saturated recipient refuses new work.
+	if !recipientLimitExempt(r.From, r.To) {
 		load, lerr := recipientLoad(tx, r.To, now)
 		if lerr != nil {
 			return "", false, lerr
