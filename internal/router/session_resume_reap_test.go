@@ -3,6 +3,7 @@
 package router
 
 import (
+	"os"
 	"os/exec"
 	"testing"
 	"time"
@@ -50,6 +51,44 @@ func TestReapDeadThreads_AttendedSessionSurvivesPIDDeathAndResumes(t *testing.T)
 	}
 	if got.ThreadID != "thr-resume" {
 		t.Fatalf("resumed session minted %q; want it to renew thr-resume", got.ThreadID)
+	}
+}
+
+// A quiet session whose process still runs keeps its thread however long the
+// quiet lasts: its next heartbeat lands on the same id. A recycled PID does not
+// count as alive, so that record still expires on the lease.
+func TestReapDeadThreads_LiveSessionOutlivesLease(t *testing.T) {
+	oldCmd := getPIDCommandFn()
+	setPIDCommandFn(func(int) string { return "claude" })
+	defer setPIDCommandFn(oldCmd)
+
+	root := t.TempDir()
+	reg, _ := LoadThreadRegistry(root)
+	pid := os.Getpid()
+	quiet := time.Now().UTC().Add(-(LeaseSessionTTL + time.Hour))
+	reg.Threads["thr-quiet"] = &Thread{
+		ThreadID: "thr-quiet", AgentID: "ra", Surface: surfaceClaude, SessionID: "conv-quiet",
+		Status: ThreadStatusActive, PID: pid, StartTime: PIDStartTimeOf(pid), StartedAt: quiet, LastSeenAt: quiet,
+		MachineID: MachineID(),
+	}
+	reg.Threads["thr-recycled"] = &Thread{
+		ThreadID: "thr-recycled", AgentID: "ra", Surface: surfaceClaude, SessionID: "conv-recycled",
+		Status: ThreadStatusActive, PID: pid, StartTime: "Thu Jan  1 00:00:00 1970", StartedAt: quiet, LastSeenAt: quiet,
+		MachineID: MachineID(),
+	}
+	if err := SaveThreadRegistry(root, reg); err != nil {
+		t.Fatal(err)
+	}
+
+	reaped, err := ReapDeadThreads(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reaped) != 1 || reaped[0].ThreadID != "thr-recycled" {
+		t.Fatalf("want only the recycled PID reaped, got %+v", reaped)
+	}
+	if _, err := Heartbeat(root, "thr-quiet", HeartbeatUpdate{}); err != nil {
+		t.Fatalf("quiet live session lost its thread: %v", err)
 	}
 }
 

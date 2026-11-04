@@ -43,7 +43,7 @@ const DefaultThreadStaleAfter = 5 * time.Minute
 // are ~15–30 min. 2 h = 120× the 60 s heartbeat cadence, covers realistic
 // idle-between-turns pauses without pinning a genuinely-dead session alive. A
 // session-keyed record that misses renewal for 2 h reads expired in ReapDeadThreads
-// (the lease expiry path), not via OS-truth reaping.
+// (the lease expiry path) unless its PID is verifiably alive.
 const LeaseSessionTTL = 2 * time.Hour
 
 // TerminalRetention is how long a terminal (closed/reaped) record is kept
@@ -1469,6 +1469,13 @@ func reapDeadThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 		// refused and its re-register minted a second thread, leaving the router
 		// blind to a working lane (claude-m5-compasspoint and ra, 2026-10-27).
 		if t.PID < minAgentPID || (t.SessionID != "" && IsAttendedSurface(t.Surface)) {
+			// The lease only stands in for OS truth when OS truth has nothing to say.
+			// A session waiting on its owner sends no heartbeat, and reaping it while
+			// its process runs burned a thread id every 2h of quiet (ADR-022: a LIVE
+			// pid is never reaped).
+			if t.PID >= minAgentPID && PIDStateOfThread(t) == PIDAlive {
+				continue
+			}
 			ttl := DefaultThreadStaleAfter
 			if t.SessionID != "" {
 				ttl = LeaseSessionTTL
