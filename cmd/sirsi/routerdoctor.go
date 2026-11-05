@@ -3,12 +3,14 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/router"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/spf13/cobra"
 )
 
@@ -72,6 +74,30 @@ func routerLocalLedgerWarning() string {
 		return ""
 	}
 	return fmt.Sprintf("retired local router path %s exists as %s on a host cut over to the router service (%s exists); stale binaries must not be allowed to use or recreate it", db, info.Mode().Type(), marker)
+}
+
+// relayJobEnvFn returns launchctl's description of a job, and whether the job is
+// loaded. Overridable in tests (A16).
+var relayJobEnvFn = func(target string) (string, bool) {
+	out, err := exec.Command("launchctl", "print", target).Output()
+	return string(out), err == nil
+}
+
+// routerRelayPinWarning flags a loaded relay running without the TLS pin. The
+// relay holds the host token, so it is the process that must enforce the pin, and
+// a manual re-migration of its plist can drop it silently. launchctl's output also
+// carries that token: only the pin key's presence is read, and the output is never
+// printed or logged.
+func routerRelayPinWarning() string {
+	for _, target := range []string{
+		"system/" + router.RelayLaunchAgentLabel,
+		fmt.Sprintf("gui/%d/%s", os.Getuid(), router.RelayLaunchAgentLabel),
+	} {
+		if env, loaded := relayJobEnvFn(target); loaded && !strings.Contains(env, routerstore.EnvSPKIPin) {
+			return fmt.Sprintf("relay %s is running without %s, so it holds the host token and does not pin the router service's TLS key", target, routerstore.EnvSPKIPin)
+		}
+	}
+	return ""
 }
 
 // partitionWakeDrift classifies wake.mechanism ChangedFields by statting the
@@ -201,6 +227,10 @@ var routerDoctorCmd = &cobra.Command{
 		if w := routerLocalLedgerWarning(); w != "" {
 			issues++
 			fmt.Printf("⚠ split-brain risk: %s\n\n", w)
+		}
+		if w := routerRelayPinWarning(); w != "" {
+			issues++
+			fmt.Printf("⚠ %s\n\n", w)
 		}
 		threadReg, threadErr := router.LoadThreadRegistry(routerRoot)
 		if threadErr != nil {
