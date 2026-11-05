@@ -202,3 +202,16 @@ func TestAnswerHandoffTransactionCASAndRollback(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestAnswerGenerationBindsServerSession(t *testing.T) {
+	base := answerGeneration("machine1", "session-a", 41, "start1")
+	if base != answerGeneration("machine1", "session-a", 41, "start1") {
+		t.Fatal("same session and process must keep one generation")
+	}
+	if base == answerGeneration("machine1", "session-b", 41, "start1") {
+		t.Fatal("a copied PID and start time under another session matched the owner")
+	}
+	if base == answerGeneration("machine1", "session-a", 42, "start1") || base == answerGeneration("machine1", "session-a", 41, "start2") {
+		t.Fatal("a changed process must be a new generation")
+	}
+}

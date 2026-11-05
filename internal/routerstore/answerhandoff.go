@@ -307,8 +307,15 @@ func answerActorOwner(tx *txHandle, actor answerActor, now time.Time) (AnswerOwn
 	if err = tx.QueryRow(`SELECT revoked FROM sessions WHERE session_id=? AND agent=? AND host=? AND thread_id=?`, actor.Session.ID, agent, host, actor.Session.ThreadID).Scan(&revoked); err != nil || revoked != "" {
 		return AnswerOwner{}, ErrAnswerHandoff
 	}
-	generation := fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%s/%d/%s", actor.MachineID, p.PID, p.Start))))
-	return AnswerOwner{ThreadID: actor.Session.ThreadID, Host: host, MachineID: actor.MachineID, Generation: generation}, nil
+	return AnswerOwner{ThreadID: actor.Session.ThreadID, Host: host, MachineID: actor.MachineID, Generation: answerGeneration(actor.MachineID, actor.Session.ID, p.PID, p.Start)}, nil
+}
+
+// answerGeneration binds ownership to the server-minted session as well as the
+// self-reported process fields, so a client that copies a thread's PID and start
+// time still cannot produce the owner's generation. A new session is a new
+// generation: the old owner's authority does not follow it.
+func answerGeneration(machineID, sessionID string, pid int, start string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%s/%s/%d/%s", machineID, sessionID, pid, start))))
 }
 
 // AnswerHandoff is a self-lane control operation. A read reveals pending work,
