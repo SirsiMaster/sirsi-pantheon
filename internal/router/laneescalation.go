@@ -2,9 +2,9 @@ package router
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/supervision"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/work"
 )
@@ -83,10 +83,7 @@ func resolveClearedAlerts(f *dispatch.Facade, open []work.Item, current []superv
 		still[e.Title()] = true
 	}
 	for _, it := range open {
-		if it.From != "horus" || still[it.Title] {
-			continue
-		}
-		if !strings.HasPrefix(it.Title, "Lane needs you:") && !strings.HasPrefix(it.Title, "Lanes need you:") {
+		if still[it.Title] || !routerstore.IsHorusLaneAlert(it.From, it.To, it.Title) {
 			continue
 		}
 		_ = f.Store().CloseItem(it.ID, "Auto-resolved by Horus: the lane is reachable again (no current escalation for it).")
