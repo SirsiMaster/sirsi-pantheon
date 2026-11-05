@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 // ErrWorkerAnswers: a headless worker tried to answer without its lane's answering role.
@@ -18,6 +19,9 @@ var ErrWorkerAnswers = errors.New("routerstore: a headless worker may not answer
 
 // answerMethods are the verbs that answer an item; the value is the position of the item id in the decoded args.
 var answerMethods = map[string]int{"CloseItem": 0, "Complete": 0, "ConvertItemToTask": 0}
+
+// horusSupervisorAgent is the agent id `sirsi horus supervise` runs as (router.SupervisorAgentID).
+const horusSupervisorAgent = "horus-supervisor"
 
 // WorkerMayAnswer reports whether the thread may answer: true for any non-worker thread (leads are judged by the
 // Rule of Ra, not here) and for a worker thread whose record carries answer_role.
@@ -96,9 +100,33 @@ func (s *server) keepAnswerRole(name string, in []reflect.Value) {
 	}
 }
 
+// IsHorusLaneAlert reports whether an item is one of Horus's own "lane needs you" alerts to the owner.
+func IsHorusLaneAlert(from, to, title string) bool {
+	return from == "horus" && to == "owner" &&
+		(strings.HasPrefix(title, "Lane needs you:") || strings.HasPrefix(title, "Lanes need you:"))
+}
+
+// horusRetiresOwnAlert allows the Horus supervisor, a headless worker, to close an alert Horus itself raised once
+// the lane recovers. That retires Horus's own message; it answers nobody. Refusing it left every cleared alert open
+// and each supervisor retrying it every pass (about 17,000 refused calls a day across three Macs, 2026-11-04).
+func (s *server) horusRetiresOwnAlert(sess Session, name string, in []reflect.Value) bool {
+	if name != "CloseItem" || sess.Agent != horusSupervisorAgent || len(in) == 0 {
+		return false
+	}
+	id, ok := in[0].Interface().(string)
+	if !ok {
+		return false
+	}
+	it, err := s.store.Get(id)
+	return err == nil && IsHorusLaneAlert(it.From, it.To, it.Title)
+}
+
 // workerAnswerHold is the service-side check. A failed thread lookup refuses (fail closed).
 func (s *server) workerAnswerHold(sess Session, name string, in []reflect.Value) error {
 	if _, ok := answerMethods[name]; !ok || sess.ThreadID == "" {
+		return nil
+	}
+	if s.horusRetiresOwnAlert(sess, name, in) {
 		return nil
 	}
 	threads, err := s.store.ListThreads()
