@@ -37,14 +37,14 @@ var convertAfterTaskHook func() error
 func (s *SQLiteStore) ConvertItemToTask(itemID, agent, taskID, actor string) (Task, error) {
 	agent, actor, taskID = strings.TrimSpace(agent), strings.TrimSpace(actor), strings.TrimSpace(taskID)
 	if itemID == "" || agent == "" || actor == "" {
-		return Task{}, fmt.Errorf("routerstore: ConvertItemToTask: item id, agent and actor are required")
+		return Task{}, fmt.Errorf("%w: routerstore: ConvertItemToTask: item id, agent and actor are required", ErrInvalidInput)
 	}
 	requested := taskID
 	if taskID == "" {
 		taskID = itemID
 	}
 	if strings.ContainsRune(taskID, '/') || strings.IndexFunc(taskID, unicode.IsSpace) >= 0 {
-		return Task{}, fmt.Errorf("routerstore: ConvertItemToTask: task id %q must not contain '/' or whitespace", taskID)
+		return Task{}, fmt.Errorf("%w: routerstore: ConvertItemToTask: task id %q must not contain '/' or whitespace", ErrInvalidInput, taskID)
 	}
 	// Postgres runs concurrent transactions, so lock the item row: a second convert waits for the first and
 	// then reads its link (the idempotent answer) instead of racing to ErrTaskExists. SQLite's withTx is

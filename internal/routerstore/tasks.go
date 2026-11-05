@@ -208,7 +208,7 @@ func (s *SQLiteStore) insertTask(exec func(string, ...any) (sql.Result, error), 
 		return err
 	}
 	if terminalTaskStatus(t.Status) {
-		return fmt.Errorf("routerstore: a task cannot be created %s; done needs a verified receipt (task complete) and cancel is owner-only", t.Status)
+		return fmt.Errorf("%w: routerstore: a task cannot be created %s; done needs a verified receipt (task complete) and cancel is owner-only", ErrInvalidInput, t.Status)
 	}
 	timeline, err := json.Marshal(t.Timeline)
 	if err != nil {
