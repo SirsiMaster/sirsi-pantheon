@@ -1,0 +1,1 @@
+- `sirsi router doctor` warns when a loaded relay runs without `SIRSI_ROUTER_SPKI_PIN`. It reads only whether the key is present and never prints launchctl's output, which also carries the host token.
