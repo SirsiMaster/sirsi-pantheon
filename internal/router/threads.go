@@ -34,16 +34,9 @@ import (
 // a recent heartbeat is considered stale.
 const DefaultThreadStaleAfter = 5 * time.Minute
 
-// LeaseSessionTTL is the renewal window for session-keyed (app-hosted) thread
-// records — those that carry a SessionID but no durable PID. Derived from the
-// observed inter-heartbeat gap distribution: the canonical /loop heartbeat
-// interval is 60 s, but app-hosted turns (e.g. Claude Code in the desktop app)
-// can sit idle between turns for tens of minutes. Live registry sample showed
-// active claude-surface sessions with last_seen gaps of 10–27 min; conduit runs
-// are ~15–30 min. 2 h = 120× the 60 s heartbeat cadence, covers realistic
-// idle-between-turns pauses without pinning a genuinely-dead session alive. A
-// session-keyed record that misses renewal for 2 h reads expired in ReapDeadThreads
-// (the lease expiry path) unless its PID is verifiably alive.
+// LeaseSessionTTL is the renewal window for session-keyed records on surfaces
+// other than attended claude/codex sessions, which never expire on time
+// (hasPerpetualRegistration).
 const LeaseSessionTTL = 2 * time.Hour
 
 // TerminalRetention is how long a terminal (closed/reaped) record is kept
@@ -75,6 +68,15 @@ const (
 	// only way back to active is `sirsi thread resume`.
 	ThreadStatusSuspended ThreadStatus = "suspended"
 )
+
+// hasPerpetualRegistration reports whether t is an attended claude/codex session.
+// Its registration lasts until it is explicitly closed or superseded: time passing
+// and its process exiting never end it, because a conversation can sit quiet
+// indefinitely and resume in a new process. A quiet record reads as stale, so it
+// never counts as a reachable watcher; any heartbeat or re-register renews it.
+func hasPerpetualRegistration(t *Thread) bool {
+	return t.SessionID != "" && IsAttendedSurface(t.Surface)
+}
 
 // IsTerminal reports whether a status is a final resting state that a heartbeat
 // must never resurrect. Closed (operator/agent ended it) and Reaped (OS truth
@@ -166,8 +168,7 @@ type Thread struct {
 	// shape for an app-hosted record, not an error state. One record per
 	// (session_id, surface) is enforced at mint time: a returning hook fire finds
 	// its own record and renews its lease (LastSeenAt) instead of minting a fresh
-	// one. The record expires when LastSeenAt + LeaseSessionTTL elapses without
-	// renewal. Populated from CLAUDE_CODE_SESSION_ID by `sirsi thread register`.
+	// one. Populated from CLAUDE_CODE_SESSION_ID by `sirsi thread register`.
 	SessionID string `json:"session_id,omitempty"`
 
 	// SuspendPayload carries resumable continuation state while Status is
@@ -1356,6 +1357,9 @@ func ReconcileExits(reg *ThreadRegistry, host, agentFilter string, now time.Time
 		case t.Status == ThreadStatusSuspended || t.Status.IsTerminal():
 			continue // parked or cleanly closed — nothing to heal
 
+		case hasPerpetualRegistration(t):
+			continue // quiet, not ended: its next heartbeat renews it
+
 		case t.IsStale(now, staleAfter):
 			// Idle is not exit. A record whose PID is still ALIVE belongs to a
 			// session that simply has not fired a hook lately (a desktop session
@@ -1447,35 +1451,19 @@ func reapDeadThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 		if !SameMachine(t.MachineID, thisMachine) {
 			continue
 		}
+		// An attended session's thread lasts until it is closed. Reaping it on a
+		// lease or on its old PID's death burned a thread id and left the router
+		// blind to a working lane (claude-m5-compasspoint and ra, 2026-10-27).
+		if hasPerpetualRegistration(t) {
+			continue
+		}
 		// Phantom PID (<minAgentPID, i.e. 0/launchd-1) is "unverifiable" by
 		// the cmdline-identity check, but PR #29 established: a stale phantom
 		// heartbeat is dead — reap it. A pid-less surface (e.g. MCP server)
 		// that is freshly heartbeating stays alive; only stale phantoms retire.
-		//
-		// Session-keyed records (SessionID != "") use LeaseSessionTTL rather
-		// than DefaultThreadStaleAfter. Their PID is intentionally null — that
-		// is the normal shape for an app-hosted surface, not a phantom. Their
-		// liveness is established by the lease (LastSeenAt + LeaseSessionTTL),
-		// not by OS-truth (ADR-022: a LIVE pid is never reaped; no pid means
-		// there is no OS-truth claim to probe). Stale-after-lease is still a
-		// reap so the terminal invariant holds and the supersession path
-		// (ReapStrayThreads) remains unaffected.
-		//
-		// The same lease governs an attended claude/codex session that DOES carry a
-		// PID. A desktop conversation outlives its process: the session resumes
-		// with a new PID and the same session_id, and RegisterThread's
-		// session-keyed path renews the record. Reaping on the old PID's death made
-		// the record terminal first, so the resumed session's heartbeats were
-		// refused and its re-register minted a second thread, leaving the router
-		// blind to a working lane (claude-m5-compasspoint and ra, 2026-10-27).
-		if t.PID < minAgentPID || (t.SessionID != "" && IsAttendedSurface(t.Surface)) {
-			// The lease only stands in for OS truth when OS truth has nothing to say.
-			// A session waiting on its owner sends no heartbeat, and reaping it while
-			// its process runs burned a thread id every 2h of quiet (ADR-022: a LIVE
-			// pid is never reaped).
-			if t.PID >= minAgentPID && PIDStateOfThread(t) == PIDAlive {
-				continue
-			}
+		// A session-keyed one has no OS-truth claim to probe, so it gets the
+		// longer LeaseSessionTTL.
+		if t.PID < minAgentPID {
 			ttl := DefaultThreadStaleAfter
 			if t.SessionID != "" {
 				ttl = LeaseSessionTTL
