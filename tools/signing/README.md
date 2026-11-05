@@ -45,9 +45,42 @@ selection and causally reject the former DHCP address defaults. These inspect
 argv to fake transport only; they do not prove live alias reachability or submit
 a signing job.
 
-The existing result-signature checks and remote job protocol are unchanged.
-This patch does not claim comprehensive timeout, crash cleanup, arbitrary-host
-authorization, notarization or signer failover qualification.
+The existing result-signature checks are unchanged.
+
+## Bounded transfers and failover (2026-11-05)
+
+- Every SSH, SCP and rsync call also carries `ServerAliveInterval=15` and
+  `ServerAliveCountMax=4`, so a link that dies mid-transfer ends in about a
+  minute. Each upload and download is also bounded overall by
+  `SIRSI_SIGN_TRANSFER_TIMEOUT` (default 900 s).
+- The job ID is validated before any host is contacted.
+- **Failover keeps one job ID and never double-signs.** The client moves to
+  the next host in `SIRSI_SIGN_HOSTS` only when the job provably never entered
+  the first signer's queue: staging, upload, or a rename the host reports as
+  not done. Its hidden staging is then removed. Two cases stop instead:
+  - an enqueue whose outcome is unknown (exit 6);
+  - a job ID already present on a signer (exit 7).
+
+  Either is reconciled by that ID, never resubmitted. With
+  `SIRSI_SIGN_CUSTODY_DIR`, each host attempt is appended to `<id>.attempts`;
+  the custody record itself is never rewritten.
+
+`sirsi-signd.sh` (the signing daemon, previously only on the signing Mac) is
+versioned here:
+
+- **Timestamp retry:** "The timestamp service is not available" is retried up
+  to 3 times (10 s, then 30 s) for the same job and input. Any other failure,
+  or a third outage, fails the job as before. Nothing unsigned is ever
+  published.
+- **Outbox pruning:** after 14 days a finished job's artifact is removed. Its
+  `receipt.txt`, its `done`/`failed` marker and `audit.log` stay forever, so
+  every job ID remains reconcilable. Unfinished jobs are never pruned.
+
+The fixtures cover failover on a failed and a hung upload, refusal to fail
+over after an ambiguous enqueue, existing-ID refusal, a ServerAlive negative
+control, timestamp retry/success, fail-closed after three outages, no retry of
+other failures, and pruning. They do not qualify real signing, notarization,
+Apple's timestamp service or live multi-host failover.
 
 ## Commercialization profile
 

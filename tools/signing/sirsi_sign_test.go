@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Transport fixtures never contact a signer, read credentials or sign anything.
@@ -52,13 +53,20 @@ func signingFixtureWithHostsAndID(t *testing.T, source []byte, app bool, mode st
 set -eu
 op=${0##*/}
 printf '%s %s\n' "$op" "$*" >> "$SIGN_FIXTURE_LOG"
-for required in ConnectTimeout=10 BatchMode=yes StrictHostKeyChecking=yes PasswordAuthentication=no KbdInteractiveAuthentication=no; do
+for required in ConnectTimeout=10 BatchMode=yes StrictHostKeyChecking=yes PasswordAuthentication=no KbdInteractiveAuthentication=no ServerAliveInterval=15 ServerAliveCountMax=4; do
   case " $* " in *"-o $required "*) ;; *) echo "UNSAFE_TRANSPORT $op $required" >> "$SIGN_FIXTURE_LOG"; exit 93;; esac
 done
 [ "$SIGN_FIXTURE_MODE" != deny ] || exit 255
 case "$op:$*" in ssh:*"mv ~/sirsi-sign/inbox/"*) [ "$SIGN_FIXTURE_MODE" != ambiguous-enqueue ] || exit 255;; esac
+# the first host's upload fails or hangs; the second host is healthy
+case "$SIGN_FIXTURE_MODE:$op:$*" in
+  upload-fail-first:scp:*"first@signer.invalid:sirsi-sign/inbox/"*) exit 1;;
+  hang-upload-first:scp:*"first@signer.invalid:sirsi-sign/inbox/"*) exec sleep 30;;
+esac
 for last; do :; done
 case "$op:$*" in
+  ssh:*"echo EXISTS"*) if [ "$SIGN_FIXTURE_MODE" = id-exists ]; then echo EXISTS; else echo STAGED; fi;;
+  ssh:*"echo QUEUED"*) [ "$SIGN_FIXTURE_MODE" != ambiguous-enqueue ] || exit 255; echo QUEUED;;
   ssh:*"ls ~/sirsi-sign/outbox/"*) printf '%s\n' "$SIGN_FIXTURE_NAME";;
   rsync:*":sirsi-sign/outbox/"*)
     case "$SIGN_FIXTURE_NAME" in *.app) mkdir "$last/$SIGN_FIXTURE_NAME";; *) printf signed > "$last/$SIGN_FIXTURE_NAME";; esac;;
@@ -87,7 +95,7 @@ fi
 	cmd.Env = []string{
 		"PATH=" + bin + ":/usr/bin:/bin:/usr/sbin:/sbin", "TMPDIR=" + root,
 		"HOME=" + root, "ZDOTDIR=" + root,
-		"SIRSI_SIGN_TIMEOUT=5",
+		"SIRSI_SIGN_TIMEOUT=5", "SIRSI_SIGN_TRANSFER_TIMEOUT=3",
 		"SIRSI_SIGN_JOB_ID=" + jobID,
 		"SIRSI_SIGN_CUSTODY_DIR=" + custody,
 		"SIGN_FIXTURE_LOG=" + log, "SIGN_FIXTURE_NAME=" + name, "SIGN_FIXTURE_MODE=" + mode,
@@ -97,7 +105,7 @@ fi
 	}
 	out, runErr := cmd.CombinedOutput()
 	logged, err := os.ReadFile(log)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) { // no transport log: the client refused before contacting any host
 		t.Fatal(err)
 	}
 	return string(out), string(logged), filepath.Join(root, "signed-"+name), runErr
@@ -255,6 +263,102 @@ func TestForeignSignatureDoesNotReplaceOutput(t *testing.T) {
 	}
 	if _, err := os.Stat(signed); !os.IsNotExist(err) {
 		t.Fatalf("foreign signed artifact published: %v", err)
+	}
+}
+
+// Failover: a signer whose upload fails or hangs gets the job's hidden staging removed (never enqueued), and the SAME
+// job ID goes to the next signer. Each attempt is recorded beside the custody record.
+func TestSignerFailsOverOnlyBeforeEnqueue(t *testing.T) {
+	source, err := os.ReadFile("sirsi-sign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"upload-fail-first", "hang-upload-first"} {
+		t.Run(mode, func(t *testing.T) {
+			hosts := "first@signer.invalid second@signer.invalid"
+			start := time.Now()
+			out, log, signed, runErr := signingFixtureWithHosts(t, source, false, mode, &hosts)
+			if runErr != nil {
+				t.Fatalf("no failover: %v\n%s\n%s", runErr, out, log)
+			}
+			if mode == "hang-upload-first" && time.Since(start) > 20*time.Second {
+				t.Fatalf("a hung upload was not bounded: %s", time.Since(start))
+			}
+			id := "11111111-2222-4333-8444-555555555555"
+			if !strings.Contains(log, "first@signer.invalid rm -rf ~/sirsi-sign/inbox/."+id) {
+				t.Errorf("the failed host's hidden staging was not removed: %s", log)
+			}
+			if strings.Contains(log, "first@signer.invalid mv ~/sirsi-sign/inbox/") {
+				t.Errorf("the failed host was enqueued anyway: %s", log)
+			}
+			if !strings.Contains(log, "second@signer.invalid mv ~/sirsi-sign/inbox/."+id+" ~/sirsi-sign/inbox/"+id) {
+				t.Errorf("the same job ID was not enqueued on the next signer: %s", log)
+			}
+			if _, err := os.Stat(signed); err != nil {
+				t.Errorf("no verified result after failover: %v", err)
+			}
+			att, err := os.ReadFile(filepath.Join(filepath.Dir(signed), "custody", id+".attempts"))
+			if err != nil || !strings.Contains(string(att), "host=first@signer.invalid result=not-enqueued") || !strings.Contains(string(att), "host=second@signer.invalid result=enqueued") {
+				t.Errorf("attempts not recorded: %v %s", err, att)
+			}
+		})
+	}
+}
+
+// An enqueue whose outcome is unknown must stop (exit 6), never fail over: the first signer may already be signing it.
+func TestSignerAmbiguousEnqueueNeverFailsOver(t *testing.T) {
+	source, err := os.ReadFile("sirsi-sign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hosts := "first@signer.invalid second@signer.invalid"
+	_, log, _, runErr := signingFixtureWithHosts(t, source, false, "ambiguous-enqueue", &hosts)
+	exit, ok := runErr.(*exec.ExitError)
+	if !ok || exit.ExitCode() != 6 {
+		t.Fatalf("ambiguous enqueue did not stop with 6: %v %s", runErr, log)
+	}
+	if strings.Contains(log, "second@signer.invalid") && strings.Contains(log, "second@signer.invalid mkdir") {
+		t.Fatalf("ambiguous enqueue failed over (double-sign risk): %s", log)
+	}
+	for _, l := range strings.Split(log, "\n") {
+		if strings.Contains(l, "second@signer.invalid") && (strings.Contains(l, "echo STAGED") || strings.HasPrefix(l, "scp ")) {
+			t.Fatalf("second signer was staged after an ambiguous enqueue: %s", log)
+		}
+	}
+}
+
+// A job ID already present on a signer stops (exit 7) before any upload.
+func TestSignerExistingJobIDStops(t *testing.T) {
+	source, err := os.ReadFile("sirsi-sign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, log, signed, runErr := signingFixture(t, source, false, "id-exists")
+	exit, ok := runErr.(*exec.ExitError)
+	if !ok || exit.ExitCode() != 7 || !strings.Contains(out, "already exists") {
+		t.Fatalf("existing job ID not refused: %v %s", runErr, out)
+	}
+	if strings.Contains(log, "scp ") || strings.Contains(log, "rsync ") {
+		t.Fatalf("existing job ID reached upload: %s", log)
+	}
+	if _, err := os.Stat(signed); !os.IsNotExist(err) {
+		t.Fatal("existing job ID produced output")
+	}
+}
+
+// Negative control: without ServerAlive the fixture refuses the transport, so the keep-alive requirement is real.
+func TestTransportNegativeControlRequiresServerAlive(t *testing.T) {
+	source, err := os.ReadFile("sirsi-sign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutant := strings.Replace(string(source), "-o ServerAliveInterval=15 ", "", 1)
+	if mutant == string(source) {
+		t.Fatal("negative control did not remove ServerAlive")
+	}
+	_, log, _, err := signingFixture(t, []byte(mutant), false, "ok")
+	if err == nil || !strings.Contains(log, "UNSAFE_TRANSPORT") {
+		t.Fatalf("transport without ServerAlive escaped the fixture: %v %s", err, log)
 	}
 }
 

@@ -7,24 +7,28 @@ f=${1:?usage: sirsi-sign <file> [codesign|bin|app|pkg|dmg]}; [ -e "$f" ] || { ec
 k=${2:-}; [ -z "$k" ] && case "$f" in *.pkg) k=pkg;; *.dmg) k=dmg;; *.app|*.app/) k=app;; *) k=bin;; esac
 case $k in codesign|bin|app|pkg|dmg) ;; *) echo "sirsi-sign: bad kind '$k'" >&2; exit 2;; esac
 T=${SIRSI_SIGN_TIMEOUT:-1800}
+XT=${SIRSI_SIGN_TRANSFER_TIMEOUT:-900}   # overall bound on each scp/rsync (ConnectTimeout bounds only the connect)
+[[ $XT =~ '^[1-9][0-9]*$' ]] || { echo "sirsi-sign: bad SIRSI_SIGN_TRANSFER_TIMEOUT" >&2; exit 2; }
 HOSTS=(${=SIRSI_SIGN_HOSTS:-sirsi-m5 sirsi-m1})
 # Every phase uses the same existing pinned-host, noninteractive transport.
 # Preflight alone is insufficient: scp/rsync and later ssh calls must neither
 # learn a key nor prompt after an authentication or host-identity change.
-SSH_OPTIONS=(-o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=yes -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no)
+# ServerAlive ends a transfer whose link went dead mid-stream (about 60 s) instead of hanging.
+SSH_OPTIONS=(-o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=yes -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no
+  -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 RSYNC_SSH="ssh ${(j: :)SSH_OPTIONS}"
-H=""
-for h in $HOSTS; do
-  ssh "${SSH_OPTIONS[@]}" "$h" 'test -x ~/sirsi-sign/bin/sirsi-signd.sh && launchctl print gui/$(id -u)/ai.sirsi.signd >/dev/null 2>&1' 2>/dev/null && { H=$h; break; }
-done
-[ -n "$H" ] || { echo "sirsi-sign: no signing host reachable/enrolled" >&2; exit 4; }
-echo "sirsi-sign: signing host ${H#*@}"
+# ssh, scp and rsync are C programs, so SIGALRM ends them (unlike a Go program).
+bounded() { perl -e 'alarm shift; exec @ARGV or die "exec: $!"' "$XT" "$@"; }
 # A custody-aware caller may allocate and durably register the exact job ID
 # before invoking the client. The caller remains responsible for the barrier;
 # accepting an ID here does not itself establish admission or custody.
 id=${SIRSI_SIGN_JOB_ID:-$(uuidgen | tr A-Z a-z)}
 [[ "$id" =~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' ]] || { echo 'sirsi-sign: invalid canonical job UUID' >&2; exit 2; }
 n=${f:t}; n=${n%/}; n=${n//[^A-Za-z0-9._-]/_}
+enrolled() { ssh "${SSH_OPTIONS[@]}" "$1" 'test -x ~/sirsi-sign/bin/sirsi-signd.sh && launchctl print gui/$(id -u)/ai.sirsi.signd >/dev/null 2>&1' 2>/dev/null; }
+H=""
+for h in $HOSTS; do enrolled "$h" && { H=$h; break; }; done
+[ -n "$H" ] || { echo "sirsi-sign: no signing host reachable/enrolled" >&2; exit 4; }
 # When requested by the release workflow, persist the exact ID and input
 # identity before any remote staging or enqueue. Unknown transport outcomes
 # must be reconciled by this ID, never resubmitted as a new job. This local
@@ -61,21 +65,57 @@ finally:
     os.close(dir_fd)
 PY
 fi
+# Every staging attempt on every host is appended to <custody>/<id>.attempts (the custody record itself is never rewritten).
+attempt() { [[ -n "${SIRSI_SIGN_CUSTODY_DIR:-}" ]] || return 0
+  print -r -- "$(date -u +%FT%TZ) host=$1 result=$2" >> "$SIRSI_SIGN_CUSTODY_DIR/$id.attempts"; chmod 600 "$SIRSI_SIGN_CUSTODY_DIR/$id.attempts"; }
 L=$(mktemp -d); trap 'rm -rf "$L"' EXIT
 print -r -- $k > "$L/kind"; print -r -- "$(id -un)@$(hostname -s)" > "$L/caller"
-# Refuse already-observed IDs and create hidden staging exclusively. This is
-# not an atomic cross-directory reservation; the admission authority's durable
-# exact-ID barrier must serialize custody before the client is invoked.
-ssh "${SSH_OPTIONS[@]}" "$H" "test ! -e ~/sirsi-sign/inbox/$id && test ! -e ~/sirsi-sign/work/$id && test ! -e ~/sirsi-sign/outbox/$id && mkdir ~/sirsi-sign/inbox/.$id"
-if [ -d "$f" ]; then rsync -a -e "$RSYNC_SSH" "$f/" "${H}:sirsi-sign/inbox/.$id/$n/"; else scp "${SSH_OPTIONS[@]}" -q "$f" "${H}:sirsi-sign/inbox/.$id/$n"; fi
-scp "${SSH_OPTIONS[@]}" -q "$L/kind" "$L/caller" "${H}:sirsi-sign/inbox/.$id/" && ssh "${SSH_OPTIONS[@]}" "$H" "mv ~/sirsi-sign/inbox/.$id ~/sirsi-sign/inbox/$id"
+# stage HOST: 0 enqueued on HOST; 10 provably NOT enqueued there (safe to try the next host with the same ID);
+# 11 enqueue outcome unknown (stop: reconcile by ID, never resubmit); 12 the ID already exists there (stop).
+stage() {
+  local h=$1 r
+  # Refuse already-observed IDs (including a hidden staging dir from an earlier attempt) and create hidden staging
+  # exclusively. Not an atomic cross-directory reservation: the admission authority's durable exact-ID barrier must
+  # serialize custody before the client is invoked.
+  r=$(ssh "${SSH_OPTIONS[@]}" "$h" "if test -e ~/sirsi-sign/inbox/$id -o -e ~/sirsi-sign/inbox/.$id -o -e ~/sirsi-sign/work/$id -o -e ~/sirsi-sign/outbox/$id; then echo EXISTS; else mkdir ~/sirsi-sign/inbox/.$id && echo STAGED; fi") || return 10
+  [ "$r" = EXISTS ] && return 12
+  [ "$r" = STAGED ] || return 10
+  local up=0
+  if [ -d "$f" ]; then bounded rsync -a -e "$RSYNC_SSH" "$f/" "${h}:sirsi-sign/inbox/.$id/$n/" || up=1
+  else bounded scp "${SSH_OPTIONS[@]}" -q "$f" "${h}:sirsi-sign/inbox/.$id/$n" || up=1; fi
+  (( up == 0 )) && { bounded scp "${SSH_OPTIONS[@]}" -q "$L/kind" "$L/caller" "${h}:sirsi-sign/inbox/.$id/" || up=1; }
+  if (( up )); then # nothing was enqueued: the job only exists as hidden staging, which the daemon never reads
+    ssh "${SSH_OPTIONS[@]}" "$h" "rm -rf ~/sirsi-sign/inbox/.$id" 2>/dev/null || true
+    return 10
+  fi
+  ssh "${SSH_OPTIONS[@]}" "$h" "mv ~/sirsi-sign/inbox/.$id ~/sirsi-sign/inbox/$id" && return 0
+  # The rename's outcome is unknown: ask the host which state the job is in.
+  r=$(ssh "${SSH_OPTIONS[@]}" "$h" "if test -e ~/sirsi-sign/inbox/$id -o -e ~/sirsi-sign/work/$id -o -e ~/sirsi-sign/outbox/$id; then echo QUEUED; elif test -d ~/sirsi-sign/inbox/.$id; then echo STAGED; else echo NONE; fi") || return 11
+  case $r in QUEUED) return 0;; STAGED) ssh "${SSH_OPTIONS[@]}" "$h" "rm -rf ~/sirsi-sign/inbox/.$id" 2>/dev/null || true; return 10;; *) return 11;; esac
+}
+# Fail over only when the job provably never entered a signer's queue; same ID on every host.
+started=0
+for h in $HOSTS; do
+  (( started )) || [ "$h" = "$H" ] || continue   # begin at the first enrolled host
+  started=1
+  [ "$h" = "$H" ] || enrolled "$h" || { attempt "$h" unreachable; continue; }
+  echo "sirsi-sign: signing host ${h#*@}"
+  rc=0; stage "$h" || rc=$?
+  case $rc in
+    0) attempt "$h" enqueued; H=$h; break;;
+    10) attempt "$h" not-enqueued; echo "sirsi-sign: staging on ${h#*@} failed before enqueue; trying the next signer with the same job $id" >&2; H="";;
+    11) attempt "$h" enqueue-unknown; echo "sirsi-sign: enqueue of job $id on ${h#*@} has an unknown outcome; reconcile that ID there, do not resubmit" >&2; exit 6;;
+    12) attempt "$h" id-exists; echo "sirsi-sign: job $id already exists on ${h#*@}; reconcile it, do not resubmit" >&2; exit 7;;
+  esac
+done
+[ -n "$H" ] || { echo "sirsi-sign: no signer accepted job $id (never enqueued anywhere)" >&2; exit 4; }
 echo "sirsi-sign: job $id queued on the signing Mac"
 end=$(( $(date +%s) + T ))
 until ssh "${SSH_OPTIONS[@]}" "$H" "test -e ~/sirsi-sign/outbox/$id/done -o -e ~/sirsi-sign/outbox/$id/failed"; do
   [ $(date +%s) -gt $end ] && { echo "sirsi-sign: timed out; job $id remains on the signing Mac" >&2; exit 3; }; sleep 15
 done
 d=${f:h}; o=$(ssh "${SSH_OPTIONS[@]}" "$H" "ls ~/sirsi-sign/outbox/$id | grep -vE '^(done|failed|receipt.txt)$' | head -1")
-V=$(mktemp -d); rsync -a -e "$RSYNC_SSH" "${H}:sirsi-sign/outbox/$id/$o" "$V/"; scp "${SSH_OPTIONS[@]}" -q "${H}:sirsi-sign/outbox/$id/receipt.txt" "$d/signed-$o.receipt.txt"
+V=$(mktemp -d); bounded rsync -a -e "$RSYNC_SSH" "${H}:sirsi-sign/outbox/$id/$o" "$V/"; bounded scp "${SSH_OPTIONS[@]}" -q "${H}:sirsi-sign/outbox/$id/receipt.txt" "$d/signed-$o.receipt.txt"
 TEAM=9D382WV988; vok=1
 if [ $k = pkg ]; then
   pkgutil --check-signature "$V/$o" | grep -q "Developer ID Installer: Sirsi Technologies Inc. ($TEAM)" || vok=0
