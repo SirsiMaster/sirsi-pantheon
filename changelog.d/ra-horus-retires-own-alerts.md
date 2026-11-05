@@ -1,0 +1,1 @@
+- Horus can close its own "lane needs you" alerts once a lane recovers. The router used to refuse this, which left cleared alerts open and had each supervisor retry them every pass, about 17,000 refused calls a day across three Macs. Every other item stays closed to headless workers.

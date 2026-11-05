@@ -127,3 +127,41 @@ func TestWorkerMayAnswer(t *testing.T) {
 		}
 	}
 }
+
+// Through the service: the Horus supervisor retires only Horus's own lane alerts. Everything else stays refused.
+func TestHorusSupervisorRetiresOnlyItsOwnAlerts(t *testing.T) {
+	var logs strings.Builder
+	backend, client := ruleHarness(t, "enforce", &logs)
+	host, _ := os.Hostname()
+	now := time.Date(2026, 9, 10, 15, 0, 0, 0, time.UTC).Add(-time.Minute)
+	registerThread(t, backend, "thr-horus", horusSupervisorAgent, host, `{"surface":"worker"}`, now)
+	registerThread(t, backend, "thr-other", "lane-a", host, `{"surface":"worker"}`, now)
+	send := func(from, to, title string) string {
+		t.Helper()
+		id, _, err := backend.SendGuarded(SendReq{From: from, To: to, Title: title, Type: "decision", Instructions: "why"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	const alert = "Lane needs you: lane-b cannot be reached automatically"
+
+	for _, title := range []string{alert, "Lanes need you: multiple lanes cannot be reached automatically"} {
+		if err := client(horusSupervisorAgent, "thr-horus").CloseItem(send("horus", "owner", title), "cleared"); err != nil {
+			t.Errorf("Horus retiring its own alert %q: %v", title, err)
+		}
+	}
+	for name, tc := range map[string]struct{ agent, thread, id string }{
+		"a real question to the owner":      {horusSupervisorAgent, "thr-horus", send("horus", "owner", "Decide something")},
+		"an alert-shaped item from another": {horusSupervisorAgent, "thr-horus", send("lane-c", "owner", alert)},
+		"an alert to someone else":          {horusSupervisorAgent, "thr-horus", send("horus", "lane-c", alert)},
+		"another worker closing the alert":  {"lane-a", "thr-other", send("horus", "owner", "Lane needs you: lane-d")},
+	} {
+		if err := client(tc.agent, tc.thread).CloseItem(tc.id, "no"); !errors.Is(err, ErrWorkerAnswers) {
+			t.Errorf("%s: err = %v, want ErrWorkerAnswers", name, err)
+		}
+		if it, _ := backend.Get(tc.id); it.Status == "closed" {
+			t.Errorf("%s: the refused close still closed the item", name)
+		}
+	}
+}
