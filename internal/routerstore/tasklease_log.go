@@ -46,7 +46,7 @@ func (s *SQLiteStore) RecordTaskLeaseEvent(e TaskLeaseLogEntry) error {
 func (s *SQLiteStore) TaskLeaseEventsSince(agent, taskID, since string) ([]TaskLeaseLogEntry, error) {
 	t, perr := time.Parse(time.RFC3339Nano, strings.TrimSpace(since))
 	if perr != nil {
-		return nil, fmt.Errorf("routerstore: TaskLeaseEventsSince: invalid since %q (want RFC3339): %w", since, perr)
+		return nil, fmt.Errorf("%w: routerstore: TaskLeaseEventsSince: invalid since %q (want RFC3339): %w", ErrInvalidInput, since, perr)
 	}
 	sinceLog := t.UTC().Format(AudienceTS)
 

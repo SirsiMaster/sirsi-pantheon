@@ -26,7 +26,7 @@ type Agent struct {
 // duplicate rows (Rule A27 idempotent-on-(agent_id,pid) intent).
 func (s *SQLiteStore) RegisterAgent(id string, pid int) error {
 	if strings.TrimSpace(id) == "" {
-		return fmt.Errorf("routerstore: RegisterAgent: id is required")
+		return fmt.Errorf("%w: routerstore: RegisterAgent: id is required", ErrInvalidInput)
 	}
 	now := s.clock().Format(time.RFC3339)
 	const q = `
@@ -99,31 +99,31 @@ func (s *SQLiteStore) SetState(key, value string) error {
 		return errors.New("lane barrier: typed API required")
 	}
 	if strings.HasPrefix(key, "task-resume:") {
-		return errors.New("task resume: generic state writes cannot replace provenance")
+		return fmt.Errorf("%w: task resume: generic state writes cannot replace provenance", ErrInvalidInput)
 	}
 	if strings.HasPrefix(key, receiptStatePrefix) || key == receiptLockKey {
 		return errors.New("task receipt: generic state writes cannot create or replace completion proof")
 	}
 	if strings.HasPrefix(key, "task-evidence-relocation:") {
-		return errors.New("task evidence: generic state writes cannot create or replace provenance")
+		return fmt.Errorf("%w: task evidence: generic state writes cannot create or replace provenance", ErrInvalidInput)
 	}
 	if key == "maat:delegations" {
-		return fmt.Errorf("maat: generic state write cannot create delegation authority; use compatible atomic RPC")
+		return fmt.Errorf("%w: maat: generic state write cannot create delegation authority; use compatible atomic RPC", ErrInvalidInput)
 	}
 	if strings.HasPrefix(key, "mailbox-reconciliation:") {
-		return errors.New("mailbox reconciliation: generic state writes cannot create or replace approvals or audits")
+		return fmt.Errorf("%w: mailbox reconciliation: generic state writes cannot create or replace approvals or audits", ErrInvalidInput)
 	}
 	if strings.HasPrefix(key, convertLinkPrefix) {
 		return errors.New("item convert: generic state writes cannot create or replace convert links")
 	}
 	if key == desktopSleepKey {
-		return errors.New("sleep custody: generic state writes cannot create or replace authority")
+		return fmt.Errorf("%w: sleep custody: generic state writes cannot create or replace authority", ErrInvalidInput)
 	}
 	if key == maatReservationsKey {
-		return fmt.Errorf("Ma'at reservation writes require the atomic scheduler API; upgrade this client")
+		return fmt.Errorf("%w: Ma'at reservation writes require the atomic scheduler API; upgrade this client", ErrInvalidInput)
 	}
 	if strings.TrimSpace(key) == "" {
-		return fmt.Errorf("routerstore: SetState: key is required")
+		return fmt.Errorf("%w: routerstore: SetState: key is required", ErrInvalidInput)
 	}
 	const q = `INSERT INTO state (key, value) VALUES (?, ?)
 ON CONFLICT(key) DO UPDATE SET value=excluded.value;`
@@ -154,16 +154,16 @@ func (s *SQLiteStore) CompareAndSwapState(key, expected string, exists bool, val
 		return false, errors.New("lane barrier: typed API required")
 	}
 	if strings.HasPrefix(key, "task-resume:") {
-		return false, errors.New("task resume: generic CAS cannot replace provenance")
+		return false, fmt.Errorf("%w: task resume: generic CAS cannot replace provenance", ErrInvalidInput)
 	}
 	if strings.HasPrefix(key, receiptStatePrefix) || key == receiptLockKey {
 		return false, errors.New("task receipt: generic CAS cannot create or replace completion proof")
 	}
 	if strings.HasPrefix(key, "task-evidence-relocation:") {
-		return false, errors.New("task evidence: generic CAS cannot create or replace provenance")
+		return false, fmt.Errorf("%w: task evidence: generic CAS cannot create or replace provenance", ErrInvalidInput)
 	}
 	if key == "maat:delegations" {
-		return false, fmt.Errorf("maat: generic CAS cannot create delegation authority; use compatible atomic RPC")
+		return false, fmt.Errorf("%w: maat: generic CAS cannot create delegation authority; use compatible atomic RPC", ErrInvalidInput)
 	}
 	if key == maatReservationsKey {
 		var swapped bool
@@ -191,16 +191,16 @@ func (s *SQLiteStore) CompareAndSwapState(key, expected string, exists bool, val
 		return swapped, err
 	}
 	if strings.HasPrefix(key, "mailbox-reconciliation:") {
-		return false, errors.New("mailbox reconciliation: generic CAS cannot create or replace approvals or audits")
+		return false, fmt.Errorf("%w: mailbox reconciliation: generic CAS cannot create or replace approvals or audits", ErrInvalidInput)
 	}
 	if strings.HasPrefix(key, convertLinkPrefix) {
 		return false, errors.New("item convert: generic CAS cannot create or replace convert links")
 	}
 	if key == desktopSleepKey {
-		return false, errors.New("sleep custody: generic CAS cannot create or replace authority")
+		return false, fmt.Errorf("%w: sleep custody: generic CAS cannot create or replace authority", ErrInvalidInput)
 	}
 	if strings.TrimSpace(key) == "" {
-		return false, fmt.Errorf("routerstore: CompareAndSwapState: key is required")
+		return false, fmt.Errorf("%w: routerstore: CompareAndSwapState: key is required", ErrInvalidInput)
 	}
 	var result sql.Result
 	var err error

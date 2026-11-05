@@ -85,7 +85,7 @@ var namespacePattern = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,15}$`)
 func normalizeNamespace(ns string) (string, error) {
 	ns = strings.ToUpper(strings.TrimSpace(ns))
 	if !namespacePattern.MatchString(ns) {
-		return "", fmt.Errorf("routerstore: invalid identifier namespace %q: want uppercase alphanumeric, 2-16 chars (e.g. ADR, REQ)", ns)
+		return "", fmt.Errorf("%w: routerstore: invalid identifier namespace %q: want uppercase alphanumeric, 2-16 chars (e.g. ADR, REQ)", ErrInvalidInput, ns)
 	}
 	return ns, nil
 }
@@ -104,10 +104,10 @@ func (s *SQLiteStore) AllocateIdentifier(namespace, title, owner string) (Identi
 	title = strings.TrimSpace(title)
 	owner = strings.TrimSpace(owner)
 	if title == "" {
-		return Identifier{}, errors.New("routerstore: identifier title is required")
+		return Identifier{}, fmt.Errorf("%w: routerstore: identifier title is required", ErrInvalidInput)
 	}
 	if owner == "" {
-		return Identifier{}, errors.New("routerstore: identifier owner is required — an unowned allocation is how numbers get orphaned")
+		return Identifier{}, fmt.Errorf("%w: routerstore: identifier owner is required — an unowned allocation is how numbers get orphaned", ErrInvalidInput)
 	}
 
 	var out Identifier
@@ -147,11 +147,11 @@ func (s *SQLiteStore) ClaimIdentifierNumber(namespace string, number int, title,
 		return Identifier{}, err
 	}
 	if number < 1 {
-		return Identifier{}, fmt.Errorf("routerstore: identifier number must be >= 1, got %d", number)
+		return Identifier{}, fmt.Errorf("%w: routerstore: identifier number must be >= 1, got %d", ErrInvalidInput, number)
 	}
 	owner = strings.TrimSpace(owner)
 	if owner == "" {
-		return Identifier{}, errors.New("routerstore: identifier owner is required")
+		return Identifier{}, fmt.Errorf("%w: routerstore: identifier owner is required", ErrInvalidInput)
 	}
 
 	var out Identifier
@@ -206,7 +206,7 @@ func (s *SQLiteStore) PublishIdentifier(namespace string, number int, slug strin
 			return err
 		}
 		if n == 0 {
-			return fmt.Errorf("routerstore: publish %s-%03d: not allocated — claim it first", ns, number)
+			return fmt.Errorf("%w: routerstore: publish %s-%03d: not allocated — claim it first", ErrNotFound, ns, number)
 		}
 		return nil
 	})
@@ -228,7 +228,7 @@ func (s *SQLiteStore) WithdrawIdentifier(namespace string, number int) error {
 		}
 		n, _ := res.RowsAffected()
 		if n == 0 {
-			return fmt.Errorf("routerstore: withdraw %s-%03d: not allocated", ns, number)
+			return fmt.Errorf("%w: routerstore: withdraw %s-%03d: not allocated", ErrNotFound, ns, number)
 		}
 		return nil
 	})

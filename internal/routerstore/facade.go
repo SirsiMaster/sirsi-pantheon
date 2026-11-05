@@ -124,7 +124,7 @@ func (s *SQLiteStore) idemKey(r SendReq, now time.Time) string {
 //   - tripped breaker → ("", false, ErrBreakerOpen)
 func (s *SQLiteStore) SendGuarded(r SendReq) (string, bool, error) {
 	if strings.TrimSpace(r.From) == "" || strings.TrimSpace(r.To) == "" {
-		return "", false, fmt.Errorf("routerstore: SendGuarded: from and to are required")
+		return "", false, fmt.Errorf("%w: routerstore: SendGuarded: from and to are required", ErrInvalidInput)
 	}
 	if err := validateMessageType(r.Type); err != nil {
 		return "", false, err
@@ -294,7 +294,7 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 // partial unique index makes duplicate rows impossible even under races.
 func (s *SQLiteStore) escalateTx(tx *txHandle, now time.Time, sourceItem, failureClass, title, body string) (string, error) {
 	if sourceItem == "" || failureClass == "" {
-		return "", fmt.Errorf("routerstore: escalate: source_item and failure_class are required")
+		return "", fmt.Errorf("%w: routerstore: escalate: source_item and failure_class are required", ErrInvalidInput)
 	}
 	id := fmt.Sprintf("%s-escalation-%s-%s", now.Format("20060102-150405"), slugify(sourceItem), slugify(failureClass))
 	recipient := strings.TrimSpace(s.escalationAgent)

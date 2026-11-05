@@ -1,0 +1,2 @@
+### Fixed
+- **Router service (`internal/routerstore`) now maps caller/validation errors to HTTP 400, not a generic 500.** ~70 `fmt.Errorf`/`errors.New` sites across `internal/routerstore/*.go` now wrap the `ErrInvalidInput` sentinel (or the existing `ErrNotFound` sentinel for "no such X" cases) so `writeCallErr` returns a client error for bad item type, unknown task, missing lease, malformed `since` timestamps, undeclared recipients, and similar caller-caused failures, leaving genuine server/transport failures as 500. Refs: PANTHEON_RULES.md A35.

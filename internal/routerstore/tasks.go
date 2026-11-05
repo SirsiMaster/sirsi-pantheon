@@ -89,35 +89,35 @@ func validLinkKind(kind string) bool {
 
 func validateTask(t Task) error {
 	if strings.TrimSpace(t.Agent) == "" || strings.TrimSpace(t.TaskID) == "" || strings.TrimSpace(t.Subject) == "" {
-		return fmt.Errorf("routerstore: task agent, task-id, and subject are required")
+		return fmt.Errorf("%w: routerstore: task agent, task-id, and subject are required", ErrInvalidInput)
 	}
 	if !validTaskStatus(t.Status) {
-		return fmt.Errorf("routerstore: invalid task status %q (want pending, in-progress, blocked, done or canceled)", t.Status)
+		return fmt.Errorf("%w: routerstore: invalid task status %q (want pending, in-progress, blocked, done or canceled)", ErrInvalidInput, t.Status)
 	}
 	if strings.TrimSpace(t.ResponsibleParty) == "" {
-		return fmt.Errorf("routerstore: task responsible-party is required")
+		return fmt.Errorf("%w: routerstore: task responsible-party is required", ErrInvalidInput)
 	}
 	if !validTestState(t.TestState) {
-		return fmt.Errorf("routerstore: invalid test-state %q", t.TestState)
+		return fmt.Errorf("%w: routerstore: invalid test-state %q", ErrInvalidInput, t.TestState)
 	}
 	if _, ok := stageRank[t.Stage]; !ok {
-		return fmt.Errorf("routerstore: invalid stage %q", t.Stage)
+		return fmt.Errorf("%w: routerstore: invalid stage %q", ErrInvalidInput, t.Stage)
 	}
 	if t.TokensConsumed < 0 || t.DurationSeconds < 0 {
-		return fmt.Errorf("routerstore: task accounting values cannot be negative")
+		return fmt.Errorf("%w: routerstore: task accounting values cannot be negative", ErrInvalidInput)
 	}
 	if _, err := time.Parse(time.RFC3339, t.CommissionedAt); err != nil {
-		return fmt.Errorf("routerstore: commissioned-at must be RFC3339 UTC: %w", err)
+		return fmt.Errorf("%w: routerstore: commissioned-at must be RFC3339 UTC: %w", ErrInvalidInput, err)
 	}
 	for i, entry := range t.Timeline {
 		if strings.TrimSpace(entry.Day) == "" || strings.TrimSpace(entry.Owner) == "" || strings.TrimSpace(entry.Label) == "" || entry.Hours < 0 || math.IsNaN(entry.Hours) || math.IsInf(entry.Hours, 0) {
-			return fmt.Errorf("routerstore: invalid timeline entry %d", i)
+			return fmt.Errorf("%w: routerstore: invalid timeline entry %d", ErrInvalidInput, i)
 		}
 	}
 	hasEvidence := false
 	for i, link := range t.Links {
 		if !validLinkKind(link.Kind) || strings.TrimSpace(link.Label) == "" || strings.TrimSpace(link.URL) == "" {
-			return fmt.Errorf("routerstore: invalid task link %d", i)
+			return fmt.Errorf("%w: routerstore: invalid task link %d", ErrInvalidInput, i)
 		}
 		hasEvidence = hasEvidence || link.Kind == "evidence"
 	}
@@ -127,8 +127,8 @@ func validateTask(t Task) error {
 		// gate is broken" — two agents independently recorded it as unsatisfiable
 		// and adopted "close without test-state" as the workaround, which discards
 		// the completion signal this gate exists to preserve.
-		return fmt.Errorf("routerstore: test-state passed requires a link of kind %q, but none of the %d attached link(s) has that kind (kinds present: %s); attach one with --link 'evidence:<label>:<url>'",
-			"evidence", len(t.Links), linkKindsPresent(t.Links))
+		return fmt.Errorf("%w: routerstore: test-state passed requires a link of kind %q, but none of the %d attached link(s) has that kind (kinds present: %s); attach one with --link 'evidence:<label>:<url>'",
+			ErrInvalidInput, "evidence", len(t.Links), linkKindsPresent(t.Links))
 	}
 	return nil
 }
@@ -208,7 +208,7 @@ func (s *SQLiteStore) insertTask(exec func(string, ...any) (sql.Result, error), 
 		return err
 	}
 	if terminalTaskStatus(t.Status) {
-		return fmt.Errorf("routerstore: a task cannot be created %s; done needs a verified receipt (task complete) and cancel is owner-only", t.Status)
+		return fmt.Errorf("%w: routerstore: a task cannot be created %s; done needs a verified receipt (task complete) and cancel is owner-only", ErrInvalidInput, t.Status)
 	}
 	timeline, err := json.Marshal(t.Timeline)
 	if err != nil {
@@ -303,7 +303,7 @@ func (s *SQLiteStore) UpdateTask(agent, taskID string, u TaskUpdate) (Task, erro
 
 func (s *SQLiteStore) updateTaskOnce(agent, taskID string, u TaskUpdate) (Task, error) {
 	if u.AddTokens < 0 || u.AddSeconds < 0 {
-		return Task{}, fmt.Errorf("routerstore: accounting increments cannot be negative")
+		return Task{}, fmt.Errorf("%w: routerstore: accounting increments cannot be negative", ErrInvalidInput)
 	}
 	t, observedLinks, err := s.taskWithRawLinks(agent, taskID)
 	if err != nil {
@@ -330,7 +330,7 @@ func (s *SQLiteStore) updateTaskOnce(agent, taskID string, u TaskUpdate) (Task, 
 		// held by anyone — refusing to relabel it leaves a correctly-blocked
 		// task's status permanently wrong (rs-43).
 		if terminalTaskStatus(u.Status) || u.Status == "in-progress" || (t.Status == "in-progress" && leaseLive) {
-			return Task{}, fmt.Errorf("routerstore: executable task transition %q -> %q requires a fenced task lease", t.Status, u.Status)
+			return Task{}, fmt.Errorf("%w: routerstore: executable task transition %q -> %q requires a fenced task lease", ErrInvalidInput, t.Status, u.Status)
 		}
 	}
 	oldStage, oldSubject, oldCharter := t.Stage, t.Subject, t.Charter
@@ -362,7 +362,7 @@ func (s *SQLiteStore) updateTaskOnce(agent, taskID string, u TaskUpdate) (Task, 
 	}
 	for i, link := range u.Links {
 		if !validLinkKind(link.Kind) || strings.TrimSpace(link.Label) == "" || strings.TrimSpace(link.URL) == "" {
-			return Task{}, fmt.Errorf("routerstore: invalid task link %d", i)
+			return Task{}, fmt.Errorf("%w: routerstore: invalid task link %d", ErrInvalidInput, i)
 		}
 	}
 	t.Links = mergeLinks(t.Links, u.Links)
@@ -373,10 +373,10 @@ func (s *SQLiteStore) updateTaskOnce(agent, taskID string, u TaskUpdate) (Task, 
 		t.Stage = u.Stage
 	}
 	if stageRank[t.Stage] < stageRank[oldStage] && (strings.TrimSpace(u.Subject) == "" || strings.TrimSpace(u.Subject) == strings.TrimSpace(oldSubject)) {
-		return Task{}, fmt.Errorf("routerstore: stage regression requires a replacement subject stating why")
+		return Task{}, fmt.Errorf("%w: routerstore: stage regression requires a replacement subject stating why", ErrInvalidInput)
 	}
 	if u.CharterSet && oldCharter != nil && *oldCharter != u.Charter && !hasOwnerInstruction(u.Links) {
-		return Task{}, fmt.Errorf("routerstore: charter amendment requires an owner-instruction link")
+		return Task{}, fmt.Errorf("%w: routerstore: charter amendment requires an owner-instruction link", ErrInvalidInput)
 	}
 	t.TokensConsumed += u.AddTokens
 	t.DurationSeconds += u.AddSeconds

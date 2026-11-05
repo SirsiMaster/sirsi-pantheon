@@ -105,7 +105,7 @@ func (s *SQLiteStore) MaatMutate(action, id, value string) (*schedule.Reservatio
 		case "invalidate":
 			out, err = l.Invalidate(id, value)
 		default:
-			err = fmt.Errorf("unknown Ma'at mutation %q", action)
+			err = fmt.Errorf("%w: unknown Ma'at mutation %q", ErrInvalidInput, action)
 		}
 		return err
 	})
@@ -129,7 +129,7 @@ func (s *SQLiteStore) MaatRead(kind, resource string) ([]schedule.Reservation, e
 		case "status":
 			out, err = l.Status(resource)
 		default:
-			err = fmt.Errorf("unknown Ma'at read %q", kind)
+			err = fmt.Errorf("%w: unknown Ma'at read %q", ErrInvalidInput, kind)
 		}
 		return err
 	})
@@ -147,7 +147,7 @@ func (s *SQLiteStore) MaatDelegation(action string, req schedule.Delegation) (sc
 		case "revoke":
 			out, err = l.Revoke(req.Pod)
 		default:
-			err = fmt.Errorf("maat: unknown delegation action")
+			err = fmt.Errorf("%w: maat: unknown delegation action", ErrInvalidInput)
 		}
 		return err
 	})

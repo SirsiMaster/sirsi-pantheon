@@ -40,26 +40,26 @@ func ValidateRecipientDelivery(path, to string) error {
 	}
 	a, ok := reg.Agents[to]
 	if !ok {
-		return fmt.Errorf("undeclared recipient %q", to)
+		return fmt.Errorf("%w: undeclared recipient %q", ErrInvalidInput, to)
 	}
 	if a.Contract != nil {
 		if a.Contract.Version != 1 {
-			return fmt.Errorf("recipient %q unsupported delivery contract version %d", to, a.Contract.Version)
+			return fmt.Errorf("%w: recipient %q unsupported delivery contract version %d", ErrInvalidInput, to, a.Contract.Version)
 		}
 		switch a.Contract.Mode {
 		case "inbox":
 			return nil
 		case "actor-only":
-			return fmt.Errorf("recipient %q is actor-only: no inbox endpoint; preserve source and route only to an explicitly declared custodian", to)
+			return fmt.Errorf("%w: recipient %q is actor-only: no inbox endpoint; preserve source and route only to an explicitly declared custodian", ErrInvalidInput, to)
 		default:
-			return fmt.Errorf("recipient %q unsupported delivery mode %q", to, a.Contract.Mode)
+			return fmt.Errorf("%w: recipient %q unsupported delivery mode %q", ErrInvalidInput, to, a.Contract.Mode)
 		}
 	}
 	// Compatibility with the existing explicit Horus declaration. Neither wake
 	// none nor an absent consumer alone makes a legacy mailbox non-deliverable.
 	d := strings.ToLower(a.Description)
 	if a.Type == "service" && a.Wake.Mechanism == "none" && strings.Contains(d, "actor-only") && strings.Contains(d, "never route inbox") {
-		return fmt.Errorf("recipient %q is explicitly actor-only: no inbox endpoint; preserve source and use a declared custodian", to)
+		return fmt.Errorf("%w: recipient %q is explicitly actor-only: no inbox endpoint; preserve source and use a declared custodian", ErrInvalidInput, to)
 	}
 	return nil
 }

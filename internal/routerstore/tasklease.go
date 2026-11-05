@@ -35,7 +35,7 @@ func (s *SQLiteStore) ClaimNextTask(agent, worker, threadID string, ttl time.Dur
 func (s *SQLiteStore) ClaimTask(agent, taskID, worker, threadID string, ttl time.Duration) (*TaskLease, error) {
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
-		return nil, fmt.Errorf("routerstore: exact task claim requires task id")
+		return nil, fmt.Errorf("%w: routerstore: exact task claim requires task id", ErrInvalidInput)
 	}
 	return s.claimTask(agent, taskID, worker, threadID, ttl)
 }
@@ -52,7 +52,7 @@ func (s *SQLiteStore) claimTaskSession(agent, exactTaskID, worker, threadID, ses
 	worker = strings.TrimSpace(worker)
 	threadID = strings.TrimSpace(threadID)
 	if agent == "" || worker == "" || threadID == "" {
-		return nil, fmt.Errorf("routerstore: task claim requires agent, worker, and thread id")
+		return nil, fmt.Errorf("%w: routerstore: task claim requires agent, worker, and thread id", ErrInvalidInput)
 	}
 	var err error
 	ttl, err = boundedLeaseTTL(ttl)
@@ -197,7 +197,7 @@ func (s *SQLiteStore) RenewTaskLease(agent, taskID, token string, ttl time.Durat
 // receipt the router verifies itself (receipts.go). Free text is refused.
 func (s *SQLiteStore) CompleteTaskLease(agent, taskID, token, resultRef string) error {
 	if strings.TrimSpace(resultRef) == "" {
-		return fmt.Errorf("routerstore: task completion receipt is required (%s)", receipts)
+		return fmt.Errorf("%w: routerstore: task completion receipt is required (%s)", ErrInvalidInput, receipts)
 	}
 	now := s.clock().UTC()
 	receipt, err := s.verifyReceipt(agent, resultRef, now)
@@ -337,7 +337,7 @@ func (s *SQLiteStore) ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseRecla
 // not cause that block, so this verb has no business clearing it.
 func (s *SQLiteStore) ResetTaskAttempts(agent, taskID string) error {
 	if strings.TrimSpace(agent) == "" || strings.TrimSpace(taskID) == "" {
-		return fmt.Errorf("routerstore: ResetTaskAttempts: agent and task-id are required")
+		return fmt.Errorf("%w: routerstore: ResetTaskAttempts: agent and task-id are required", ErrInvalidInput)
 	}
 	res, err := s.exec(`UPDATE tasks SET attempts=0, failure_reason='', lease_token='', lease_expires='', claimed_by='', thread_id='',
 		status=CASE WHEN status='blocked' AND (blocked_by IS NULL OR trim(blocked_by)='') THEN 'pending' ELSE status END
