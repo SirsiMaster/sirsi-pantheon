@@ -57,7 +57,7 @@ func boundedLeaseTTL(ttl time.Duration) (time.Duration, error) {
 		return 10 * time.Minute, nil
 	}
 	if ttl > MaxLeaseTTL {
-		return 0, fmt.Errorf("routerstore: lease ttl %s exceeds maximum %s; renew bounded leases for long work", ttl, MaxLeaseTTL)
+		return 0, fmt.Errorf("%w: routerstore: lease ttl %s exceeds maximum %s; renew bounded leases for long work", ErrInvalidInput, ttl, MaxLeaseTTL)
 	}
 	return ttl, nil
 }
@@ -188,10 +188,10 @@ func (s *SQLiteStore) claimItemOnce(agent, id string, ttl time.Duration) (*Lease
 
 func (s *SQLiteStore) claimItemSessionOnce(agent, id string, ttl time.Duration, session string) (*Lease, error) {
 	if strings.TrimSpace(agent) == "" {
-		return nil, fmt.Errorf("routerstore: ClaimItem: agent is required")
+		return nil, fmt.Errorf("%w: routerstore: ClaimItem: agent is required", ErrInvalidInput)
 	}
 	if strings.TrimSpace(id) == "" {
-		return nil, fmt.Errorf("routerstore: ClaimItem: item id is required")
+		return nil, fmt.Errorf("%w: routerstore: ClaimItem: item id is required", ErrInvalidInput)
 	}
 	var err error
 	ttl, err = boundedLeaseTTL(ttl)
@@ -263,7 +263,7 @@ func (s *SQLiteStore) claimNextOnce(agent string, ttl time.Duration) (*Lease, er
 
 func (s *SQLiteStore) claimNextSessionOnce(agent string, ttl time.Duration, session string) (*Lease, error) {
 	if strings.TrimSpace(agent) == "" {
-		return nil, fmt.Errorf("routerstore: ClaimNext: agent is required")
+		return nil, fmt.Errorf("%w: routerstore: ClaimNext: agent is required", ErrInvalidInput)
 	}
 	var err error
 	ttl, err = boundedLeaseTTL(ttl)
@@ -599,7 +599,7 @@ func (s *SQLiteStore) ForceOwner(id, action, reason string) error {
 	case "reopen":
 		q = `UPDATE items SET status='open', closed='', result=?, lease_token='', lease_expires='', claimed_by='', attempts=0 WHERE id=?;`
 	default:
-		return fmt.Errorf("routerstore: ForceOwner: unknown action %q (complete|dead_letter|reopen)", action)
+		return fmt.Errorf("%w: routerstore: ForceOwner: unknown action %q (complete|dead_letter|reopen)", ErrInvalidInput, action)
 	}
 	note := fmt.Sprintf("FORCE-OWNER %s: %s", action, strings.TrimSpace(reason))
 	if action == "reopen" {

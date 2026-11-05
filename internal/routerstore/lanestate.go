@@ -34,7 +34,7 @@ type LaneOperationalState struct {
 func (s *SQLiteStore) ClassifyLane(agent string, wakeRoutable bool, recentWithin time.Duration) (LaneOperationalState, error) {
 	agent = strings.TrimSpace(agent)
 	if agent == "" {
-		return LaneOperationalState{}, fmt.Errorf("routerstore: lane agent is required")
+		return LaneOperationalState{}, fmt.Errorf("%w: routerstore: lane agent is required", ErrInvalidInput)
 	}
 	if recentWithin <= 0 {
 		recentWithin = 5 * time.Minute

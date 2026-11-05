@@ -980,6 +980,10 @@ func (s *server) writeCallErr(w http.ResponseWriter, method string, err error) {
 		writeErr(w, http.StatusForbidden, "ErrLaneScope", err.Error())
 		return
 	}
+	if errors.Is(err, ErrInvalidInput) {
+		writeErr(w, http.StatusBadRequest, "ErrInvalidInput", err.Error())
+		return
+	}
 	if sn := sentinelName(err); sn != "" {
 		writeJSON(w, http.StatusOK, wireResponse{Error: &wireError{Name: sn, Message: err.Error()}})
 		return

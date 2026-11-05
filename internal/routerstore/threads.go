@@ -33,17 +33,17 @@ func decodeThreadCASArgument(raw []byte, record *ThreadRecord) error {
 			return err
 		}
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid insert-only thread argument")
+			return fmt.Errorf("%w: invalid insert-only thread argument", ErrInvalidInput)
 		}
 		var version string
 		if err := json.Unmarshal(parts[0], &version); err != nil || version != "thread-insert-only.v1" {
-			return fmt.Errorf("unsupported insert-only thread version")
+			return fmt.Errorf("%w: unsupported insert-only thread version", ErrInvalidInput)
 		}
 		if err := json.Unmarshal(parts[1], record); err != nil {
 			return err
 		}
 		if !record.CreateOnly {
-			return fmt.Errorf("insert-only thread restriction missing")
+			return fmt.Errorf("%w: insert-only thread restriction missing", ErrInvalidInput)
 		}
 		return nil
 	}
@@ -51,7 +51,7 @@ func decodeThreadCASArgument(raw []byte, record *ThreadRecord) error {
 		return err
 	}
 	if record.CreateOnly {
-		return fmt.Errorf("insert-only thread requires versioned argument")
+		return fmt.Errorf("%w: insert-only thread requires versioned argument", ErrInvalidInput)
 	}
 	return nil
 }
@@ -592,7 +592,7 @@ func (s *SQLiteStore) AudienceSince(since string) (AudienceReport, error) {
 	// 2026-09-10, PR #726 r2 P2).
 	t, perr := time.Parse(time.RFC3339Nano, strings.TrimSpace(since))
 	if perr != nil {
-		return AudienceReport{}, fmt.Errorf("routerstore: AudienceSince: invalid since %q (want RFC3339): %w", since, perr)
+		return AudienceReport{}, fmt.Errorf("%w: routerstore: AudienceSince: invalid since %q (want RFC3339): %w", ErrInvalidInput, since, perr)
 	}
 	t = t.UTC()
 	sinceLog := t.Format(AudienceTS) // fixed-width, for the nanosecond audience_log
