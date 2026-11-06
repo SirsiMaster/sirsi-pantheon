@@ -6,6 +6,15 @@
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
   --mono:ui-monospace,"SF Mono",Menlo,monospace;
   --sidebar:208px;
+  /* Owner, Nov 6: black page, not green. The brand's dark ground, panels, lines and greys are
+     green-tinted; the router board overrides them with neutral black/grey. Green stays only as
+     the "done" state color. Keywords + color-mix, no hex (TestUIFilesCarryNoHexColors). */
+  --bg:black;
+  --panel:color-mix(in srgb,white 5%,black);
+  --line:color-mix(in srgb,white 14%,black);
+  --ink:color-mix(in srgb,white 92%,black);
+  --ink2:color-mix(in srgb,white 70%,black);
+  --dim:color-mix(in srgb,white 52%,black);
   --settled:color-mix(in srgb,var(--ok) 55%,var(--dim));
   --flash:color-mix(in srgb,var(--ok) 20%,transparent);
 }
