@@ -197,7 +197,7 @@ func TestHomeServesTheDashboardAndItsAssets(t *testing.T) {
 			t.Errorf("ledger.js missing %q", want)
 		}
 	}
-	if strings.Index(home, `src="/assets/ledger.js"`) < 0 || strings.Index(home, `src="/assets/ledger.js"`) > strings.Index(home, `src="/assets/app.js"`) {
+	if !strings.Contains(home, `src="/assets/ledger.js"`) || strings.Index(home, `src="/assets/ledger.js"`) > strings.Index(home, `src="/assets/app.js"`) {
 		t.Fatal("ledger.js must be mounted before app.js")
 	}
 	if strings.Contains(home, "<script>") {
