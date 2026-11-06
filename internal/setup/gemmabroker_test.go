@@ -60,6 +60,22 @@ func TestInstallGemmaBroker_SkipsWithoutSNE(t *testing.T) {
 	}
 }
 
+// apolloHome creates only test fixtures; no real service is launched.
+func apolloHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	fakeSNERuntime(t, home)
+	router := filepath.Join(home, "Applications", "Apollo.app", "Contents", "Helpers", "apollo-router")
+	if err := os.MkdirAll(filepath.Dir(router), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(router, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
 func TestInstallGemmaBroker_HonorsQuarantine(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("darwin only")

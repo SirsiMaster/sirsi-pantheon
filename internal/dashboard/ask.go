@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/guard"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/liveness"
 )
 
 // Ask — natural language over the board's OWN diagnostics.
@@ -67,6 +68,41 @@ func snePort() int {
 		return sneDefaultPort
 	}
 	return p
+}
+
+// sneModel names the served model from ~/.sirsi/gemma-model.conf (the file the
+// liveness probe also reads). Apollo.app's router routes by model id and
+// rejects the placeholder "local", which only the retired broker accepted. So
+// when Apollo.app provides the local model, a missing, unreadable or blank
+// selection is an error: the dashboard never invents a model. Without Apollo
+// (the legacy broker), "local" is still the broker's own name.
+func sneModel() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("local model selection: %w", err)
+	}
+	// The marker is checked first: an invalid Apollo router marker fails closed even when a model is configured.
+	provided, perr := liveness.CheckApolloGemmaProvider(home)
+	if perr != nil {
+		return "", fmt.Errorf("local model selection: %w", perr)
+	}
+	// Same precedence as liveness.resolveModel and the worker/CLI: GEMMA_MODEL, then the conf file.
+	if m := strings.TrimSpace(os.Getenv("GEMMA_MODEL")); m != "" {
+		return m, nil
+	}
+	b, rerr := os.ReadFile(filepath.Join(home, ".sirsi", "gemma-model.conf"))
+	if rerr == nil {
+		if m := strings.TrimSpace(string(b)); m != "" {
+			return m, nil
+		}
+	}
+	if !provided {
+		return "local", nil
+	}
+	if rerr != nil && !os.IsNotExist(rerr) {
+		return "", fmt.Errorf("Apollo.app provides the local model but ~/.sirsi/gemma-model.conf is unreadable: %w", rerr)
+	}
+	return "", fmt.Errorf("Apollo.app provides the local model but no model is selected in ~/.sirsi/gemma-model.conf")
 }
 
 type askRequest struct {
@@ -234,9 +270,13 @@ func (s *Server) apiAsk(w http.ResponseWriter, r *http.Request) {
 func askLocalEngine(ctx context.Context, question, grounding string) (modelSelection, string, error) {
 	port := snePort()
 	url := fmt.Sprintf("http://127.0.0.1:%d/v1/chat/completions", port)
+	model, err := sneModel()
+	if err != nil {
+		return modelSelection{}, "", err
+	}
 
 	body, err := json.Marshal(chatRequest{
-		Model: "local",
+		Model: model,
 		Messages: []chatMessage{
 			{Role: "system", Content: askSystemPrompt + "\n\n--- LIVE DIAGNOSTIC REPORT ---\n" + grounding},
 			{Role: "user", Content: question},

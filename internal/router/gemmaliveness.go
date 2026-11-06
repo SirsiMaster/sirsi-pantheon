@@ -175,6 +175,21 @@ func setIsQuarantinedFn(fn func(home string) bool) {
 	isQuarantinedFn = fn
 }
 
+// apolloProvidesFn is the injected Apollo.app check (A16/A21).
+var apolloProvidesFn = liveness.CheckApolloGemmaProvider
+
+func setApolloProvidesFn(fn func(home string) (bool, error)) {
+	gemmaLifeMu.Lock()
+	defer gemmaLifeMu.Unlock()
+	apolloProvidesFn = fn
+}
+
+func getApolloProvidesFn() func(home string) (bool, error) {
+	gemmaLifeMu.RLock()
+	defer gemmaLifeMu.RUnlock()
+	return apolloProvidesFn
+}
+
 func getIsQuarantinedFn() func(home string) bool {
 	gemmaLifeMu.RLock()
 	defer gemmaLifeMu.RUnlock()
@@ -191,6 +206,17 @@ func RunGemmaLivenessDuty(routerRoot, _ string) error {
 	// never reaches the GemmaDown branch that would restart it. Strikes reset
 	// so a later un-quarantine starts the wedge-confirmation counter clean.
 	if getIsQuarantinedFn()(home) {
+		gemmaWedgeStrikes = 0
+		return nil
+	}
+	// Apollo.app owns the model's lifecycle (on-demand load, idle unload).
+	// Restoring the Pantheon broker would load a second copy of the model.
+	provided, err := getApolloProvidesFn()(home)
+	if err != nil {
+		gemmaWedgeStrikes = 0
+		return fmt.Errorf("Apollo provider check failed; no legacy restore: %w", err)
+	}
+	if provided {
 		gemmaWedgeStrikes = 0
 		return nil
 	}
