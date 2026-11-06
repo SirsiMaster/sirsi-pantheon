@@ -45,9 +45,64 @@ selection and causally reject the former DHCP address defaults. These inspect
 argv to fake transport only; they do not prove live alias reachability or submit
 a signing job.
 
-The existing result-signature checks and remote job protocol are unchanged.
-This patch does not claim comprehensive timeout, crash cleanup, arbitrary-host
-authorization, notarization or signer failover qualification.
+The existing result-signature checks are unchanged.
+
+## Bounded transfers and failover (2026-11-05)
+
+- Every SSH, SCP and rsync call also carries `ServerAliveInterval=15` and
+  `ServerAliveCountMax=4`, so a link that dies mid-transfer ends in about a
+  minute. Each upload and download is also bounded overall by
+  `SIRSI_SIGN_TRANSFER_TIMEOUT` (default 900 s).
+- The job ID is validated before any host is contacted.
+- **Failover keeps one job ID and never double-signs.** The client moves to
+  the next host in `SIRSI_SIGN_HOSTS` only when the job provably never entered
+  the first signer's queue: staging, upload, or a rename the host reports as
+  not done. Its hidden staging is then removed. Two cases stop instead:
+  - an enqueue whose outcome is unknown (exit 6);
+  - a job ID already present on a signer (exit 7).
+
+  Either is reconciled by that ID, never resubmitted. With
+  `SIRSI_SIGN_CUSTODY_DIR`, each host attempt is appended to `<id>.attempts`;
+  the custody record itself is never rewritten.
+- **Reconcile from `<id>.attempts`, not `<id>.json`.** The custody record names
+  the first enrolled host and is written before staging; after a failover the
+  host that holds the job is the `result=enqueued` line in `.attempts`. The
+  client also prints that host when the job is queued.
+- If a rename over SSH reports failure while the job still looks staged, the
+  client claims the staging with its own rename (`.<id>` to `.<id>.abandon`),
+  deletes only the claimed copy and re-tests, all in one call. Exactly one of
+  the two renames wins, so the job is then whole and queued (continue there) or
+  provably absent (fail over); a half-deleted bundle can never enqueue.
+  Anything unreadable stops with exit 6.
+- A caller-set `SIRSI_SIGN_JOB_ID` requires `SIRSI_SIGN_CUSTODY_DIR` (exit 2
+  otherwise): its exclusive record is what stops a rerun from enqueueing the
+  same ID on a second host while the first is unreachable.
+- Exit 8: the job finished on the signer but its artifact could not be fetched
+  (download failed or timed out), or it has no artifact (rejected, or pruned).
+  The result stays on the signer under its ID. Exit 5 remains a returned
+  artifact that failed Team verification.
+
+`sirsi-signd.sh` (the signing daemon, previously only on the signing Mac) is
+versioned here:
+
+- **Timestamp retry:** "The timestamp service is not available" is retried up
+  to 3 times (10 s, then 30 s) for the same job and input. Any other failure,
+  or a third outage, fails the job as before. Nothing unsigned is ever
+  published.
+- **Outbox pruning is OFF by default.** Signed artifacts are never deleted
+  unless the signer's custodian sets `SIRSI_SIGND_KEEP_DAYS` (whole days) in
+  the daemon's environment. When set, a finished job older than that loses its
+  artifact; its `receipt.txt`, its `done`/`failed` marker and `audit.log` stay
+  forever, so every job ID remains reconcilable. Unfinished jobs are never
+  pruned.
+
+The fixtures cover failover on a failed and a hung upload, refusal to fail
+over after an ambiguous enqueue, the late-landing rename race (rename wins,
+rm wins, unreadable), refusal of a caller ID without custody, existing-ID
+refusal, a ServerAlive negative control, timestamp retry/success, fail-closed
+after three outages, no retry of other failures, no pruning by default, and
+opt-in pruning. They do not qualify real signing, notarization,
+Apple's timestamp service or live multi-host failover.
 
 ## Commercialization profile
 
