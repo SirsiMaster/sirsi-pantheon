@@ -38,7 +38,7 @@ function taskPage(b){
  if(!p.rows.every(function(t){return matchesFilter(t,p.filter||'')}))return null;
  return p;
 }
-function taskList(b,e){
+function taskList(b,e,now,showRecent){
  var p=taskPage(b),h='<h2 id="fabric-task-heading" tabindex="-1">'+(p?taskFilters[p.filter||'']:'Ledger tasks')+'</h2>';
  if(!p)return h+'<p role="status">Task rows unavailable — not an empty task list. Refresh Fabric to retry.</p>';
  h+='<p>Showing '+(p.rows.length?p.offset+1:0)+'–'+(p.offset+p.rows.length)+' of '+p.total+' task rows. Page bound to this canonical observation.</p>';
@@ -46,9 +46,19 @@ function taskList(b,e){
  if(p.filter&&p.filter!=='open')h+=' <button class="btn" data-fabric-filter="open">Show all open tasks</button>';
  if(p.next_offset!=null)h+=' <button class="btn" data-fabric-task-page="next">Next task page</button>';
  if(!p.rows.length)return h+'<p>'+(p.filter&&p.filter!=='open'?'No tasks match this selection in this observation.':'No open ledger tasks in this observation.')+' Inbox messages are a separate stream.</p>';
- return h+'<table class="table responsive-table"><thead><tr><th>Task</th><th>Agent</th><th>Status</th></tr></thead><tbody>'+p.rows.map(function(t){
-  return '<tr><td data-label="Task"><button class="lane-select" data-fabric-task-agent="'+e(t.agent)+'" data-fabric-task-id="'+e(t.id)+'">'+e(t.subject||'Subject not supplied')+'</button><div class="sub">'+e(t.id)+'</div></td><td data-label="Agent">'+e(t.agent)+'</td><td data-label="Status" class="'+roleClass(t.role)+'">'+e(t.status)+' · '+e(t.liveness)+'</td></tr>';
- }).join('')+'</tbody></table>';
+ var groups=new Map(),observationAge=now-Date.parse(b.generated_at);
+ p.rows.forEach(function(t){if(!groups.has(t.agent))groups.set(t.agent,[]);groups.get(t.agent).push(t)});
+ h+='<p class="fabric-page-note">Grouped by lane on this page only; counts do not represent the entire lane.</p>';
+ groups.forEach(function(rows,agent){
+  h+='<section class="fabric-ledger-group" aria-label="Tasks for '+e(agent)+' on this page"><h3>'+e(agent)+' <span>'+rows.length+' on this page</span></h3><table class="rows"><tbody>'+rows.map(function(t){
+   // A recent transition is shown only from a current, error-free observation and only while it is
+   // genuinely recent; it is derived from the producer's own activity feed, never inferred client-side.
+   var event=showRecent&&b.activity_seeded&&Number.isFinite(observationAge)&&observationAge>=0&&observationAge<=30000&&b.activity.find(function(a){var age=now-Date.parse(a.at);return a.agent===t.agent&&a.task_id===t.id&&Number.isFinite(age)&&age>=0&&age<=30000});
+   var change=event?'<span class="sub-line fabric-recent-change" data-fabric-at="'+e(event.at)+'" data-fabric-observed="'+e(b.generated_at)+'">Observed transition: '+e(event.from)+' → '+e(event.to)+' · '+e(event.at)+'</span>':'';
+   return '<tr'+(event?' class="changed fabric-recent-row"':'')+'><td class="s"><span class="pill fabric-status '+roleClass(t.role)+'">'+e(t.status)+'</span></td><td class="id"><span class="idv" title="'+e(t.id)+'">'+e(t.id)+'</span></td><td class="t"><button class="lane-select" data-fabric-task-agent="'+e(t.agent)+'" data-fabric-task-id="'+e(t.id)+'">'+e(t.subject||'Subject not supplied')+'</button><span class="sub-line rid">'+e(t.id)+'</span><span class="sub-line dim">liveness '+e(t.liveness)+'</span>'+change+'</td></tr>';
+  }).join('')+'</tbody></table></section>';
+ });
+ return h;
 }
 function taskDetail(b,agent,id,e){
  var p=taskPage(b),t=p&&p.rows.find(function(row){return row.agent===agent&&row.id===id});
@@ -86,24 +96,36 @@ function bindLaneInspectors(element,b,inspect){
  });
 }
 function headlines(b,e){
- if(!valid(b))return '<p role="status">Fabric unavailable — no task or message counts observed.</p>';
+ if(!valid(b))return '<p role="status" class="banner b-warn">Fabric unavailable — no task or message counts observed.</p>';
  var w=b.work;
  function metric(filter,value,label){return '<button type="button" class="fabric-metric" data-fabric-filter="'+filter+'" aria-label="Show '+value+' '+label+'">'+value+'</button>'}
- return '<section aria-label="Canonical fabric tasks and messages"><div class="grid g4">'+
- '<div class="card kpi '+headlineRole(b,'completed')+'"><h2>Completed / in flight</h2><div class="v" aria-label="'+w.done+' / '+w.open+' tasks">'+metric('done',w.done,'completed tasks')+' / '+metric('open',w.open,'open tasks')+'</div><div class="l">Tasks · '+w.total+' total</div></div>'+
- '<div class="card kpi '+headlineRole(b,'progress')+'"><h2>In progress / assigned</h2><div class="v">'+metric('in_progress',w.in_progress,'in-progress tasks')+' / '+metric('assigned_not_started',w.assigned_not_started,'assigned tasks not started')+'</div><div class="l">Tasks</div></div>'+
- '<div class="card kpi '+headlineRole(b,'stalled')+'"><h2>Stalled / blocked</h2><div class="v">'+metric('stalled',w.stalled,'stalled tasks')+' / '+metric('blocked',w.blocked,'blocked tasks')+'</div><div class="l">Tasks</div></div>'+
- '<div class="card kpi '+headlineRole(b,'messages')+'"><h2>Messages pending</h2><div class="v"><button type="button" class="fabric-metric" data-fabric-messages aria-label="Show '+b.messages.open+' pending inbox messages">'+b.messages.open+'</button></div><div class="l">Inbox messages · '+b.messages.stranded+' stranded</div></div></div>'+
- '<p class="sub">Fabric observation '+e(b.generated_at)+' · '+e(b.build)+'</p></section>';
+ function card(role,cls,n,label,sub){return '<div class="card count '+headlineRole(b,role)+'"><div class="n '+cls+'">'+n+'</div><div class="l">'+label+'</div>'+(sub?'<div class="s">'+sub+'</div>':'')+'</div>'}
+ // Stalled counts include pending tasks that are also "not started", so the stack uses the
+ // stalled-while-in-progress remainder: open minus the other disjoint buckets. Words and numbers are in the aria-label.
+ var stalledRunning=Math.max(0,w.open-w.blocked-w.in_progress-w.assigned_not_started);
+ var segs=[['Done',w.done,'r-ok'],['In progress',w.in_progress,'r-warn'],['Not started',w.assigned_not_started,'r-info'],['Stalled in progress',stalledRunning,'r-warn'],['Blocked',w.blocked,'r-danger']].filter(function(s){return s[1]>0});
+ var total=segs.reduce(function(n,s){return n+s[1]},0);
+ var bar='<div class="bar" role="img" aria-label="Task distribution: '+(segs.length?segs.map(function(s){return s[0]+' '+s[1]}).join(', '):'no tasks')+'">'+segs.map(function(s){return '<span class="'+s[2]+'" style="width:'+(100*s[1]/total).toFixed(2)+'%" title="'+s[0]+' '+s[1]+'"></span>'}).join('')+'</div>';
+ return '<section aria-label="Canonical fabric tasks and messages"><div class="cards">'+
+ card('progress','r-ink',w.total,'Tasks')+
+ card('completed','r-ok','<button type="button" class="fabric-metric" data-fabric-filter="done" aria-label="Show '+w.done+' completed tasks">'+w.done+'</button>','Done')+
+ card('progress','r-warn',metric('in_progress',w.in_progress,'in-progress tasks'),'In progress')+
+ card('progress','r-info',metric('assigned_not_started',w.assigned_not_started,'assigned tasks not started'),'Not started')+
+ card('stalled','r-warn',metric('stalled',w.stalled,'stalled tasks'),'Stalled')+
+ card('stalled','r-danger',metric('blocked',w.blocked,'blocked tasks'),'Blocked')+
+ card('messages','r-info','<button type="button" class="fabric-metric" data-fabric-messages aria-label="Show '+b.messages.open+' pending inbox messages">'+b.messages.open+'</button>','Messages pending','Inbox messages · '+b.messages.stranded+' stranded')+
+ '</div>'+bar+'<p class="sub">'+metric('open',w.open,'open tasks')+' open tasks · stalled may overlap not started · Fabric observation '+e(b.generated_at)+' · '+e(b.build)+'</p></section>';
 }
-function render(b,e){
+function render(b,e,now,showRecent){
  if(!valid(b))return headlines(b,e);
+ if(!Number.isFinite(now))now=Date.now();
+ if(showRecent===undefined)showRecent=true;
  var h=headlines(b,e),v=b.health;
  function fact(value,unit){return value==null?'Unavailable':e(value)+(unit||'')}
  h+='<h2>Needs attention</h2>'+(!b.runtime_available?'<p role="status">Runtime classification unavailable.</p>':'')+
  (v.issues.length?'<ul>'+v.issues.map(function(x){return '<li>'+e(x)+'</li>'}).join('')+'</ul>':'<p>No issue entries supplied; absence is not a host-health verdict.</p>');
- h+='<h2>Lanes — supervised runtime</h2><table class="table responsive-table fabric-lane-table"><thead><tr><th>Agent</th><th>State</th><th class="num">Open tasks</th></tr></thead><tbody>'+b.lanes.map(function(l){return '<tr><td data-label="Agent"><button class="lane-select" data-fabric-inspect="'+e(l.agent)+'">'+e(l.agent)+'</button></td><td data-label="State"><button class="lane-select" data-fabric-inspect="'+e(l.agent)+'"><span class="'+roleClass(l.role)+'">'+e(l.state_label)+'</span></button></td><td data-label="Open tasks" class="num"><button class="lane-select" data-fabric-inspect="'+e(l.agent)+'" aria-label="Inspect '+e(l.agent)+' with '+l.open+' open tasks">'+l.open+'</button></td></tr>'}).join('')+'</tbody></table>';
- h+=taskList(b,e);
+ h+='<h2>Lanes — supervised runtime</h2><table class="rows fabric-lane-table"><tbody>'+b.lanes.map(function(l){return '<tr><td class="s"><button class="lane-select pill-btn" data-fabric-control="state" data-fabric-inspect="'+e(l.agent)+'"><span class="'+roleClass(l.role)+'">'+e(l.state_label)+'</span></button></td><td class="id"><span class="idv" title="'+e(l.agent)+'"><button class="lane-select" data-fabric-control="agent" data-fabric-inspect="'+e(l.agent)+'">'+e(l.agent)+'</button></span></td><td class="t"><button class="lane-select" data-fabric-control="open" data-fabric-inspect="'+e(l.agent)+'" aria-label="Inspect '+e(l.agent)+' with '+l.open+' open tasks">'+l.open+' open tasks</button><span class="sub-line rid">'+e(l.agent)+'</span></td></tr>'}).join('')+'</tbody></table>';
+ h+=taskList(b,e,now,showRecent);
  h+='<h2>Host health — separate from work</h2><p>RAM availability complement: '+fact(v.ram_pct,'%')+' · Swap: '+fact(v.swap,' bytes')+' · Capacity: '+fact(v.total_ram,' bytes')+' · CPU cores: '+fact(v.cpu_cores)+'</p><p>Repository dirty: '+(v.git_dirty==null?'Unavailable':e(String(v.git_dirty)))+' · Engine: '+e(v.engine)+' · '+e(v.engine_state)+' (session observation, not readiness proof)</p>';
  h+='<h2>Observed task transitions</h2>';
  if(!b.activity_seeded)h+='<p>Baseline only — no prior transition observation. Empty is not evidence of inactivity.</p>';
