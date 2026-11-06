@@ -181,10 +181,27 @@ func TestHomeServesTheDashboardAndItsAssets(t *testing.T) {
 		t.Fatalf("home page wrong: %d %s", code, ct)
 	}
 	js, _, _ := body("/assets/app.js")
-	for _, want := range []string{"/api/router/v1/snapshot", "/api/fabric", "/api/stats", "Where work is waiting", "data-view", "data-inspect"} {
+	for _, want := range []string{"/api/router/v1/snapshot", "/api/router/v1/ledger", "/api/router/v1/jobs", "/api/fabric", "/api/stats", "data-view", "data-inspect", "loadJobs", "lane/"} {
 		if !strings.Contains(js, want) {
 			t.Errorf("app.js missing %q", want)
 		}
+	}
+	// The row/section markup moved into ledger.js in the 2026-11-06 redesign, so the pinned
+	// overview strings are checked on the served ledger renderer, loaded before app.js.
+	ledgerJS, ledgerType, ledgerStatus := body("/assets/ledger.js")
+	if ledgerStatus != http.StatusOK || ledgerType != "application/javascript; charset=utf-8" {
+		t.Fatalf("ledger.js = %d %q", ledgerStatus, ledgerType)
+	}
+	for _, want := range []string{"Where work is waiting", "data-inspect", "data-queue", "Cloud jobs: no source connected for this lane"} {
+		if !strings.Contains(ledgerJS, want) {
+			t.Errorf("ledger.js missing %q", want)
+		}
+	}
+	if strings.Index(home, `src="/assets/ledger.js"`) < 0 || strings.Index(home, `src="/assets/ledger.js"`) > strings.Index(home, `src="/assets/app.js"`) {
+		t.Fatal("ledger.js must be mounted before app.js")
+	}
+	if strings.Contains(home, "<script>") {
+		t.Fatal("index.html must not carry an inline script (CSP script-src 'self')")
 	}
 	if !strings.Contains(home, "/assets/fabric.js") {
 		t.Fatal("actual Fabric renderer not mounted")
@@ -216,6 +233,18 @@ func TestHomeServesTheDashboardAndItsAssets(t *testing.T) {
 	fabricJS := string(fabricBytes)
 	if !strings.Contains(fabricJS, "Messages pending") || !strings.Contains(fabricJS, "Baseline only") {
 		t.Fatal("actual Fabric module missing stream/coverage labels")
+	}
+	// The served stylesheet and board-actions.js are the embedded source leaves (no stale or 500 asset).
+	appCSS, cssType, cssStatus := body("/assets/app.css")
+	cssSource, err := os.ReadFile("ui/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cssStatus != http.StatusOK || cssType != "text/css; charset=utf-8" || sha256.Sum256([]byte(appCSS)) != sha256.Sum256(cssSource) {
+		t.Fatal("served dashboard CSS does not match the source leaf")
+	}
+	if _, _, status := body("/assets/board-actions.js"); status != http.StatusOK {
+		t.Fatalf("board-actions.js = %d, want 200", status)
 	}
 	for _, path := range []string{"/assets/fabric.js.map", "/assets/Fabric.js", "/assets/fabric.js/other"} {
 		if _, _, status := body(path); status != http.StatusNotFound {
@@ -290,7 +319,7 @@ func TestRouterSurfaceCORSIsExplicit(t *testing.T) {
 func TestUIFilesCarryNoHexColors(t *testing.T) {
 	t.Parallel()
 	re := regexp.MustCompile(`#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b`)
-	for _, f := range []string{"ui/index.html", "ui/app.css", "ui/app.js"} {
+	for _, f := range []string{"ui/index.html", "ui/app.css", "ui/app.js", "ui/ledger.js", "ui/fabric.js"} {
 		b, err := uiFS.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
