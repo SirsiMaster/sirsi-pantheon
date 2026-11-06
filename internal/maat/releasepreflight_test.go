@@ -125,6 +125,8 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	// The builder pins bind v149's explicit Apollo capability and shared
 	// pre-sign receipt route, including its checked Bash 3.2 receipt reader.
 	// Notary and retained-app owner pins remain independent.
+	// PR1371 deliberately re-pins the signing client after its signing
+	// hardening; the delegated-signing-return-verification needles are unchanged.
 	// No copied script is executed. Future route changes must deliberately
 	// update this provenance and the observer together.
 	pinned := map[string]string{
@@ -136,7 +138,7 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 		// Keep both reviewed source digests exact; changes require deliberate
 		// provenance review while the negative contract controls remain in force.
 		".github/workflows/release.yml": "4bcc85ba631aa2544dadea197535565188eba48575b61bf3a074d72326e67fad",
-		"tools/signing/sirsi-sign":      "22d5d6811eb38549a31524cd4e27e707e9e884421f485090b1829fefc1593c77",
+		"tools/signing/sirsi-sign":      "84c59e34261991ac7dc803f123215e8c959bf9b56a11b800f51229f443a4e7b1",
 	}
 	for _, requirement := range releaseContractRequirements {
 		relative := requirement.Path
