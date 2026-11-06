@@ -113,6 +113,9 @@ type Config struct {
 	// release added. Wired by the caller, which owns registry/store access.
 	// If nil the endpoint returns 503 rather than an empty panel.
 	RouterFn RouterProducer
+	// LedgerAgentFn produces GET /api/router/v1/ledger?agent=<id> in-process
+	// (ledger.Build). If nil the endpoint returns 503, never an empty ledger.
+	LedgerAgentFn LedgerAgentProducer
 	// SurfaceOrigins is the explicit browser-origin allowlist for the canonical
 	// router surface consumed by Nexus. Empty uses the local development and
 	// Sirsi production defaults; wildcard CORS is never used.
@@ -264,6 +267,8 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/api/router", s.apiRouter)          // router panel: lanes, queue, known failures, swap, releases
 	mux.HandleFunc("/api/router/v1/manifest", s.apiRouterSurfaceManifest)
 	mux.HandleFunc("/api/router/v1/snapshot", s.apiRouterSurfaceSnapshot)
+	mux.HandleFunc("/api/router/v1/ledger", s.apiRouterLedger)
+	mux.HandleFunc("/api/router/v1/jobs", s.apiRouterJobs)
 	mux.HandleFunc("/api/fabric", s.apiFabric) // unified work/message/lane contract
 	mux.HandleFunc("/api/maat/decisions", s.apiMaatDecisions)
 	mux.HandleFunc("/api/maat/casebook", s.apiMaatCasebook)

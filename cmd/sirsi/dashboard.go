@@ -79,11 +79,12 @@ func runDashboard(cmd *cobra.Command, args []string) {
 			snap := collectDashboardStats()
 			return json.Marshal(snap)
 		},
-		VitalsFn:     collectDashboardVitals,
-		NodeStatusFn: collectDashboardNodeStatus,
-		LedgerFn:     collectDashboardLedger,
-		FleetFn:      collectDashboardFleet,
-		RouterFn:     collectDashboardRouter,
+		VitalsFn:      collectDashboardVitals,
+		NodeStatusFn:  collectDashboardNodeStatus,
+		LedgerFn:      collectDashboardLedger,
+		FleetFn:       collectDashboardFleet,
+		RouterFn:      collectDashboardRouter,
+		LedgerAgentFn: collectDashboardLedgerAgent,
 		RoutabilityFn: func() (map[string]bool, error) {
 			repoRoot, err := router.FindRepoRoot()
 			if err != nil {
@@ -135,6 +136,15 @@ func runDashboard(cmd *cobra.Command, args []string) {
 	if nStore != nil {
 		nStore.Close()
 	}
+}
+
+// collectDashboardLedgerAgent is the library call behind `sirsi router ledger <agent> --json`.
+func collectDashboardLedgerAgent(agent string) (ledger.Snapshot, error) {
+	repoRoot, err := router.FindRepoRoot()
+	if err != nil {
+		return ledger.Snapshot{}, err
+	}
+	return ledger.Build(repoRoot, agent, time.Now().UTC(), ledger.DefaultStaleAfter)
 }
 
 // Explicit browser diagnostics use the exact ranked CLI producer. Periodic
