@@ -94,12 +94,12 @@ type PingResult struct {
 	ReportSummary string `json:"report_summary,omitempty"`
 }
 
-// idleSession describes a registered interactive session that is between turns. Peers read
-// "not registered" as "that agent has no session" and repeat it as fact; an idle session is
-// registered and will read its inbox on its next turn, so say exactly that.
+// idleSession describes a registered interactive session whose heartbeat is stale. Say only what
+// the registry shows: a stale heartbeat proves neither that the session is gone nor that it will
+// read the inbox, so name the gap and leave consumption unknown.
 func idleSession(now time.Time, t *Thread) string {
-	return "its attended " + t.Surface + " session " + t.ThreadID + " is registered but idle (last heartbeat " +
-		ago(now, t.LastSeenAt) + " on " + hostOrUnknown(t.Host) + "); items wait for its next turn — it has not gone away"
+	return "attended " + t.Surface + " session " + t.ThreadID + " on " + hostOrUnknown(t.Host) + ": last heartbeat " +
+		ago(now, t.LastSeenAt) + "; the session may still be open and may read the inbox when it next runs"
 }
 
 // attendedSurface reports whether a thread surface is an interactive session
@@ -133,8 +133,8 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 			if stale == nil || t.LastSeenAt.After(stale.LastSeenAt) {
 				stale = t
 			}
-			// A registered interactive session that is between turns: it is not fresh enough to be
-			// deferred to, but it exists. Wording below must not call it unregistered.
+			// A registered interactive session with a stale heartbeat: not fresh enough to be
+			// deferred to, but visible. Wording below reports the gap, not absence or presence.
 			if attendedSurface(t.Surface) && (idle == nil || t.LastSeenAt.After(idle.LastSeenAt)) {
 				idle = t
 			}
@@ -185,20 +185,20 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 			}
 			switch l.Hold {
 			case HoldNoGrant, HoldAttended:
-				// Both holds defer to a lead/attended session, and none is fresh here, so the
-				// worker waits on a reader that does not exist. Not a hold that will clear.
+				// Both holds defer to a lead/attended session, and none is fresh in this view, so
+				// the worker has no visible reader. The view may be scoped; absence is not proven.
 				res.Workable = false
 				if idle != nil {
-					res.Detail += " (no live consumer right now: " + idleSession(now, idle) + ")"
+					res.Detail += " (no fresh attended session visible in this view; " + idleSession(now, idle) + ")"
 				} else {
-					res.Detail += " (no live consumer: the worker defers to a session that is not registered — needs-owner until that session resumes and `sirsi thread register`s)"
+					res.Detail += " (no registered session visible in this view for the worker to defer to — needs-owner until a session `sirsi thread register`s and is seen)"
 				}
 			case HoldQuarantine:
 				// This branch is reached only when no attended session is heartbeat-fresh,
 				// so the hold describes the background loop, not the lane. An attended
 				// session whose thread was reaped (e.g. a resumed session with a new PID)
 				// is invisible here until it registers again.
-				res.Detail += " (background loop quarantined; no attended session registered — a live session must `sirsi thread register` to be seen)"
+				res.Detail += " (background loop quarantined; no fresh attended session visible in this view — a live session must `sirsi thread register` to be seen)"
 			}
 		case l != nil && l.LastOutcome == OutcomeRelay:
 			res.Verdict = VerdictHeld
@@ -226,7 +226,7 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 		mech := ExplicitWakeMechanism(cfg)
 		switch mech {
 		case "", WakeNone:
-			res.Detail = "no worker path: wake mechanism is none and no session is registered"
+			res.Detail = "no worker path: wake mechanism is none and no registered session is visible in this view"
 		default:
 			res.Detail = "wake mechanism " + mech + " is declared but no worker is reporting"
 		}
