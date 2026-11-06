@@ -380,8 +380,14 @@ func TestSignerRenameRecheckNeverDoubleEnqueues(t *testing.T) {
 			if code != c.exit {
 				t.Fatalf("exit %d, want %d: %s %s", code, c.exit, out, log)
 			}
-			if !strings.Contains(log, "first@signer.invalid rm -rf ~/sirsi-sign/inbox/."+id+"; if test -e") {
-				t.Fatalf("staging was not removed and re-tested in one call: %s", log)
+			claim := "mv ~/sirsi-sign/inbox/." + id + " ~/sirsi-sign/inbox/." + id + ".abandon 2>/dev/null; rm -rf ~/sirsi-sign/inbox/." + id + ".abandon; if test -e"
+			if !strings.Contains(log, "first@signer.invalid rm -rf ~/sirsi-sign/inbox/."+id+".abandon; "+claim) {
+				t.Fatalf("staging was not claimed by rename, removed and re-tested in one call: %s", log)
+			}
+			for _, l := range strings.Split(log, "\n") { // only the claimed copy is ever deleted, never live staging
+				if strings.Contains(l, "rm -rf ~/sirsi-sign/inbox/."+id+";") || strings.HasSuffix(l, "rm -rf ~/sirsi-sign/inbox/."+id) {
+					t.Fatalf("live staging deleted without a claiming rename: %s", l)
+				}
 			}
 			if got := stagedOn(log, "second@signer.invalid"); got != c.second {
 				t.Fatalf("second signer staged=%v, want %v (double-sign risk): %s", got, c.second, log)

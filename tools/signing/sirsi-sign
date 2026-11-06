@@ -94,9 +94,10 @@ stage() {
   # The rename's outcome is unknown: ask the host which state the job is in.
   r=$(ssh "${SSH_OPTIONS[@]}" "$h" "if test -e ~/sirsi-sign/inbox/$id -o -e ~/sirsi-sign/work/$id -o -e ~/sirsi-sign/outbox/$id; then echo QUEUED; elif test -d ~/sirsi-sign/inbox/.$id; then echo STAGED; else echo NONE; fi") || return 11
   case $r in QUEUED) return 0;; STAGED) ;; *) return 11;; esac
-  # Still staged, but the first rename may still be running on the host. Remove the staging and re-test in one call:
-  # rename is atomic, so afterwards the job is either queued (the rename won) or provably absent (the rm won).
-  r=$(ssh "${SSH_OPTIONS[@]}" "$h" "rm -rf ~/sirsi-sign/inbox/.$id; if test -e ~/sirsi-sign/inbox/$id -o -e ~/sirsi-sign/work/$id -o -e ~/sirsi-sign/outbox/$id; then echo LANDED; elif test -e ~/sirsi-sign/inbox/.$id; then echo LEFT; else echo ABSENT; fi") || return 11
+  # Still staged, but the first rename may still be running on the host. Claim the staging with a rename of our own
+  # (exactly one of the two renames wins; rm -rf alone is not atomic and could let a half-deleted bundle enqueue),
+  # delete only what we claimed, and re-test, all in one call: the job is then whole and queued, or provably absent.
+  r=$(ssh "${SSH_OPTIONS[@]}" "$h" "rm -rf ~/sirsi-sign/inbox/.$id.abandon; mv ~/sirsi-sign/inbox/.$id ~/sirsi-sign/inbox/.$id.abandon 2>/dev/null; rm -rf ~/sirsi-sign/inbox/.$id.abandon; if test -e ~/sirsi-sign/inbox/$id -o -e ~/sirsi-sign/work/$id -o -e ~/sirsi-sign/outbox/$id; then echo LANDED; elif test -e ~/sirsi-sign/inbox/.$id; then echo LEFT; else echo ABSENT; fi") || return 11
   case $r in LANDED) return 0;; ABSENT) return 10;; *) return 11;; esac
 }
 # Fail over only when the job provably never entered a signer's queue; same ID on every host.

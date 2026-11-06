@@ -69,9 +69,11 @@ The existing result-signature checks are unchanged.
   host that holds the job is the `result=enqueued` line in `.attempts`. The
   client also prints that host when the job is queued.
 - If a rename over SSH reports failure while the job still looks staged, the
-  client removes the staging and re-tests in one call. Rename is atomic, so the
-  job is then either queued (continue there) or provably absent (fail over);
-  anything unreadable stops with exit 6.
+  client claims the staging with its own rename (`.<id>` to `.<id>.abandon`),
+  deletes only the claimed copy and re-tests, all in one call. Exactly one of
+  the two renames wins, so the job is then whole and queued (continue there) or
+  provably absent (fail over); a half-deleted bundle can never enqueue.
+  Anything unreadable stops with exit 6.
 - A caller-set `SIRSI_SIGN_JOB_ID` requires `SIRSI_SIGN_CUSTODY_DIR` (exit 2
   otherwise): its exclusive record is what stops a rerun from enqueueing the
   same ID on a second host while the first is unreachable.
