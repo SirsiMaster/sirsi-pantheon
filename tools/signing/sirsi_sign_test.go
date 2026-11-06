@@ -58,6 +58,8 @@ for required in ConnectTimeout=10 BatchMode=yes StrictHostKeyChecking=yes Passwo
 done
 [ "$SIGN_FIXTURE_MODE" != deny ] || exit 255
 case "$op:$*" in ssh:*"mv ~/sirsi-sign/inbox/"*) [ "$SIGN_FIXTURE_MODE" != ambiguous-enqueue ] || exit 255;; esac
+# rename-*: the first host's mv reports failure while the hidden staging still looks present
+case "$SIGN_FIXTURE_MODE:$op:$*" in rename-*:ssh:*"first@signer.invalid mv ~/sirsi-sign/inbox/"*) exit 255;; esac
 # the first host's upload fails or hangs; the second host is healthy
 case "$SIGN_FIXTURE_MODE:$op:$*" in
   upload-fail-first:scp:*"first@signer.invalid:sirsi-sign/inbox/"*) exit 1;;
@@ -66,6 +68,8 @@ esac
 for last; do :; done
 case "$op:$*" in
   ssh:*"echo EXISTS"*) if [ "$SIGN_FIXTURE_MODE" = id-exists ]; then echo EXISTS; else echo STAGED; fi;;
+  ssh:*"echo LANDED"*) case $SIGN_FIXTURE_MODE in rename-lands-late) echo LANDED;; rename-unreadable) exit 255;; *) echo ABSENT;; esac;;
+  ssh:*"first@signer.invalid"*"echo QUEUED"*) case $SIGN_FIXTURE_MODE in rename-*) echo STAGED;; ambiguous-enqueue) exit 255;; *) echo QUEUED;; esac;;
   ssh:*"echo QUEUED"*) [ "$SIGN_FIXTURE_MODE" != ambiguous-enqueue ] || exit 255; echo QUEUED;;
   ssh:*"ls ~/sirsi-sign/outbox/"*) printf '%s\n' "$SIGN_FIXTURE_NAME";;
   rsync:*":sirsi-sign/outbox/"*)
@@ -102,6 +106,15 @@ fi
 	}
 	if hosts != nil {
 		cmd.Env = append(cmd.Env, "SIRSI_SIGN_HOSTS="+*hosts)
+	}
+	if mode == "no-custody" { // a caller-set job ID without a custody record
+		env := cmd.Env[:0]
+		for _, e := range cmd.Env {
+			if !strings.HasPrefix(e, "SIRSI_SIGN_CUSTODY_DIR=") {
+				env = append(env, e)
+			}
+		}
+		cmd.Env = env
 	}
 	out, runErr := cmd.CombinedOutput()
 	logged, err := os.ReadFile(log)
@@ -317,13 +330,85 @@ func TestSignerAmbiguousEnqueueNeverFailsOver(t *testing.T) {
 	if !ok || exit.ExitCode() != 6 {
 		t.Fatalf("ambiguous enqueue did not stop with 6: %v %s", runErr, log)
 	}
-	if strings.Contains(log, "second@signer.invalid") && strings.Contains(log, "second@signer.invalid mkdir") {
+	if stagedOn(log, "second@signer.invalid") {
 		t.Fatalf("ambiguous enqueue failed over (double-sign risk): %s", log)
 	}
 	for _, l := range strings.Split(log, "\n") {
 		if strings.Contains(l, "second@signer.invalid") && (strings.Contains(l, "echo STAGED") || strings.HasPrefix(l, "scp ")) {
 			t.Fatalf("second signer was staged after an ambiguous enqueue: %s", log)
 		}
+	}
+}
+
+// stagedOn: the client sent HOST its exclusive staging probe (the only command that creates hidden staging).
+func stagedOn(log, host string) bool {
+	for _, l := range strings.Split(log, "\n") {
+		if strings.HasPrefix(l, "ssh ") && strings.Contains(l, host+" ") && strings.Contains(l, "echo EXISTS") {
+			return true
+		}
+	}
+	return false
+}
+
+// Mercury's race: mv over ssh reports failure while the rename is still landing on the first signer. The client
+// removes the staging and re-tests in one call, and fails over only when the job is confirmed absent.
+func TestSignerRenameRecheckNeverDoubleEnqueues(t *testing.T) {
+	source, err := os.ReadFile("sirsi-sign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "11111111-2222-4333-8444-555555555555"
+	for _, c := range []struct {
+		mode     string
+		exit     int
+		attempts []string
+		second   bool // the second signer may be staged
+	}{
+		{"rename-lands-late", 0, []string{"host=first@signer.invalid result=enqueued"}, false},
+		{"rename-rm-wins", 0, []string{"host=first@signer.invalid result=not-enqueued", "host=second@signer.invalid result=enqueued"}, true},
+		{"rename-unreadable", 6, []string{"host=first@signer.invalid result=enqueue-unknown"}, false},
+	} {
+		t.Run(c.mode, func(t *testing.T) {
+			hosts := "first@signer.invalid second@signer.invalid"
+			out, log, signed, runErr := signingFixtureWithHosts(t, source, false, c.mode, &hosts)
+			code := 0
+			if exit, ok := runErr.(*exec.ExitError); ok {
+				code = exit.ExitCode()
+			} else if runErr != nil {
+				t.Fatal(runErr)
+			}
+			if code != c.exit {
+				t.Fatalf("exit %d, want %d: %s %s", code, c.exit, out, log)
+			}
+			if !strings.Contains(log, "first@signer.invalid rm -rf ~/sirsi-sign/inbox/."+id+"; if test -e") {
+				t.Fatalf("staging was not removed and re-tested in one call: %s", log)
+			}
+			if got := stagedOn(log, "second@signer.invalid"); got != c.second {
+				t.Fatalf("second signer staged=%v, want %v (double-sign risk): %s", got, c.second, log)
+			}
+			att, _ := os.ReadFile(filepath.Join(filepath.Dir(signed), "custody", id+".attempts"))
+			for _, a := range c.attempts {
+				if !strings.Contains(string(att), a) {
+					t.Errorf("attempts missing %q: %s", a, att)
+				}
+			}
+		})
+	}
+}
+
+// A caller-chosen job ID without a custody record is refused before any host is contacted.
+func TestSignerCallerJobIDRequiresCustody(t *testing.T) {
+	source, err := os.ReadFile("sirsi-sign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, log, _, runErr := signingFixture(t, source, false, "no-custody")
+	exit, ok := runErr.(*exec.ExitError)
+	if !ok || exit.ExitCode() != 2 || !strings.Contains(out, "requires SIRSI_SIGN_CUSTODY_DIR") {
+		t.Fatalf("caller ID without custody not refused: %v %s", runErr, out)
+	}
+	if log != "" {
+		t.Fatalf("refused job still contacted a host: %s", log)
 	}
 }
 

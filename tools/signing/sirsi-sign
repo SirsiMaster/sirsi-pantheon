@@ -24,6 +24,8 @@ bounded() { perl -e 'alarm shift; exec @ARGV or die "exec: $!"' "$XT" "$@"; }
 # accepting an ID here does not itself establish admission or custody.
 id=${SIRSI_SIGN_JOB_ID:-$(uuidgen | tr A-Z a-z)}
 [[ "$id" =~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' ]] || { echo 'sirsi-sign: invalid canonical job UUID' >&2; exit 2; }
+# A caller-chosen ID can be resubmitted; only the O_EXCL custody record stops a rerun from enqueueing it on a second host.
+[[ -z "${SIRSI_SIGN_JOB_ID:-}" || -n "${SIRSI_SIGN_CUSTODY_DIR:-}" ]] || { echo 'sirsi-sign: SIRSI_SIGN_JOB_ID requires SIRSI_SIGN_CUSTODY_DIR' >&2; exit 2; }
 n=${f:t}; n=${n%/}; n=${n//[^A-Za-z0-9._-]/_}
 enrolled() { ssh "${SSH_OPTIONS[@]}" "$1" 'test -x ~/sirsi-sign/bin/sirsi-signd.sh && launchctl print gui/$(id -u)/ai.sirsi.signd >/dev/null 2>&1' 2>/dev/null; }
 H=""
@@ -91,7 +93,11 @@ stage() {
   ssh "${SSH_OPTIONS[@]}" "$h" "mv ~/sirsi-sign/inbox/.$id ~/sirsi-sign/inbox/$id" && return 0
   # The rename's outcome is unknown: ask the host which state the job is in.
   r=$(ssh "${SSH_OPTIONS[@]}" "$h" "if test -e ~/sirsi-sign/inbox/$id -o -e ~/sirsi-sign/work/$id -o -e ~/sirsi-sign/outbox/$id; then echo QUEUED; elif test -d ~/sirsi-sign/inbox/.$id; then echo STAGED; else echo NONE; fi") || return 11
-  case $r in QUEUED) return 0;; STAGED) ssh "${SSH_OPTIONS[@]}" "$h" "rm -rf ~/sirsi-sign/inbox/.$id" 2>/dev/null || true; return 10;; *) return 11;; esac
+  case $r in QUEUED) return 0;; STAGED) ;; *) return 11;; esac
+  # Still staged, but the first rename may still be running on the host. Remove the staging and re-test in one call:
+  # rename is atomic, so afterwards the job is either queued (the rename won) or provably absent (the rm won).
+  r=$(ssh "${SSH_OPTIONS[@]}" "$h" "rm -rf ~/sirsi-sign/inbox/.$id; if test -e ~/sirsi-sign/inbox/$id -o -e ~/sirsi-sign/work/$id -o -e ~/sirsi-sign/outbox/$id; then echo LANDED; elif test -e ~/sirsi-sign/inbox/.$id; then echo LEFT; else echo ABSENT; fi") || return 11
+  case $r in LANDED) return 0;; ABSENT) return 10;; *) return 11;; esac
 }
 # Fail over only when the job provably never entered a signer's queue; same ID on every host.
 started=0
@@ -109,13 +115,16 @@ for h in $HOSTS; do
   esac
 done
 [ -n "$H" ] || { echo "sirsi-sign: no signer accepted job $id (never enqueued anywhere)" >&2; exit 4; }
-echo "sirsi-sign: job $id queued on the signing Mac"
+echo "sirsi-sign: job $id queued on the signing Mac ${H#*@}"
 end=$(( $(date +%s) + T ))
 until ssh "${SSH_OPTIONS[@]}" "$H" "test -e ~/sirsi-sign/outbox/$id/done -o -e ~/sirsi-sign/outbox/$id/failed"; do
   [ $(date +%s) -gt $end ] && { echo "sirsi-sign: timed out; job $id remains on the signing Mac" >&2; exit 3; }; sleep 15
 done
 d=${f:h}; o=$(ssh "${SSH_OPTIONS[@]}" "$H" "ls ~/sirsi-sign/outbox/$id | grep -vE '^(done|failed|receipt.txt)$' | head -1")
-V=$(mktemp -d); bounded rsync -a -e "$RSYNC_SSH" "${H}:sirsi-sign/outbox/$id/$o" "$V/"; bounded scp "${SSH_OPTIONS[@]}" -q "${H}:sirsi-sign/outbox/$id/receipt.txt" "$d/signed-$o.receipt.txt"
+[ -n "$o" ] || { echo "sirsi-sign: job $id finished on ${H#*@} with no artifact (rejected, or its artifact was pruned); its receipt.txt there says why" >&2; exit 8; }
+V=$(mktemp -d)
+{ bounded rsync -a -e "$RSYNC_SSH" "${H}:sirsi-sign/outbox/$id/$o" "$V/" && bounded scp "${SSH_OPTIONS[@]}" -q "${H}:sirsi-sign/outbox/$id/receipt.txt" "$d/signed-$o.receipt.txt"; } ||
+  { rm -rf "$V"; echo "sirsi-sign: download of job $id from ${H#*@} failed or timed out; the signed result stays there, fetch it by ID" >&2; exit 8; }
 TEAM=9D382WV988; vok=1
 if [ $k = pkg ]; then
   pkgutil --check-signature "$V/$o" | grep -q "Developer ID Installer: Sirsi Technologies Inc. ($TEAM)" || vok=0

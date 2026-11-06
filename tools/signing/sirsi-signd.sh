@@ -15,12 +15,12 @@ PROFILE=sirsi-notary
 B=$HOME/sirsi-sign; mkdir -p "$B/inbox" "$B/outbox" "$B/work"
 mkdir "$B/.lock" 2>/dev/null || exit 0; trap 'rmdir "$B/.lock"' EXIT   # one runner at a time
 SAFE='^[A-Za-z0-9._-]+$'
-KEEP_DAYS=14        # finished jobs keep their signed artifact this long; receipt.txt, done/failed and audit.log stay forever
+KEEP_DAYS=${SIRSI_SIGND_KEEP_DAYS:-}   # OFF unless set (whole days): enabling it is the signer custodian's decision
 TS_BACKOFF=(10 30)  # waits before the 2nd and 3rd try when Apple's timestamp service is unavailable
 
-# Prune: after KEEP_DAYS, a finished job's artifact goes; its receipt and done/failed marker stay, so any job ID can
-# still be reconciled. Unfinished jobs are never touched.
-for P in "$B"/outbox/*(/Nm+$KEEP_DAYS); do
+# Prune (opt-in): after KEEP_DAYS, a finished job's artifact goes; its receipt and done/failed marker stay, so any job
+# ID can still be reconciled. Unfinished jobs are never touched. Unset or non-numeric: nothing is ever pruned.
+[[ $KEEP_DAYS == <1-> ]] && for P in "$B"/outbox/*(/Nm+$KEEP_DAYS); do
   [ -e "$P/done" ] || [ -e "$P/failed" ] || continue
   gone=(); for x in "$P"/*(DN); do case ${x:t} in receipt.txt|done|failed) ;; *) gone+=(${x:t}); rm -rf -- "$x";; esac; done
   (( ${#gone} )) && print -r -- "$(date -u +%FT%TZ) id=${P:t} result=pruned removed=${(j:,:)gone} kept=receipt,marker" >> "$B/audit.log"

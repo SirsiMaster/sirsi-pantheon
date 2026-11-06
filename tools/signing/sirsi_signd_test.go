@@ -18,7 +18,7 @@ type signdRun struct {
 	calls                     int
 }
 
-func runSignd(t *testing.T, codesignFails int, failText string, setup func(home string)) signdRun {
+func runSignd(t *testing.T, codesignFails int, failText string, setup func(home string), env ...string) signdRun {
 	t.Helper()
 	zsh, err := exec.LookPath("zsh")
 	if err != nil {
@@ -61,7 +61,7 @@ echo "signed (fixture)"
 		setup(home)
 	}
 	cmd := exec.Command(zsh, "-f", daemon)
-	cmd.Env = []string{"HOME=" + home, "PATH=" + bin + ":/usr/bin:/bin", "TMPDIR=" + root}
+	cmd.Env = append([]string{"HOME=" + home, "PATH=" + bin + ":/usr/bin:/bin", "TMPDIR=" + root}, env...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("daemon run: %v %s", err, out)
@@ -118,6 +118,31 @@ func TestSigndDoesNotRetryOtherFailures(t *testing.T) {
 	}
 }
 
+func mkOutboxJob(home, id, marker string) string {
+	d := filepath.Join(home, "sirsi-sign", "outbox", id)
+	os.MkdirAll(d, 0o700)
+	os.WriteFile(filepath.Join(d, "receipt.txt"), []byte("r"), 0o600)
+	os.WriteFile(filepath.Join(d, "big.pkg"), []byte("artifact"), 0o600)
+	if marker != "" {
+		os.WriteFile(filepath.Join(d, marker), nil, 0o600)
+	}
+	old := time.Now().Add(-400 * 24 * time.Hour)
+	os.Chtimes(d, old, old)
+	return d
+}
+
+// Pruning is off unless the custodian sets SIRSI_SIGND_KEEP_DAYS: a year-old finished job keeps its artifact.
+func TestSigndNeverPrunesByDefault(t *testing.T) {
+	var d string
+	r := runSignd(t, 0, "", func(home string) { d = mkOutboxJob(home, "aaaaaaaa-0000-4000-8000-000000000009", "done") })
+	if _, err := os.Stat(filepath.Join(d, "big.pkg")); err != nil {
+		t.Fatal("artifact pruned with pruning unset")
+	}
+	if strings.Contains(r.audit, "result=pruned") {
+		t.Fatalf("prune audited with pruning unset: %s", r.audit)
+	}
+}
+
 func TestSigndPrunesOnlyOldFinishedArtifacts(t *testing.T) {
 	old := time.Now().Add(-20 * 24 * time.Hour)
 	mk := func(home, id string, marker string) string {
@@ -138,7 +163,7 @@ func TestSigndPrunesOnlyOldFinishedArtifacts(t *testing.T) {
 		for _, d := range []string{oldDone, oldOpen} {
 			os.Chtimes(d, old, old)
 		}
-	})
+	}, "SIRSI_SIGND_KEEP_DAYS=14")
 	if _, err := os.Stat(filepath.Join(oldDone, "big.pkg")); !os.IsNotExist(err) {
 		t.Error("old finished artifact not pruned")
 	}

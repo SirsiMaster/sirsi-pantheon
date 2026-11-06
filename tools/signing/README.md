@@ -64,6 +64,21 @@ The existing result-signature checks are unchanged.
   Either is reconciled by that ID, never resubmitted. With
   `SIRSI_SIGN_CUSTODY_DIR`, each host attempt is appended to `<id>.attempts`;
   the custody record itself is never rewritten.
+- **Reconcile from `<id>.attempts`, not `<id>.json`.** The custody record names
+  the first enrolled host and is written before staging; after a failover the
+  host that holds the job is the `result=enqueued` line in `.attempts`. The
+  client also prints that host when the job is queued.
+- If a rename over SSH reports failure while the job still looks staged, the
+  client removes the staging and re-tests in one call. Rename is atomic, so the
+  job is then either queued (continue there) or provably absent (fail over);
+  anything unreadable stops with exit 6.
+- A caller-set `SIRSI_SIGN_JOB_ID` requires `SIRSI_SIGN_CUSTODY_DIR` (exit 2
+  otherwise): its exclusive record is what stops a rerun from enqueueing the
+  same ID on a second host while the first is unreachable.
+- Exit 8: the job finished on the signer but its artifact could not be fetched
+  (download failed or timed out), or it has no artifact (rejected, or pruned).
+  The result stays on the signer under its ID. Exit 5 remains a returned
+  artifact that failed Team verification.
 
 `sirsi-signd.sh` (the signing daemon, previously only on the signing Mac) is
 versioned here:
@@ -72,14 +87,19 @@ versioned here:
   to 3 times (10 s, then 30 s) for the same job and input. Any other failure,
   or a third outage, fails the job as before. Nothing unsigned is ever
   published.
-- **Outbox pruning:** after 14 days a finished job's artifact is removed. Its
-  `receipt.txt`, its `done`/`failed` marker and `audit.log` stay forever, so
-  every job ID remains reconcilable. Unfinished jobs are never pruned.
+- **Outbox pruning is OFF by default.** Signed artifacts are never deleted
+  unless the signer's custodian sets `SIRSI_SIGND_KEEP_DAYS` (whole days) in
+  the daemon's environment. When set, a finished job older than that loses its
+  artifact; its `receipt.txt`, its `done`/`failed` marker and `audit.log` stay
+  forever, so every job ID remains reconcilable. Unfinished jobs are never
+  pruned.
 
 The fixtures cover failover on a failed and a hung upload, refusal to fail
-over after an ambiguous enqueue, existing-ID refusal, a ServerAlive negative
-control, timestamp retry/success, fail-closed after three outages, no retry of
-other failures, and pruning. They do not qualify real signing, notarization,
+over after an ambiguous enqueue, the late-landing rename race (rename wins,
+rm wins, unreadable), refusal of a caller ID without custody, existing-ID
+refusal, a ServerAlive negative control, timestamp retry/success, fail-closed
+after three outages, no retry of other failures, no pruning by default, and
+opt-in pruning. They do not qualify real signing, notarization,
 Apple's timestamp service or live multi-host failover.
 
 ## Commercialization profile
