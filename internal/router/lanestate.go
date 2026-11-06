@@ -94,6 +94,14 @@ type PingResult struct {
 	ReportSummary string `json:"report_summary,omitempty"`
 }
 
+// idleSession describes a registered interactive session whose heartbeat is stale. Say only what
+// the registry shows: a stale heartbeat proves neither that the session is gone nor that it will
+// read the inbox, so name the gap and leave consumption unknown.
+func idleSession(now time.Time, t *Thread) string {
+	return "attended " + t.Surface + " session " + t.ThreadID + " on " + hostOrUnknown(t.Host) + ": last heartbeat " +
+		ago(now, t.LastSeenAt) + "; the session may still be open and may read the inbox when it next runs"
+}
+
 // attendedSurface reports whether a thread surface is an interactive session
 // (it IS the consumer) rather than a headless worker loop.
 func attendedSurface(surface string) bool {
@@ -110,7 +118,7 @@ func attendedSurface(surface string) bool {
 // enough for WAKEABLE — the loop must also declare a working consumer.
 func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Time) PingResult {
 	res := PingResult{Agent: agentID}
-	var worker, attended, stale *Thread
+	var worker, attended, stale, idle *Thread
 	for _, t := range reg.SortedThreads() {
 		watches := t.AgentID == agentID
 		for _, w := range t.Watches {
@@ -124,6 +132,11 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 		if now.Sub(t.LastSeenAt) > DefaultThreadStaleAfter {
 			if stale == nil || t.LastSeenAt.After(stale.LastSeenAt) {
 				stale = t
+			}
+			// A registered interactive session with a stale heartbeat: not fresh enough to be
+			// deferred to, but visible. Wording below reports the gap, not absence or presence.
+			if attendedSurface(t.Surface) && (idle == nil || t.LastSeenAt.After(idle.LastSeenAt)) {
+				idle = t
 			}
 			continue
 		}
@@ -155,6 +168,9 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 		case (!worker.ConsumerCapable || (l != nil && !l.ConsumerDeclared)) && (l == nil || l.Hold != HoldAttended):
 			res.Verdict = VerdictWatchOnly
 			res.Detail = "a wake loop is running but declares no working consumer, so it will watch the inbox and never work it"
+			if idle != nil {
+				res.Detail += "; " + idleSession(now, idle)
+			}
 		case l != nil && l.LastOutcome == OutcomeProviderQuota:
 			res.Verdict = "PROVIDER_QUOTA"
 			res.Detail = "provider quota blocked; explicit availability evidence required before retry"
@@ -169,16 +185,20 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 			}
 			switch l.Hold {
 			case HoldNoGrant, HoldAttended:
-				// Both holds defer to a lead/attended session, and none is fresh here, so the
-				// worker waits on a reader that does not exist. Not a hold that will clear.
+				// Both holds defer to a lead/attended session, and none is fresh in this view, so
+				// the worker has no visible reader. The view may be scoped; absence is not proven.
 				res.Workable = false
-				res.Detail += " (no live consumer: the worker defers to a session that is not registered — needs-owner until that session resumes and `sirsi thread register`s)"
+				if idle != nil {
+					res.Detail += " (no fresh attended session visible in this view; " + idleSession(now, idle) + ")"
+				} else {
+					res.Detail += " (no registered session visible in this view for the worker to defer to — needs-owner until a session `sirsi thread register`s and is seen)"
+				}
 			case HoldQuarantine:
 				// This branch is reached only when no attended session is heartbeat-fresh,
 				// so the hold describes the background loop, not the lane. An attended
 				// session whose thread was reaped (e.g. a resumed session with a new PID)
 				// is invisible here until it registers again.
-				res.Detail += " (background loop quarantined; no attended session registered — a live session must `sirsi thread register` to be seen)"
+				res.Detail += " (background loop quarantined; no fresh attended session visible in this view — a live session must `sirsi thread register` to be seen)"
 			}
 		case l != nil && l.LastOutcome == OutcomeRelay:
 			res.Verdict = VerdictHeld
@@ -198,12 +218,15 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 	case stale != nil:
 		res.Verdict, res.Thread = VerdictUnreachable, stale.ThreadID
 		res.Detail = "its worker last reported " + ago(now, stale.LastSeenAt) + " on " + hostOrUnknown(stale.Host)
+		if idle != nil {
+			res.Detail = idleSession(now, idle)
+		}
 	default:
 		res.Verdict = VerdictUnstaffed
 		mech := ExplicitWakeMechanism(cfg)
 		switch mech {
 		case "", WakeNone:
-			res.Detail = "no worker path: wake mechanism is none and no session is registered"
+			res.Detail = "no worker path: wake mechanism is none and no registered session is visible in this view"
 		default:
 			res.Detail = "wake mechanism " + mech + " is declared but no worker is reporting"
 		}

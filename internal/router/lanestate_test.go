@@ -45,9 +45,9 @@ func TestPingLaneVerdicts(t *testing.T) {
 		{"auth required", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, LastOutcome: OutcomeAuthRequired, LastDetail: "Not logged in"}, time.Minute)), AgentConfig{}, VerdictAuthRequired, false, "Not logged in"},
 		{"held by window", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldWindow}, time.Minute)), AgentConfig{}, VerdictHeld, true, "window"},
 		{"held by backoff with expiry", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldBackoff, HoldUntil: pingNow.Add(time.Hour)}, time.Minute)), AgentConfig{}, VerdictHeld, true, "until"},
-		{"quarantine is not workable", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldQuarantine}, time.Minute)), AgentConfig{}, VerdictHeld, false, "no attended session registered"},
-		// The lead/attended session these holds defer to is absent here, so nothing reads the inbox.
-		{"no_grant without a live session has no consumer", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldNoGrant}, time.Minute)), AgentConfig{}, VerdictHeld, false, "no live consumer"},
+		{"quarantine is not workable", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldQuarantine}, time.Minute)), AgentConfig{}, VerdictHeld, false, "no fresh attended session visible in this view"},
+		// No lead/attended session these holds defer to is visible here.
+		{"no_grant without a live session has no consumer", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldNoGrant}, time.Minute)), AgentConfig{}, VerdictHeld, false, "no registered session visible in this view"},
 		{"attended hold without a live session has no consumer", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldAttended}, time.Minute)), AgentConfig{}, VerdictHeld, false, "needs-owner"},
 		// What a declared-attended loop actually publishes (wakeLoopConsumerCapable is false for it).
 		{"declared-attended loop reads held, not watch-only", regWith(worker("a", false, &LaneState{Hold: HoldAttended}, time.Minute)), AgentConfig{}, VerdictHeld, false, "needs-owner"},
@@ -66,6 +66,42 @@ func TestPingLaneVerdicts(t *testing.T) {
 		if c.detail != "" && !strings.Contains(got.Detail, c.detail) {
 			t.Errorf("%s: detail %q missing %q", c.name, got.Detail, c.detail)
 		}
+	}
+}
+
+// TestPingLaneIdleSessionIsNotUnregistered: an interactive session with a stale heartbeat keeps every
+// verdict as before, but the detail must report only what is observed (the heartbeat gap), never
+// "not registered" and never a claim that the session still exists or will read the inbox.
+func TestPingLaneIdleSessionIsNotUnregistered(t *testing.T) {
+	idle := func() *Thread {
+		return &Thread{ThreadID: "thr-idle", AgentID: "a", Surface: "claude", Status: ThreadStatusActive,
+			Host: "m5", LastSeenAt: pingNow.Add(-25 * time.Minute)}
+	}
+	cases := []struct {
+		name    string
+		reg     *ThreadRegistry
+		verdict string
+	}{
+		{"no_grant hold", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldNoGrant}, time.Minute), idle()), VerdictHeld},
+		{"attended hold", regWith(worker("a", false, &LaneState{Hold: HoldAttended}, time.Minute), idle()), VerdictHeld},
+		{"watch-only loop", regWith(worker("a", false, &LaneState{}, time.Minute), idle()), VerdictWatchOnly},
+		{"only the idle session", regWith(idle()), VerdictUnreachable},
+	}
+	for _, c := range cases {
+		got := PingLane(c.reg, AgentConfig{}, "a", pingNow)
+		if got.Verdict != c.verdict || got.Workable {
+			t.Errorf("%s: verdict %s workable=%v, want %s not workable (wording only, no dispatch change)", c.name, got.Verdict, got.Workable, c.verdict)
+		}
+		want := "thr-idle on m5: last heartbeat 25m0s ago; the session may still be open and may read the inbox when it next runs"
+		if !strings.Contains(got.Detail, want) || strings.Contains(got.Detail, "not registered") || strings.Contains(got.Detail, "gone away") {
+			t.Errorf("%s: detail %q must report the stale heartbeat as observed, without claiming absence or future consumption", c.name, got.Detail)
+		}
+	}
+	// A suspended or closed session is still not counted as idle-registered.
+	s := idle()
+	s.Status = ThreadStatusSuspended
+	if got := PingLane(regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldNoGrant}, time.Minute), s), AgentConfig{}, "a", pingNow); !strings.Contains(got.Detail, "no registered session visible in this view") {
+		t.Errorf("suspended session must keep the no-visible-session wording: %q", got.Detail)
 	}
 }
 
