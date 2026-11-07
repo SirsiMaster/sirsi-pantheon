@@ -20,10 +20,13 @@ import (
 )
 
 const (
-	InstalledAppModel     = "mlx-community/Qwen3.5-9B-4bit"
-	InstalledAppRoute     = InstalledAppModel + "@apollo:2.3.0"
-	InstalledAppPrecision = "Q4-affine-g64-bf16"
-	installedAppEndpoint  = "http://127.0.0.1:8520/v1"
+	InstalledAppModel = "mlx-community/Qwen3.5-9B-4bit"
+	InstalledAppRoute = InstalledAppModel + "@apollo:2.3.0"
+	// installedAppLegacyRoute is the documented 2.2.x route ID. It stays accepted as input and is always
+	// normalized to InstalledAppRoute on the wire (the 2.3.0 service no longer serves @apollo:2.2.0).
+	installedAppLegacyRoute = InstalledAppModel + "@apollo:2.2.0"
+	InstalledAppPrecision   = "Q4-affine-g64-bf16"
+	installedAppEndpoint    = "http://127.0.0.1:8520/v1"
 	// Public checkpoint identity, not a transport credential. A named digest
 	// keeps its role distinct from credential-shaped assignment syntax.
 	qwenVocabularySHA256 = "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4"
@@ -55,7 +58,7 @@ func installedAppProfile() InstalledAppProfile {
 }
 
 func IsInstalledAppModel(model string) bool {
-	return model == "qwen3.5-9b" || model == InstalledAppModel || model == InstalledAppRoute
+	return model == "qwen3.5-9b" || model == InstalledAppModel || model == InstalledAppRoute || model == installedAppLegacyRoute
 }
 
 var installedAppFiles = map[string]string{
