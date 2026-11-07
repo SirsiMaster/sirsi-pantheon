@@ -1,6 +1,6 @@
 # Installed Apollo app transport
 
-`installed_app.go` is the narrow Qwen2.2.6 bridge alongside (not in place of)
+`installed_app.go` is the narrow Qwen 2.3.0 bridge (was 2.2.6) alongside (not in place of)
 the signed native fleet backend. One compiled typed profile pins the model,
 precision, checkpoint/tokenizer/template and five installed artifact hashes.
 `InstalledApp` observes fixed install locations without changing a registry.
