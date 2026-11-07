@@ -81,6 +81,11 @@ The existing result-signature checks are unchanged.
   (download failed or timed out), or it has no artifact (rejected, or pruned).
   The result stays on the signer under its ID. Exit 5 remains a returned
   artifact that failed Team verification.
+- Exit 9: the signed artifact was fetched, passed Team verification and is
+  published as `signed-<name>`, but the signer's `done` marker is missing or
+  unreadable. The job did not fail; reconcile its marker by ID on the signer
+  and never resubmit it. Exit codes in use: 2, 3, 4, 5, 6, 7, 8, 9 (stage
+  results 10/11/12 are internal and map to failover, 6 and 7).
 
 `sirsi-signd.sh` (the signing daemon, previously only on the signing Mac) is
 versioned here:
@@ -100,8 +105,13 @@ The fixtures cover failover on a failed and a hung upload, refusal to fail
 over after an ambiguous enqueue, the late-landing rename race (rename wins,
 rm wins, unreadable), refusal of a caller ID without custody, existing-ID
 refusal, a ServerAlive negative control, timestamp retry/success, fail-closed
-after three outages, no retry of other failures, no pruning by default, and
-opt-in pruning. They do not qualify real signing, notarization,
+after three outages, no retry of other failures, no pruning by default
+(unset, empty, zero or non-numeric `SIRSI_SIGND_KEEP_DAYS`), opt-in pruning,
+the missing-`done`-marker report (exit 9, no resubmit), and a remote upload
+process that outlives the client's transfer timeout: its late write fails or
+lands in a dead hidden staging dir that is never renamed and that the daemon
+never reads. Enabling pruning needs consumer acknowledgment, reader/writer
+fencing and the signer custodian's approval. They do not qualify real signing, notarization,
 Apple's timestamp service or live multi-host failover.
 
 ## Commercialization profile

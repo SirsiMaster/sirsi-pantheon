@@ -6,6 +6,9 @@
 # profile, stapled where Apple allows, and written to ~/sirsi-sign/outbox/<id>/ with receipt.txt and
 # `done` (or `failed`). Every job appends one line to ~/sirsi-sign/audit.log (append-only record of
 # caller, kind, input/output sha256, notary id, result). Keys never leave this Mac.
+# Outbox pruning stays OFF: SIRSI_SIGND_KEEP_DAYS unset (or not a whole number >= 1) prunes nothing. Enabling it
+# needs (1) acknowledgment from every consumer that fetches by job ID, (2) reader/writer fencing so a prune never
+# races a client download of the same outbox entry, and (3) the signer custodian's approval.
 set -u
 setopt nullglob
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin
