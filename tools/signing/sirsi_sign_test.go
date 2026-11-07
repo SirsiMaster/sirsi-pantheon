@@ -66,7 +66,25 @@ case "$SIGN_FIXTURE_MODE:$op:$*" in
   hang-upload-first:scp:*"first@signer.invalid:sirsi-sign/inbox/"*) exec sleep 30;;
 esac
 for last; do :; done
+# late-*: ssh runs each remote command for real against a fake signer HOME; the upload hangs until the client's
+# bounded timeout kills it, while a detached "remote scp" outlives the kill and writes after the client has given up.
+case $SIGN_FIXTURE_MODE in late-*)
+  R=$SIGN_FIXTURE_REMOTE
+  case "$op:$*" in
+    ssh:*"test -x ~/sirsi-sign/bin/"*) exit 0;;
+    ssh:*) HOME=$R exec sh -c "$last";;
+    scp:*":sirsi-sign/inbox/."*)
+      dst=$R/${last#*:}; st=${dst%/*}
+      ( i=0; while [ -e "$st" ] && [ $i -lt 150 ]; do sleep 0.1; i=$((i+1)); done
+        # late-recreate is the adversarial worst case: the late writer even recreates the staging dir
+        [ "$SIGN_FIXTURE_MODE" != late-recreate ] || { mkdir -p "$st" && printf 'codesign\n' > "$st/kind"; }
+        if printf late > "$dst" 2>/dev/null; then echo landed; else echo refused; fi > "$R/late.tmp"; mv "$R/late.tmp" "$R/late.result"
+      ) </dev/null >/dev/null 2>&1 &
+      exec sleep 30;;
+  esac;;
+esac
 case "$op:$*" in
+  ssh:*"/done") [ "$SIGN_FIXTURE_MODE" != done-missing ] || exit 1;;
   ssh:*"echo EXISTS"*) if [ "$SIGN_FIXTURE_MODE" = id-exists ]; then echo EXISTS; else echo STAGED; fi;;
   ssh:*"echo LANDED"*) case $SIGN_FIXTURE_MODE in rename-lands-late) echo LANDED;; rename-unreadable) exit 255;; *) echo ABSENT;; esac;;
   ssh:*"first@signer.invalid"*"echo QUEUED"*) case $SIGN_FIXTURE_MODE in rename-*) echo STAGED;; ambiguous-enqueue) exit 255;; *) echo QUEUED;; esac;;
@@ -93,6 +111,10 @@ fi
 	if err := os.Mkdir(custody, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	remote := filepath.Join(root, "remote") // the fake signer HOME used by the late-* modes
+	if err := os.MkdirAll(filepath.Join(remote, "sirsi-sign", "inbox"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.Command(zsh, "-f", client, input)
 	// A closed fixture environment prevents inherited real signing host or
 	// transport configuration from crossing the test boundary.
@@ -103,6 +125,7 @@ fi
 		"SIRSI_SIGN_JOB_ID=" + jobID,
 		"SIRSI_SIGN_CUSTODY_DIR=" + custody,
 		"SIGN_FIXTURE_LOG=" + log, "SIGN_FIXTURE_NAME=" + name, "SIGN_FIXTURE_MODE=" + mode,
+		"SIGN_FIXTURE_REMOTE=" + remote,
 	}
 	if hosts != nil {
 		cmd.Env = append(cmd.Env, "SIRSI_SIGN_HOSTS="+*hosts)
@@ -397,6 +420,71 @@ func TestSignerRenameRecheckNeverDoubleEnqueues(t *testing.T) {
 				if !strings.Contains(string(att), a) {
 					t.Errorf("attempts missing %q: %s", a, att)
 				}
+			}
+		})
+	}
+}
+
+// A verified, published artifact whose `done` marker is missing is reported as exactly that (exit 9), never as a
+// failure, and is never resubmitted.
+func TestSignerDoneMarkerMissingIsNotFailure(t *testing.T) {
+	source, err := os.ReadFile("sirsi-sign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, log, signed, runErr := signingFixture(t, source, false, "done-missing")
+	exit, ok := runErr.(*exec.ExitError)
+	if !ok || exit.ExitCode() != 9 || !strings.Contains(out, "published and verified") || !strings.Contains(out, "done marker missing") {
+		t.Fatalf("missing done marker not reported distinctly: %v %s", runErr, out)
+	}
+	if strings.Contains(out, "FAILED") {
+		t.Fatalf("verified artifact reported as FAILED: %s", out)
+	}
+	if _, err := os.Stat(signed); err != nil {
+		t.Fatalf("verified artifact not kept: %v", err)
+	}
+	if n := strings.Count(log, "echo EXISTS"); n != 1 {
+		t.Fatalf("job staged %d times (resubmitted): %s", n, log)
+	}
+}
+
+// A remote scp that outlives the client's bounded timeout can never enqueue the job: the client removes the hidden
+// staging before giving up, so a late write either fails (no dir) or lands in a dead hidden dir that nothing renames.
+func TestSignerLateRemoteWriteNeverEnqueues(t *testing.T) {
+	source, err := os.ReadFile("sirsi-sign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "11111111-2222-4333-8444-555555555555"
+	for _, c := range []struct{ mode, late string }{{"late-write", "refused"}, {"late-recreate", "landed"}} {
+		t.Run(c.mode, func(t *testing.T) {
+			hosts := "first@signer.invalid"
+			out, log, signed, runErr := signingFixtureWithHosts(t, source, false, c.mode, &hosts)
+			exit, ok := runErr.(*exec.ExitError)
+			if !ok || exit.ExitCode() != 4 || !strings.Contains(out, "never enqueued anywhere") {
+				t.Fatalf("killed upload did not end as never-enqueued: %v %s %s", runErr, out, log)
+			}
+			inbox := filepath.Join(filepath.Dir(signed), "remote", "sirsi-sign", "inbox")
+			var late []byte
+			for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+				if late, err = os.ReadFile(filepath.Join(filepath.Dir(signed), "remote", "late.result")); err == nil {
+					break
+				}
+			}
+			if got := strings.TrimSpace(string(late)); got != c.late {
+				t.Fatalf("late remote writer result %q, want %q", got, c.late)
+			}
+			if _, err := os.Stat(filepath.Join(inbox, id)); !os.IsNotExist(err) {
+				t.Fatal("late remote write enqueued the job")
+			}
+			entries, _ := os.ReadDir(inbox)
+			for _, e := range entries {
+				if !strings.HasPrefix(e.Name(), ".") {
+					t.Fatalf("visible inbox entry after a killed upload: %s", e.Name())
+				}
+			}
+			if strings.Contains(log, "mv ~/sirsi-sign/inbox/."+id+" ~/sirsi-sign/inbox/"+id) {
+				t.Fatalf("client renamed staging after a killed upload: %s", log)
 			}
 		})
 	}

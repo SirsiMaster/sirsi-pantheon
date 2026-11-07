@@ -131,15 +131,36 @@ func mkOutboxJob(home, id, marker string) string {
 	return d
 }
 
-// Pruning is off unless the custodian sets SIRSI_SIGND_KEEP_DAYS: a year-old finished job keeps its artifact.
+// Pruning stays off: SIRSI_SIGND_KEEP_DAYS unset (runSignd passes a closed environment, so nothing is inherited)
+// means NO pruning, as do empty, zero and non-numeric values. A year-old finished job keeps its artifact. Turning
+// pruning on needs consumer acknowledgment, reader/writer fencing and custodian approval (sirsi-signd.sh header).
 func TestSigndNeverPrunesByDefault(t *testing.T) {
-	var d string
-	r := runSignd(t, 0, "", func(home string) { d = mkOutboxJob(home, "aaaaaaaa-0000-4000-8000-000000000009", "done") })
-	if _, err := os.Stat(filepath.Join(d, "big.pkg")); err != nil {
-		t.Fatal("artifact pruned with pruning unset")
+	for _, env := range [][]string{nil, {"SIRSI_SIGND_KEEP_DAYS="}, {"SIRSI_SIGND_KEEP_DAYS=0"}, {"SIRSI_SIGND_KEEP_DAYS=abc"}} {
+		var d string
+		r := runSignd(t, 0, "", func(home string) { d = mkOutboxJob(home, "aaaaaaaa-0000-4000-8000-000000000009", "done") }, env...)
+		if _, err := os.Stat(filepath.Join(d, "big.pkg")); err != nil {
+			t.Fatalf("artifact pruned with %v", env)
+		}
+		if strings.Contains(r.audit, "result=pruned") {
+			t.Fatalf("prune audited with %v: %s", env, r.audit)
+		}
 	}
-	if strings.Contains(r.audit, "result=pruned") {
-		t.Fatalf("prune audited with pruning unset: %s", r.audit)
+}
+
+// A dead hidden staging dir (.<id>, e.g. left by a late remote writer after the client gave up) is never enqueued.
+func TestSigndIgnoresHiddenStaging(t *testing.T) {
+	id := "aaaaaaaa-0000-4000-8000-00000000000a"
+	r := runSignd(t, 0, "", func(home string) {
+		st := filepath.Join(home, "sirsi-sign", "inbox", "."+id)
+		os.MkdirAll(st, 0o700)
+		os.WriteFile(filepath.Join(st, "kind"), []byte("codesign\n"), 0o600)
+		os.WriteFile(filepath.Join(st, "artifact.bin"), []byte("late"), 0o600)
+	})
+	if _, err := os.Stat(filepath.Join(r.root, "sirsi-sign", "outbox", id)); !os.IsNotExist(err) {
+		t.Fatal("hidden staging was processed")
+	}
+	if strings.Contains(r.audit, id) {
+		t.Fatalf("hidden staging reached the audit log: %s", r.audit)
 	}
 }
 

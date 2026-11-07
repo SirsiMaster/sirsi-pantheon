@@ -138,4 +138,7 @@ fi
 [ $vok = 1 ] || { rm -rf "$V"; echo "sirsi-sign: returned artifact failed Team verification" >&2; exit 5; }
 rm -rf "$d/signed-$o"; mv "$V/$o" "$d/signed-$o"; rm -rf "$V"
 cat "$d/signed-$o.receipt.txt" | sed -n '/--- verification/,$p'
-ssh "${SSH_OPTIONS[@]}" "$H" "test -e ~/sirsi-sign/outbox/$id/done" && { echo "sirsi-sign: verified artifact at $d/signed-$o; signer terminal retained for job $id"; } || { echo "sirsi-sign: FAILED — see $d/signed-$o.receipt.txt" >&2; exit 1; }
+# Exit 9: the artifact is already published here and passed Team verification, but the signer's `done` marker is
+# missing or unreadable. The job is NOT failed; reconcile its marker by ID on the signer and never resubmit it.
+ssh "${SSH_OPTIONS[@]}" "$H" "test -e ~/sirsi-sign/outbox/$id/done" && { echo "sirsi-sign: verified artifact at $d/signed-$o; signer terminal retained for job $id"; } ||
+  { echo "sirsi-sign: published and verified at $d/signed-$o; done marker missing for job $id on ${H#*@} (reconcile it there by ID, do not resubmit)" >&2; exit 9; }

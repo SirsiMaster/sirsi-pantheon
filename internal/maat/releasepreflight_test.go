@@ -127,6 +127,8 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	// Notary and retained-app owner pins remain independent.
 	// PR1371 deliberately re-pins the signing client after its signing
 	// hardening; the delegated-signing-return-verification needles are unchanged.
+	// The sign-r3 follow-up re-pins it again: only the final done-marker branch
+	// changes (verified + published but no marker = exit 9, not FAILED/exit 1).
 	// No copied script is executed. Future route changes must deliberately
 	// update this provenance and the observer together.
 	pinned := map[string]string{
@@ -138,7 +140,7 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 		// Keep both reviewed source digests exact; changes require deliberate
 		// provenance review while the negative contract controls remain in force.
 		".github/workflows/release.yml": "4bcc85ba631aa2544dadea197535565188eba48575b61bf3a074d72326e67fad",
-		"tools/signing/sirsi-sign":      "84c59e34261991ac7dc803f123215e8c959bf9b56a11b800f51229f443a4e7b1",
+		"tools/signing/sirsi-sign":      "1623c4accab2e6cd86a98517447a361dc7be8992ce7aaa3e71b228210673bb44",
 	}
 	for _, requirement := range releaseContractRequirements {
 		relative := requirement.Path
