@@ -20,10 +20,13 @@ import (
 )
 
 const (
-	InstalledAppModel     = "mlx-community/Qwen3.5-9B-4bit"
-	InstalledAppRoute     = InstalledAppModel + "@apollo:2.2.0"
-	InstalledAppPrecision = "Q4-affine-g64-bf16"
-	installedAppEndpoint  = "http://127.0.0.1:8520/v1"
+	InstalledAppModel = "mlx-community/Qwen3.5-9B-4bit"
+	InstalledAppRoute = InstalledAppModel + "@apollo:2.3.0"
+	// installedAppLegacyRoute is the documented 2.2.x route ID. It stays accepted as input and is always
+	// normalized to InstalledAppRoute on the wire (the 2.3.0 service no longer serves @apollo:2.2.0).
+	installedAppLegacyRoute = InstalledAppModel + "@apollo:2.2.0"
+	InstalledAppPrecision   = "Q4-affine-g64-bf16"
+	installedAppEndpoint    = "http://127.0.0.1:8520/v1"
 	// Public checkpoint identity, not a transport credential. A named digest
 	// keeps its role distinct from credential-shaped assignment syntax.
 	qwenVocabularySHA256 = "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4"
@@ -45,7 +48,7 @@ type InstalledAppProfile struct {
 
 func installedAppProfile() InstalledAppProfile {
 	return InstalledAppProfile{
-		Version: "2.2.6", Model: InstalledAppModel, Route: InstalledAppRoute,
+		Version: "2.3.0", Model: InstalledAppModel, Route: InstalledAppRoute,
 		Precision: InstalledAppPrecision, Endpoint: installedAppEndpoint,
 		Modes:              []string{"plain", "flash", "mlx-certified"},
 		CheckpointRevision: "8b2b98c00a6b4d291155e4890773ca8f769aee53",
@@ -55,15 +58,15 @@ func installedAppProfile() InstalledAppProfile {
 }
 
 func IsInstalledAppModel(model string) bool {
-	return model == "qwen3.5-9b" || model == InstalledAppModel || model == InstalledAppRoute
+	return model == "qwen3.5-9b" || model == InstalledAppModel || model == InstalledAppRoute || model == installedAppLegacyRoute
 }
 
 var installedAppFiles = map[string]string{
-	"Helpers/apollo-router":               "2aa330c40c09f947bbda69cbb7e1bbbd3089205559ea5d31742d0f66e4c6f769",
-	"Helpers/qwen35_serve":                "1c3ede1cacc7bb9b6c3b57517596a52166fb832771e6e4a30dcf15b4aa672a3a",
-	"Helpers/qwen35_flash":                "27bbe5cac64b43911cb2a325f39dc69b254aaebf49e023d9620fabb2a3f4677a",
-	"Resources/qwen/apollo_qwen_serve.py": "15fa38b17ac4bf29f870f13ba8273239d725c14ac59d021b564bb6bc707d2257",
-	"MacOS/Apollo":                        "7d8b43cf9a3fcfb677f918ffc1aba4fb42b3eb069eaeb4e2c76d962c50463ad3",
+	"Helpers/apollo-router":               "facd990c9606a1508565c5be316e2aac0eee97fae63392a94f74f81751f54918",
+	"Helpers/qwen35_serve":                "13616eb8ce516744fe853a7a06eb59b58a70dc571aae75069db969a7b38a2f66",
+	"Helpers/qwen35_flash":                "c121fcf48b41e1499e92aecb674f5febfdd9a569ece7f9d02ee6cabe8c53b444",
+	"Resources/qwen/apollo_qwen_serve.py": "bbd46d8e8fb695908f45629160550ecede861ef4230411058ad29df85eedbadf",
+	"MacOS/Apollo":                        "9f44356f6f17744826e2826fbeeb8deb2d3fe9a0abaa349684646231ba190e0c",
 }
 
 // InstalledApp reads only fixed installation locations. It accepts no profile,
@@ -77,11 +80,11 @@ func InstalledApp(home string) (InstalledAppProfile, error) {
 		// The first existing installation is authoritative. Never hide drift
 		// in the per-user app by finding a stale system-wide copy instead.
 		if err := verifyInstalledApp(bundle, installedAppFiles); err != nil {
-			return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.2.6 binding unavailable: %w", err)
+			return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.3.0 binding unavailable: %w", err)
 		}
 		return installedAppProfile(), nil
 	}
-	return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.2.6 app is unavailable")
+	return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.3.0 app is unavailable")
 }
 
 func verifyInstalledApp(bundle string, files map[string]string) error {
@@ -108,7 +111,7 @@ func verifyInstalledApp(bundle string, files map[string]string) error {
 			return fmt.Errorf("close installed Apollo artifact %s: %w", path, closeErr)
 		}
 		if hex.EncodeToString(h.Sum(nil)) != expected {
-			return fmt.Errorf("installed Apollo artifact %s differs from release 2.2.6", path)
+			return fmt.Errorf("installed Apollo artifact %s differs from release 2.3.0", path)
 		}
 	}
 	return nil
