@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- **Ma’at unsent status-read recovery (source candidate):** return a specific
+  no-queue error for newly submitted reads proven never sent, and permit the
+  running supervisor to retry only its own exact reservation read within the
+  previously proven deadline. Denials, prelaunch failures and uncertain send
+  outcomes remain fail-closed. Bounded mock/private-spool and narrow race
+  controls passed; native transition, mixed-version qualification and the
+  separate legacy-read/mutation-custody holds remain open. No installed repair
+  is asserted. See `docs/stacklab/MAAT_READ_RELAY_COMPATIBILITY_DRAFT_20261107.md`.
+
 ## [0.24.162] — 2026-11-02
 
 - fix(core): `board.sh verify` reads the IAP-enabled annotation via JSON (the escaped gcloud projection failed) and reports an unreadable IAP policy as a permission gap instead of a wrong binding.

@@ -284,6 +284,7 @@ type spoolResponse struct {
 	Status         int    `json:"status"`
 	Body           []byte `json:"body"`
 	outcomeUnknown bool
+	unsentMaatRead bool
 }
 
 // SpoolDir returns the spool directory named by a spool:// URL, or "" when the
@@ -1120,6 +1121,12 @@ func (rl *Relay) handleOne(ctx context.Context, agent, f string) bool {
 	}
 	rl.handled.Add(1)
 	sr := rl.forward(agent, id, inflight)
+	if sr.Status == statusHoldForRetry && sr.unsentMaatRead {
+		// Only initial, provably unsent reads fail without queueing; existing
+		// outbox entries keep their existing retry custody.
+		body, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: "relay: Ma'at read unavailable; service not reached and read not queued"}})
+		sr = spoolResponse{Status: http.StatusServiceUnavailable, Body: body}
+	}
 	if sr.Status == statusHoldForRetry {
 		// ADR-069: the service was unreachable — HOLD the request in the
 		// relay-owned outbox/ (which the client never touches, so no ownership
@@ -1296,7 +1303,7 @@ func (rl *Relay) retryOutboxOne(ctx context.Context, agent, f string) outboxOutc
 		}
 		return outboxHeld
 	}
-	sr := rl.forward(agent, id, inflight)
+	sr := rl.forwardQueued(agent, id, inflight)
 	switch {
 	case sr.Status == statusHoldForRetry:
 		if err := os.Rename(inflight, f); err != nil { // provably never reached
@@ -1527,6 +1534,31 @@ func neverReachedService(err error) bool {
 	return false
 }
 
+// A nested DNS/dial cause is not sufficient when another wrapper identifies
+// a read/write phase or several competing causes. Leave those outcomes unknown.
+// This stricter check applies to initial MaatRead forwards only. Legacy queued
+// reads keep their old classification until an independently safe durable
+// frontier exists; that compatibility retains the legacy replay risk.
+func maatReadNeverReached(err error) bool {
+	if err == nil {
+		return false
+	}
+	current := err
+	for depth := 0; current != nil; depth++ {
+		if depth >= 32 {
+			return false
+		}
+		if _, joined := current.(interface{ Unwrap() []error }); joined {
+			return false
+		}
+		if op, ok := current.(*net.OpError); ok && op.Op != "dial" {
+			return false
+		}
+		current = errors.Unwrap(current)
+	}
+	return neverReachedService(err)
+}
+
 // isTLSHandshakeTimeout reports whether err is exactly what http.Client.Do
 // returns for a stalled TLS handshake: a *url.Error whose Err is net/http's own
 // unexported tlsHandshakeTimeoutError leaf. It is matched by the leaf's type
@@ -1569,6 +1601,16 @@ func queuedForRetryResponse(id string) spoolResponse {
 }
 
 func (rl *Relay) forward(agent, id, path string) spoolResponse {
+	return rl.forwardWithQueuePolicy(agent, id, path, false)
+}
+
+// Preserve legacy queued-read classification until an ordering frontier is
+// available; this is compatibility, not proof that ambiguous replay is safe.
+func (rl *Relay) forwardQueued(agent, id, path string) spoolResponse {
+	return rl.forwardWithQueuePolicy(agent, id, path, true)
+}
+
+func (rl *Relay) forwardWithQueuePolicy(agent, id, path string, queued bool) spoolResponse {
 	fail := func(status int, msg string) spoolResponse {
 		b, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: msg}})
 		return spoolResponse{Status: status, Body: b}
@@ -1650,7 +1692,11 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 	// CRITICAL: the retry is gated on neverReachedService — a post-send failure
 	// (response lost mid-flight) is NEVER retried here; it falls through to the
 	// OUTCOME-UNKNOWN branch below, the exact discipline the durable outbox uses.
-	if err != nil && neverReachedService(err) {
+	neverReached := neverReachedService
+	if req.Method == "MaatRead" && !queued {
+		neverReached = maatReadNeverReached
+	}
+	if err != nil && neverReached(err) {
 		forwardClient.CloseIdleConnections()
 		if hr2, berr := buildReq(); berr == nil {
 			rl.Log.Warn("relay: forward never reached service, re-dialing once on a fresh connection", "agent", agent, "method", req.Method, "id", id, "err", err.Error())
@@ -1658,12 +1704,11 @@ func (rl *Relay) forward(agent, id, path string) spoolResponse {
 		}
 	}
 	if err != nil {
-		if neverReachedService(err) {
-			// Provably never reached the service → NOT committed → hold for
-			// ordered retry rather than drop (ADR-069). The sentinel tells
-			// handleOne to move it to the outbox and tell the client it is queued.
-			rl.Log.Warn("relay: service unreachable, holding request for ordered retry", "agent", agent, "method", req.Method, "id", id, "err", err.Error())
-			return spoolResponse{Status: statusHoldForRetry}
+		if neverReached(err) {
+			// Every attempted forward was classified never sent. The caller
+			// decides whether to hold the request or return a read failure.
+			rl.Log.Warn("relay: service unreachable before request was sent", "agent", agent, "method", req.Method, "id", id, "err", err.Error())
+			return spoolResponse{Status: statusHoldForRetry, unsentMaatRead: req.Method == "MaatRead"}
 		}
 		return unknown("service unreachable or connection lost: " + err.Error())
 	}

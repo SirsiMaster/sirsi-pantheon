@@ -1163,6 +1163,133 @@ class RecurringTests(unittest.TestCase):
 
 
 class RecoveryTests(unittest.TestCase):
+    def run_native_nonqueued_read_case(self, mode):
+        """Exercise Native.call and supervision with only in-memory controls."""
+        clock = Clock()
+        child = FakeChild(clock, 45 if mode == 'recovery' else 1000)
+        native = runner.Native()
+        native.executor_thread = 'thread'
+        native.executor_identity = dict(agent_id='lane', thread_id='thread')
+        native.registered = mock.Mock()
+        native.verify_runtime = mock.Mock()
+        native.heartbeat_executor = mock.Mock()
+        native.release = mock.Mock()
+        real_datetime = dt.datetime
+        epoch = real_datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+
+        class FixtureDateTime(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                current = epoch + dt.timedelta(seconds=clock.now)
+                return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+        row = admission(heartbeat_at=epoch.isoformat(), lease_ttl_sec=120)
+        events = []
+        sentinel = ("routerstore: router service unavailable (retry): relay: Ma'at read "
+                    "unavailable; service not reached and read not queued")
+
+        def control(argv, **kwargs):
+            args = tuple(argv[1:])
+            events.append((args, clock.now, native.deadline, kwargs['timeout']))
+            if args[:2] == ('maat', 'reserve'):
+                value = dict(granted=True, reservation=dict(row))
+            elif args[:2] == ('maat', 'status'):
+                unavailable = mode == 'prelaunch' or (clock.now >= 30 and
+                              (mode == 'outage' or mode in ('recovery', 'revoked') and clock.now < 34))
+                if unavailable:
+                    raise subprocess.CalledProcessError(1, argv, stderr=sentinel)
+                value = [dict(row, status='revoked') if mode == 'revoked' and clock.now >= 34 else dict(row)]
+            elif args[:2] == ('maat', 'heartbeat'):
+                if mode == 'queued-mutation':
+                    raise subprocess.CalledProcessError(1, argv, stderr=(
+                        'routerstore: remote MaatMutate: HTTP 202: relay: req-fixture '
+                        'QUEUED_FOR_RETRY — held durably'))
+                row['heartbeat_at'] = (epoch + dt.timedelta(seconds=clock.now)).isoformat()
+                value = dict(row)
+            else:
+                raise AssertionError('Unexpected control call: ' + repr(args))
+            return mock.Mock(stdout=json.dumps(value))
+
+        def wait_terminal(target, timeout):
+            if clock.now + timeout < target.finish:
+                clock.advance(timeout)
+                raise subprocess.TimeoutExpired('fixture', timeout)
+            clock.now = target.finish
+            return 0
+
+        record = {}
+        with mock.patch.object(runner.dt, 'datetime', FixtureDateTime), \
+                mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
+                mock.patch.object(runner.subprocess, 'run', side_effect=control), \
+                mock.patch.object(runner.subprocess, 'Popen', return_value=child) as spawn, \
+                mock.patch.object(runner.os, 'pipe', return_value=(901, 902)), \
+                mock.patch.object(runner.os, 'close'), \
+                mock.patch.object(runner, 'require_job_safe_command'), \
+                mock.patch.object(runner, 'fabric_bind_child'), \
+                mock.patch.object(runner, 'release_fabric_child'), \
+                mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda target: target.terminal_status()), \
+                mock.patch.object(runner, 'fabric_wait_terminal', side_effect=wait_terminal), \
+                mock.patch.object(runner, 'stop') as stop:
+            code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 300, native, record)
+        return code, record, events, clock, native, spawn, stop
+
+    def test_native_nonqueued_read_outage_stops_at_original_lease(self):
+        code, record, events, clock, native, spawn, stop = self.run_native_nonqueued_read_case('outage')
+        reads = [event for event in events if event[0][:2] == ('maat', 'status') and event[1] >= 30]
+        self.assertGreater(len(reads), 1)
+        self.assertTrue(all(event[0] == ('maat', 'status', '--id', 'fixture-id', '--json') and
+                            event[2] == 120 and event[3] <= 120 - event[1] for event in reads))
+        self.assertFalse(any(event[0][:2] == ('maat', 'heartbeat') for event in events))
+        self.assertEqual(code, 78)
+        self.assertEqual(record['stop_cause'], 'proven_lease_expired')
+        self.assertEqual(clock.now, 120)
+        spawn.assert_called_once()
+        stop.assert_called_once()
+        native.release.assert_called_once_with('fixture-id')
+
+    def test_native_nonqueued_read_recovery_checks_before_renewing(self):
+        code, record, events, clock, native, spawn, stop = self.run_native_nonqueued_read_case('recovery')
+        self.assertEqual(code, 0, record)
+        self.assertGreater(record['transport_retries'], 0)
+        renewals = [i for i, event in enumerate(events) if event[0][:2] == ('maat', 'heartbeat')]
+        self.assertEqual(len(renewals), 1)
+        renewal = renewals[0]
+        self.assertGreaterEqual(events[renewal][1], 34)
+        self.assertEqual(events[renewal - 1][0][:2], ('maat', 'status'))
+        self.assertTrue(all(event[2] == 120 for event in events if event[0][:2] == ('maat', 'status') and
+                            30 <= event[1] < 34))
+        spawn.assert_called_once()
+        stop.assert_called_once()
+
+    def test_native_nonqueued_read_recovery_revoked_never_renews(self):
+        code, record, events, clock, native, spawn, stop = self.run_native_nonqueued_read_case('revoked')
+        self.assertEqual(code, 78)
+        self.assertGreater(record['transport_retries'], 0)
+        self.assertGreaterEqual(clock.now, 34)
+        self.assertLess(clock.now, 120)
+        self.assertFalse(any(event[0][:2] == ('maat', 'heartbeat') for event in events))
+        spawn.assert_called_once()
+        stop.assert_called_once()
+
+    def test_native_nonqueued_prelaunch_read_never_spawns(self):
+        code, record, events, clock, native, spawn, stop = self.run_native_nonqueued_read_case('prelaunch')
+        self.assertEqual(code, 78)
+        self.assertEqual(len([event for event in events if event[0][:2] == ('maat', 'status')]), 1)
+        self.assertFalse(any(event[0][:2] == ('maat', 'heartbeat') for event in events))
+        spawn.assert_not_called()
+        stop.assert_not_called()
+        native.release.assert_called_once_with('fixture-id')
+
+    def test_native_queued_mutation_is_not_the_nonqueued_read_sentinel(self):
+        code, record, events, clock, native, spawn, stop = self.run_native_nonqueued_read_case('queued-mutation')
+        self.assertEqual(code, 78)
+        self.assertIn('QUEUED_FOR_RETRY', record['reason'])
+        self.assertNotIn('transport_retries', record)
+        self.assertEqual(len([event for event in events if event[0][:2] == ('maat', 'heartbeat')]), 1)
+        spawn.assert_called_once()
+        stop.assert_called_once()
+        native.release.assert_called_once_with('fixture-id')
+
     def run_case(self, *, failure=None, restore=34, finish=45, renewal=None, ttl=120, timeout=300):
         clock = Clock()
         backend = Backend(None)
@@ -1954,6 +2081,54 @@ class RecoveryTests(unittest.TestCase):
 
 
 class TransportTests(unittest.TestCase):
+    def test_relay_unavailable_maat_read_is_transient_without_local_fallback(self):
+        native = runner.Native()
+        native.owned_admission = 'exact-fixture'
+        native.release_scope = {'id': 'exact-fixture'}
+        native.deadline = runner.time.monotonic() + 60
+        error = subprocess.CalledProcessError(
+            1, 'sirsi', stderr="routerstore: router service unavailable (retry): relay: Ma'at read unavailable; service not reached and read not queued")
+        with mock.patch.object(runner.subprocess, 'run', side_effect=error) as call:
+            with self.assertRaises(runner.TransientTransport):
+                native.call('maat', 'status', '--id', 'exact-fixture', '--json')
+        self.assertEqual(call.call_count, 1)
+
+        for operation, change, detail in [
+                (('maat', 'status', '--id', 'foreign', '--json'), {}, error.stderr),
+                (('maat', 'heartbeat', 'exact-fixture', '--json'), {}, error.stderr),
+                (('maat', 'status', '--id', 'exact-fixture', '--json'), {'deadline': None}, error.stderr),
+                (('maat', 'status', '--id', 'exact-fixture', '--json'), {}, '403 denied; ' + error.stderr)]:
+            candidate = runner.Native()
+            candidate.owned_admission = 'exact-fixture'
+            candidate.release_scope = {'id': 'exact-fixture'}
+            candidate.deadline = runner.time.monotonic() + 60
+            for key, value in change.items():
+                setattr(candidate, key, value)
+            with mock.patch.object(runner.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'sirsi', stderr=detail)):
+                with self.assertRaises(runner.Refused) as caught:
+                    candidate.call(*operation)
+                self.assertNotIsInstance(caught.exception, runner.TransientTransport)
+
+    def test_exact_read_requires_complete_rendered_sentinel_and_preserves_denial(self):
+        sentinel = ("routerstore: router service unavailable (retry): relay: Ma'at read "
+                    "unavailable; service not reached and read not queued")
+        for detail, transient in [
+                ('  \x1b[31m𓁵\x1b[0m \x1b[32m' + sentinel + '\x1b[0m\n', True),
+                ('another failure\n' + sentinel, False),
+                ('HTTP 403 denied\n' + 'x' * 1700 + '\nHTTP 502\n' + sentinel, False),
+                ("routerstore: caller's session does not own this lease\n" + sentinel, False),
+                ('HTTP 401 missing or invalid bearer token\n' + sentinel, False)]:
+            with self.subTest(detail=detail[:35]):
+                native = runner.Native()
+                native.owned_admission = 'fixture-id'
+                native.release_scope = {'id': 'fixture-id'}
+                native.deadline = runner.time.monotonic() + 60
+                failure = subprocess.CalledProcessError(1, 'sirsi', stderr=detail)
+                with mock.patch.object(runner.subprocess, 'run', side_effect=failure):
+                    with self.assertRaises(runner.Refused) as caught:
+                        native.call('maat', 'status', '--id', 'fixture-id', '--json')
+                self.assertEqual(isinstance(caught.exception, runner.TransientTransport), transient)
+
     def test_transport_allowlist_and_denial_precedence(self):
         for text, transient in [('MaatMutate HTTP 502', True), ('TLS handshake timeout', True),
                                 ('relay restart OUTCOME UNKNOWN', True),
@@ -1965,6 +2140,24 @@ class TransportTests(unittest.TestCase):
                     with self.assertRaises(runner.TransientTransport if transient else runner.Refused) as caught:
                         runner.Native().call('maat', 'heartbeat', 'fixture')
                     self.assertEqual(isinstance(caught.exception, runner.TransientTransport), transient)
+
+    def test_not_owner_denial_precedes_http_502_for_status_and_heartbeat(self):
+        denial = "routerstore: caller's session does not own this lease"
+        for operation in [('maat', 'status', '--id', 'fixture-id', '--json'),
+                          ('maat', 'heartbeat', 'fixture-id', '--json')]:
+            for detail in [denial + '\nHTTP 502',
+                           denial + '\n' + 'x' * 1700 + '\nHTTP 502']:
+                with self.subTest(operation=operation, truncated=len(detail) > 1600):
+                    native = runner.Native()
+                    native.owned_admission = 'fixture-id'
+                    native.release_scope = {'id': 'fixture-id'}
+                    native.deadline = runner.time.monotonic() + 60
+                    failure = subprocess.CalledProcessError(1, 'sirsi', stderr=detail)
+                    with mock.patch.object(runner.subprocess, 'run', side_effect=failure) as call:
+                        with self.assertRaises(runner.Refused) as caught:
+                            native.call(*operation)
+                    self.assertNotIsInstance(caught.exception, runner.TransientTransport)
+                    self.assertEqual(call.call_count, 1)
 
     def test_rpc_timeout_is_clamped_to_proven_deadline(self):
         native = runner.Native()

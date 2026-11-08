@@ -430,6 +430,17 @@ healthy remote check (up to30 seconds plus bounded RPC latency, always before
 the proven deadline); terminal acceptance requires its own exact readback.
 After transport uncertainty, remote readback retries on1/2/4/8-second backoff.
 
+For a newly submitted `MaatRead` that the relay determines never reached the
+service, the relay returns 503 rather than enqueueing a read whose result can
+no longer reach its caller. The supervisor recognizes this exact response only
+for its own admission and deadline. Existing queued reads retain their legacy
+classifier, including its risk of retrying ambiguous errors that may be
+post-send. No durable lane frontier is added; this risk remains a release hold,
+not a safety endorsement. Mutation custody and post-send unknown outcomes
+otherwise retain their existing behavior. Pre-launch reads
+and session mint failures still fail closed. Revocation during an outage cannot
+be observed until a successful read; no read extends the proven lease deadline.
+
 Recognized HTTP 502/503/504, TLS handshake timeout, relay outcome-unknown and
 bounded RPC timeouts may retry with 1/2/4/8-second backoff only inside the proven
 interval. RPC timeouts and child waits are clamped to the earlier execution/lease

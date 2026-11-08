@@ -945,7 +945,7 @@ def valid(row, resource, agent, work, cpu_cores=None, regime=None):
         return False
 
 
-CONTROL_DENIAL_RE = re.compile(r'(?i)\b(401|403|unauthori[sz]ed|forbidden|denied|revoked|released|expired|scope|mismatch)\b')
+CONTROL_DENIAL_RE = re.compile(r"(?i)\b(?:401|403|unauthori[sz]ed|forbidden|denied|revoked|released|expired|scope|mismatch)\b|\bcaller['’]s session does not own this lease\b")
 
 
 def registration_transport_cause(error):
@@ -1033,9 +1033,23 @@ class Native:
                 raise TransientTransport('Control transport timed out') from error
             raise
         except subprocess.CalledProcessError as error:
-            detail = (error.stderr or '')[-1600:]
+            stderr = error.stderr or ''
+            detail = stderr[-1600:]
             # Denial takes precedence over transport text; unknown errors refuse.
-            denied = CONTROL_DENIAL_RE.search(detail)
+            # No control call may lose a denial because a longer diagnostic
+            # truncated it out of the displayed tail.
+            denied = CONTROL_DENIAL_RE.search(stderr)
+            # Only the exact never-sent read for our own admitted reservation
+            # is eligible; this does not extend the previously proven lease.
+            rendered = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', stderr)
+            sentinel = "routerstore: router service unavailable (retry): relay: Ma'at read unavailable; service not reached and read not queued"
+            exact_error = re.fullmatch(r'\s*(?:𓁵\s+)?' + re.escape(sentinel) + r'\s*', rendered)
+            unsent_read = (not denied and self.deadline is not None and self.owned_admission and
+                           isinstance(self.release_scope, dict) and self.release_scope.get('id') == self.owned_admission and
+                           args == ('maat', 'status', '--id', self.owned_admission, '--json') and
+                           exact_error is not None)
+            if unsent_read:
+                raise TransientTransport('Control transport unavailable: exact read not queued') from error
             transient = re.search(r'(?i)(\bHTTP (502|503|504)\b|TLS handshake timeout|relay[^\n]*OUTCOME UNKNOWN)', detail)
             # RegisterThread saves its own row before opportunistic terminal
             # pruning. A lost prune CAS can therefore report failure AFTER our
