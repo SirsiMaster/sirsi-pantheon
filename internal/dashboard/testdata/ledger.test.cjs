@@ -8,26 +8,27 @@ const T=(id,status,subject,phase,extra)=>Object.assign({task_id:id,status,subjec
 function ledger(tasks,items){return {data:{generated_at:'2026-11-06T12:00:00Z',agent:'lane-a',items:items||[],tasks},at:NOW-1000,err:null}}
 const pillWords=html=>Array.from(html.matchAll(/<span class="pill r-[a-z0-9-]+">([^<]+)<\/span>/g)).map(m=>m[1]);
 
-test('settled is derived from the first 80 characters, never from a done task, and keeps the stored status visible',()=>{
- assert.equal(L.view(T('a','pending','DONE — shipped','p')),'settled');
- assert.equal(L.view(T('a','blocked','Item RESOLVED upstream','p')),'settled');
+test('subject text never overrides the authoritative task status',()=>{
+ assert.equal(L.view(T('a','pending','DONE — shipped','p')),'pending');
+ assert.equal(L.view(T('a','blocked','Item RESOLVED upstream','p')),'blocked');
+ assert.equal(L.view(T('a','blocked','NOT DONE — still needs review','p')),'blocked');
+ assert.equal(L.view(T('a','blocked','DONE only after tests pass','p')),'blocked');
  assert.equal(L.view(T('a','done','DONE — shipped','p')),'done');
  assert.equal(L.view(T('a','pending','x'.repeat(80)+' DONE','p')),'pending','the marker must sit inside the first 80 characters');
  assert.equal(L.view(T('a','pending','UNDONE work','p')),'pending','word boundary: UNDONE is not DONE');
  assert.equal(L.view(T('a','','no status','p')),'unknown');
  const html=L.laneLedger({agent:'lane-a',ledger:ledger([T('t1','pending','WITHDRAWN: old plan','Phase A')]),now:NOW});
- assert.match(html,/router still stores: pending/);
- assert.deepEqual(pillWords(html).filter(w=>w==='settled'),['settled']);
+ assert.deepEqual(pillWords(html).filter(w=>w==='pending'),['pending']);
 });
 
-test('tasks group by phase in first-seen order with a box row, done/total, and rows sorted done, settled, in-progress, pending, blocked',()=>{
+test('tasks group by phase in first-seen order with a box row, done/total, and rows sorted done, in-progress, pending, blocked',()=>{
  const tasks=[T('p1','blocked','blocked one','Beta'),T('p2','done','finished','Alpha'),T('p3','pending','waiting','Beta'),T('p4','in-progress','running','Beta'),T('p5','pending','SUPERSEDED plan','Beta'),T('p6','done','done two','Beta'),T('p7','pending','no phase task','')];
  const html=L.laneLedger({agent:'lane-a',ledger:ledger(tasks),now:NOW});
  const order=Array.from(html.matchAll(/<span class="name">([^<]+)<\/span>/g)).map(m=>m[1]);
  assert.deepEqual(order,['Beta','Alpha','No phase'],'first-seen order, not alphabetical');
  const beta=html.slice(html.indexOf('<span class="name">Beta'),html.indexOf('<span class="name">Alpha'));
- assert.match(html,/<h2 class="ph has-block"><span class="boxes"[^>]*>(<i[^>]*><\/i>){13}<\/span><span class="xy">1\/5<\/span><span class="name">Beta<\/span><span class="tally">1 settled<\/span><span class="tally r-danger">1 blocked<\/span><\/h2>/);
- assert.deepEqual(pillWords(beta),['done','settled','in-progress','pending','blocked']);
+ assert.match(html,/<h2 class="ph has-block"><span class="boxes"[^>]*>(<i[^>]*><\/i>){13}<\/span><span class="xy">1\/5<\/span><span class="name">Beta<\/span><span class="tally r-danger">1 blocked<\/span><\/h2>/);
+ assert.deepEqual(pillWords(beta),['done','in-progress','pending','pending','blocked'],'stored status only: a SUPERSEDED subject stays pending');
  assert.match(html,/<h2 class="ph"><span class="boxes"[^>]*>(<i class="r-ok on"><\/i>){13}<\/span><span class="xy">1\/1<\/span><span class="name">Alpha<\/span><\/h2>/,'a finished phase fills every box');
 });
 
@@ -40,14 +41,14 @@ test('box rows fill done then settled in proportion, never round a nonzero count
  const half=L.boxes({done:2,settled:0},4);assert.equal(on(half,'ok'),7);
  assert.equal((L.boxes({},0).match(/<i><\/i>/g)||[]).length,13,'an empty phase is all outlines, not NaN');
  const top=L.laneLedger({agent:'lane-a',ledger:ledger([T('a','done','x','P'),T('b','pending','UNDONE','P'),T('c','pending','DONE x','P'),T('d','blocked','y','P')]),now:NOW});
- assert.match(top,/<div class="n r-ok">2\/4<\/div><div class="l">Complete<\/div>/);
- assert.match(top,/<b>25% done<\/b><span>1 done · 1 settled · 1 active · 1 blocked · 0 router items<\/span>/);
+ assert.match(top,/<div class="n r-ok">1\/4<\/div><div class="l">Complete<\/div>/,'Complete counts stored done only');
+ assert.match(top,/<b>25% done<\/b><span>1 done · 2 active · 1 blocked · 0 router items<\/span>/);
 });
 
 test('blocked_by shows as waits on, and cards carry every word with their counts',()=>{
  const html=L.laneLedger({agent:'lane-a',ledger:ledger([T('b1','blocked','needs input','P',{blocked_by:'owner decision'}),T('d1','done','ok','P')],[{id:'i1',title:'Review please',from:'ra',type:'request',opened:'2026-11-06T11:00:00Z',age_seconds:720,blocked:false}]),now:NOW});
  assert.match(html,/waits on: owner decision/);
- for(const w of ['Tasks','Done','Settled','Running','Pending','Blocked','Inbox'])assert.match(html,new RegExp('<div class="l">'+w+'</div>'));
+ for(const w of ['Tasks','Done','Running','Pending','Blocked','Inbox'])assert.match(html,new RegExp('<div class="l">'+w+'</div>'));
  assert.match(html,/from ra · 12 min old/);
  assert.match(html,/<span class="pill r-info">request<\/span>/);
 });

@@ -40,7 +40,7 @@ test('#lane/<agent> loads that lane ledger and renders the CompassPoint view',as
  assert.match(h.elements['#nav'].innerHTML,/data-v="lanes" aria-current="page"/,'a lane ledger highlights Lanes in the nav');
  assert.doesNotMatch(h.elements['#nav'].innerHTML,/data-v="overview" aria-current/);
  assert.match(h.html,/<h2 class="ph[^"]*"><span class="boxes"[^>]*>[\s\S]*?<span class="name">Phase 1<\/span>/);
- assert.match(h.html,/router still stores: pending/,'settled derivation runs in the live app');
+ assert.match(h.html,/<span class="pill r-info">pending<\/span>/,'the live app shows the stored status');
  assert.match(h.html,/<h2>Router inbox<span class="tally">1 open<\/span><\/h2>/);
  assert.match(h.html,/Cloud jobs: no source connected for this lane/);
  assert.match(h.elements['#live-t'].textContent,/^live · updated .* ET · refreshes every 10 s$/);

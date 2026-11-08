@@ -14,7 +14,8 @@ import (
 type LedgerAgentProducer func(agent string) (ledger.Snapshot, error)
 
 // RouterLedgerItem and RouterLedgerTask are the additive v1 read shape for one
-// lane ledger. BlockedBy and Phase are preserved verbatim from the store.
+// lane ledger. Task fields use the existing public Fabric projection. Items carry
+// only the blocked flag: the store's blocked_by is free text and never leaves.
 type RouterLedgerItem struct {
 	ID         string  `json:"id"`
 	Title      string  `json:"title"`
@@ -23,7 +24,6 @@ type RouterLedgerItem struct {
 	Opened     string  `json:"opened"`
 	AgeSeconds float64 `json:"age_seconds"`
 	Blocked    bool    `json:"blocked"`
-	BlockedBy  string  `json:"blocked_by,omitempty"`
 }
 
 type RouterLedgerTask struct {
@@ -84,16 +84,15 @@ func (s *Server) apiRouterLedger(w http.ResponseWriter, r *http.Request) {
 	}
 	out := RouterLedger{GeneratedAt: snap.GeneratedAt, Agent: agent, Items: []RouterLedgerItem{}, Tasks: []RouterLedgerTask{}}
 	found := false
+	scoped := ledger.Snapshot{}
 	for _, a := range snap.Agents {
 		if a.AgentID != agent {
 			continue
 		}
 		found = true
+		scoped.Agents = append(scoped.Agents, a)
 		for _, it := range a.Items {
-			out.Items = append(out.Items, RouterLedgerItem{ID: it.ID, Title: it.Title, From: it.From, Type: it.Type, Opened: it.Opened, AgeSeconds: it.AgeSeconds, Blocked: it.Blocked, BlockedBy: it.BlockedBy})
-		}
-		for _, t := range a.Tasks {
-			out.Tasks = append(out.Tasks, RouterLedgerTask{TaskID: t.TaskID, Subject: t.Subject, Status: t.Status, Phase: t.Phase, BlockedBy: t.BlockedBy, Updated: t.Updated, ResponsibleParty: t.ResponsibleParty})
+			out.Items = append(out.Items, RouterLedgerItem{ID: it.ID, Title: it.Title, From: it.From, Type: it.Type, Opened: it.Opened, AgeSeconds: it.AgeSeconds, Blocked: it.Blocked})
 		}
 	}
 	// A registered lane with nothing open has no ledger entry; that is a genuinely
@@ -101,6 +100,17 @@ func (s *Server) apiRouterLedger(w http.ResponseWriter, r *http.Request) {
 	if !found && !s.knownLane(agent) {
 		writeError(w, "unknown agent", http.StatusNotFound)
 		return
+	}
+	// Project both open and completed tasks with the same public allowlist used
+	// by /api/fabric. In particular, private phase and arbitrary blocker prose
+	// must never be emitted through the hosted lane endpoint.
+	rows, err := ledger.FabricAllTasksFrom(scoped)
+	if err != nil {
+		writeError(w, "ledger projection unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	for _, t := range rows {
+		out.Tasks = append(out.Tasks, RouterLedgerTask{TaskID: t.ID, Subject: t.Subject, Status: t.Status, BlockedBy: t.BlockerID, Updated: t.Updated, ResponsibleParty: t.Responsible})
 	}
 	_ = json.NewEncoder(w).Encode(out)
 }

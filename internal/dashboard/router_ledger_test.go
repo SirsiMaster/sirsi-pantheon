@@ -3,6 +3,7 @@ package dashboard
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -37,7 +38,7 @@ func getJSON(t *testing.T, s *Server, path string) (int, map[string]any, *httpte
 	return rec.Code, m, rec
 }
 
-func TestRouterLedgerShapePreservesPhaseAndBlockedBy(t *testing.T) {
+func TestRouterLedgerShapeUsesSafeTaskProjection(t *testing.T) {
 	s := New(Config{LedgerAgentFn: ledgerFixture})
 	code, m, rec := getJSON(t, s, "/api/router/v1/ledger?agent=claude-m5-compasspoint")
 	if code != 200 {
@@ -66,11 +67,63 @@ func TestRouterLedgerShapePreservesPhaseAndBlockedBy(t *testing.T) {
 			t.Errorf("task missing %q", k)
 		}
 	}
-	if t0["phase"] != "Phase A" || t0["blocked_by"] != "waiting on T0" {
-		t.Fatalf("phase/blocked_by not preserved: %v", t0)
+	if t0["phase"] != "" || t0["blocked_by"] != "" {
+		t.Fatalf("private phase or blocker escaped: %v", t0)
 	}
-	if tasks[1].(map[string]any)["phase"] != "Phase B" {
-		t.Fatal("task order or phase lost")
+	if tasks[1].(map[string]any)["phase"] != "" {
+		t.Fatal("private phase escaped")
+	}
+}
+
+func TestRouterLedgerExcludesPrivateTaskPayloadAcrossPages(t *testing.T) {
+	const secret = "PRIVATE-LEASE-JOURNAL-CREDENTIAL-CANARY"
+	s := New(Config{CloudBoard: true, LedgerAgentFn: func(agent string) (ledger.Snapshot, error) {
+		a := ledger.Agent{AgentID: agent}
+		for i := 0; i < 130; i++ {
+			a.Tasks = append(a.Tasks, routerstore.Task{TaskID: fmt.Sprintf("task-%03d", i), Subject: "safe", Status: "pending", Phase: secret, BlockedBy: secret})
+		}
+		a.Tasks[0].BlockedBy = "done-001"
+		a.Tasks = append(a.Tasks, routerstore.Task{TaskID: "done-001", Subject: "safe done", Status: "done", Phase: secret, BlockedBy: secret})
+		a.Items = append(a.Items, ledger.Item{ID: "item-1", Title: "safe item", From: "ra", Type: "request", Blocked: true, BlockedBy: secret})
+		return ledger.Snapshot{Agents: []ledger.Agent{a}}, nil
+	}})
+	code, m, rec := getJSON(t, s, "/api/router/v1/ledger?agent=lane")
+	if code != http.StatusOK || strings.Contains(rec.Body.String(), secret) {
+		t.Fatalf("private task payload escaped or request failed: %d %s", code, rec.Body)
+	}
+	items := m["items"].([]any)
+	if len(items) != 1 || items[0].(map[string]any)["blocked"] != true {
+		t.Fatalf("item or its blocked flag lost: %v", items)
+	}
+	if got := len(m["tasks"].([]any)); got != 131 {
+		t.Fatalf("got %d tasks; want all 130 open and 1 completed", got)
+	}
+	found := false
+	for _, raw := range m["tasks"].([]any) {
+		task := raw.(map[string]any)
+		if task["task_id"] == "task-000" {
+			found = true
+			if task["blocked_by"] != "done-001" {
+				t.Fatal("same-lane blocker across status groups was lost")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected task missing")
+	}
+}
+
+func TestRouterLedgerRejectsOversizedLaneWithoutPartialRows(t *testing.T) {
+	s := New(Config{LedgerAgentFn: func(agent string) (ledger.Snapshot, error) {
+		a := ledger.Agent{AgentID: agent}
+		for i := 0; i <= ledger.FabricAllTaskLimit; i++ {
+			a.Tasks = append(a.Tasks, routerstore.Task{TaskID: fmt.Sprintf("task-%05d", i), Status: "pending"})
+		}
+		return ledger.Snapshot{Agents: []ledger.Agent{a}}, nil
+	}})
+	code, _, rec := getJSON(t, s, "/api/router/v1/ledger?agent=lane")
+	if code != http.StatusServiceUnavailable || strings.Contains(rec.Body.String(), "task-00000") {
+		t.Fatalf("oversized lane must fail closed, not return partial rows: %d", code)
 	}
 }
 

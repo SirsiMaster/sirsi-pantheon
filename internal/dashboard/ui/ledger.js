@@ -3,23 +3,20 @@
    classes (r-<role>) bound to brand tokens in app.css; a state is always a WORD in a pill. */
 (function(root){
 'use strict';
-var ORDER=['done','settled','in-progress','pending','blocked'];
+var ORDER=['done','in-progress','pending','blocked'];
 var ROLE={done:'ok',settled:'settled','in-progress':'warn',pending:'info',blocked:'danger',unknown:'dim'};
 var SEV={critical:'danger',warn:'warn',info:'info'};
 var VERDICT={LIVE:'ok',WAKEABLE:'ok',HELD:'warn',WATCH_ONLY:'info',AUTH_REQUIRED:'danger',UNREACHABLE:'danger',UNSTAFFED:'dim'};
 var PRODUCER_ROLES=['ok','gold','warn','ink2','dim'];
 var JOB_ORDER=['building','qualifying','waiting','reported','withdrawn'];
 var JOB_ROLE={building:'warn',qualifying:'warn',waiting:'info',reported:'ok',withdrawn:'dim'};
-// A row whose text says it is finished while the router still stores another status (closing needs a
-// lease and a verifiable receipt) is "settled": derived for display, never written back.
-var SETTLED=/\b(DONE|RESOLVED|WITHDRAWN|SUPERSEDED|RETIRED)\b/;
 var INTERVAL_MS=10000,STALE_MS=2*INTERVAL_MS;
 function has(o,k){return Object.prototype.hasOwnProperty.call(o,k)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function role(v){return has(ROLE,v)?ROLE[v]:'dim'}
 function pill(word,r){return '<span class="pill r-'+esc(r||'dim')+'">'+esc(word||'unknown')+'</span>'}
 function producerRole(r){return PRODUCER_ROLES.indexOf(r)>-1?r:'dim'}
-function view(t){var s=t&&t.status?String(t.status):'unknown';return s!=='done'&&SETTLED.test(String((t&&t.subject)||'').slice(0,80))?'settled':s}
+function view(t){return t&&t.status?String(t.status):'unknown'}
 function count(tasks){return (tasks||[]).reduce(function(a,t){var v=view(t);a[v]=(a[v]||0)+1;return a},{})}
 function sum(segs){return segs.reduce(function(n,s){return n+s.n},0)}
 // Stacked bar. Every segment carries its word (tooltip) and the whole bar carries the numbers (aria-label).
@@ -177,10 +174,10 @@ function laneLedger(o){
  var d=L.data,tasks=d.tasks||[],items=d.items||[],c=count(tasks),h='';
  if(L.err)h+=banner('danger','Refresh failed.','Showing last good ledger from '+clock(L.at)+' · '+L.err,true);
  else if(now-L.at>STALE_MS)h+=banner('warn','Stale.','This ledger is '+Math.round((now-L.at)/1000)+' s old (last read '+clock(L.at)+').',false);
- h+=cards([['Complete',(c.done||0)+(c.settled||0)+'/'+tasks.length,'ok'],['Tasks',tasks.length,''],['Done',c.done||0,'ok'],['Settled',c.settled||0,'settled'],['Running',c['in-progress']||0,'warn'],['Pending',c.pending||0,'info'],['Blocked',c.blocked||0,'danger'],['Inbox',items.length,items.length?'danger':'ok']]);
+ h+=cards([['Complete',(c.done||0)+'/'+tasks.length,'ok'],['Tasks',tasks.length,''],['Done',c.done||0,'ok'],['Running',c['in-progress']||0,'warn'],['Pending',c.pending||0,'info'],['Blocked',c.blocked||0,'danger'],['Inbox',items.length,items.length?'danger':'ok']]);
  h+=bar(viewSegs(c));
  h+='<div class="overall">'+boxes(c,tasks.length,20)+'<b>'+(tasks.length?Math.round(100*(c.done||0)/tasks.length):0)+'% done</b><span>'+
-  (c.done||0)+' done · '+(c.settled||0)+' settled · '+((c.pending||0)+(c['in-progress']||0))+' active · '+(c.blocked||0)+' blocked · '+items.length+' router items</span></div>';
+  (c.done||0)+' done · '+((c.pending||0)+(c['in-progress']||0))+' active · '+(c.blocked||0)+' blocked · '+items.length+' router items</span></div>';
  h+=heading('Router inbox',{note:items.length+' open'});
  h+=items.length?table(inboxRows(items,{now:now,changed:o.changed,scope:'lane-inbox:'+o.agent,inspect:false})):muted('Empty: nothing waiting.');
  h+=jobsPanel(o.jobs,now);
@@ -196,8 +193,7 @@ function laneLedger(o){
   h+=phaseHead(phase,pc,ts.length);
   h+=table(sorted.map(function(t){
    var v=view(t),subs=[];
-   if(v==='settled')subs.push({t:'router still stores: '+esc(t.status)+' (closing needs a verifiable receipt)',c:'dim'});
-   else if(t.blocked_by)subs.push({t:'waits on: '+esc(t.blocked_by),c:'wait'});
+   if(t.blocked_by)subs.push({t:'waits on: '+esc(t.blocked_by),c:'wait'});
    var sig=[t.status,t.subject,t.phase,t.blocked_by].join('|');
    return row({pill:pill(v,role(v)),id:esc(t.task_id),rid:esc(t.task_id),text:esc(t.subject),subs:subs,changed:o.changed&&o.changed('lane:'+o.agent,t.task_id,sig)});
   }));
