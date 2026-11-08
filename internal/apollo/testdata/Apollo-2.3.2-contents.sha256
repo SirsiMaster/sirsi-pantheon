@@ -1,15 +1,16 @@
-# Apollo 2.3.0 package contents (sha256  path  [codesign identifier])
-9f44356f6f17744826e2826fbeeb8deb2d3fe9a0abaa349684646231ba190e0c  Contents/MacOS/Apollo  [ai.sirsi.apollo]
-78b01145cc948cf1b07bb5e28204d69def49ef5fe763ee218fcf9a5c4e253eda  Contents/Helpers/apollo-dashboard  [ai.sirsi.apollo.dashboard]
-d9e86f6b70bf70f16ded32c2d325cdc81f766dd229dba6543948c209ef10d4c3  Contents/Helpers/apollo-mcp  [ai.sirsi.apollo.mcp]
-0ccfdf7307a8ee9d91056b8876efe15c2b13184a1a4fa620e5339b59f5fc46c1  Contents/Helpers/apollo-plain-native-serve  [ai.sirsi.apollo.engine]
-facd990c9606a1508565c5be316e2aac0eee97fae63392a94f74f81751f54918  Contents/Helpers/apollo-router  [ai.sirsi.apollo.router]
-f4a12d459b3a64d14aa3226d0f5133561521711b02d678861636bc242ace78cb  Contents/Helpers/mlx_gemma4_stage  [ai.sirsi.apollo.split-stage]
-c121fcf48b41e1499e92aecb674f5febfdd9a569ece7f9d02ee6cabe8c53b444  Contents/Helpers/qwen35_flash  [ai.sirsi.apollo.qwen-reference-cli]
-13616eb8ce516744fe853a7a06eb59b58a70dc571aae75069db969a7b38a2f66  Contents/Helpers/qwen35_serve  [ai.sirsi.apollo.qwen-engine]
-c2884ec68d574775962907d419498cdb9e7fb6241d7c861711d0bfcec0936842  Contents/Helpers/stacklab-compare  [ai.sirsi.apollo.stacklab-compare]
-6cbb7a2b3a2ba4a013212b1d5a35a5c7973ef1f05d3e3dd7a5ab4bfeab5953c4  Contents/Helpers/stacklab-store  [ai.sirsi.apollo.stacklab-store]
-3cbb9cd6677776ab57811b0a54db641b03eec2cec602fabc06d5f252c4c3e02f  Contents/Frameworks/libapollo_plain.dylib  [libapollo_plain]
+# Apollo 2.3.2 package contents (sha256  path  [codesign identifier])
+a11aac1d164753e073d0deddd4fc9d28420d96ce44c7d1c3b128af5f55d67d9f  Contents/MacOS/Apollo  [ai.sirsi.apollo]
+1f6df901bb72e329631e53912b36a4161f8d07fcb54be0b7aa45e88d65c390e0  Contents/Helpers/apollo-dashboard  [ai.sirsi.apollo.dashboard]
+f79e7d11c6af4348ccb7f8e58e54c9631bf6f99d423aa427f421bd04f7742992  Contents/Helpers/apollo-mcp  [ai.sirsi.apollo.mcp]
+5a602164cb7104498a2dd15546568fa538967cfcc83ac394f3754ac3c2cfac32  Contents/Helpers/apollo-plain-native-serve  [ai.sirsi.apollo.engine]
+62f25b64cf2047e499a5a95183eb2e4e4cb0772cd9146ad673c67d134a8fb0a2  Contents/Helpers/apollo-router  [ai.sirsi.apollo.router]
+68b03566898ee2ea87944b1c434ea5efa66670c4f791668fb66941919d6cd1fb  Contents/Helpers/mlx_gemma4_stage  [ai.sirsi.apollo.split-stage]
+27e86ea32b5d89c813740ddff3f3e8c8b092baec0815fb85c05ac7f883362c0c  Contents/Helpers/mlx_qwen  [ai.sirsi.apollo.qwen-graph-engine]
+6656db00b13c6756b8e631cab36fc264f78f32304d5ba5b2cc4b3d6c4b99cc7b  Contents/Helpers/qwen35_flash  [ai.sirsi.apollo.qwen-reference-cli]
+89c2d06f48af907ffccfdfd40ea46f5a879ec8c5acf0f1685111433b5cc5c809  Contents/Helpers/qwen35_serve  [ai.sirsi.apollo.qwen-engine]
+e2eda2b910979a791c9a3d2ff4d96c653c6ec9f59ce86b26937bbedda47e84d5  Contents/Helpers/stacklab-compare  [ai.sirsi.apollo.stacklab-compare]
+33cd0ee960f62810cc0e1d7cdf113bd13d25ede31f60fa8f1bb8e035c69fb64a  Contents/Helpers/stacklab-store  [ai.sirsi.apollo.stacklab-store]
+b8536d10b12f617f65ffe1c705278b079bb2ae743672eecb290424afbb4ec8ff  Contents/Frameworks/libapollo_plain.dylib  [libapollo_plain]
 a937c822dfdc22c8c2b17e36d822452466914dcfb912b514c553521ba2a0cdb8  Contents/Resources/AppIcon.icns
 886a4a0607425a28cd5aeff0073b24aa668d63035911a35cde298074d85b29f6  Contents/Resources/EULA.md
 d43966d13322e53c2fadfc4e277bb7c31bf5358a3ac85d39e1ac42de2e25e87d  Contents/Resources/GEMMA_NOTICE.md
@@ -17,8 +18,8 @@ a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9  Contents/Resou
 ccfab7ccb2ea306f71531c8ca77bb55507606cd90768b1e32b8b52ab5b48cf01  Contents/Resources/LICENSE-MLX
 df76017890b0f0e8a3caa9f04503c4b60563e976c2a58548b06f9bacbb77f8e4  Contents/Resources/README-DASHBOARD.md
 eb6d927d05d5e0751fdaa8b6aa398e3ad073e087b024c16c98139c092f9e7524  Contents/Resources/README.md
-cb0deeb3e12d45d6a255440d1c0086eedf427041275ee4253231d6f4414ed476  Contents/Resources/RELEASE.json
-6b4337916440a3060514869cde01579cc5bde527eab1e853a0bfd584ef11dc0e  Contents/Resources/SBOM.json
+7a59ea739329af1efc207f7cc3b8c7c7fd066e40586a55d8b0c16d54ff8cdec3  Contents/Resources/RELEASE.json
+fa5599ca25ac1a0d91cca33bcf61832c236995cd60ffa753521e5dffd20e50cc  Contents/Resources/SBOM.json
 d60b8dce7066709699b6c1f9bb1fa6b850096e7438352d551281eeadcdcf090f  Contents/Resources/THIRD_PARTY_NOTICES.md
 9fedbd52861d93683a250aac81f2d8277e426210c557fa4712e8bb46cbd08f15  Contents/Resources/apollo-bench
 a25c6454d5ae1a933e264b05b8c83120382a066ff6e5514afae33517c00a9ca7  Contents/Resources/apollo-self.md
@@ -187,7 +188,7 @@ dd6eb1d4fc4321c7fc87c145f7abf94e216cc3f46d2f6090af01474b3a400552  Contents/Resou
 0724f8dff476d30672ce5ca0afa220722c579ae95dac86479d6d2e749d51fd94  Contents/Resources/service/fleet-rollout-install.zsh
 53bf6939556b9b75b6fff571032a184bdb284f6e63d74a2983a9d88e3b378ad5  Contents/Resources/service/fleet-rollout.zsh
 898c82d1cd4b3aa40ef26d54b394344c8b8b97f7c4aa7b61aec51a7444698f56  Contents/Resources/service/hub-install.zsh
-e2573de7b3666df46205dba308fb3a96c873a9a7dc47ed109b12caa1cd84cf0e  Contents/Resources/service/install.zsh
+63019c4572c856ff3fda4e615d19cbf22ba0889ce4c05bb6b463abdaba0edb98  Contents/Resources/service/install.zsh
 94966cc10d28dfb4784d297001af97fd31963255417b146eb607d4e827139e7a  Contents/Resources/service/stacklab-accounts.zsh
 5aa1a03c0895b63cbfa1b97abfecd1a34714c1969f6e88105606a2d6332f3642  Contents/Resources/service/uninstall.zsh
 c84f0fbd0ccdea18cdc11b0d1e93d788c07702ecc49cba81379158684080ffef  Contents/Resources/sirsi-logo.png

@@ -116,7 +116,7 @@ var apolloChatCmd = &cobra.Command{
 	Long: `Runs the installed Apollo profile only: the current macOS user is the
 principal, Ma'at provides live all-rank memory fences, and Apollo owns pinned
 native workers and teardown. The command accepts no endpoint, token, model path,
-or worker-path override. Qwen3.5-9B uses the exact installed Apollo 2.3.0 loopback
+or worker-path override. Qwen3.5-9B uses the exact installed Apollo 2.3.2 loopback
 profile instead; the existing Apollo service owns admission and teardown there.
 Qwen requires explicit --mode and --precision Q4-affine-g64-bf16. Plain, Flash
 and MLX-certified never fall back between each other.`,

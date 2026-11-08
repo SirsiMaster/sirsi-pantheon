@@ -15,18 +15,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 	"unicode/utf8"
 )
 
 const (
-	InstalledAppModel = "mlx-community/Qwen3.5-9B-4bit"
-	InstalledAppRoute = InstalledAppModel + "@apollo:2.3.0"
-	// installedAppLegacyRoute is the documented 2.2.x route ID. It stays accepted as input and is always
-	// normalized to InstalledAppRoute on the wire (the 2.3.0 service no longer serves @apollo:2.2.0).
-	installedAppLegacyRoute = InstalledAppModel + "@apollo:2.2.0"
-	InstalledAppPrecision   = "Q4-affine-g64-bf16"
-	installedAppEndpoint    = "http://127.0.0.1:8520/v1"
+	InstalledAppModel     = "mlx-community/Qwen3.5-9B-4bit"
+	InstalledAppRoute     = InstalledAppModel + "@apollo:2.3.2"
+	InstalledAppPrecision = "Q4-affine-g64-bf16"
+	installedAppEndpoint  = "http://127.0.0.1:8520/v1"
 	// Public checkpoint identity, not a transport credential. A named digest
 	// keeps its role distinct from credential-shaped assignment syntax.
 	qwenVocabularySHA256 = "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4"
@@ -48,7 +46,7 @@ type InstalledAppProfile struct {
 
 func installedAppProfile() InstalledAppProfile {
 	return InstalledAppProfile{
-		Version: "2.3.0", Model: InstalledAppModel, Route: InstalledAppRoute,
+		Version: "2.3.2", Model: InstalledAppModel, Route: InstalledAppRoute,
 		Precision: InstalledAppPrecision, Endpoint: installedAppEndpoint,
 		Modes:              []string{"plain", "flash", "mlx-certified"},
 		CheckpointRevision: "8b2b98c00a6b4d291155e4890773ca8f769aee53",
@@ -57,16 +55,24 @@ func installedAppProfile() InstalledAppProfile {
 	}
 }
 
+// installedAppLegacyRoutes are earlier documented route IDs. They stay accepted as input and are always
+// normalized to InstalledAppRoute on the wire, so pinned invocations keep working across releases.
+var installedAppLegacyRoutes = []string{
+	InstalledAppModel + "@apollo:2.2.0",
+	InstalledAppModel + "@apollo:2.3.0",
+	InstalledAppModel + "@apollo:2.3.1",
+}
+
 func IsInstalledAppModel(model string) bool {
-	return model == "qwen3.5-9b" || model == InstalledAppModel || model == InstalledAppRoute || model == installedAppLegacyRoute
+	return model == "qwen3.5-9b" || model == InstalledAppModel || model == InstalledAppRoute || slices.Contains(installedAppLegacyRoutes, model)
 }
 
 var installedAppFiles = map[string]string{
-	"Helpers/apollo-router":               "facd990c9606a1508565c5be316e2aac0eee97fae63392a94f74f81751f54918",
-	"Helpers/qwen35_serve":                "13616eb8ce516744fe853a7a06eb59b58a70dc571aae75069db969a7b38a2f66",
-	"Helpers/qwen35_flash":                "c121fcf48b41e1499e92aecb674f5febfdd9a569ece7f9d02ee6cabe8c53b444",
+	"Helpers/apollo-router":               "62f25b64cf2047e499a5a95183eb2e4e4cb0772cd9146ad673c67d134a8fb0a2",
+	"Helpers/qwen35_serve":                "89c2d06f48af907ffccfdfd40ea46f5a879ec8c5acf0f1685111433b5cc5c809",
+	"Helpers/qwen35_flash":                "6656db00b13c6756b8e631cab36fc264f78f32304d5ba5b2cc4b3d6c4b99cc7b",
 	"Resources/qwen/apollo_qwen_serve.py": "bbd46d8e8fb695908f45629160550ecede861ef4230411058ad29df85eedbadf",
-	"MacOS/Apollo":                        "9f44356f6f17744826e2826fbeeb8deb2d3fe9a0abaa349684646231ba190e0c",
+	"MacOS/Apollo":                        "a11aac1d164753e073d0deddd4fc9d28420d96ce44c7d1c3b128af5f55d67d9f",
 }
 
 // InstalledApp reads only fixed installation locations. It accepts no profile,
@@ -80,11 +86,11 @@ func InstalledApp(home string) (InstalledAppProfile, error) {
 		// The first existing installation is authoritative. Never hide drift
 		// in the per-user app by finding a stale system-wide copy instead.
 		if err := verifyInstalledApp(bundle, installedAppFiles); err != nil {
-			return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.3.0 binding unavailable: %w", err)
+			return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.3.2 binding unavailable: %w", err)
 		}
 		return installedAppProfile(), nil
 	}
-	return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.3.0 app is unavailable")
+	return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.3.2 app is unavailable")
 }
 
 func verifyInstalledApp(bundle string, files map[string]string) error {
@@ -111,7 +117,7 @@ func verifyInstalledApp(bundle string, files map[string]string) error {
 			return fmt.Errorf("close installed Apollo artifact %s: %w", path, closeErr)
 		}
 		if hex.EncodeToString(h.Sum(nil)) != expected {
-			return fmt.Errorf("installed Apollo artifact %s differs from release 2.3.0", path)
+			return fmt.Errorf("installed Apollo artifact %s differs from release 2.3.2", path)
 		}
 	}
 	return nil
