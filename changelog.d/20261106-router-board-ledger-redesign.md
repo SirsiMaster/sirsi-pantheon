@@ -3,5 +3,6 @@
   - **Black page:** the board now uses a neutral black page and grey panels in place of the brand's green-tinted dark ground. Green is reserved for the "done" state.
   - **New endpoint:** read-only `GET /api/router/v1/ledger?agent=` returns phase and blocked_by. An unknown agent returns 404; an unavailable producer returns 503.
   - **Cloud jobs:** `/api/router/v1/jobs` returns an honest 404, "no source connected", until a producer exists.
+  - **Box rows (owner, Nov 8):** every lane ledger phase now opens with 13 boxes, then done/total, then its name, with settled and blocked counts. The top of the lane ledger adds a "Complete x/y" card and a 20-box "% done" row, matching the per-lane ledger page lanes run in their in-app browsers.
   - **Fix:** `board-actions.js` is now embedded. Before this, `/assets/board-actions.js` returned 500 and hosted ledger edits had no controls.
   - Refs: ADR-038 (brand tokens; the board overrides the ground and greys with keywords only, no hex), router-surface.v1.

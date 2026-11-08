@@ -28,6 +28,19 @@ function bar(segs,cls){
  var label=live.length?live.map(function(s){return s.word+' '+s.n}).join(', '):'no data';
  return '<div class="bar'+(cls?' '+cls:'')+'" role="img" aria-label="'+esc(label)+'">'+live.map(function(s){return '<span class="r-'+esc(s.role)+'" style="width:'+(100*s.n/total).toFixed(2)+'%" title="'+esc(s.word+' '+s.n)+'"></span>'}).join('')+'</div>';
 }
+// Box row (the owner's x/y format): done boxes fill first, then settled, the rest stay empty outlines.
+function boxes(c,total,n){
+ n=n||13;total=total||0;
+ var d=c.done||0,s=c.settled||0,fd=total?Math.round(n*d/total):0,fs=total?Math.round(n*(d+s)/total)-fd:0;
+ if(d&&!fd)fd=1;if(s&&fs<1)fs=1;
+ var out='';for(var i=0;i<n;i++)out+=i<fd?'<i class="r-ok on"></i>':i<fd+fs?'<i class="r-settled on"></i>':'<i></i>';
+ return '<span class="boxes" role="img" aria-label="'+esc(d+' done, '+s+' settled of '+total)+'">'+out+'</span>';
+}
+function phaseHead(name,pc,total){
+ var b=pc.blocked||0;
+ return '<h2 class="ph'+(b?' has-block':'')+'">'+boxes(pc,total)+'<span class="xy">'+(pc.done||0)+'/'+total+'</span><span class="name">'+esc(name)+'</span>'+
+  (pc.settled?'<span class="tally">'+pc.settled+' settled</span>':'')+(b?'<span class="tally r-danger">'+b+' blocked</span>':'')+'</h2>';
+}
 function viewSegs(c){return ORDER.map(function(k){return {word:k,n:c[k]||0,role:role(k)}}).concat(Object.keys(c).filter(function(k){return ORDER.indexOf(k)<0}).map(function(k){return {word:k,n:c[k],role:'dim'}}))}
 function cards(list){return '<div class="cards">'+list.map(function(c){return '<div class="card count"><div class="n'+(c[2]?' r-'+esc(c[2]):'')+'">'+esc(c[1])+'</div><div class="l">'+esc(c[0])+'</div></div>'}).join('')+'</div>'}
 function heading(text,o){o=o||{};return '<h2>'+esc(text)+(o.segs?bar(o.segs,'mini'):'')+(o.total!=null?'<span class="tally">'+o.done+'/'+o.total+'</span>':'')+(o.note?'<span class="tally">'+esc(o.note)+'</span>':'')+(o.extra||'')+'</h2>'}
@@ -164,8 +177,10 @@ function laneLedger(o){
  var d=L.data,tasks=d.tasks||[],items=d.items||[],c=count(tasks),h='';
  if(L.err)h+=banner('danger','Refresh failed.','Showing last good ledger from '+clock(L.at)+' · '+L.err,true);
  else if(now-L.at>STALE_MS)h+=banner('warn','Stale.','This ledger is '+Math.round((now-L.at)/1000)+' s old (last read '+clock(L.at)+').',false);
- h+=cards([['Tasks',tasks.length,''],['Done',c.done||0,'ok'],['Settled',c.settled||0,'settled'],['Running',c['in-progress']||0,'warn'],['Pending',c.pending||0,'info'],['Blocked',c.blocked||0,'danger'],['Inbox',items.length,items.length?'danger':'ok']]);
+ h+=cards([['Complete',(c.done||0)+(c.settled||0)+'/'+tasks.length,'ok'],['Tasks',tasks.length,''],['Done',c.done||0,'ok'],['Settled',c.settled||0,'settled'],['Running',c['in-progress']||0,'warn'],['Pending',c.pending||0,'info'],['Blocked',c.blocked||0,'danger'],['Inbox',items.length,items.length?'danger':'ok']]);
  h+=bar(viewSegs(c));
+ h+='<div class="overall">'+boxes(c,tasks.length,20)+'<b>'+(tasks.length?Math.round(100*(c.done||0)/tasks.length):0)+'% done</b><span>'+
+  (c.done||0)+' done · '+(c.settled||0)+' settled · '+((c.pending||0)+(c['in-progress']||0))+' active · '+(c.blocked||0)+' blocked · '+items.length+' router items</span></div>';
  h+=heading('Router inbox',{note:items.length+' open'});
  h+=items.length?table(inboxRows(items,{now:now,changed:o.changed,scope:'lane-inbox:'+o.agent,inspect:false})):muted('Empty: nothing waiting.');
  h+=jobsPanel(o.jobs,now);
@@ -178,7 +193,7 @@ function laneLedger(o){
    var x=ORDER.indexOf(view(a.t)),y=ORDER.indexOf(view(b.t));
    return (x<0?ORDER.length:x)-(y<0?ORDER.length:y)||a.i-b.i;
   }).map(function(x){return x.t});
-  h+=heading(phase,{segs:viewSegs(pc),done:pc.done||0,total:ts.length});
+  h+=phaseHead(phase,pc,ts.length);
   h+=table(sorted.map(function(t){
    var v=view(t),subs=[];
    if(v==='settled')subs.push({t:'router still stores: '+esc(t.status)+' (closing needs a verifiable receipt)',c:'dim'});
@@ -200,7 +215,7 @@ function inbox(items,o){
  }).join('');
 }
 
-var api={ORDER:ORDER,STALE_MS:STALE_MS,INTERVAL_MS:INTERVAL_MS,esc:esc,view:view,count:count,bar:bar,cards:cards,pill:pill,heading:heading,ageText:ageText,ago:ago,clock:clock,status:status,
+var api={ORDER:ORDER,STALE_MS:STALE_MS,INTERVAL_MS:INTERVAL_MS,esc:esc,view:view,count:count,bar:bar,boxes:boxes,phaseHead:phaseHead,cards:cards,pill:pill,heading:heading,ageText:ageText,ago:ago,clock:clock,status:status,
  overview:overview,lanes:lanes,laneLedger:laneLedger,inbox:inbox,jobsPanel:jobsPanel,banner:banner,muted:muted,waiting:waiting,laneLink:laneLink,role:role};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.PantheonLedger=api;
 })(typeof window!=='undefined'?window:globalThis);

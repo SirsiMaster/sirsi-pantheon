@@ -96,6 +96,15 @@ h2{font-size:13px;font-weight:600;color:var(--dim);text-transform:uppercase;lett
 h2 .tally{font-weight:400;text-transform:none;letter-spacing:0}
 h2 .actions{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:400}
 h2 .link{text-transform:none;letter-spacing:0;font-weight:400;margin-left:auto}
+/* Box rows: x/y per phase (the owner's lane-ledger format). Empty boxes are outlines; filled take the role color. */
+.boxes{display:inline-flex;gap:3px;vertical-align:middle}
+.boxes i{width:11px;height:11px;border:1px solid var(--dim);border-radius:2px}
+.boxes i.on{background:currentColor;border-color:currentColor}
+h2.ph{font-size:14px;font-weight:400;color:var(--ink);text-transform:none;letter-spacing:0}
+h2.ph .xy{font-weight:600;font-variant-numeric:tabular-nums}
+h2.ph.has-block .name{color:var(--warn)}
+.overall{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:-8px 0 16px;color:var(--dim);font-size:13px}
+.overall b{color:var(--ink);font-weight:600}
 .section-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:22px 0 8px}
 .section-heading h2{margin:0}
 

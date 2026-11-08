@@ -20,16 +20,28 @@ test('settled is derived from the first 80 characters, never from a done task, a
  assert.deepEqual(pillWords(html).filter(w=>w==='settled'),['settled']);
 });
 
-test('tasks group by phase in first-seen order with a mini bar, done/total, and rows sorted done, settled, in-progress, pending, blocked',()=>{
+test('tasks group by phase in first-seen order with a box row, done/total, and rows sorted done, settled, in-progress, pending, blocked',()=>{
  const tasks=[T('p1','blocked','blocked one','Beta'),T('p2','done','finished','Alpha'),T('p3','pending','waiting','Beta'),T('p4','in-progress','running','Beta'),T('p5','pending','SUPERSEDED plan','Beta'),T('p6','done','done two','Beta'),T('p7','pending','no phase task','')];
  const html=L.laneLedger({agent:'lane-a',ledger:ledger(tasks),now:NOW});
- const heads=Array.from(html.matchAll(/<h2>([^<]+)<span class="bar|<h2>([^<]+)</g)).map(m=>m[1]||m[2]);
- const order=heads.filter(h=>['Beta','Alpha','No phase'].includes(h));
+ const order=Array.from(html.matchAll(/<span class="name">([^<]+)<\/span>/g)).map(m=>m[1]);
  assert.deepEqual(order,['Beta','Alpha','No phase'],'first-seen order, not alphabetical');
- const beta=html.slice(html.indexOf('<h2>Beta'),html.indexOf('<h2>Alpha'));
- assert.match(beta,/class="bar mini"/);assert.match(beta,/<span class="tally">1\/5<\/span>/);
+ const beta=html.slice(html.indexOf('<span class="name">Beta'),html.indexOf('<span class="name">Alpha'));
+ assert.match(html,/<h2 class="ph has-block"><span class="boxes"[^>]*>(<i[^>]*><\/i>){13}<\/span><span class="xy">1\/5<\/span><span class="name">Beta<\/span><span class="tally">1 settled<\/span><span class="tally r-danger">1 blocked<\/span><\/h2>/);
  assert.deepEqual(pillWords(beta),['done','settled','in-progress','pending','blocked']);
- assert.match(html,/<h2>Alpha[\s\S]*<span class="tally">1\/1<\/span>/);
+ assert.match(html,/<h2 class="ph"><span class="boxes"[^>]*>(<i class="r-ok on"><\/i>){13}<\/span><span class="xy">1\/1<\/span><span class="name">Alpha<\/span><\/h2>/,'a finished phase fills every box');
+});
+
+test('box rows fill done then settled in proportion, never round a nonzero count to no box, and say their numbers',()=>{
+ const on=(h,r)=>(h.match(new RegExp('<i class="r-'+r+' on">','g'))||[]).length;
+ const b=L.boxes({done:1,settled:2},275);
+ assert.equal(on(b,'ok'),1,'1 of 275 still shows one box');assert.equal(on(b,'settled'),1);
+ assert.equal((b.match(/<i><\/i>/g)||[]).length,11);
+ assert.match(b,/aria-label="1 done, 2 settled of 275"/);
+ const half=L.boxes({done:2,settled:0},4);assert.equal(on(half,'ok'),7);
+ assert.equal((L.boxes({},0).match(/<i><\/i>/g)||[]).length,13,'an empty phase is all outlines, not NaN');
+ const top=L.laneLedger({agent:'lane-a',ledger:ledger([T('a','done','x','P'),T('b','pending','UNDONE','P'),T('c','pending','DONE x','P'),T('d','blocked','y','P')]),now:NOW});
+ assert.match(top,/<div class="n r-ok">2\/4<\/div><div class="l">Complete<\/div>/);
+ assert.match(top,/<b>25% done<\/b><span>1 done · 1 settled · 1 active · 1 blocked · 0 router items<\/span>/);
 });
 
 test('blocked_by shows as waits on, and cards carry every word with their counts',()=>{
@@ -67,7 +79,7 @@ test('cloud jobs: honest empty state, read failure, and a populated source',()=>
  assert.match(L.laneLedger({agent:'a',ledger:base,jobs:{state:'error',err:'HTTP 502'},now:NOW}),/Cloud jobs: read failed · HTTP 502 \(not an empty list\)/);
  assert.match(L.laneLedger({agent:'a',ledger:base,jobs:{state:'loading'},now:NOW}),/Cloud jobs: loading/);
  const html=L.laneLedger({agent:'a',ledger:base,jobs:{state:'ok',data:[{stream:'s1',purpose:'Build X',activity:'reported',last_push:'2026-11-06T11:53:00Z',verdict:'not verified'},{stream:'s2',purpose:'Build Y',activity:'building'}]},now:NOW});
- assert.deepEqual(pillWords(html.slice(html.indexOf('Cloud jobs'),html.indexOf('<h2>P'))),['building','reported'],'building sorts before reported');
+ assert.deepEqual(pillWords(html.slice(html.indexOf('Cloud jobs'),html.indexOf('<h2 class="ph'))),['building','reported'],'building sorts before reported');
  assert.match(html,/last push 7 min ago/);assert.match(html,/builder verified: not verified/);
 });
 
