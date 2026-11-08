@@ -3,6 +3,24 @@
 # Each entry is timestamped with context and reasoning.
 # This is the "why" behind every decision.
 
+## 2026-11-08 — Isolated recipient terminal-task accounting candidate
+
+Classification: platform-foundation; source preparation only. Owner requested
+the confirmed RecipientLoad defect be corrected in a new isolated worktree,
+separate from Ma'at PR1375. Base is freshly fetched origin/main
+1ddd5291cf835f60b4c280e8617cf46e45d026b7. The shared admission query now excludes
+both terminal statuses (done and canceled), consistently affecting guarded/raw
+sends without changing recipient, age, expiry, threshold or exemption guards.
+Owner-canceled history previously began counting as stalled after 24 hours.
+Superseded prose alone remains nonterminal and must not erase real obligations.
+
+Added deterministic-clock private-store fixtures for aged canceled/done history,
+pending superseded descriptions, genuine pending/blocked saturation, active and
+expired leases, and fresh pending work on both send paths. No tests or builds
+have run; separate explicit SHA scope and fresh admission are required before
+parent verification. No live sends, capacity changes, production changes or
+completion claim. No source change is made to the Ma'at repair worktree.
+
 ## 2026-10-25 — v0.24.137 corrective preparation and preserved release notes
 
 Build on public136 and Main's complete accepted1f227096 composition, not a

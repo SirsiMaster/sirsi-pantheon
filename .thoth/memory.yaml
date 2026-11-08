@@ -1,4 +1,5 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
+# 2026-11-08 isolated router-recipient-terminal candidate on main1ddd529: RecipientLoad excludes done+canceled, preserving age/lease/threshold checks. Guarded/raw fixture controls added; no tests/builds run, pending separate explicit SHA scope and fresh admission. Disjoint from Ma'at PR1375; no sends, bypass, deployment or product-completion claim. See journal 2026-11-08.
 # Current release preparation 2026-10-25: candidate0.24.137 derives from exact
 # Main1f227096/treea1977180 on public136eff2. Qualified976 normal/race names each,
 # strict Swift Release and160Swift passes with explicit skips; not whole-product
