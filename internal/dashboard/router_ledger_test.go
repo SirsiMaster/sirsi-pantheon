@@ -67,11 +67,34 @@ func TestRouterLedgerShapeUsesSafeTaskProjection(t *testing.T) {
 			t.Errorf("task missing %q", k)
 		}
 	}
-	if t0["phase"] != "" || t0["blocked_by"] != "" {
-		t.Fatalf("private phase or blocker escaped: %v", t0)
+	if t0["blocked_by"] != "" {
+		t.Fatalf("blocker prose escaped: %v", t0)
 	}
-	if tasks[1].(map[string]any)["phase"] != "" {
-		t.Fatal("private phase escaped")
+	// Owner decision 2026-11-08: phase is a display label, shown like the subject,
+	// so the board can draw x/y per phase.
+	if t0["phase"] != "Phase A" || tasks[1].(map[string]any)["phase"] != "Phase B" {
+		t.Fatalf("phase labels lost: %v / %v", t0, tasks[1])
+	}
+}
+
+func TestRouterLedgerPhaseIsCleanedLikeTheSubject(t *testing.T) {
+	long := strings.Repeat("p", 200)
+	s := New(Config{LedgerAgentFn: func(agent string) (ledger.Snapshot, error) {
+		return ledger.Snapshot{Agents: []ledger.Agent{{AgentID: agent, Tasks: []routerstore.Task{
+			{TaskID: "a", Status: "pending", Phase: "Gap\nburndown:\x1b intake"},
+			{TaskID: "b", Status: "pending", Phase: long},
+		}}}}, nil
+	}})
+	code, m, _ := getJSON(t, s, "/api/router/v1/ledger?agent=lane")
+	if code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	tasks := m["tasks"].([]any)
+	if got := tasks[0].(map[string]any)["phase"]; got != "Gap burndown:  intake" {
+		t.Fatalf("control characters must become spaces, got %q", got)
+	}
+	if got := tasks[1].(map[string]any)["phase"].(string); len(got) != 128 {
+		t.Fatalf("phase must be capped at 128 characters, got %d", len(got))
 	}
 }
 
@@ -80,10 +103,10 @@ func TestRouterLedgerExcludesPrivateTaskPayloadAcrossPages(t *testing.T) {
 	s := New(Config{CloudBoard: true, LedgerAgentFn: func(agent string) (ledger.Snapshot, error) {
 		a := ledger.Agent{AgentID: agent}
 		for i := 0; i < 130; i++ {
-			a.Tasks = append(a.Tasks, routerstore.Task{TaskID: fmt.Sprintf("task-%03d", i), Subject: "safe", Status: "pending", Phase: secret, BlockedBy: secret})
+			a.Tasks = append(a.Tasks, routerstore.Task{TaskID: fmt.Sprintf("task-%03d", i), Subject: "safe", Status: "pending", Phase: "safe phase", BlockedBy: secret})
 		}
 		a.Tasks[0].BlockedBy = "done-001"
-		a.Tasks = append(a.Tasks, routerstore.Task{TaskID: "done-001", Subject: "safe done", Status: "done", Phase: secret, BlockedBy: secret})
+		a.Tasks = append(a.Tasks, routerstore.Task{TaskID: "done-001", Subject: "safe done", Status: "done", Phase: "safe phase", BlockedBy: secret})
 		a.Items = append(a.Items, ledger.Item{ID: "item-1", Title: "safe item", From: "ra", Type: "request", Blocked: true, BlockedBy: secret})
 		return ledger.Snapshot{Agents: []ledger.Agent{a}}, nil
 	}})

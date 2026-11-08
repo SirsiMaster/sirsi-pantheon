@@ -84,6 +84,14 @@ func fabricText(value string, limit int) (string, bool) {
 	return string(runes), limited
 }
 
+// PhaseLabel cleans a task phase for the lane ledger the way a subject is
+// cleaned: control characters become spaces, capped at 128 characters. The
+// Fabric projection itself never carries the phase.
+func PhaseLabel(phase string) string {
+	s, _ := fabricText(phase, 128)
+	return s
+}
+
 func fabricID(value string) bool {
 	return value != "" && strings.TrimSpace(value) == value && len(value) <= 1024 && !strings.ContainsFunc(value, unicode.IsControl)
 }

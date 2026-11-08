@@ -102,15 +102,21 @@ func (s *Server) apiRouterLedger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Project both open and completed tasks with the same public allowlist used
-	// by /api/fabric. In particular, private phase and arbitrary blocker prose
-	// must never be emitted through the hosted lane endpoint.
+	// by /api/fabric. Arbitrary blocker prose never leaves; the phase is a
+	// display label cleaned like the subject (owner decision 2026-11-08).
 	rows, err := ledger.FabricAllTasksFrom(scoped)
 	if err != nil {
 		writeError(w, "ledger projection unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	phase := map[string]string{}
+	for _, a := range scoped.Agents {
+		for _, t := range a.Tasks {
+			phase[t.TaskID] = ledger.PhaseLabel(t.Phase)
+		}
+	}
 	for _, t := range rows {
-		out.Tasks = append(out.Tasks, RouterLedgerTask{TaskID: t.ID, Subject: t.Subject, Status: t.Status, BlockedBy: t.BlockerID, Updated: t.Updated, ResponsibleParty: t.Responsible})
+		out.Tasks = append(out.Tasks, RouterLedgerTask{TaskID: t.ID, Subject: t.Subject, Status: t.Status, Phase: phase[t.ID], BlockedBy: t.BlockerID, Updated: t.Updated, ResponsibleParty: t.Responsible})
 	}
 	_ = json.NewEncoder(w).Encode(out)
 }
