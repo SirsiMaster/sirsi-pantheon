@@ -56,7 +56,7 @@ var (
 var ErrRecipientSaturated = errors.New("routerstore: recipient saturated — nothing appended")
 
 // RecipientLoad is one recipient's backlog as admission reads it: open items it
-// has not acknowledged, and ledger tasks not done whose row has not moved (no
+// has not acknowledged, and nonterminal ledger tasks whose row has not moved (no
 // claim, renewal or update) for RecipientStallAfter and that hold no live lease.
 type RecipientLoad struct {
 	Unacked int `json:"unacked"`
@@ -81,7 +81,7 @@ func recipientLoad(q interface {
 	nowS, cutoff := now.Format(time.RFC3339), now.Add(-RecipientStallAfter).Format(time.RFC3339)
 	err := q.QueryRow(`SELECT
 	    (SELECT COUNT(*) FROM items WHERE to_agent = ? AND status = 'open' AND acked_at = ''),
-	    (SELECT COUNT(*) FROM tasks WHERE agent = ? AND status <> 'done' AND updated < ?
+	    (SELECT COUNT(*) FROM tasks WHERE agent = ? AND status NOT IN ('done','canceled') AND updated < ?
 	        AND (lease_expires IS NULL OR lease_expires = '' OR lease_expires < ?));`,
 		agent, agent, cutoff, nowS).Scan(&l.Unacked, &l.Stalled)
 	if err != nil {
