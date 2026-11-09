@@ -451,7 +451,7 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 		if r.Holder == req.Holder {
 			continue // own overlapping hold — the new one is additive/refresh, allow
 		}
-		if yieldsAfterBlock(&reservations[i], req, floor, now) {
+		if yieldsAfterBlock(&reservations[i], reservations, req, floor, now) {
 			continue
 		}
 		// A live foreign holder is on the window — --queue waits for the
@@ -499,7 +499,7 @@ const maxBuildBlock = 120 * time.Second
 // ponytail: a pod journal projects rows for each decision, so BlockingSince does
 // not persist there and pod-admitted holds never yield. That is the safe side;
 // persist it in the journal when a pod authority is deployed.
-func yieldsAfterBlock(r *Reservation, req Reservation, floor int, now time.Time) bool {
+func yieldsAfterBlock(r *Reservation, rows []Reservation, req Reservation, floor int, now time.Time) bool {
 	if r.Regime != RegimeBuild || r.MemGB != 0 || req.Regime == RegimeQuiet {
 		return false
 	}
@@ -507,7 +507,7 @@ func yieldsAfterBlock(r *Reservation, req Reservation, floor int, now time.Time)
 		return true // otherwise each floored lane would start its own 120s in turn
 	}
 	since, err := time.Parse(time.RFC3339, r.BlockingSince)
-	if err != nil {
+	if err != nil || !waiterStillLive(*r, rows, now) {
 		r.BlockingSince = now.Format(time.RFC3339)
 		return false
 	}
@@ -519,6 +519,21 @@ func yieldsAfterBlock(r *Reservation, req Reservation, floor int, now time.Time)
 		r.Reason = fmt.Sprintf("held up %s past %s: downgraded to the floor share; nothing was stopped", req.Holder, maxBuildBlock)
 	}
 	return true
+}
+
+// waiterStillLive reports whether a lane r already held up is still waiting
+// beside it: a live floor grant or a queued request from another holder. When
+// every earlier waiter has gone, the clock restarts for the current request.
+func waiterStillLive(r Reservation, rows []Reservation, now time.Time) bool {
+	for _, q := range rows {
+		if q.ID == r.ID || q.Holder == r.Holder || !sameResource(q.Resource, r.Resource) || q.leaseExpired(now) {
+			continue
+		}
+		if (q.Status == StatusActive && q.Share == ShareFloor) || q.Status == StatusQueued {
+			return true
+		}
+	}
+	return false
 }
 
 // orOpen renders an est-end for a Reason string ("open" if unset).

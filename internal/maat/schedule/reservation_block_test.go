@@ -85,3 +85,33 @@ func TestProtectedHoldsNeverYield(t *testing.T) {
 		})
 	}
 }
+
+func TestBlockClockRestartsWhenEarlierWaiterLeft(t *testing.T) {
+	l, now := blockLedger()
+	mustReserve(t, l, blockReq("builder", RegimeBuild))
+	gone := mustReserve(t, l, blockReq("asked-once", RegimeBuild))
+	if _, err := l.Release(gone.Reservation.ID); err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(2 * time.Hour)
+	if res := mustReserve(t, l, blockReq("late", RegimeBuild)); res.Reservation.Share != ShareFloor {
+		t.Fatalf("a lane that left must not count as time blocked, got %+v", res.Reservation)
+	}
+	*now = now.Add(maxBuildBlock)
+	if res := mustReserve(t, l, blockReq("later", RegimeBuild)); res.Reservation.Share != ShareFull {
+		t.Fatalf("the restarted clock must still end at 120s, got %+v", res.Reservation)
+	}
+}
+
+func TestBlockClockSavedOnQueuedPath(t *testing.T) {
+	l, now := blockLedger()
+	mustReserve(t, l, blockReq("builder", RegimeBuild))
+	res, err := l.Reserve(blockReq("queued", RegimeBuild), true)
+	if err != nil || !res.Queued {
+		t.Fatalf("want queued, got %+v %v", res, err)
+	}
+	*now = now.Add(maxBuildBlock)
+	if got := mustReserve(t, l, blockReq("next", RegimeBuild)); got.Reservation.Share != ShareFull {
+		t.Fatalf("the clock started by a queued request must persist, got %+v", got.Reservation)
+	}
+}
