@@ -81,7 +81,7 @@ func recipientLoad(q interface {
 	nowS, cutoff := now.Format(time.RFC3339), now.Add(-RecipientStallAfter).Format(time.RFC3339)
 	err := q.QueryRow(`SELECT
 	    (SELECT COUNT(*) FROM items WHERE to_agent = ? AND status = 'open' AND acked_at = ''),
-	    (SELECT COUNT(*) FROM tasks WHERE agent = ? AND status NOT IN ('done','canceled') AND updated < ?
+	    (SELECT COUNT(*) FROM tasks WHERE agent = ? AND status NOT IN ('done','canceled','withdrawn') AND updated < ?
 	        AND (lease_expires IS NULL OR lease_expires = '' OR lease_expires < ?));`,
 		agent, agent, cutoff, nowS).Scan(&l.Unacked, &l.Stalled)
 	if err != nil {
