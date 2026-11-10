@@ -379,6 +379,11 @@ func (rs *RemoteStore) VerifyLease(id, token string) (bool, error) {
 func (rs *RemoteStore) Waive(reqID, reason, ownerDecisionRef string) error {
 	return rs.call("Waive", []any{reqID, reason, ownerDecisionRef})
 }
+func (rs *RemoteStore) WakeLatencySamples(agent string, limit int) ([]WakeLatencySample, error) {
+	var o0 []WakeLatencySample
+	err := rs.call("WakeLatencySamples", []any{agent, limit}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) WithdrawIdentifier(namespace string, number int) error {
 	return rs.call("WithdrawIdentifier", []any{namespace, number})
 }
