@@ -62,6 +62,9 @@ func newThreadWatchActuator(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(dir, "launchctl")
 	if err := os.WriteFile(path, []byte(threadWatchActuatorScript), 0o700); err != nil {
 		t.Fatal(err)
