@@ -1,6 +1,24 @@
 # Ra Router release contract
 
-## Current published native release — 0.24.126
+## Current published native release — 0.24.162
+
+Evidence update: November 10, 2026. This supersedes the 0.24.126 heading
+below as the *current* release; the 0.24.126 record stays as historical
+evidence.
+
+- [v0.24.162](https://github.com/SirsiMaster/sirsi-pantheon/releases/tag/v0.24.162)
+  was published at `2026-11-03T01:44:10Z`, target
+  `b298daac4c5fa3fb34fa0f454d3e906f96fcea04`, with
+  `SirsiPantheon-0.24.162-arm64.dmg` and `SirsiPantheon-0.24.162-arm64.pkg`.
+  This is a read of the release record (`gh release view`), not an independent
+  re-download or signature check by Ra.
+- **v0.24.163** is abandoned as a delivery route. Its tag, empty draft and
+  claims are kept as evidence.
+- **v0.24.164 is unreleased.** It is the one owner-approved forward
+  publication. Scope and conditions:
+  [v164-forward-route-decision.md](../../../releases/v164-forward-route-decision.md).
+
+## Earlier published native release — 0.24.126
 
 Evidence update: October23,2026,9:46p.m. EDT (October24,01:46UTC).
 This forward update supersedes only the pending126 publication state in the

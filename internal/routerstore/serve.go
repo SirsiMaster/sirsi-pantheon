@@ -123,7 +123,8 @@ var ruleOfRaExempt = map[string]bool{
 	"GetState": true, "Counters": true, "Breakers": true, "Render": true, "ListWakeEvents": true, "ListIdentifiers": true,
 	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "RecipientLoad": true, "OperationalAgents": true,
 	"Wait": true, "ListenNotify": true, "NotifyAgent": true, "NotifyPath": true, "ExportItem": true,
-	"ForceOwner": true, "AudienceSince": true, "TaskLeaseEventsSince": true,
+	"WakeLatencySamples": true,
+	"ForceOwner":         true, "AudienceSince": true, "TaskLeaseEventsSince": true,
 }
 
 // ErrThreadAuthority: a session tried to write or delete a thread binding
