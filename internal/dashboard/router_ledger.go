@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 
@@ -95,11 +96,19 @@ func (s *Server) apiRouterLedger(w http.ResponseWriter, r *http.Request) {
 			out.Items = append(out.Items, RouterLedgerItem{ID: it.ID, Title: it.Title, From: it.From, Type: it.Type, Opened: it.Opened, AgeSeconds: it.AgeSeconds, Blocked: it.Blocked})
 		}
 	}
-	// A registered lane with nothing open has no ledger entry; that is a genuinely
-	// empty ledger, not an unknown agent. Anything else is unknown.
-	if !found && !s.knownLane(agent) {
-		writeError(w, "unknown agent", http.StatusNotFound)
-		return
+	// A registered lane with nothing open has no ledger entry. Only a successful
+	// lane inventory can distinguish that empty ledger from an unknown agent;
+	// unavailable inventory is not evidence that the agent does not exist.
+	if !found {
+		known, err := s.knownLane(agent)
+		if err != nil {
+			writeError(w, "lane registry unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if !known {
+			writeError(w, "unknown agent", http.StatusNotFound)
+			return
+		}
 	}
 	// Project both open and completed tasks with the same public allowlist used
 	// by /api/fabric. Arbitrary blocker prose never leaves; the phase is a
@@ -121,20 +130,20 @@ func (s *Server) apiRouterLedger(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
-func (s *Server) knownLane(agent string) bool {
+func (s *Server) knownLane(agent string) (bool, error) {
 	if s.cfg.RouterFn == nil {
-		return false
+		return false, errors.New("router producer not configured")
 	}
 	snap, err := s.cfg.RouterFn()
 	if err != nil {
-		return false
+		return false, err
 	}
 	for _, l := range snap.Lanes.List {
 		if l.Agent == agent {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // apiRouterJobs is the cloud-jobs slot (spec section 4). No producer exists, so

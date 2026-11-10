@@ -172,6 +172,107 @@ func TestRouterLedgerUnknownAgentIs404AndKnownEmptyLaneIs200(t *testing.T) {
 	}
 }
 
+func TestRouterLedgerEmptyDistinguishesUnavailableUnknownAndKnownLane(t *testing.T) {
+	const privateError = "MODEL-PRIVATE-ROUTER-PRODUCER-ERROR"
+	const generatedAt = "2026-11-09T06:00:00Z"
+	laneSnapshot := func(agent string) RouterSnapshot {
+		return RouterSnapshot{Lanes: RouterLanes{List: []RouterLaneVerdict{{Agent: agent}}}}
+	}
+	for _, tc := range []struct {
+		name      string
+		routerFn  func() (RouterSnapshot, error)
+		want      int
+		wantError string
+	}{
+		{"unconfigured inventory", nil, http.StatusServiceUnavailable, "lane registry unavailable"},
+		{"failed inventory", func() (RouterSnapshot, error) {
+			return RouterSnapshot{}, errors.New(privateError)
+		}, http.StatusServiceUnavailable, "lane registry unavailable"},
+		{"failed partial inventory includes lane", func() (RouterSnapshot, error) {
+			return laneSnapshot("lane"), errors.New(privateError)
+		}, http.StatusServiceUnavailable, "lane registry unavailable"},
+		{"known empty lane", func() (RouterSnapshot, error) {
+			return laneSnapshot("lane"), nil
+		}, http.StatusOK, ""},
+		{"unknown lane in available inventory", func() (RouterSnapshot, error) {
+			return laneSnapshot("other"), nil
+		}, http.StatusNotFound, "unknown agent"},
+		{"unknown lane in successfully empty inventory", func() (RouterSnapshot, error) {
+			return RouterSnapshot{}, nil
+		}, http.StatusNotFound, "unknown agent"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ledgerCalls, routerCalls := 0, 0
+			cfg := Config{LedgerAgentFn: func(agent string) (ledger.Snapshot, error) {
+				ledgerCalls++
+				if agent != "lane" {
+					t.Fatalf("wrong ledger agent %q", agent)
+				}
+				return ledger.Snapshot{GeneratedAt: generatedAt}, nil
+			}}
+			if tc.routerFn != nil {
+				cfg.RouterFn = func() (RouterSnapshot, error) {
+					routerCalls++
+					return tc.routerFn()
+				}
+			}
+			code, body, rec := getJSON(t, New(cfg), "/api/router/v1/ledger?agent=lane")
+			if code != tc.want || rec.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("status/cache = %d/%q, want %d/no-store: %s", code, rec.Header().Get("Cache-Control"), tc.want, rec.Body)
+			}
+			wantRouterCalls := 0
+			if tc.routerFn != nil {
+				wantRouterCalls = 1
+			}
+			if ledgerCalls != 1 || routerCalls != wantRouterCalls {
+				t.Fatalf("producer calls ledger=%d/router=%d", ledgerCalls, routerCalls)
+			}
+			if strings.Contains(rec.Body.String(), privateError) {
+				t.Fatal("raw producer error leaked")
+			}
+			if tc.want != http.StatusOK {
+				if body["error"] != tc.wantError {
+					t.Fatalf("error = %v, want %q", body["error"], tc.wantError)
+				}
+				if _, ok := body["items"]; ok {
+					t.Fatal("failure returned a healthy-looking ledger")
+				}
+				return
+			}
+			if body["agent"] != "lane" || body["generated_at"] != generatedAt {
+				t.Fatalf("known-empty identity/freshness lost: %v", body)
+			}
+			for _, key := range []string{"items", "tasks"} {
+				rows, ok := body[key].([]any)
+				if !ok || len(rows) != 0 {
+					t.Fatalf("known-empty %s must be [], got %v", key, body[key])
+				}
+			}
+		})
+	}
+}
+
+func TestRouterLedgerPresentAgentDoesNotRequireLaneInventory(t *testing.T) {
+	for _, configured := range []bool{false, true} {
+		t.Run(fmt.Sprintf("router-configured-%t", configured), func(t *testing.T) {
+			routerCalls := 0
+			cfg := Config{LedgerAgentFn: func(agent string) (ledger.Snapshot, error) {
+				return ledger.Snapshot{Agents: []ledger.Agent{{AgentID: agent}}}, nil
+			}}
+			if configured {
+				cfg.RouterFn = func() (RouterSnapshot, error) {
+					routerCalls++
+					return RouterSnapshot{}, errors.New("MODEL-unused producer error")
+				}
+			}
+			code, body, _ := getJSON(t, New(cfg), "/api/router/v1/ledger?agent=lane")
+			if code != http.StatusOK || body["agent"] != "lane" || routerCalls != 0 {
+				t.Fatalf("ledger's own lane evidence must not depend on fallback: %d %v calls=%d", code, body, routerCalls)
+			}
+		})
+	}
+}
+
 func TestRouterLedgerProducerFailureAndMissingAre503(t *testing.T) {
 	bad := New(Config{LedgerAgentFn: func(string) (ledger.Snapshot, error) { return ledger.Snapshot{}, errors.New("db locked") }})
 	code, m, rec := getJSON(t, bad, "/api/router/v1/ledger?agent=a")
