@@ -21,11 +21,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// watcherPidfile returns the per-thread fs-watcher pidfile path.
-func watcherPidfile(threadID string) string {
-	return fmt.Sprintf("/tmp/sirsi-router-watch-%s.pid", threadID)
-}
-
 // The fs-watcher is SPAWNED BY THE SURFACE, never by the router.
 //
 // `spawnRouterWatcher` used to live here and was forked by `thread discover`
@@ -35,20 +30,22 @@ func watcherPidfile(threadID string) string {
 // again. Removed 2026-07-27 after it took the workstation to 358 `claude`
 // processes, load average 436, and swap 48.5 GB of 49 GB.
 //
-// killRouterWatcher stays: watchers armed BY A SURFACE still need stopping on
-// close/suspend, and the pidfile contract is unchanged.
+// Retirement is cooperative: a persisted PID is never authority to signal a
+// process. Legacy /tmp records are diagnostic-only and are never taken over.
 
-// killRouterWatcher cleanly stops the fs-watcher for a thread, if any.
+// killRouterWatcher retains its historical name, but only REQUESTS retirement.
+// Registration/closure is not evidence that a watcher or consumer has stopped.
 func killRouterWatcher(threadID string) {
-	pf := watcherPidfile(threadID)
-	data, err := os.ReadFile(pf)
-	if err != nil {
-		return
+	requested, err := requestRouterWatcherStopWith(threadID, os.UserHomeDir)
+	if requested {
+		fmt.Fprintln(os.Stderr, "watch-router: cooperative stop requested; retirement and consumer quiescence are NOT confirmed")
 	}
-	if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
-		_ = terminateProcess(pid)
+	if legacyErr := legacyRouterWatcherDiagnostic(threadID, os.Lstat); legacyErr != nil {
+		err = errors.Join(err, legacyErr)
 	}
-	_ = os.Remove(pf)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(os.Stderr, "warning: watch-router retirement unverified: %v\n", err)
+	}
 }
 
 // reapDeadPIDThreads sweeps threads whose recorded PID is dead by OS truth —
@@ -563,8 +560,16 @@ var threadWatchRouterCmd = &cobra.Command{
 			}
 		}
 
-		ctx, cancel := context.WithCancel(context.Background())
+		custody, err := newRouterWatcherCustody(watchThreadID, watchAgentID, watchRouterRoot)
+		if err != nil {
+			return fmt.Errorf("watch-router custody (no PID signal fallback): %w", err)
+		}
+		defer custody.Close()
+
+		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()
+		custodyTick := time.NewTicker(250 * time.Millisecond)
+		defer custodyTick.Stop()
 
 		// Liveness ticker: exit when parent PID dies.
 		go func() {
@@ -585,7 +590,19 @@ var threadWatchRouterCmd = &cobra.Command{
 
 		// Debounce: coalesce rapid bursts into one dispatch.
 		var debounceTimer *time.Timer
+		var dispatchGate routerWatcherDispatchGate
+		defer func() {
+			cancel() // cancels only this watcher's existing CommandContext helpers
+			if debounceTimer != nil {
+				debounceTimer.Stop()
+			}
+			dispatchGate.drain(os.Stderr)
+		}()
 		fire := func() {
+			if !dispatchGate.begin(ctx, custody) {
+				return
+			}
+			defer dispatchGate.end()
 			handleRouterEvent(watchThreadID, watchAgentID, watchRouterRoot)
 		}
 
@@ -651,6 +668,11 @@ var threadWatchRouterCmd = &cobra.Command{
 			select {
 			case <-ctx.Done():
 				return nil
+			case <-custodyTick.C:
+				if custody.retired() {
+					fmt.Fprintln(os.Stderr, "watch-router: stop/rollover or custody loss observed; canceling own wait helpers and draining callbacks, not detached consumers; helper/consumer quiet is unproven")
+					return nil
+				}
 			case <-watcher.Events:
 				if debounceTimer != nil {
 					debounceTimer.Stop()
