@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -35,10 +38,10 @@ func seedAgent(t *testing.T, dir, agentID, agentType string) {
 }
 
 // runThreadWatch runs `sirsi thread watch ...` in an isolated router dir with HOME
-// pinned to a temp home, so the wake LaunchAgent is written/read under
-// <home>/Library/LaunchAgents — never the developer's real ~/Library/LaunchAgents
-// or launchd domain (the launchctl bootout is a harmless no-op on an unloaded
-// label). This is the injected-writer boundary for the CLI path (Rule A16).
+// pinned to a temp home for files AND an explicit private actuator for launchd.
+// HOME does not isolate gui/<UID>; fixed fixture labels must never be booted out
+// in the real launchd domain. Use the actual built CLI, including main,
+// executeSirsi and its local-receipt guard, not a lighter test-binary entry.
 func runThreadWatch(t *testing.T, dir, home string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	return runThreadWatchEnv(t, dir, home, nil, args...)
@@ -47,6 +50,49 @@ func runThreadWatch(t *testing.T, dir, home string, args ...string) (stdout, std
 // runThreadWatchEnv is runThreadWatch with extra environment (e.g. the session's
 // own SIRSI_AGENT_ID, which --uninstall requires to match --agent).
 func runThreadWatchEnv(t *testing.T, dir, home string, extra []string, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	return runThreadWatchActuator(t, dir, home, newThreadWatchActuator(t), extra, args...)
+}
+
+const threadWatchActuatorScript = "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$0.calls\"\n"
+
+func newThreadWatchActuator(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "launchctl")
+	if err := os.WriteFile(path, []byte(threadWatchActuatorScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func checkThreadWatchActuator(path string) error {
+	physical, err := filepath.EvalSymlinks(path)
+	if err != nil || !filepath.IsAbs(path) || physical != path || filepath.Base(path) != "launchctl" {
+		return fmt.Errorf("thread-watch fixture: actuator must be an existing physical absolute launchctl path")
+	}
+	dir, err := os.Lstat(filepath.Dir(path))
+	if err != nil || !dir.IsDir() || dir.Mode().Perm() != 0o700 {
+		return fmt.Errorf("thread-watch fixture: actuator directory is not private")
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o700 || info.Size() != int64(len(threadWatchActuatorScript)) {
+		return fmt.Errorf("thread-watch fixture: actuator is not the private executable")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(data, []byte(threadWatchActuatorScript)) {
+		return fmt.Errorf("thread-watch fixture: actuator bytes differ")
+	}
+	return nil
+}
+
+func runThreadWatchActuator(t *testing.T, dir, home, actuator string, extra []string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -59,12 +105,116 @@ func runThreadWatchEnv(t *testing.T, dir, home string, extra []string, args ...s
 		"XDG_CACHE_HOME="+filepath.Join(home, ".cache"),
 	)
 	env = append(env, extra...)
-	cmd.Env = env
+	// No inherited or caller-supplied PATH entry may restore real launchctl.
+	// The fake uses absolute /bin/sh and printf is a shell builtin. FindRepoRoot's
+	// optional git probe may fail normally, then walk this private fixture cwd.
+	// No git, system-tool directory, or real-actuator fallback is needed here.
+	closed := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "PATH=") {
+			closed = append(closed, kv)
+		}
+	}
+	cmd.Env = append(closed, "PATH="+filepath.Dir(actuator))
 	cmd.Stdin = nil
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &outBuf, &errBuf
+	// Refuse missing/changed fixtures before launching even the built CLI.
+	// A later deletion still cannot fall through to a system PATH directory.
+	if err := checkThreadWatchActuator(actuator); err != nil {
+		return "", "", err
+	}
 	err = cmd.Run()
 	return outBuf.String(), errBuf.String(), err
+}
+
+func TestThreadWatchUninstallUsesOnlyPrivateActuator(t *testing.T) {
+	tmp, home := setupTempRouter(t), t.TempDir()
+	seedAgent(t, tmp, "gemma-private-actuator", "gemma")
+	actuator := newThreadWatchActuator(t)
+	poison := newThreadWatchActuator(t)
+	env := []string{"SIRSI_AGENT_ID=gemma-private-actuator", "PATH=" + filepath.Dir(poison) + string(os.PathListSeparator) + filepath.Dir(testBinary)}
+	run := func(args ...string) {
+		t.Helper()
+		if _, stderr, err := runThreadWatchActuator(t, tmp, home, actuator, env, args...); err != nil {
+			t.Fatalf("thread watch %q: %v\n%s", args, err, stderr)
+		}
+	}
+	run("--agent", "gemma-private-actuator", "--install")
+	foreign := []string{"SIRSI_AGENT_ID=gemma-foreign", "PATH=" + filepath.Dir(poison)}
+	if _, _, err := runThreadWatchActuator(t, tmp, home, actuator, foreign, "--agent", "gemma-private-actuator", "--uninstall"); err == nil {
+		t.Fatal("foreign identity must still be refused")
+	}
+	if _, err := os.Stat(actuator + ".calls"); !os.IsNotExist(err) {
+		t.Fatalf("refused uninstall reached actuator: %v", err)
+	}
+	run("--agent", "gemma-private-actuator", "--uninstall")
+	want := fmt.Sprintf("bootout\ngui/%d/ai.sirsi.router.wake.gemma-private-actuator\n", os.Getuid())
+	got, err := os.ReadFile(actuator + ".calls")
+	if err != nil || string(got) != want {
+		t.Fatalf("private actuator calls=%q, err=%v; want %q", got, err, want)
+	}
+	run("--agent", "gemma-private-actuator", "--uninstall")
+	got, err = os.ReadFile(actuator + ".calls")
+	if err != nil || string(got) != want {
+		t.Fatalf("idempotent uninstall added an actuator call: %q, %v", got, err)
+	}
+	if _, err := os.Stat(poison + ".calls"); !os.IsNotExist(err) {
+		t.Fatalf("PATH actuator must never run: %v", err)
+	}
+
+	run("--agent", "gemma-private-actuator", "--install")
+	if err := os.Remove(actuator); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runThreadWatchActuator(t, tmp, home, actuator, env, "--agent", "gemma-private-actuator", "--uninstall"); err == nil {
+		t.Fatal("missing explicit actuator must fail, never fall back to PATH")
+	}
+	plist := filepath.Join(home, "Library", "LaunchAgents", "ai.sirsi.router.wake.gemma-private-actuator.plist")
+	if _, err := os.Stat(plist); err != nil {
+		t.Fatalf("missing actuator must refuse before removing plist: %v", err)
+	}
+	if _, err := os.Stat(poison + ".calls"); !os.IsNotExist(err) {
+		t.Fatalf("missing actuator fell back to PATH: %v", err)
+	}
+	if err := os.WriteFile(actuator, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runThreadWatchActuator(t, tmp, home, actuator, env, "--agent", "gemma-private-actuator", "--uninstall"); err == nil {
+		t.Fatal("changed actuator bytes must be refused")
+	}
+	if _, err := os.Stat(plist); err != nil {
+		t.Fatalf("changed actuator must refuse before removing plist: %v", err)
+	}
+}
+
+func TestThreadWatchMainRejectsInvalidLocalReceipt(t *testing.T) {
+	tmp, home := setupTempRouter(t), t.TempDir()
+	seedAgent(t, tmp, "gemma-main-receipt", "gemma")
+	actuator := newThreadWatchActuator(t)
+	if _, stderr, err := runThreadWatchActuator(t, tmp, home, actuator, nil, "--agent", "gemma-main-receipt", "--install"); err != nil {
+		t.Fatalf("install: %v\n%s", err, stderr)
+	}
+	receipt := filepath.Join(t.TempDir(), "invalid-local-receipt.json")
+	if err := os.WriteFile(receipt, []byte(`{"schema":"fixture-invalid"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(receipt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{"SIRSI_AGENT_ID=gemma-main-receipt", "SIRSI_MAAT_LOCAL_EXECUTION_RECEIPT=" + receipt}
+	_, stderr, err := runThreadWatchActuator(t, tmp, home, actuator, env, "--agent", "gemma-main-receipt", "--uninstall")
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(stderr, "local admission:") {
+		t.Fatalf("actual CLI main must reject the invalid receipt: err=%v stderr=%q", err, stderr)
+	}
+	plist := filepath.Join(home, "Library", "LaunchAgents", "ai.sirsi.router.wake.gemma-main-receipt.plist")
+	if _, err := os.Stat(plist); err != nil {
+		t.Fatalf("receipt refusal must precede uninstall: %v", err)
+	}
+	if _, err := os.Stat(actuator + ".calls"); !os.IsNotExist(err) {
+		t.Fatalf("receipt refusal reached actuator: %v", err)
+	}
 }
 
 // TestThreadWatchInstallUninstall exercises the thin alias end to end: with
