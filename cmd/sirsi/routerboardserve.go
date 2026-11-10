@@ -59,11 +59,12 @@ account, and is recorded as board:<email>.`,
 			return err
 		}
 		srv := dashboard.New(dashboard.Config{
-			Port:       port,
-			ListenHost: "0.0.0.0",
-			CloudBoard: true,
-			Macs:       macs,
-			RouterFn:   collectDashboardRouter,
+			Port:          port,
+			ListenHost:    "0.0.0.0",
+			CloudBoard:    true,
+			Macs:          macs,
+			RouterFn:      collectDashboardRouter,
+			LedgerAgentFn: collectDashboardLedgerAgent,
 			RoutabilityFn: func() (map[string]bool, error) {
 				repoRoot, err := router.FindRepoRoot()
 				if err != nil {
