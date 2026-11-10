@@ -184,6 +184,23 @@ func TestRouterWatcherPreservesUnsafeOrLegacyPrivateRecord(t *testing.T) {
 }
 
 func TestRouterWatcherMissingHomeAndEntropyAreNotRetirement(t *testing.T) {
+	t.Run("publication-cleanup-outcomes", func(t *testing.T) {
+		original := errors.New("original publication failure")
+		for _, prior := range []error{nil, original} {
+			for _, cleanup := range []error{nil, unix.ENOENT, unix.EACCES, unix.EIO} {
+				got := routerWatcherPublicationCleanupError(prior, cleanup)
+				if cleanup == nil || errors.Is(cleanup, unix.ENOENT) {
+					if got != prior {
+						t.Fatal("expected absent temporary name changed publication outcome")
+					}
+					continue
+				}
+				if !errors.Is(got, cleanup) || (prior != nil && !errors.Is(got, prior)) {
+					t.Fatal("real cleanup uncertainty or original publication failure was hidden")
+				}
+			}
+		}
+	})
 	_, resolve := routerWatcherTestHome(t)
 	if c, err := newRouterWatcherCustodyWith("thr-entropy", "fixture", "/fixture/router", resolve, bytes.NewReader(nil)); err == nil {
 		c.Close()

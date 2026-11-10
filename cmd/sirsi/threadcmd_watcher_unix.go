@@ -145,6 +145,13 @@ func validRouterWatcherLeaf(leaf string) bool {
 	return leaf != "" && leaf != "." && leaf != ".." && filepath.Base(leaf) == leaf
 }
 
+func routerWatcherPublicationCleanupError(result, cleanup error) error {
+	if cleanup == nil || errors.Is(cleanup, unix.ENOENT) {
+		return result // a successful rename has consumed the temporary name
+	}
+	return errors.Join(result, fmt.Errorf("clean up own watcher publication: %w", cleanup))
+}
+
 func (f *privateRouterWatcherFiles) read(leaf string) ([]byte, error) {
 	if !validRouterWatcherLeaf(leaf) {
 		return nil, errors.New("invalid watcher custody leaf")
@@ -178,7 +185,7 @@ func (f *privateRouterWatcherFiles) read(leaf string) ([]byte, error) {
 	return data, nil
 }
 
-func (f *privateRouterWatcherFiles) write(leaf string, data []byte) error {
+func (f *privateRouterWatcherFiles) write(leaf string, data []byte) (err error) {
 	if !validRouterWatcherLeaf(leaf) || len(data) > 4096 {
 		return errors.New("invalid watcher publication")
 	}
@@ -202,7 +209,11 @@ func (f *privateRouterWatcherFiles) write(leaf string, data []byte) error {
 	}
 	file := os.NewFile(uintptr(fd), tmp)
 	defer file.Close()
-	defer unix.Unlinkat(dirfd, tmp, 0) // only our unique temporary name, never a lease
+	defer func() {
+		// Rename consumes this unique temporary name on success. Any other
+		// cleanup failure is uncertainty, not a successful publication receipt.
+		err = routerWatcherPublicationCleanupError(err, unix.Unlinkat(dirfd, tmp, 0))
+	}() // only our unique temporary name, never a lease
 	n, err := file.Write(data)
 	if err != nil {
 		return err
