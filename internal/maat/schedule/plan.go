@@ -73,10 +73,12 @@ func (l *Ledger) Coverage(resource string, horizonHours int) (Coverage, error) {
 		if !sameResource(r.Resource, resource) {
 			continue
 		}
-		if r.Status == StatusInvalidated {
+		if r.InvalidatedBy != "" {
 			if end, err := time.Parse(time.RFC3339, r.EstEnd); err == nil && now.Sub(end) <= 24*time.Hour {
 				cov.ConflictsCaught++
 			}
+		}
+		if r.Status == StatusInvalidated {
 			continue
 		}
 		if r.Status == StatusQueued {
