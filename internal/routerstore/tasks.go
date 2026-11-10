@@ -57,16 +57,17 @@ var ErrTaskExists = errors.New("routerstore: task already exists")
 
 func validTaskStatus(status string) bool {
 	switch status {
-	case "pending", "in-progress", "blocked", "done", "canceled":
+	case "pending", "in-progress", "blocked", "done", "canceled", "withdrawn":
 		return true
 	}
 	return false
 }
 
-// terminalTaskStatus: done (verified receipt) or canceled (owner, with reason).
-// Neither is reachable through AddTask or UpdateTask.
+// terminalTaskStatus: done (verified receipt), canceled (owner, with reason) or
+// withdrawn (the lane, naming the task that supersedes it). None is reachable
+// through AddTask or UpdateTask.
 func terminalTaskStatus(status string) bool {
-	return status == "done" || status == "canceled"
+	return status == "done" || status == "canceled" || status == "withdrawn"
 }
 
 func validTestState(state string) bool {
@@ -92,7 +93,7 @@ func validateTask(t Task) error {
 		return fmt.Errorf("%w: routerstore: task agent, task-id, and subject are required", ErrInvalidInput)
 	}
 	if !validTaskStatus(t.Status) {
-		return fmt.Errorf("%w: routerstore: invalid task status %q (want pending, in-progress, blocked, done or canceled)", ErrInvalidInput, t.Status)
+		return fmt.Errorf("%w: routerstore: invalid task status %q (want pending, in-progress, blocked, done, canceled or withdrawn)", ErrInvalidInput, t.Status)
 	}
 	if strings.TrimSpace(t.ResponsibleParty) == "" {
 		return fmt.Errorf("%w: routerstore: task responsible-party is required", ErrInvalidInput)

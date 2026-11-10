@@ -39,6 +39,11 @@ func fabricFacts(s Snapshot) FabricFacts {
 				status = "pending"
 			}
 			lane.Counts[status]++
+			// Canceled and withdrawn tasks are closed without being done: they
+			// are neither progress nor open work, so they stay off the board totals.
+			if status == "canceled" || status == "withdrawn" {
+				continue
+			}
 			lane.Total++
 			f.Work.Total++
 			if task.Updated > lane.LastTouch {

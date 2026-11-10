@@ -105,6 +105,9 @@ func (rs *RemoteStore) CompleteTaskByOwner(agent, taskID, actor, reason string) 
 func (rs *RemoteStore) CancelTask(agent, taskID, actor, reason string) error {
 	return rs.call("CancelTask", []any{agent, taskID, actor, reason})
 }
+func (rs *RemoteStore) WithdrawTask(agent, taskID, supersededBy, actor, reason string) error {
+	return rs.call("WithdrawTask", []any{agent, taskID, supersededBy, actor, reason})
+}
 func (rs *RemoteStore) Counters() (DispatchCounters, error) {
 	var o0 DispatchCounters
 	err := rs.call("Counters", nil, &o0)

@@ -384,6 +384,53 @@ func (s *SQLiteStore) CancelTask(agent, taskID, actor, reason string) error {
 	return s.ownerTerminal(agent, taskID, actor, reason, "canceled")
 }
 
+// WithdrawTask is a lane retiring its own task because other work carries it:
+// a duplicate, or a task superseded by a newer one. It never counts as done.
+// supersededBy ("agent/task-id") must name a different task that is not itself
+// withdrawn or canceled, so the work it stood for still lives on the ledger.
+// The audit trail is the result_ref (superseded:<agent/task>), the reason, and
+// a timeline entry naming the actor (over the wire, the authenticated session).
+func (s *SQLiteStore) WithdrawTask(agent, taskID, supersededBy, actor, reason string) error {
+	actor, reason, supersededBy = strings.TrimSpace(actor), strings.TrimSpace(reason), strings.TrimSpace(supersededBy)
+	if actor == "" || reason == "" {
+		return fmt.Errorf("%w: withdraw needs an actor and a reason", ErrReasonRequired)
+	}
+	toAgent, toTask, ok := strings.Cut(supersededBy, "/")
+	if !ok || toAgent == "" || toTask == "" || (toAgent == agent && toTask == taskID) {
+		return fmt.Errorf("%w: withdraw needs --superseded-by <agent>/<task-id> naming another task", ErrInvalidInput)
+	}
+	successor, err := s.GetTask(toAgent, toTask)
+	if err != nil {
+		return fmt.Errorf("%w: superseding task %s: %v", ErrInvalidInput, supersededBy, err)
+	}
+	if successor.Status == "withdrawn" || successor.Status == "canceled" {
+		return fmt.Errorf("%w: superseding task %s is itself %s", ErrInvalidInput, supersededBy, successor.Status)
+	}
+	t, err := s.GetTask(agent, taskID)
+	if err != nil {
+		return err
+	}
+	if terminalTaskStatus(t.Status) {
+		return fmt.Errorf("%w: %s/%s is already %s", ErrNotFound, agent, taskID, t.Status)
+	}
+	now := s.clock().UTC()
+	t.Timeline = append(t.Timeline, TimelineEntry{Day: now.Format("2006-01-02"), Owner: actor, Label: "withdrawn, superseded by " + supersededBy + ": " + reason})
+	timeline, err := json.Marshal(t.Timeline)
+	if err != nil {
+		return err
+	}
+	// Guarded on the status we read, so a concurrent completion or cancel wins.
+	res, err := s.exec(`UPDATE tasks SET status='withdrawn',result_ref=?,failure_reason=?,timeline=?,lease_token='',lease_expires='',claimed_by='',thread_id='',updated=?
+		WHERE agent=? AND task_id=? AND status=?;`, "superseded:"+supersededBy, reason, string(timeline), now.Format(time.RFC3339), agent, taskID, t.Status)
+	if err != nil {
+		return fmt.Errorf("routerstore: withdraw %s/%s: %w", agent, taskID, err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return fmt.Errorf("%w: %s/%s changed while withdrawing; retry", ErrNotFound, agent, taskID)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) ownerTerminal(agent, taskID, actor, reason, status string) error {
 	actor, reason = strings.TrimSpace(actor), strings.TrimSpace(reason)
 	if actor == "" || reason == "" {
@@ -397,7 +444,7 @@ func (s *SQLiteStore) ownerTerminal(agent, taskID, actor, reason, status string)
 	defer func() { _ = tx.Rollback() }()
 	ref := "owner:" + actor
 	res, err := tx.Exec(`UPDATE tasks SET status=?,result_ref=?,failure_reason=?,lease_token='',lease_expires='',claimed_by='',thread_id='',updated=?
-		WHERE agent=? AND task_id=? AND status NOT IN ('done','canceled');`, status, ref, reason, now.Format(time.RFC3339), agent, taskID)
+		WHERE agent=? AND task_id=? AND status NOT IN ('done','canceled','withdrawn');`, status, ref, reason, now.Format(time.RFC3339), agent, taskID)
 	if err != nil {
 		return fmt.Errorf("routerstore: owner %s %s/%s: %w", status, agent, taskID, err)
 	}
