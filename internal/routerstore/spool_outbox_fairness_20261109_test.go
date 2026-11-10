@@ -270,7 +270,7 @@ func TestRelayOutboxPassNonDeliveryDoesNotImmediateContinue(t *testing.T) {
 			assertFairnessResponses(t, spool, lane, responses)
 		})
 	}
-	for _, transition := range []string{"held", "unknown", "cleanup_failure", "empty", "paused", "cancelled"} {
+	for _, transition := range []string{"held", "unknown", "cleanup_failure", "empty", "paused", "canceled"} {
 		t.Run("worker_yield_then_"+transition, func(t *testing.T) {
 			fairnessWorkerTransition(t, transition)
 		})
@@ -284,7 +284,7 @@ func fairnessWorkerTransition(t *testing.T, transition string) {
 	t.Helper()
 	spool, lane := t.TempDir(), "fairness-transition"
 	ids := []string{"001", "002"}
-	if transition == "cancelled" {
+	if transition == "canceled" {
 		ids = append(ids, "003")
 	}
 	envelopes, responses := seedFairnessOutbox(t, spool, lane, ids...)
@@ -339,7 +339,7 @@ func fairnessWorkerTransition(t *testing.T, transition string) {
 			return nil, &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("inert transition dial refusal")}
 		case "unknown":
 			return nil, &net.OpError{Op: "write", Net: "tcp", Err: errors.New("inert transition post-send loss")}
-		case "cancelled":
+		case "canceled":
 			cancel() //001 already yielded;002 is active and must settle normally.
 		}
 		return fairnessPositiveResponse(), nil
@@ -375,7 +375,7 @@ func fairnessWorkerTransition(t *testing.T, transition string) {
 		entered = first //002 is refused by beginDuty, before the transport.
 	}
 	awaitFairnessDone(t, entered)
-	if transition != "cancelled" {
+	if transition != "canceled" {
 		resumed := make(chan struct{})
 		probeStarted = true
 		go func() {
@@ -406,13 +406,13 @@ func fairnessWorkerTransition(t *testing.T, transition string) {
 			t.Fatalf("replayed positive head or crossed stopped frontier: %v", got)
 		}
 	}
-	if transition == "cancelled" {
+	if transition == "canceled" {
 		if !reflect.DeepEqual(got, []string{"001", "002"}) {
 			t.Fatalf("cancellation crossed the remaining frontier: %v", got)
 		}
 		tail, err := os.ReadFile(filepath.Join(spool, lane, "outbox", "003.json"))
 		if err != nil || !bytes.Equal(tail, envelopes["003"]) {
-			t.Fatal("cancelled continued pass changed untouched003")
+			t.Fatal("canceled continued pass changed untouched003")
 		}
 	}
 	if transition == "empty" || transition == "unknown" || transition == "cleanup_failure" {

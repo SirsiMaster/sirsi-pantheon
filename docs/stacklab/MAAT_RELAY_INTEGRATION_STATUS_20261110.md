@@ -13,8 +13,13 @@ Exact integrated production bytes:
 - internal/routerstore/spool.go:80100c4c38e4fbdc97b5843ed0d12ee762a3bd2332da7ab6d54559f134c6404c.
 - scripts/maat/admitted-run.py:e74e8ef6d1cde891595cf42f2d17f5b29417bdaf81b3053c56e95d34ee53ad8b.
 
-The two Go fixtures and two adjacent driver fixtures are byte-identical to
-the frozen reviewed inputs, not rewritten tests or substituted selections.
+The deadline Go fixture and two adjacent driver fixtures are byte-identical to
+the frozen reviewed inputs. The fairness fixture's original3b7ed390 bytes are
+preserved in source commit0271 and its frozen qualification packet. A later
+lint-only correction consistently spells its cancellation-transition labels
+and one diagnostic as "canceled" (six substitutions); control logic and
+assertions are unchanged. Historical PASS results retain their original pins,
+not a claim that the later fixture bytes have already executed.
 
 ## Actual qualification retained
 
@@ -55,8 +60,17 @@ Parent confirmed canonical RELEASED integer0; the terminal's launch-time ACTIVE
 snapshot is not itself settlement proof. Entry result is retained at
 /Users/thekryptodragon/.sirsi/evidence/ssa-e74e-canary-0a01260f0802402ab399e1eb61cbcf62/entry-result.json,
 SHA2561ebff8047025c8937bcce0027aeef1059fef4c34273b4af26af9b431d73b5fd0.
-Independent actual canary review remains PENDING: no accepted-canary or full
-operational-repair claim is made here.
+Subsequent independent actual review01dbba3b5b7c7992aa818a669619eb8ae8a277381b39a4684d44b9f6a70ce4b5
+accepted this bounded canary and its explicit canonical settlement only. It is
+not default adoption, loaded Go relay repair or whole operational qualification.
+
+First actual three-phase integration check on source0271: nativee39f526978004bafa0cfcee5ee69363b
+finished child_failed/integer1 after128.344s. Build passed in32.797s, vet passed
+in20.265s; lint found exactly six misspell diagnostics in the fairness fixture.
+That failed result and all logs remain preserved. The six spelling-only fixes
+are a later source successor, not a relabelled passing run. Full race was not
+run by that three-phase check and remains required; static checks are not the
+whole repository baseline.
 
 Evidence authority remains the full receipts in ~/.sirsi/evidence, including
 ssa-m5-full8-actual-20261110T0021Z.json and
@@ -65,8 +79,8 @@ not replacements for complete SHA256 bindings.
 
 ## Remaining work
 
-Independent review of the actual canary and full protected source-integration/
-CI gates remain outstanding. The accepted finite units above do not establish
+Full protected source-integration/CI gates, the corrected static successor and
+full-race test-child safety audit/execution remain outstanding. The accepted finite units above do not establish
 the full repository baseline. Existing defaults, consumers, sessions, services
 and root-native4 STOP remain unchanged; universal default adoption and the
 loaded Go relay repair are NOT done. Authorized release/publisher/install
