@@ -1172,9 +1172,27 @@ class Native:
                                 self.executor_identity['thread_id'])
             self.call('thread', 'heartbeat', '--thread', self.executor_thread, '--json', timeout=30, json_result=False)
 
-    def release(self, identity):
+    def release_supports_exit_code(self):
+        # An installed CLI older than `maat release --exit-code` rejects the
+        # flag; ask its help once instead of failing the release.
+        if getattr(self, '_release_exit_flag', None) is None:
+            try:
+                probe = subprocess.run([self.cli, 'maat', 'release', '--help'],
+                                       capture_output=True, text=True, timeout=10)
+                self._release_exit_flag = '--exit-code' in probe.stdout + probe.stderr
+            except (OSError, subprocess.SubprocessError):
+                self._release_exit_flag = False
+        return self._release_exit_flag
+
+    def release(self, identity, exit_code=None):
+        # The guarded run's exit status rides on the release so a maat:
+        # receipt can be verified (the ledger refuses one without it).
+        args = ('maat', 'release', identity)
+        if exit_code is not None and self.release_supports_exit_code():
+            args += ('--exit-code', str(exit_code))
+        args += ('--json',)
         try:
-            return self.call('maat', 'release', identity, '--json')
+            return self.call(*args)
         except TransientTransport as uncertain:
             # The write may already have committed. Never blindly replay it or
             # release a reservation selected only by a lane/work name.
@@ -1195,7 +1213,7 @@ class Native:
                         # Exact readback proves this same owned grant remains
                         # active. A repeated release is now deliberate, not a
                         # replay used to discover an unknown write outcome.
-                        return self.call('maat', 'release', identity, '--json')
+                        return self.call(*args)
                     except TransientTransport:
                         if attempt == 2 or time.monotonic() + 2 >= self.deadline:
                             raise uncertain
@@ -1687,7 +1705,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             append_cleanup_debt(record, 'Owned reservation release deferred; lease may expire before child cleanup')
         elif owned:
             try:
-                backend.release(owned)
+                backend.release(owned, code)
             except (Exception, KeyboardInterrupt) as error:
                 append_cleanup_debt(record, 'Reservation release unconfirmed: '+str(error))
                 record['reservation_outcome_unconfirmed'] = True
