@@ -1,5 +1,11 @@
 # v0.24.163 exact-draft recovery disposition
 
+> **Superseded as a delivery route (2026-11-09).** v163 is abandoned for
+> delivering the current repair; one qualified v0.24.164 publication replaces
+> it. Everything below is kept as history. Do not dispatch
+> `recover-v163-after-consumed.yml`. See
+> [v164-forward-route-decision.md](v164-forward-route-decision.md).
+
 This is a narrow proposed recovery, not a claim that the original error was a
 page shift or that GitHub release listings are atomic. Run 41592161041 attempt
 1 failed at draft reservation before identity import and build/sign steps. Its
