@@ -68,6 +68,9 @@ type Store interface {
 	// served ONLY to an @ledger-editor token (the IAP board) acting for a board:<email> actor (serve.go ownerTerminals).
 	CompleteTaskByOwner(agent, taskID, actor, reason string) error
 	CancelTask(agent, taskID, actor, reason string) error
+	// WithdrawTask retires the lane's own task in favor of supersededBy ("agent/task-id"); never done.
+	// actor is overwritten server-side with the authenticated session over the wire.
+	WithdrawTask(agent, taskID, supersededBy, actor, reason string) error
 	Counters() (DispatchCounters, error)
 	// DeleteThreadCAS retires the exact ordinary row to a retained pruned key
 	// with empty user payload. Existing fences remain unchanged. True means

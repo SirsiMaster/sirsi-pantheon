@@ -55,6 +55,15 @@ var migratedTables = []migratedTable{
 	{"sessions", []string{"session_id"}},
 	{"lease_sessions", []string{"kind", "key"}},
 	{"host_tokens", []string{"token_id"}},
+	// Without its scope rows a scoped token reads as UNSCOPED (tokenAgents: no rows = unscoped),
+	// so a copy that carries host_tokens must carry host_token_scopes too (SSA 20261106-164621).
+	{"host_token_scopes", []string{"token_id", "agent"}},
+}
+
+// unmigratedTables are left out on purpose; TestMigratedTablesCoverSchema refuses any other omission.
+var unmigratedTables = map[string]string{
+	"audience_log":   "append-only gate diagnostic log, no primary key; not recovery state",
+	"task_lease_log": "append-only lease diagnostic log, no primary key; not recovery state",
 }
 
 // MigrateOptions tune MigrateStore.
