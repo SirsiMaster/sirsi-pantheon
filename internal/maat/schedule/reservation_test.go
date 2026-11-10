@@ -198,8 +198,28 @@ func TestInvalidate_MarksBlockAndIntruder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inv.Status != StatusInvalidated || inv.InvalidatedBy == "" {
-		t.Fatalf("want invalidated with intruder, got %+v", inv)
+	// A live hold keeps the machine; only the measurement is marked contaminated.
+	if inv.Status != StatusActive || inv.InvalidatedBy == "" {
+		t.Fatalf("want a live hold carrying the intruder, got %+v", inv)
+	}
+	if who, _ := l.WhoIsOn("rail-a"); who == nil || who.ID != res.Reservation.ID {
+		t.Fatalf("contamination freed the resource: who-is-on %+v", who)
+	}
+	if again, _ := l.Invalidate(res.Reservation.ID, "second"); again.InvalidatedBy != "bench:sr-A-fwd(unknown)" {
+		t.Fatalf("first intruder overwritten: %q", again.InvalidatedBy)
+	}
+	rel, err := l.Release(res.Reservation.ID)
+	if err != nil || rel.Status != StatusReleased || rel.InvalidatedBy == "" {
+		t.Fatalf("release must keep the contamination record: %+v %v", rel, err)
+	}
+}
+
+func TestInvalidate_NotYetLiveReservationEnds(t *testing.T) {
+	l := fixedLedger("2026-09-24T10:00:00Z")
+	res, _ := l.Reserve(mkReq("rail-a", "claude-io", "2026-09-24T11:00:00Z", "2026-09-24T11:30:00Z", RegimeQuiet), false)
+	inv, err := l.Invalidate(res.Reservation.ID, "build:vite")
+	if err != nil || inv.Status != StatusInvalidated {
+		t.Fatalf("want invalidated, got %+v %v", inv, err)
 	}
 }
 

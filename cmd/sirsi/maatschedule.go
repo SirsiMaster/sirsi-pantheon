@@ -506,7 +506,7 @@ var maatConflictCheckCmd = &cobra.Command{
 				fmt.Printf("    %s\n", s)
 			}
 		} else {
-			fmt.Printf("𓆄 CONFLICT — %s\n  block %s INVALIDATED\n", rep.Summary, rep.Reservation)
+			fmt.Printf("𓆄 CONFLICT — %s\n  measurement in %s INVALIDATED; %s keeps the hold\n", rep.Summary, rep.Reservation, rep.Holder)
 		}
 		if !rep.Clean {
 			os.Exit(admissionRefusedExit)

@@ -581,6 +581,16 @@ func (l *Ledger) Invalidate(id, intruder string) (*Reservation, error) {
 		return atomic.MaatMutate("invalidate", id, intruder)
 	}
 	return l.mutate(id, func(r *Reservation) error {
+		// A contaminated measurement must not also free the machine: ending a live
+		// hold here admitted a foreign lane mid-gate (Mercury 20261103-214714). The
+		// live hold keeps its status and carries the contamination; only a
+		// reservation that is not yet live is ended.
+		if start, _ := parseWindow(*r); r.Status == StatusActive && !l.now().Before(start) {
+			if r.InvalidatedBy == "" {
+				r.InvalidatedBy = intruder
+			}
+			return nil
+		}
 		r.Status = StatusInvalidated
 		r.InvalidatedBy = intruder
 		return nil
