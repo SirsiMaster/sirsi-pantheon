@@ -1,0 +1,1 @@
+- Make the menu-bar write-failure test deterministic and confine its actuator commands to private fixtures.
