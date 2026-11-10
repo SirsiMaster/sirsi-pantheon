@@ -174,6 +174,23 @@ var routerTaskCompleteCmd = &cobra.Command{
 	},
 }
 
+var taskWithdrawSupersededBy string
+
+var routerTaskWithdrawCmd = &cobra.Command{
+	Use:   "withdraw <agent> <task-id>",
+	Args:  cobra.ExactArgs(2),
+	Short: "Retire your own task in favor of the task that carries its work (never counts as done)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		// The router service replaces this actor with the authenticated session.
+		return f.Store().WithdrawTask(args[0], args[1], taskWithdrawSupersededBy, args[0]+"@local", taskLeaseReason)
+	},
+}
+
 // resolveReceipt is a convenience only: "maat:<run-dir>" naming a local
 // ~/.sirsi/evidence/maat-runs/<run-dir> becomes "maat:<its reservation id>".
 // Proof never comes from this file — the router checks the reservation in its
@@ -538,6 +555,9 @@ func init() {
 	routerTaskReclaimExpiredCmd.Flags().BoolVar(&taskReclaimDryRun, "dry-run", false, "Report what would be reclaimed without writing")
 	routerTaskReclaimExpiredCmd.Flags().BoolVar(&ledgerJSON, "json", false, "Emit JSON")
 	routerTaskWhyCmd.Flags().BoolVar(&taskWhyJSON, "json", false, "Emit JSON")
+	routerTaskWithdrawCmd.Flags().StringVar(&taskWithdrawSupersededBy, "superseded-by", "", "<agent>/<task-id> of the task that carries this work (required)")
+	routerTaskWithdrawCmd.Flags().StringVar(&taskLeaseReason, "reason", "", "Why this task is withdrawn (required)")
+	routerTaskCmd.AddCommand(routerTaskWithdrawCmd)
 	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd, routerTaskReclaimExpiredCmd, routerTaskRecheckReceiptsCmd, routerTaskResetAttemptsCmd, routerTaskWhyCmd)
 	routerCmd.AddCommand(routerLedgerCmd, routerTaskCmd, routerDependCmd)
 }

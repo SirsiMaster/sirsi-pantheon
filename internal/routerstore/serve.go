@@ -616,6 +616,14 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	if name == "ConvertItemToTask" && sess.Agent != "" {
 		in[3] = reflect.ValueOf(sess.Agent + "@" + sess.Host)
 	}
+	// A lane withdraws only its own task, and the audit names the authenticated session.
+	if name == "WithdrawTask" {
+		if sess.Agent == "" || in[0].String() != sess.Agent {
+			writeErr(w, http.StatusForbidden, "ErrLaneScope", ErrLaneScope.Error()+": WithdrawTask is for the task's own lane session")
+			return
+		}
+		in[3] = reflect.ValueOf(sess.Agent + "@" + sess.Host)
+	}
 	// The board names the signed-in account it verified through IAP; anything else is not an owner actor.
 	if ownerTerminals[name] {
 		if a := in[2].String(); !strings.HasPrefix(a, "board:") || !strings.Contains(a, "@") {
