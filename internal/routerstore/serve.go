@@ -733,6 +733,10 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		if lease != nil {
 			s.recordTaskLeaseEvent(lease.TaskID, lease.Agent, "bind", sess, verdict, reason)
 		}
+	} else if keep, rec := s.keepAttendedSession(name, in); keep {
+		s.logf("thread: kept attended session %s of %s registered; a pre-#1364 client tried to expire it on a quiet lease", rec.ThreadID, rec.Agent)
+		var err error
+		outs = []reflect.Value{reflect.ValueOf(true), reflect.ValueOf(&err).Elem()}
 	} else {
 		outs = s.sv.MethodByName(name).Call(in)
 	}
