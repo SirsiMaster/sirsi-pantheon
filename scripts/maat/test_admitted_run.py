@@ -37,8 +37,9 @@ class Backend:
         return dict(granted=True, reservation=self.row)
     def heartbeat(self, identity):
         pass
-    def release(self, identity):
+    def release(self, identity, exit_code=None):
         self.released.append(identity)
+        self.exit_codes = getattr(self, 'exit_codes', []) + [exit_code]
 
 
 class RegistryDeadlineTests(unittest.TestCase):
@@ -303,18 +304,25 @@ class RegistryDeadlineTests(unittest.TestCase):
         self.assertEqual(native.call.call_count, 1)
         self.assertIsNone(native.deadline)
 
-    def test_unknown_release_still_active_is_read_before_retry(self):
+    def test_unknown_release_still_active_is_read_without_mutation_retry(self):
         native = self.release_native()
-        events = []
-        def call(*args, **kwargs):
-            events.append('release')
-            if len(events) == 1:
-                raise runner.TransientTransport('HTTP 502')
-            return admission(status='released')
-        native.call = call
-        native.lookup = lambda resource: events.append('read') or admission()
-        self.assertEqual(native.release('fixture-id')['status'], 'released')
-        self.assertEqual(events, ['release', 'read', 'release'])
+        native.call = mock.Mock(side_effect=runner.TransientTransport('HTTP 502'))
+        native.lookup = mock.Mock(return_value=admission())
+        with mock.patch.object(runner.time, 'sleep'), self.assertRaises(runner.TransientTransport):
+            native.release('fixture-id')
+        self.assertEqual(native.call.call_count, 1)
+        self.assertEqual(native.lookup.call_count, 3)
+        self.assertIsNone(native.deadline)
+
+    def test_unknown_release_active_then_committed_is_read_without_retry(self):
+        native = self.release_native()
+        native.call = mock.Mock(side_effect=runner.TransientTransport('HTTP 502'))
+        native.lookup = mock.Mock(side_effect=[admission(), admission(status='released')])
+        with mock.patch.object(runner.time, 'sleep'):
+            self.assertEqual(native.release('fixture-id')['status'], 'released')
+        self.assertEqual(native.call.call_count, 1)
+        self.assertEqual(native.lookup.call_count, 2)
+        self.assertIsNone(native.deadline)
 
     def test_unknown_release_does_not_touch_replacement_or_foreign_holder(self):
         for change in (dict(id='different'), dict(holder='foreign'), dict(exempt_pid=1)):
@@ -334,6 +342,31 @@ class RegistryDeadlineTests(unittest.TestCase):
             native.release('fixture-id')
         self.assertEqual(native.lookup.call_count, 3)
         self.assertEqual(native.call.call_count, 1)
+
+    def test_release_records_exit_code_when_cli_supports_it(self):
+        for supported, expected in ((True, ('maat', 'release', 'fixture-id', '--exit-code', '3', '--json')),
+                                    (False, ('maat', 'release', 'fixture-id', '--json'))):
+            native = self.release_native()
+            native._release_exit_flag = supported
+            native.call = mock.Mock(return_value=admission(status='released', **({'exit_code': 3} if supported else {})))
+            native.release('fixture-id', 3)
+            self.assertEqual(native.call.call_args.args, expected)
+
+    def test_uncertain_release_does_not_repeat_after_active_read(self):
+        native = self.release_native()
+        native._release_exit_flag = True
+        calls = []
+        def call(*args, **kwargs):
+            calls.append(args)
+            if len(calls) == 1:
+                raise runner.TransientTransport('HTTP 502')
+            return admission(status='released')
+        native.call = call
+        native.lookup = lambda resource: admission()
+        with mock.patch.object(runner.time, 'sleep'), self.assertRaises(runner.TransientTransport):
+            native.release('fixture-id', 0)
+        self.assertEqual(len(calls), 1)
+        self.assertIn('--exit-code', calls[0])
 
     def test_release_explicit_denial_is_not_retried_or_reconciled(self):
         native = self.release_native()
@@ -470,9 +503,10 @@ class SupervisorTests(unittest.TestCase):
                 mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
                 mock.patch.object(runner, 'release_fabric_child'), \
                 mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda child: child.terminal_status()), \
-                mock.patch.object(runner, 'stop'):
+                mock.patch.object(runner, 'stop', side_effect=lambda child: child.wait()):
             code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 30, backend, record)
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 0, record)
+        backend.release.assert_called_once_with('fixture-id', exit_code=0)
         self.assertEqual(backend.reserve.call_count, 1)
         self.assertFalse(record['borrowed'])
         self.assertEqual(backend.lookup.call_count, 2)
@@ -492,9 +526,10 @@ class SupervisorTests(unittest.TestCase):
                 mock.patch.object(runner, 'fabric_bind_child', side_effect=bind_fake_fabric_child), \
                 mock.patch.object(runner, 'release_fabric_child'), \
                 mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda child: child.terminal_status()), \
-                mock.patch.object(runner, 'stop'):
+                mock.patch.object(runner, 'stop', side_effect=lambda child: child.wait()):
             code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 30, backend, record)
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 0, record)
+        backend.release.assert_called_once_with('fixture-id', exit_code=0)
         backend.reserve.assert_called_once()
         self.assertFalse(record['borrowed'])
         self.assertEqual(backend.lookup.call_count, 2)
@@ -821,7 +856,7 @@ class FabricLaunchGateTests(unittest.TestCase):
             child.returncode = wait_result
             return wait_result
         child.wait.side_effect = wait
-        def release_reservation(identity):
+        def release_reservation(identity, exit_code=None):
             events.append(('release', identity))
             if release_error:
                 raise release_error
@@ -854,7 +889,7 @@ class FabricLaunchGateTests(unittest.TestCase):
     def test_bind_failure_releases_only_after_refusal_exit_is_reaped(self):
         record, backend, events = self.run_bind_failure(78)
         self.assertLess(events.index(('wait', 6)), events.index(('release', 'fixture-id')))
-        backend.release.assert_called_once_with('fixture-id')
+        backend.release.assert_called_once_with('fixture-id', 78)
         self.assertNotIn('cleanup_debt', record)
 
     def test_bind_failure_retains_grant_on_timeout_echild_or_unexpected_status(self):
@@ -889,7 +924,7 @@ class FabricLaunchGateTests(unittest.TestCase):
         self.assertIn('Fabric launch gate close unconfirmed', record['cleanup_debt'])
         self.assertTrue(record['child_cleanup_unconfirmed'])
         record, backend, _ = self.run_bind_failure(78, close_error=failure)
-        backend.release.assert_called_once_with('fixture-id')  # Exact exit receipt, not close, permits release.
+        backend.release.assert_called_once_with('fixture-id', 78)  # Exact exit receipt, not close, permits release.
         self.assertIn('Fabric launch gate close unconfirmed', record['cleanup_debt'])
 
     def test_previously_reaped_helper_status_is_not_a_fresh_receipt(self):
@@ -901,7 +936,7 @@ class FabricLaunchGateTests(unittest.TestCase):
     def test_reaped_helper_release_failure_records_debt(self):
         record, backend, events = self.run_bind_failure(78, runner.Refused('release outcome unknown'))
         self.assertLess(events.index(('wait', 6)), events.index(('release', 'fixture-id')))
-        backend.release.assert_called_once_with('fixture-id')
+        backend.release.assert_called_once_with('fixture-id', 78)
         self.assertIn('Reservation release unconfirmed: release outcome unknown', record['cleanup_debt'])
         backend.close_executor = mock.Mock()
         runner.close_fabric_executor(backend, record)
@@ -936,7 +971,7 @@ class FabricLaunchGateTests(unittest.TestCase):
         child = FakeChild(clock, 0)
         backend = Backend(None)
         events = []
-        backend.release = mock.Mock(side_effect=lambda identity: events.append('grant release'))
+        backend.release = mock.Mock(side_effect=lambda identity, exit_code: events.append('grant release'))
         backend.close_executor = mock.Mock(side_effect=lambda: events.append('executor close'))
         def bind(target):
             events.append('bind')
@@ -954,13 +989,14 @@ class FabricLaunchGateTests(unittest.TestCase):
                                               backend, record), 0)
             runner.close_fabric_executor(backend, record)
         self.assertEqual(events, ['bind', 'gate release', 'cleanup', 'grant release', 'executor close'])
+        backend.release.assert_called_once_with('fixture-id', 0)  # the run's exit status rides on the release
 
     def test_payload_exec_failure_is_reaped_before_grant_release(self):
         clock = Clock()
         child = FakeChild(clock, 0, exit_code=78)
         child.wait = mock.Mock(wraps=child.wait)
         backend = Backend(None)
-        backend.release = mock.Mock(side_effect=lambda identity: self.assertEqual(child.returncode, 78))
+        backend.release = mock.Mock(side_effect=lambda identity, exit_code: self.assertEqual(child.returncode, 78))
         record = {}
         with mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
                 mock.patch.object(runner.os, 'pipe', return_value=(41, 42)), \
@@ -976,7 +1012,7 @@ class FabricLaunchGateTests(unittest.TestCase):
                                               backend, record), 78)
         child.wait.assert_called_once_with(timeout=1)
         kill_group.assert_not_called()
-        backend.release.assert_called_once_with('fixture-id')
+        backend.release.assert_called_once_with('fixture-id', 78)
         self.assertNotIn('cleanup_debt', record)
 
     def test_uncertain_release_and_failed_bound_cleanup_retain_grant(self):
@@ -1217,6 +1253,14 @@ class RecoveryTests(unittest.TestCase):
             clock.now = target.finish
             return 0
 
+        def stop_owned_fixture(target):
+            # A terminal receipt is observed before stop; cleanup reaps the same
+            # child. On a refusal path model termination without an OS signal.
+            if target.terminal_status() is None:
+                target.finish = clock.now
+                target.exit_code = -15
+            target.wait()
+
         record = {}
         with mock.patch.object(runner.dt, 'datetime', FixtureDateTime), \
                 mock.patch.object(runner.time, 'monotonic', clock.monotonic), \
@@ -1229,7 +1273,7 @@ class RecoveryTests(unittest.TestCase):
                 mock.patch.object(runner, 'release_fabric_child'), \
                 mock.patch.object(runner, 'fabric_child_terminal', side_effect=lambda target: target.terminal_status()), \
                 mock.patch.object(runner, 'fabric_wait_terminal', side_effect=wait_terminal), \
-                mock.patch.object(runner, 'stop') as stop:
+                mock.patch.object(runner, 'stop', side_effect=stop_owned_fixture) as stop:
             code = runner.supervise(['fixture'], 'm5', 'lane', 'thread', 'work', 300, native, record)
         return code, record, events, clock, native, spawn, stop
 
@@ -1245,11 +1289,12 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(clock.now, 120)
         spawn.assert_called_once()
         stop.assert_called_once()
-        native.release.assert_called_once_with('fixture-id')
+        native.release.assert_called_once_with('fixture-id', exit_code=None)
 
     def test_native_nonqueued_read_recovery_checks_before_renewing(self):
         code, record, events, clock, native, spawn, stop = self.run_native_nonqueued_read_case('recovery')
         self.assertEqual(code, 0, record)
+        native.release.assert_called_once_with('fixture-id', exit_code=0)
         self.assertGreater(record['transport_retries'], 0)
         renewals = [i for i, event in enumerate(events) if event[0][:2] == ('maat', 'heartbeat')]
         self.assertEqual(len(renewals), 1)
@@ -1278,7 +1323,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(any(event[0][:2] == ('maat', 'heartbeat') for event in events))
         spawn.assert_not_called()
         stop.assert_not_called()
-        native.release.assert_called_once_with('fixture-id')
+        native.release.assert_called_once_with('fixture-id', exit_code=None)
 
     def test_native_queued_mutation_is_not_the_nonqueued_read_sentinel(self):
         code, record, events, clock, native, spawn, stop = self.run_native_nonqueued_read_case('queued-mutation')
@@ -1288,7 +1333,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(len([event for event in events if event[0][:2] == ('maat', 'heartbeat')]), 1)
         spawn.assert_called_once()
         stop.assert_called_once()
-        native.release.assert_called_once_with('fixture-id')
+        native.release.assert_called_once_with('fixture-id', exit_code=None)
 
     def run_case(self, *, failure=None, restore=34, finish=45, renewal=None, ttl=120, timeout=300):
         clock = Clock()

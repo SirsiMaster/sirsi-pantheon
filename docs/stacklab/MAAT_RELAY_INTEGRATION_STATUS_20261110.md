@@ -8,7 +8,7 @@ release checkout and both frozen qualification trees are unchanged. The
 adjacent design drafts retain their original authorship-time descriptions;
 this record supplies the later qualification status.
 
-Exact integrated production bytes:
+Historical integration inputs (not necessarily the current source bytes):
 
 - internal/routerstore/spool.go:80100c4c38e4fbdc97b5843ed0d12ee762a3bd2332da7ab6d54559f134c6404c.
 - scripts/maat/admitted-run.py:e74e8ef6d1cde891595cf42f2d17f5b29417bdaf81b3053c56e95d34ee53ad8b.
@@ -37,28 +37,25 @@ integer0 and executor CLOSED. This is not live e74e native operation.
 
 Separate seven deadline controls: native90a639d90e76462485b3b91c2c75b036,
 integer exit0; normal and race each seven parents plus nineteen subtests PASS
-on the retained combined-candidate binaries. Independent review at
-/Users/thekryptodragon/.sirsi/evidence/ssa-go7-successor-actual-independent-review-20261109.ofJcTJ/REVIEW.json,
+on the retained combined-candidate binaries. Independent review, retained privately,
 SHA25606bbc98eada51aaf3a1b390ca889e4f8facfa3c577798901842e5a635de3aea9,
 accepted this finite unit and captured settlement: own reservation RELEASED
 integer0, executor CLOSED. The prior failed8366 attempt remains preserved;
 this was a separate successor, not a replay relabelled successful.
 
 Create-only M5 versioned publication: native31165eae83da4ab18ffa689a24970b52,
-integer exit0. Independent review at
-/Users/thekryptodragon/.sirsi/evidence/ssa-e74e-publisher-actual-independent-review-20261110.Bohr/REVIEW.json,
+integer exit0. Independent review, retained privately,
 SHA2565a9611fed45684fcef9fa7826ed6ea962aee5bb1284e02ed2a7634f177bf9b4f,
 accepted publication custody, unchanged default and captured own settlement
-(RELEASED integer0, executor CLOSED). Exact published executable:
-/Users/thekryptodragon/.local/libexec/sirsi-maat-run-e74e8ef6d1cde891595cf42f2d17f5b29417bdaf81b3053c56e95d34ee53ad8b/sirsi-maat-run.
+(RELEASED integer0, executor CLOSED). The versioned executable retains the
+e74e source digest recorded above.
 This side-by-side publication did not replace the default or execute the target.
 
 The subsequent separate e74e Native canary8787a6bcb72b429288f1fe065d7d4c45
 actually returned integer0 in0.428s for /usr/bin/true using its own admission
 and fixed protected84a CLI.
 Parent confirmed canonical RELEASED integer0; the terminal's launch-time ACTIVE
-snapshot is not itself settlement proof. Entry result is retained at
-/Users/thekryptodragon/.sirsi/evidence/ssa-e74e-canary-0a01260f0802402ab399e1eb61cbcf62/entry-result.json,
+snapshot is not itself settlement proof. The entry result is retained privately,
 SHA2561ebff8047025c8937bcce0027aeef1059fef4c34273b4af26af9b431d73b5fd0.
 Subsequent independent actual review01dbba3b5b7c7992aa818a669619eb8ae8a277381b39a4684d44b9f6a70ce4b5
 accepted this bounded canary and its explicit canonical settlement only. It is
@@ -72,10 +69,9 @@ are a later source successor, not a relabelled passing run. Full race was not
 run by that three-phase check and remains required; static checks are not the
 whole repository baseline.
 
-Evidence authority remains the full receipts in ~/.sirsi/evidence, including
-ssa-m5-full8-actual-20261110T0021Z.json and
-ssa-m5-e74e21-actual-20261110T0023Z.json. Short hashes above are navigation,
-not replacements for complete SHA256 bindings.
+Evidence authority remains the full receipts retained in the private local
+evidence store. Short hashes above are navigation, not replacements for
+complete SHA256 bindings.
 
 ## Remaining work
 

@@ -1221,17 +1221,30 @@ class Native:
                                 self.executor_identity['thread_id'])
             self.call('thread', 'heartbeat', '--thread', self.executor_thread, '--json', timeout=30, json_result=False)
 
-    def release(self, identity, *, exit_code=None):
+    def release_supports_exit_code(self):
+        if getattr(self, '_release_exit_flag', None) is None:
+            try:
+                probe = subprocess.run([self.cli, 'maat', 'release', '--help'],
+                                       capture_output=True, text=True, timeout=10)
+                self._release_exit_flag = probe.returncode == 0 and '--exit-code' in probe.stdout + probe.stderr
+            except (OSError, subprocess.SubprocessError):
+                self._release_exit_flag = False
+        return self._release_exit_flag
+
+    def release(self, identity, exit_code=None):
         if exit_code is not None and type(exit_code) is not int:
             raise Refused('Release requires an observed integer child exit, not a default')
-        outcome = ('--exit-code', str(exit_code)) if exit_code is not None else ()
+        self.last_release_exit_recorded = False
+        supported = exit_code is not None and self.release_supports_exit_code()
+        outcome = ('--exit-code', str(exit_code)) if supported else ()
         command = ('maat', 'release', identity, *outcome, '--json')
 
         def confirmed(row):
-            if exit_code is not None and (not isinstance(row, dict) or row.get('id') != identity or
+            if supported and (not isinstance(row, dict) or row.get('id') != identity or
                     row.get('status') not in ('released', 'done') or
                     type(row.get('exit_code')) is not int or row['exit_code'] != exit_code):
                 raise Refused('Reservation release child exit outcome unconfirmed; never backfill a terminal row')
+            self.last_release_exit_recorded = bool(supported)
             return row
 
         try:
@@ -1766,8 +1779,10 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                     observed = (settled_child_exit if record.get('status') in ('success', 'child_failed')
                                 and not record.get('cleanup_debt') and code == settled_child_exit else None)
                     backend.release(owned, exit_code=observed)
+                    if observed is not None and getattr(backend, 'last_release_exit_recorded', None) is False:
+                        record['canonical_exit_code'] = 'not_recorded_or_unverified'
                 else:
-                    backend.release(owned)  # Preserve the existing non-Native fixture/backend interface.
+                    backend.release(owned, code)  # Preserve the existing non-Native fixture/backend interface.
             except (Exception, KeyboardInterrupt) as error:
                 append_cleanup_debt(record, 'Reservation release unconfirmed: '+str(error))
                 record['reservation_outcome_unconfirmed'] = True

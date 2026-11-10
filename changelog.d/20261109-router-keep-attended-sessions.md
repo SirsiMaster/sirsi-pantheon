@@ -1,0 +1,1 @@
+- **Router**: the service keeps an attended claude/codex session registered when a Mac running a pre-#1364 client tries to expire it on a quiet 2-hour lease. Worker threads and dead-PID reaps are unchanged.

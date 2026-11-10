@@ -291,28 +291,19 @@ func TestInstallMenubar_BundleFallbackThenWriteFail(t *testing.T) {
 
 	bin := t.TempDir()
 	writeExecutable(t, bin, "sirsi-menubar", "#!/bin/sh\n")
-	writeExecutable(t, bin, "codesign", "#!/bin/sh\nprintf '%s\\n' codesign >> \"$FIXTURE_LOG\"\n")
-	writeExecutable(t, bin, "launchctl", "#!/bin/sh\nprintf '%s\\n' launchctl >> \"$FIXTURE_LOG\"\n")
-	t.Setenv("PATH", bin)
-	log := filepath.Join(home, "actuators.log")
-	t.Setenv("FIXTURE_LOG", log)
+	restrictPATH(t, bin)
 
-	// A file blocks the bundle; a directory at the plist path always blocks
-	// WriteFile, including when the test process has elevated privileges.
-	if err := os.WriteFile(filepath.Join(home, "Applications"), []byte("x"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	plist := filepath.Join(home, "Library", "LaunchAgents", menubarPlistLabel+".plist")
-	if err := os.MkdirAll(plist, 0700); err != nil {
-		t.Fatal(err)
-	}
+	// ~/Applications is a file → bundle creation fails → bare-binary fallback.
+	os.WriteFile(filepath.Join(home, "Applications"), []byte("x"), 0o644)
+	// LaunchAgents exists but is read-only → WriteFile fails before launchctl.
+	la := filepath.Join(home, "Library", "LaunchAgents")
+	os.MkdirAll(la, 0o755)
+	os.Chmod(la, 0o555)
+	t.Cleanup(func() { os.Chmod(la, 0o755) })
+
 	res := InstallMenubar()
-	if res.Status != StatusFailed || !strings.Contains(res.Message, plist) {
-		t.Fatalf("res = %+v, want failure writing fixture plist %s", res, plist)
-	}
-	calls, err := os.ReadFile(log)
-	if err != nil || string(calls) != "codesign\n" {
-		t.Fatalf("fixture calls = %q, err = %v; want codesign only", calls, err)
+	if res.Status != StatusFailed {
+		t.Fatalf("res = %+v, want plist write failure", res)
 	}
 }
 

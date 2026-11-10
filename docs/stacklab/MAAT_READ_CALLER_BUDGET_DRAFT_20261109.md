@@ -11,8 +11,7 @@ state changes. No fetch, build, test, CI, signing or release action performed.
 Reviewed the complete a0a spool.go and PR1375 read compatibility contract,
 read/unavailable tests and relevant caller-timeout/redial/handshake controls.
 Reused the optional read_deadline_unix_nano RawMessage design and four authored
-test functions from the existing UNRUN pre1375 candidate at
-/Users/thekryptodragon/Development/.worktrees/maat-relay-read-deadline-20261108.
+test functions from an existing, privately retained UNRUN pre1375 candidate.
 That candidate stays untouched. Its forwardNew/forwardRequest split is NOT
 ported: a0a's forwardWithQueuePolicy and PR1375 conservative initial-read
 classifier remain the existing integration path. Also do not port its blanket

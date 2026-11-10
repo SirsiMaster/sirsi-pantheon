@@ -17,6 +17,9 @@ import (
 
 const FabricTaskPageSize = 64
 
+// FabricAllTaskLimit bounds the work and response size of a single lane view.
+const FabricAllTaskLimit = 10000
+
 var ErrFabricTasksChanged = errors.New("fabric tasks changed; refresh the task list from its first page")
 
 type FabricTask struct {
@@ -79,6 +82,14 @@ func fabricText(value string, limit int) (string, bool) {
 		runes = append(runes, r)
 	}
 	return string(runes), limited
+}
+
+// PhaseLabel cleans a task phase for the lane ledger the way a subject is
+// cleaned: control characters become spaces, capped at 128 characters. The
+// Fabric projection itself never carries the phase.
+func PhaseLabel(phase string) string {
+	s, _ := fabricText(phase, 128)
+	return s
 }
 
 func fabricID(value string) bool {
@@ -161,36 +172,9 @@ func FabricTasksFilteredFrom(s Snapshot, offset int, expected, filter string) (F
 	if offset < 0 || offset%FabricTaskPageSize != 0 {
 		return page, errors.New("invalid fabric task page offset")
 	}
-	var rows []FabricTask
-	seen := map[string]bool{}
-	for _, lane := range s.Agents {
-		for _, task := range lane.Tasks {
-			if !fabricTaskMatches(task, filter) {
-				continue
-			}
-			if !fabricID(lane.AgentID) || !fabricID(task.TaskID) || task.Agent != "" && task.Agent != lane.AgentID {
-				return page, errors.New("fabric task identity unavailable")
-			}
-			key := lane.AgentID + "\x00" + task.TaskID
-			if seen[key] {
-				return page, errors.New("duplicate fabric task identity")
-			}
-			seen[key] = true
-			rows = append(rows, fabricTask(lane.AgentID, task))
-		}
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].Agent == rows[j].Agent {
-			return rows[i].ID < rows[j].ID
-		}
-		return rows[i].Agent < rows[j].Agent
-	})
-	// A blocker ID is exposed only as an exact reference within this same public
-	// task set. Arbitrary blocker prose/commands are not a second message stream.
-	for i := range rows {
-		if !seen[rows[i].Agent+"\x00"+rows[i].BlockerID] {
-			rows[i].BlockerID = ""
-		}
+	rows, err := fabricTaskRows(s, filter, false, 0)
+	if err != nil {
+		return page, err
 	}
 	h := sha256.New()
 	if filter == "" {
@@ -217,6 +201,51 @@ func FabricTasksFilteredFrom(s Snapshot, offset int, expected, filter string) (F
 		page.NextOffset = &end
 	}
 	return page, nil
+}
+
+// FabricAllTasksFrom projects open and completed rows once, with the same
+// allowlist and identity checks as paged Fabric. It fails instead of silently
+// returning an incomplete lane when the bounded response limit is exceeded.
+func FabricAllTasksFrom(s Snapshot) ([]FabricTask, error) {
+	return fabricTaskRows(s, "", true, FabricAllTaskLimit)
+}
+
+func fabricTaskRows(s Snapshot, filter string, all bool, limit int) ([]FabricTask, error) {
+	var rows []FabricTask
+	seen := map[string]bool{}
+	for _, lane := range s.Agents {
+		for _, task := range lane.Tasks {
+			if !all && !fabricTaskMatches(task, filter) {
+				continue
+			}
+			if limit > 0 && len(rows) >= limit {
+				return nil, errors.New("fabric task response limit exceeded")
+			}
+			if !fabricID(lane.AgentID) || !fabricID(task.TaskID) || task.Agent != "" && task.Agent != lane.AgentID {
+				return nil, errors.New("fabric task identity unavailable")
+			}
+			key := lane.AgentID + "\x00" + task.TaskID
+			if seen[key] {
+				return nil, errors.New("duplicate fabric task identity")
+			}
+			seen[key] = true
+			rows = append(rows, fabricTask(lane.AgentID, task))
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Agent == rows[j].Agent {
+			return rows[i].ID < rows[j].ID
+		}
+		return rows[i].Agent < rows[j].Agent
+	})
+	// A blocker ID is exposed only as an exact reference within this same public
+	// task set. Arbitrary blocker prose/commands are not a second message stream.
+	for i := range rows {
+		if !seen[rows[i].Agent+"\x00"+rows[i].BlockerID] {
+			rows[i].BlockerID = ""
+		}
+	}
+	return rows, nil
 }
 
 func fabricTask(agent string, task routerstore.Task) FabricTask {

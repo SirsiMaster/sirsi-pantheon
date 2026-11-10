@@ -41,7 +41,7 @@ var routerPingCmd = &cobra.Command{
 honest state each worker publishes on its heartbeat — not from "a launch job is
 installed". Verdicts:
 
-  LIVE           an attended session is consuming the inbox now
+  LIVE           a fresh attended session is available; consumption is unproven
   WAKEABLE       a worker loop with a working consumer will start a session
   HELD           would work but is gated now (measurement window, load, back-off,
                  relay unreachable, quarantine); the detail says until when

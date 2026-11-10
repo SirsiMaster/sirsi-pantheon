@@ -188,3 +188,54 @@ func (s *SQLiteStore) laneWakeFailures(agent string) (int, int, error) {
 	}
 	return total, unresolved, rows.Err()
 }
+
+// WakeLatencySample is one item's elapsed time from opened to first claim
+// (lease_updated), the M0 charter's T4 delivery+claim latency measurement.
+type WakeLatencySample struct {
+	ID             string  `json:"id"`
+	Agent          string  `json:"agent"`
+	Opened         string  `json:"opened"`
+	LeaseUpdated   string  `json:"lease_updated"`
+	LatencySeconds float64 `json:"latency_seconds"`
+}
+
+// WakeLatencySamples returns up to limit claimed-at-least-once items for
+// agent (every agent if empty), newest-opened first. lease_updated=opened
+// (the backfill default for pre-existing claims, store.go migration v15)
+// is excluded: it has no granular claim timestamp, so it is not a sample,
+// not a zero-latency claim.
+func (s *SQLiteStore) WakeLatencySamples(agent string, limit int) ([]WakeLatencySample, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 200
+	}
+	query := `SELECT id, to_agent, opened, lease_updated FROM items
+		WHERE lease_updated <> '' AND lease_updated <> opened`
+	args := []any{}
+	if agent != "" {
+		query += ` AND to_agent = ?`
+		args = append(args, agent)
+	}
+	query += ` ORDER BY opened DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("routerstore: wake latency samples: %w", err)
+	}
+	defer rows.Close()
+
+	var out []WakeLatencySample
+	for rows.Next() {
+		var smp WakeLatencySample
+		if err := rows.Scan(&smp.ID, &smp.Agent, &smp.Opened, &smp.LeaseUpdated); err != nil {
+			return nil, fmt.Errorf("routerstore: scan wake latency sample: %w", err)
+		}
+		o, oerr := time.Parse(time.RFC3339, smp.Opened)
+		u, uerr := time.Parse(time.RFC3339, smp.LeaseUpdated)
+		if oerr == nil && uerr == nil {
+			smp.LatencySeconds = u.Sub(o).Seconds()
+		}
+		out = append(out, smp)
+	}
+	return out, rows.Err()
+}

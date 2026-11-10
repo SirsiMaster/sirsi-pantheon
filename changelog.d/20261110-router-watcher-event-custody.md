@@ -1,0 +1,1 @@
+- Observe cooperative watcher custody changes through filesystem events and fail closed on observation loss.

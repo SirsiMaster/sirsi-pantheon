@@ -7,11 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 // A bounded in-memory custody provider: these tests never probe, spawn, signal
@@ -72,6 +75,46 @@ func TestRouterWatcherExactCooperativeStop(t *testing.T) {
 	}
 	if !bytes.Equal(files.data[c.leaf], files.data[c.leaf+".stop"]) {
 		t.Fatal("stop must retain exact whole publication, not just its PID")
+	}
+}
+
+func TestRouterWatcherRetirementDecision(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		setup            func(*routerWatcherCustody, *memoryRouterWatcherFiles)
+		ancestorErr      error
+		retired, failure bool
+	}{
+		{name: "active"},
+		{name: "exact stop", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) {
+			f.data[c.leaf+".stop"] = append([]byte(nil), f.data[c.leaf]...)
+		}, retired: true},
+		{name: "missing publication", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) { delete(f.data, c.leaf) }, retired: true, failure: true},
+		{name: "malformed stop", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) { f.data[c.leaf+".stop"] = []byte("invalid") }, retired: true, failure: true},
+		{name: "stale stop", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) {
+			stale := c.record
+			stale.Nonce = strings.Repeat("b", 64)
+			f.data[c.leaf+".stop"], _ = json.Marshal(stale)
+		}},
+		{name: "successor publication", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) {
+			next := c.record
+			next.Nonce = strings.Repeat("b", 64)
+			f.data[c.leaf], _ = json.Marshal(next)
+		}, retired: true, failure: true},
+		{name: "ancestor changed despite exact stop", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) {
+			f.data[c.leaf+".stop"] = append([]byte(nil), f.data[c.leaf]...)
+		}, ancestorErr: errors.New("replaced"), retired: true, failure: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, f := memoryRouterWatcher(t)
+			if tc.setup != nil {
+				tc.setup(c, f)
+			}
+			retired, err := routerWatcherRetirementDecision(func() error { return tc.ancestorErr }, c)
+			if retired != tc.retired || (err != nil) != tc.failure {
+				t.Fatalf("retired=%v err=%v; want retired=%v failure=%v", retired, err, tc.retired, tc.failure)
+			}
+		})
 	}
 }
 
@@ -244,5 +287,127 @@ func TestRouterWatcherDrainWaitsForInFlightCallback(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("returned callback did not release drain")
+	}
+}
+
+func TestRouterWatcherObservationArmsBeforeCheckingCustody(t *testing.T) {
+	paths, err := routerWatcherCustodyPaths("/private/home")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, gap := range []int{0, 1, len(paths) - 1} {
+		t.Run(fmt.Sprint(gap), func(t *testing.T) {
+			armed, stopped, checks := 0, false, 0
+			retired, err := armRouterWatcherObservation(paths, func(path string) error {
+				if path != paths[armed] {
+					t.Fatalf("unexpected subscription order %q", path)
+				}
+				if armed == gap {
+					stopped = true
+				}
+				armed++
+				return nil
+			}, func() (bool, error) {
+				checks++
+				if armed != len(paths) {
+					t.Fatal("checked custody before watches were installed")
+				}
+				return stopped, nil
+			})
+			if err != nil || !retired || checks != 1 {
+				t.Fatalf("setup gap: retired=%v checks=%d err=%v", retired, checks, err)
+			}
+		})
+	}
+	checks := 0
+	_, err = armRouterWatcherObservation(paths, func(string) error { return os.ErrPermission }, func() (bool, error) { checks++; return false, nil })
+	if !errors.Is(err, os.ErrPermission) || checks != 0 {
+		t.Fatalf("failed subscription must refuse: checks=%d err=%v", checks, err)
+	}
+}
+
+func TestRouterWatcherObservationSetupRetirementReason(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		setup            func(*routerWatcherCustody, *memoryRouterWatcherFiles)
+		ancestorErr      error
+		retired, failure bool
+	}{
+		{name: "active"},
+		{name: "exact stop", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) {
+			f.data[c.leaf+".stop"] = append([]byte(nil), f.data[c.leaf]...)
+		}, retired: true},
+		{name: "stale stop", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) {
+			stale := c.record
+			stale.Nonce = strings.Repeat("b", 64)
+			f.data[c.leaf+".stop"], _ = json.Marshal(stale)
+		}},
+		{name: "missing publication", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) { delete(f.data, c.leaf) }, retired: true, failure: true},
+		{name: "malformed publication", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) { f.data[c.leaf] = []byte("invalid") }, retired: true, failure: true},
+		{name: "successor publication", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) {
+			next := c.record
+			next.Nonce = strings.Repeat("b", 64)
+			f.data[c.leaf], _ = json.Marshal(next)
+		}, retired: true, failure: true},
+		{name: "malformed stop", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) { f.data[c.leaf+".stop"] = []byte("invalid") }, retired: true, failure: true},
+		{name: "ancestor changed despite exact stop", setup: func(c *routerWatcherCustody, f *memoryRouterWatcherFiles) {
+			f.data[c.leaf+".stop"] = append([]byte(nil), f.data[c.leaf]...)
+		}, ancestorErr: errors.New("replaced"), retired: true, failure: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, files := memoryRouterWatcher(t)
+			armed := false
+			retired, err := armRouterWatcherObservation([]string{"/fixture/custody"}, func(string) error {
+				// The request/replacement occurs after publication, while arming.
+				if tc.setup != nil {
+					tc.setup(c, files)
+				}
+				armed = true
+				return nil
+			}, func() (bool, error) {
+				if !armed {
+					t.Fatal("retirement checked before subscription")
+				}
+				return routerWatcherRetirementDecision(func() error { return tc.ancestorErr }, c)
+			})
+			if retired != tc.retired || (err != nil) != tc.failure {
+				t.Fatalf("retired=%v err=%v; want retired=%v failure=%v", retired, err, tc.retired, tc.failure)
+			}
+		})
+	}
+}
+
+func TestRouterWatcherCustodyEventsIncludeReplacementAndStop(t *testing.T) {
+	c, files := memoryRouterWatcher(t)
+	if c.retired() {
+		t.Fatal("initial custody must be active")
+	}
+	newRecord := c.record
+	newRecord.Nonce = strings.Repeat("b", 64)
+	data, err := json.Marshal(newRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files.data[c.leaf] = data
+	if !c.retired() {
+		t.Fatal("atomic replacement must retire previous incarnation")
+	}
+}
+
+func TestRouterWatcherObservationLossIsTerminal(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		open bool
+	}{
+		{"overflow", fsnotify.ErrEventOverflow, true},
+		{"backend failure", os.ErrPermission, true},
+		{"closed error stream", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := routerWatcherObservationError(tc.err, tc.open); err == nil {
+				t.Fatal("observation loss must terminate without polling fallback")
+			}
+		})
 	}
 }

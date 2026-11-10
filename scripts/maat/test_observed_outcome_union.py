@@ -43,6 +43,7 @@ class ObservedOutcomeJoinControls(unittest.TestCase):
         for patch in (
                 mock.patch.object(runner.time, 'monotonic', self.clock.monotonic),
                 mock.patch.object(runner.time, 'sleep', self.clock.sleep),
+                mock.patch.object(runner.Native, 'release_supports_exit_code', return_value=True),
                 mock.patch.object(runner.subprocess, 'Popen', side_effect=AssertionError('no real child')),
                 mock.patch.object(runner.subprocess, 'run', side_effect=AssertionError('no real CLI'))):
             patch.start()
@@ -60,6 +61,23 @@ class ObservedOutcomeJoinControls(unittest.TestCase):
 
     def failure(self, text=None):
         return subprocess.CalledProcessError(1, 'inert-fixture', stderr=consumed() if text is None else text)
+
+    def test_legacy_cli_release_is_not_claimed_as_canonical_outcome(self):
+        native = self.native()
+        with mock.patch.object(native, 'release_supports_exit_code', return_value=False), \
+             mock.patch.object(native, 'call', return_value=self.row(native)) as call:
+            self.assertEqual(native.release(native.owned_admission, exit_code=0)['status'], 'released')
+        call.assert_called_once_with('maat', 'release', native.owned_admission, '--json')
+        self.assertFalse(native.last_release_exit_recorded)
+
+    def test_legacy_uncertain_release_is_never_replayed(self):
+        native = self.native()
+        with mock.patch.object(native, 'release_supports_exit_code', return_value=False), \
+             mock.patch.object(native, 'call', side_effect=runner.TransientTransport('uncertain')) as call, \
+             mock.patch.object(native, 'lookup', return_value=self.row(native, status='active')):
+            with self.assertRaises(runner.TransientTransport):
+                native.release(native.owned_admission, exit_code=0)
+        call.assert_called_once()
 
     def test_literal_owned_release_vectors_only(self):
         native = self.native()
@@ -238,6 +256,14 @@ class ObservedOutcomeJoinControls(unittest.TestCase):
             self.assertEqual(record['status'], 'success' if outcome == 0 else 'child_failed')
             self.assertEqual(releases, [('maat', 'release', 'owned-supervisor-fixture',
                                          '--exit-code', str(outcome), '--json')])
+
+    def test_legacy_supervisor_records_local_exit_without_inventing_canonical_exit(self):
+        with mock.patch.object(runner.Native, 'release_supports_exit_code', return_value=False):
+            result, record, releases = self.supervise_fixture()
+        self.assertEqual(result, 0)
+        self.assertEqual(record['status'], 'success')
+        self.assertEqual(record['canonical_exit_code'], 'not_recorded_or_unverified')
+        self.assertEqual(releases, [('maat', 'release', 'owned-supervisor-fixture', '--json')])
 
     def test_supervisor_cleanup_mismatch_withholds_release_and_keeps_debt(self):
         result, record, releases = self.supervise_fixture(0, 17)

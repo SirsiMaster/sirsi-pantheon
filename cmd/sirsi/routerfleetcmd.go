@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -66,15 +67,20 @@ needs a long-lived process to hold the baseline. Use the Horus board for that.`,
 		if err != nil {
 			return fmt.Errorf("locate repo root: %w", err)
 		}
-		snap, err := ledger.Build(repoRoot, "", time.Now().UTC(), ledger.DefaultStaleAfter)
+		// The task DTO omits lease capabilities. Do not infer WORKING from its
+		// Updated field: reuse the same fenced operational reader as /api/fleet.
+		producer := ledger.NewFabricGenerationProducerContext(cmd.Context(), func(ctx context.Context) (ledger.FabricRead, error) {
+			return ledger.ReadFabricContext(ctx, repoRoot, time.Now().UTC())
+		}, "")
+		defer producer.Close()
+		generation, err := producer.Read(cmd.Context())
 		if err != nil {
-			return fmt.Errorf("build ledger: %w", err)
+			return fmt.Errorf("fleet canonical observation: %w", err)
 		}
-		un, unErr := unroutableAgents(repoRoot)
-		if unErr != nil {
-			return fmt.Errorf("fleet: %w — routability is unknown; refusing to render lanes as routable", unErr)
+		out, err := dashboard.FleetFromGeneration(generation)
+		if err != nil {
+			return fmt.Errorf("fleet canonical projection: %w", err)
 		}
-		out := dashboard.NewFleetTracker(nil).ObserveWithRoutability(snap, time.Now(), un)
 
 		if JsonOutput {
 			enc := json.NewEncoder(os.Stdout)

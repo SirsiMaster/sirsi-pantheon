@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 // A record is a cooperative lease, NOT OS liveness or authority to signal PID.
@@ -124,23 +126,44 @@ func newRouterWatcherCustodyWith(threadID, agentID, routerRoot string, home func
 func (c *routerWatcherCustody) Close() error { return c.files.Close() }
 
 func (c *routerWatcherCustody) retired() bool {
+	retired, _ := c.retirement()
+	return retired
+}
+
+// retirement distinguishes an exact cooperative request from lost custody.
+// Both stop dispatch; only the former confirms a normal watcher exit.
+func (c *routerWatcherCustody) retirement() (bool, bool) {
 	data, err := c.files.read(c.leaf)
 	if err != nil {
-		return true // loss of custody: self-retire, never signal anything
+		return true, false // loss of custody: self-retire, never signal anything
 	}
 	current, err := decodeRouterWatcherRecord(data, c.record.ThreadID)
 	if err != nil || current != c.record {
-		return true // successor publication, including same PID/different nonce
+		return true, false // successor publication, including same PID/different nonce
 	}
 	data, err = c.files.read(c.leaf + ".stop")
 	if errors.Is(err, os.ErrNotExist) {
-		return false
+		return false, false
 	}
 	if err != nil {
-		return true
+		return true, false
 	}
 	stop, err := decodeRouterWatcherRecord(data, c.record.ThreadID)
-	return err != nil || stop == c.record // a valid stale request cannot stop successor
+	if err != nil {
+		return true, false
+	}
+	return stop == c.record, stop == c.record // stale request cannot stop successor
+}
+
+func routerWatcherRetirementDecision(revalidate func() error, custody *routerWatcherCustody) (bool, error) {
+	if err := revalidate(); err != nil {
+		return true, fmt.Errorf("watch-router: custody ancestor changed; watcher retired: %w", err)
+	}
+	retired, requested := custody.retirement()
+	if retired && !requested {
+		return true, errors.New("watch-router: custody lost; watcher retired")
+	}
+	return retired, nil
 }
 
 func requestRouterWatcherStopWith(threadID string, home func() (string, error)) (bool, error) {
@@ -231,4 +254,77 @@ func (g *routerWatcherDispatchGate) drain(out io.Writer) {
 		fmt.Fprintln(out, "watch-router: callback already in flight; awaiting callback drain without interrupting its consumer; consumer quiet is unproven")
 	}
 	g.wg.Wait()
+}
+
+// routerWatcherCustodyPaths observes every named link to the retained custody
+// directory, including replacement of HOME or one of its ancestors. Watching is
+// installed before the first custody read to close the subscribe/check gap.
+func routerWatcherCustodyPaths(home string) ([]string, error) {
+	if !filepath.IsAbs(home) || filepath.Clean(home) != home {
+		return nil, errors.New("watch-router: custody HOME must be absolute and clean")
+	}
+	dir := filepath.Join(home, ".sirsi", "router-watchers")
+	var paths []string
+	for p := dir; ; p = filepath.Dir(p) {
+		paths = append(paths, p)
+		if filepath.Dir(p) == p {
+			break
+		}
+	}
+	return paths, nil
+}
+
+// armRouterWatcherObservation refuses a partial watch: otherwise a detached
+// directory or dropped stop could silently leave the watcher live forever.
+func armRouterWatcherObservation(paths []string, add func(string) error, retirement func() (bool, error)) (bool, error) {
+	for _, path := range paths {
+		if err := add(path); err != nil {
+			return false, fmt.Errorf("watch-router: cannot observe custody %s: %w", path, err)
+		}
+	}
+	return retirement()
+}
+
+func routerWatcherDispatchEvent(root string, event fsnotify.Event) bool {
+	if event.Name == filepath.Join(root, "state.json") {
+		return true
+	}
+	for _, name := range []string{"items", "proposals"} {
+		dir := filepath.Join(root, name)
+		if event.Name == dir || filepath.Dir(event.Name) == dir {
+			return true
+		}
+	}
+	return false
+}
+
+func routerWatcherObservationError(err error, open bool) error {
+	if !open || err == nil {
+		return errors.New("watch-router: filesystem observation stream closed; custody lost")
+	}
+	return fmt.Errorf("watch-router: filesystem observation failed; custody lost: %w", err)
+}
+
+// Each subscribed ancestor must still name the exact retained directory. A
+// watch on a temporarily substituted inode cannot establish custody.
+type routerWatcherAncestorBinding struct {
+	path string
+	file *os.File
+}
+
+func revalidateRouterWatcherAncestors(bindings []routerWatcherAncestorBinding) error {
+	for _, binding := range bindings {
+		opened, err := binding.file.Stat()
+		if err != nil {
+			return fmt.Errorf("stat retained custody ancestor %s: %w", binding.path, err)
+		}
+		named, err := os.Lstat(binding.path)
+		if err != nil {
+			return fmt.Errorf("lstat custody ancestor %s: %w", binding.path, err)
+		}
+		if !opened.IsDir() || !named.IsDir() || named.Mode()&os.ModeSymlink != 0 || !os.SameFile(opened, named) {
+			return fmt.Errorf("watch-router: custody ancestor %s changed after subscription", binding.path)
+		}
+	}
+	return nil
 }

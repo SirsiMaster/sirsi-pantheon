@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const fabric=require('../ui/fabric.js');
+const fabric=require("../ui/fabric.js"),ledger=require("../ui/ledger.js");
 const source=fs.readFileSync(__dirname+'/../ui/app.js','utf8');
 const at=Date.parse('2026-10-25T12:00:00Z');
 function board(){return {work:{done:0,open:3,in_progress:0,assigned_not_started:3,stalled:0,blocked:0,total:3},messages:{open:7,stranded:0,oldest_age_seconds:0},lanes:[{agent:'own-lane',state:'IDLE_WITH_WORK',state_label:'IDLE with work',open:3,active:0,stalled:0,blocked:0,registered:{router:true,thread:false,ledger:true},last_touch:'task-touch'}],health:{ram_pct:null,swap:null,total_ram:null,cpu_cores:null,git_dirty:null,engine:'unknown',engine_state:'unavailable',issues:[]},activity:[],activity_seeded:false,runtime_available:true,generated_at:new Date(at).toISOString(),build:'fabric-build'}}
@@ -27,7 +27,7 @@ function host(view='fleet',initial={}){
   addEventListener(k,f){listeners[k]=f},
   body:{appendChild(d){dialog=d},classList:{add(){},remove(){}}}
  };
- const context={document:doc,location:{hash:'#'+view},navigator:{},PantheonFabric:fabric,
+ const context={document:doc,location:{hash:'#'+view},navigator:{},PantheonFabric:fabric,PantheonLedger:ledger,
   Date:class extends Date {constructor(...args){super(...(args.length?args:[clock]))}static now(){return clock}},
   AbortSignal:{timeout(){}},setInterval(f){tick=f;return 1},
   fetch:async url=>{requests.push(url);let value=url.startsWith('/api/fabric')?reply.fabric:url==='/api/router/v1/snapshot'?reply.router:{};if(typeof value==='function')value=await value(url);return {ok:!(value instanceof Error),status:value instanceof Error?value.status||503:200,json:async()=>value instanceof Error?{error:value.message}:value}},
@@ -48,9 +48,9 @@ function host(view='fleet',initial={}){
 test('actual app keeps Fabric receipt independent of router read success and failure',async()=>{
  const h=host('overview');await h.settle();assert.match(h.elements['#view'].innerHTML,/Current Fabric observation/);
  h.reply.fabric=new Error('fabric-read-refused');h.refresh();await h.settle();
- assert.match(h.elements['#view'].innerHTML,/Retained Fabric observation/);assert.match(h.elements['#live-t'].textContent,/Router received/);
+ assert.match(h.elements['#view'].innerHTML,/Retained Fabric observation/);assert.match(h.elements['#live-t'].textContent,/live · updated/);
  h.reply.fabric=board();h.reply.router=new Error('router-read-refused');h.refresh();await h.settle();
- assert.match(h.elements['#view'].innerHTML,/Current Fabric observation/);assert.match(h.elements['#live-t'].textContent,/Router stale/);
+ assert.match(h.elements['#view'].innerHTML,/Current Fabric observation/);assert.match(h.elements['#live-t'].textContent,/showing last good data/);
  h.navigate('host');assert.match(h.elements['#view'].innerHTML,/Current Fabric observation/);
 });
 function taskBoard(offset=0){
@@ -87,7 +87,7 @@ test('older task-page response cannot overwrite explicit first-page refresh',asy
 });
 test('actual app ages retained Fabric without response and discloses future time and known empty',async()=>{
  const b=board();b.work={done:0,open:0,in_progress:0,assigned_not_started:0,stalled:0,blocked:0,total:0};b.lanes=[];const h=host('fleet',{fabric:b});await h.settle();
- assert.match(h.elements['#view'].innerHTML,/Current Fabric observation/);assert.match(h.elements['#view'].innerHTML,/0 \/ 0/);
+ assert.match(h.elements['#view'].innerHTML,/Current Fabric observation/);assert.match(h.elements["#view"].innerHTML,/data-fabric-filter="open"[^>]*>0<\/button>/);
  h.age();assert.equal(h.elements['#view'].receipt.dataset.fabricState,'retained');assert.match(h.elements['#view'].receipt.textContent,/31s old/);
  const future=board();future.generated_at=new Date(at+120000).toISOString();h.reply.fabric=future;h.refresh();await h.settle();
  assert.match(h.elements['#view'].innerHTML,/Fabric time unknown — future observation/);
@@ -142,7 +142,7 @@ test('missing invalid or nondefault embedded Fabric preserves independent Fleet 
  }
  const unavailable=host('fleet',{router:new Error('router-not-available'),fabric:taskBoard()});await unavailable.settle();
  assert.match(unavailable.elements['#view'].innerHTML,/Actual task 0/);
- assert.match(unavailable.elements['#live-t'].textContent,/Router stale/);
+ assert.match(unavailable.elements['#live-t'].textContent,/Router unavailable/);
  assert.equal(unavailable.requests.filter(url=>url==='/api/fabric').length,1);
  unavailable.reply.fabric=new Error('fabric-not-available');unavailable.refresh();await unavailable.settle();
  assert.match(unavailable.elements['#view'].innerHTML,/Retained Fabric observation/);

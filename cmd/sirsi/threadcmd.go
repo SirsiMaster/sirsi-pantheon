@@ -565,10 +565,33 @@ var threadWatchRouterCmd = &cobra.Command{
 		}
 		defer custody.Close()
 
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("watch-router custody HOME: %w", err)
+		}
+		custodyPaths, err := routerWatcherCustodyPaths(home)
+		if err != nil {
+			return err
+		}
+		var ancestors *routerWatcherAncestorMonitor
+		retired, err := armRouterWatcherObservation(custodyPaths[:1], func(_ string) error {
+			var err error
+			ancestors, err = startRouterWatcherAncestors(custodyPaths)
+			return err
+		}, func() (bool, error) {
+			return routerWatcherRetirementDecision(ancestors.revalidate, custody)
+		})
+		if ancestors != nil {
+			defer ancestors.Close()
+		}
+		if err != nil {
+			return err
+		}
+		if retired {
+			return nil // exact cooperative stop after successful subscription
+		}
 		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()
-		custodyTick := time.NewTicker(250 * time.Millisecond)
-		defer custodyTick.Stop()
 
 		// Liveness ticker: exit when parent PID dies.
 		go func() {
@@ -667,12 +690,21 @@ var threadWatchRouterCmd = &cobra.Command{
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-custodyTick.C:
-				if custody.retired() {
-					fmt.Fprintln(os.Stderr, "watch-router: stop/rollover or custody loss observed; canceling own wait helpers and draining callbacks, not detached consumers; helper/consumer quiet is unproven")
-					return nil
+			case <-ancestors.changed:
+				if retired, err := routerWatcherRetirementDecision(ancestors.revalidate, custody); retired {
+					return err
 				}
-			case <-watcher.Events:
+			case err := <-ancestors.errors:
+				return routerWatcherObservationError(err, true)
+			case <-ancestors.done:
+				return routerWatcherObservationError(nil, false)
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return routerWatcherObservationError(nil, false)
+				}
+				if !routerWatcherDispatchEvent(watchRouterRoot, event) {
+					continue
+				}
 				if debounceTimer != nil {
 					debounceTimer.Stop()
 				}
@@ -682,8 +714,8 @@ var threadWatchRouterCmd = &cobra.Command{
 					debounceTimer.Stop()
 				}
 				debounceTimer = time.AfterFunc(watchDebounce, fire)
-			case err := <-watcher.Errors:
-				_ = err // non-fatal; keep going
+			case err, ok := <-watcher.Errors:
+				return routerWatcherObservationError(err, ok)
 			}
 		}
 	},

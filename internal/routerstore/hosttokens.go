@@ -92,17 +92,38 @@ func (s *SQLiteStore) MintScopedHostToken(host, label string, agents []string) (
 	if len(list) == 0 {
 		return "", HostToken{}, errors.New("routerstore: MintScopedHostToken: at least one agent is required (use MintHostToken for an unscoped token)")
 	}
-	tok, rec, err := s.MintHostToken(host, label)
+	if host == "" {
+		return "", HostToken{}, errors.New("routerstore: MintScopedHostToken: host is required")
+	}
+	id, err := randomHex(8)
 	if err != nil {
 		return "", HostToken{}, err
 	}
+	tok, err := randomHex(32)
+	if err != nil {
+		return "", HostToken{}, err
+	}
+	now := s.clock().Format(time.RFC3339)
+	// One transaction: no reader (or backup) can ever see this token without its scope,
+	// which would read as UNSCOPED (SSA 20261106-164621).
+	tx, err := s.beginImmediate()
+	if err != nil {
+		return "", HostToken{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`INSERT INTO host_tokens(token_id,token_hash,host,label,created,revoked) VALUES(?,?,?,?,?,'')`,
+		id, hashToken(tok), host, label, now); err != nil {
+		return "", HostToken{}, fmt.Errorf("routerstore: MintScopedHostToken: %w", err)
+	}
 	for _, a := range list {
-		if _, err := s.exec(`INSERT INTO host_token_scopes(token_id,agent) VALUES(?,?)`, rec.ID, a); err != nil {
-			// A token minted without its scope would be UNSCOPED: revoke it rather than leave it behind.
-			_ = s.RevokeHostToken(rec.ID)
+		if _, err := tx.Exec(`INSERT INTO host_token_scopes(token_id,agent) VALUES(?,?)`, id, a); err != nil {
 			return "", HostToken{}, fmt.Errorf("routerstore: MintScopedHostToken: record scope: %w", err)
 		}
 	}
+	if err := tx.Commit(); err != nil {
+		return "", HostToken{}, fmt.Errorf("routerstore: MintScopedHostToken: %w", err)
+	}
+	rec := HostToken{ID: id, Host: host, Label: label, Created: now}
 	sort.Strings(list)
 	rec.Agents = list
 	return tok, rec, nil

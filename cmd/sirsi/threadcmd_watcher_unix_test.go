@@ -7,9 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -287,6 +290,196 @@ func TestRouterWatcherPostOpenDirectoryReplacementRetiresOldLease(t *testing.T) 
 			retained, err = os.ReadFile(canonical)
 			if err != nil || !bytes.Equal(retained, current) {
 				t.Fatal("old lease operation modified successor publication")
+			}
+		})
+	}
+}
+
+// Exercise the real fsnotify path using only a private HOME and this test's
+// watcher custody. No process is spawned or signaled.
+func TestRouterWatcherPrivateEventStopDrainsOwnedCallback(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	resolve := func() (string, error) { return home, nil }
+	c, err := newRouterWatcherCustodyWith("thr-event-fixture", "fixture", "/fixture/router", resolve, bytes.NewReader(bytes.Repeat([]byte{3}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	paths, err := routerWatcherCustodyPaths(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ancestors, err := startRouterWatcherAncestors(paths)
+	if runtime.GOOS != "darwin" {
+		if err == nil {
+			_ = ancestors.Close()
+			t.Fatal("unqualified platform accepted custody observation")
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("watch private custody ancestors: %v", err)
+	}
+	defer ancestors.Close()
+	if c.retired() {
+		t.Fatal("custody retired while installing private watches")
+	}
+	var gate routerWatcherDispatchGate
+	if !gate.begin(context.Background(), c) {
+		t.Fatal("active custody did not admit the owned callback")
+	}
+	requested, err := requestRouterWatcherStopWith(c.record.ThreadID, resolve)
+	if err != nil || !requested {
+		t.Fatalf("request private stop: requested=%v err=%v", requested, err)
+	}
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ancestors.changed:
+			if err := ancestors.revalidate(); err != nil {
+				t.Fatalf("private watch binding lost: %v", err)
+			}
+			if c.retired() {
+				goto observed
+			}
+		case err := <-ancestors.errors:
+			t.Fatalf("private event observation failed: %v", err)
+		case <-ancestors.done:
+			t.Fatal("private event observation closed")
+		case <-timer.C:
+			t.Fatal("atomic stop publication did not produce a custody event")
+		}
+	}
+observed:
+	if gate.begin(context.Background(), c) {
+		t.Fatal("new callback admitted after the stop")
+	}
+	done := make(chan struct{})
+	go func() { gate.drain(io.Discard); close(done) }()
+	select {
+	case <-done:
+		t.Fatal("drain returned before the admitted callback completed")
+	default:
+	}
+	gate.end()
+	select {
+	case <-done:
+	case <-timer.C:
+		t.Fatal("drain did not complete after the owned callback returned")
+	}
+}
+
+func TestRouterWatcherPrivateAncestorRenameRetires(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	resolve := func() (string, error) { return home, nil }
+	c, err := newRouterWatcherCustodyWith("thr-ancestor-fixture", "fixture", "/fixture/router", resolve, bytes.NewReader(bytes.Repeat([]byte{4}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	paths, err := routerWatcherCustodyPaths(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ancestors, err := startRouterWatcherAncestors(paths)
+	if runtime.GOOS != "darwin" {
+		if err == nil {
+			_ = ancestors.Close()
+			t.Fatal("unqualified platform accepted custody observation")
+		}
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ancestors.Close()
+	if c.retired() {
+		t.Fatal("custody lost during watcher setup")
+	}
+	if err := os.Rename(filepath.Join(home, ".sirsi"), filepath.Join(home, "old-sirsi")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ancestors.changed:
+		if !c.retired() {
+			t.Fatal("detached ancestor retained custody")
+		}
+	case err := <-ancestors.errors:
+		t.Fatalf("ancestor watcher failed: %v", err)
+	case <-ancestors.done:
+		t.Fatal("ancestor watcher stopped without an observation")
+	case <-time.After(5 * time.Second):
+		t.Fatal("ancestor rename was not observed")
+	}
+}
+
+// A temporary ancestor substitution during setup must not leave an armed watch
+// attached to the replacement after the canonical directory is restored.
+func TestRouterWatcherAncestorSetupSwapRestoreRefuses(t *testing.T) {
+	for _, leaf := range []string{".sirsi", "router-watchers"} {
+		t.Run(leaf, func(t *testing.T) {
+			home, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(home, 0700); err != nil {
+				t.Fatal(err)
+			}
+			resolve := func() (string, error) { return home, nil }
+			c, err := newRouterWatcherCustodyWith("thr-swap-fixture", "fixture", "/fixture/router", resolve, bytes.NewReader(bytes.Repeat([]byte{5}, 32)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			paths, err := routerWatcherCustodyPaths(home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(home, ".sirsi")
+			if leaf == "router-watchers" {
+				target = filepath.Join(target, leaf)
+			}
+			before := func(path string) error {
+				if path != target {
+					return nil
+				}
+				if err := os.Rename(target, target+"-original"); err != nil {
+					return err
+				}
+				return os.Mkdir(target, 0700)
+			}
+			after := func(path string) error {
+				if path != target {
+					return nil
+				}
+				if err := os.Rename(target, target+"-replacement"); err != nil {
+					return err
+				}
+				return os.Rename(target+"-original", target)
+			}
+			monitor, err := startRouterWatcherAncestorsWith(paths, before, after)
+			if monitor != nil {
+				_ = monitor.Close()
+				t.Fatal("detached directory watch was accepted")
+			}
+			if err == nil {
+				t.Fatal("setup swap and restore was not refused")
+			}
+			if c.retired() {
+				t.Fatal("the original custody was not restored by the fixture")
 			}
 		})
 	}

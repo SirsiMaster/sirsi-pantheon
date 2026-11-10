@@ -124,3 +124,54 @@ func TestOldWorkingItemLeaseIsAssignedNotWorking(t *testing.T) {
 		t.Fatalf("old working item falsely remained WORKING: %+v", state)
 	}
 }
+
+func TestWakeLatencySamplesMeasuresOpenedToFirstClaim(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Date(2026, 8, 6, 2, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+	id, err := s.Send("sender", "ra", "T", "proposal", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(37 * time.Second) // simulate wake-loop delay before claim
+	if _, err := s.ClaimNext("ra", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	samples, err := s.WakeLatencySamples("ra", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(samples) != 1 || samples[0].ID != id {
+		t.Fatalf("expected the one claimed item, got %+v", samples)
+	}
+	if samples[0].LatencySeconds != 37 {
+		t.Fatalf("latency_seconds = %v, want 37", samples[0].LatencySeconds)
+	}
+
+	// Never-claimed items (lease_updated == "") must not appear as a sample.
+	if _, err := s.Send("sender", "ra", "U", "proposal", "never claimed"); err != nil {
+		t.Fatal(err)
+	}
+	samples, err = s.WakeLatencySamples("ra", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(samples) != 1 {
+		t.Fatalf("an unclaimed item leaked into the wake-latency report: %+v", samples)
+	}
+
+	// Agent filter excludes other agents' claimed items.
+	if _, err := s.Send("sender", "other-agent", "V", "proposal", "body"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ClaimNext("other-agent", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	samples, err = s.WakeLatencySamples("ra", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(samples) != 1 {
+		t.Fatalf("agent filter leaked another agent's sample: %+v", samples)
+	}
+}

@@ -98,5 +98,5 @@ func (s *Server) apiRouterSurfaceSnapshot(w http.ResponseWriter, r *http.Request
 		w.Header().Set("X-Sirsi-Fabric-Generation", snap.FabricGeneration)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(snap)
+	_ = json.NewEncoder(w).Encode(s.routerResponse(snap))
 }

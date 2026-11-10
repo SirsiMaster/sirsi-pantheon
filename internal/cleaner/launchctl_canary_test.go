@@ -32,7 +32,7 @@ func TestLaunchctlPrintShapeCanary(t *testing.T) {
 
 	printed := string(out)
 	if !strings.Contains(printed, "arguments = {") {
-		t.Fatal("launchctl print output no longer contains an `arguments = {` block — parseLaunchctlArguments will return nothing and the cleaner will fail closed on every delete")
+		t.Fatalf("launchctl print output no longer contains an `arguments = {` block — parseLaunchctlArguments will return nothing and the cleaner will fail closed on every delete. Output was:\n%s", printed)
 	}
 
 	args := parseLaunchctlArguments(printed)
@@ -41,6 +41,6 @@ func TestLaunchctlPrintShapeCanary(t *testing.T) {
 	}
 	// The serve contract itself: a loaded engine must still yield a model dir.
 	if _, ok := sneModelDir(args); !ok {
-		t.Error("real argv does not identify a legacy serve model or native Apollo checkpoint")
+		t.Errorf("real argv %v does not identify a legacy serve model or native Apollo checkpoint", args)
 	}
 }

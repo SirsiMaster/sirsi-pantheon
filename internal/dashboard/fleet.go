@@ -223,8 +223,9 @@ func (ft *FleetTracker) observe(snap ledger.Snapshot, now time.Time, unroutable 
 			}
 		}
 
-		// Classification is delegated, and "working" now REQUIRES evidence of a
-		// recent task-record mutation rather than merely having active work.
+		// This compatibility snapshot has no fenced lease evidence. Updated is
+		// display metadata only, never a WORKING input. Production fleet reads
+		// use the canonical Fabric operational classification instead.
 		//
 		// UnmetRequirements is 0 until the canonical requirement registry lands
 		// (supervision step 1/7). That is an honest under-count, not a
@@ -246,8 +247,7 @@ func (ft *FleetTracker) observe(snap ledger.Snapshot, now time.Time, unroutable 
 				ActionableTasks: lane.Active + lane.Stalled,
 				BlockedTasks:    lane.Blocked,
 			},
-			LastTaskMutation: lane.touchedAt,
-			Routable:         lane.Routable,
+			Routable: lane.Routable,
 		}, now, supervision.DefaultWorkWindow))
 		if !lane.touchedAt.IsZero() {
 			lane.TouchedAgo = ledger.FormatAge(now.Sub(lane.touchedAt).Seconds())
