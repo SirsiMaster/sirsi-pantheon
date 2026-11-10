@@ -10,9 +10,9 @@ import (
 	"testing"
 )
 
-// Earlier documented route IDs (2.2.0, 2.3.0, 2.3.1) stay accepted as input and are always sent as the current route.
+// Earlier documented route IDs (2.2.0, 2.3.0, 2.3.1, 2.3.2) stay accepted as input and are always sent as the current route.
 func TestInstalledAppLegacyRouteNormalized(t *testing.T) {
-	for _, model := range []string{InstalledAppModel + "@apollo:2.2.0", InstalledAppModel + "@apollo:2.3.0", InstalledAppModel + "@apollo:2.3.1", InstalledAppRoute, InstalledAppModel, "qwen3.5-9b"} {
+	for _, model := range []string{InstalledAppModel + "@apollo:2.2.0", InstalledAppModel + "@apollo:2.3.0", InstalledAppModel + "@apollo:2.3.1", InstalledAppModel + "@apollo:2.3.2", InstalledAppRoute, InstalledAppModel, "qwen3.5-9b"} {
 		in := appRequestFixture()
 		in.Model = model
 		wire, err := appWireRequest(in)
@@ -28,7 +28,7 @@ func TestInstalledAppLegacyRouteNormalized(t *testing.T) {
 	}
 }
 
-// 2.3.2 serves Plain on the native front over mlx_qwen (router/qwenfront.go). Its apollo block carries extra
+// Since 2.3.2, Apollo serves Plain on the native front over mlx_qwen (router/qwenfront.go). Its apollo block carries extra
 // fields (front, runtime, exact, timings, hashes) and an explicit null drafter; the binding must still accept it.
 func TestInstalledAppAcceptsNativeFrontPlainMetadata(t *testing.T) {
 	body := `{"id":"chatcmpl-x","object":"chat.completion","created":1,"model":"` + InstalledAppModel + `","usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5},` +
@@ -45,10 +45,10 @@ func TestInstalledAppAcceptsNativeFrontPlainMetadata(t *testing.T) {
 }
 
 // Release-contract control: every pinned artifact hash must equal the contents manifest published with the
-// GitHub release apollo-v2.3.2 (testdata is the read-back copy of Apollo-2.3.2-contents.sha256, sha256 fcaeb920…,
+// GitHub release apollo-v2.3.9 (testdata is the read-back copy of Apollo-2.3.9-contents.sha256, sha256 8478e605…,
 // itself listed in that release's SHA256SUMS). This is sourced independently of installedAppFiles.
 func TestInstalledAppFilesMatchPublishedContents(t *testing.T) {
-	f, err := os.Open("testdata/Apollo-2.3.2-contents.sha256")
+	f, err := os.Open("testdata/Apollo-2.3.9-contents.sha256")
 	if err != nil {
 		t.Fatal(err)
 	}

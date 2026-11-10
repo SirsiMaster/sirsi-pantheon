@@ -120,7 +120,7 @@ func Collect(home string) (Catalog, error) {
 }
 
 func withInstalledAppEngine(engines []Engine, profile InstalledAppProfile) []Engine {
-	return append(engines, Engine{ID: "apollo-app-qwen35-9b", MachineID: "this-mac", Name: "Installed Apollo 2.3.2 Qwen", Provider: "Apollo", Endpoint: profile.Endpoint, State: "configured", InstalledProfile: &profile})
+	return append(engines, Engine{ID: "apollo-app-qwen35-9b", MachineID: "this-mac", Name: "Installed Apollo 2.3.9 Qwen", Provider: "Apollo", Endpoint: profile.Endpoint, State: "configured", InstalledProfile: &profile})
 }
 
 // BuildPlan validates a user-selected resource envelope without reserving
