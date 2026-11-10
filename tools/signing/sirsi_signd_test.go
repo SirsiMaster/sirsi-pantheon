@@ -30,7 +30,9 @@ func runSignd(t *testing.T, codesignFails int, failText string, setup func(home 
 	}
 	root := t.TempDir()
 	bin := filepath.Join(root, "bin")
-	os.Mkdir(bin, 0o700)
+	if err := os.Mkdir(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	s := string(src)
 	for _, r := range [][2]string{
 		{"export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin", "export PATH=" + bin + ":/usr/bin:/bin:/usr/sbin:/sbin"},
@@ -41,15 +43,39 @@ func runSignd(t *testing.T, codesignFails int, failText string, setup func(home 
 		}
 		s = strings.Replace(s, r[0], r[1], 1)
 	}
+	// Bind every fixture signing invocation to the private fake, not PATH.
+	// A missing fake must fail rather than resolve the system codesign binary.
+	fake := filepath.Join(bin, "codesign")
+	quotedFake := "'" + strings.ReplaceAll(fake, "'", "'\\''") + "'"
+	for _, binding := range []struct {
+		old, replacement string
+		count            int
+	}{
+		{"withts codesign ", "withts " + quotedFake + " ", 4},
+		{"codesign -dvv ", quotedFake + " -dvv ", 1},
+	} {
+		if strings.Count(s, binding.old) != binding.count {
+			t.Fatalf("daemon signing invocation count changed: %q", binding.old)
+		}
+		s = strings.ReplaceAll(s, binding.old, binding.replacement)
+	}
 	daemon := filepath.Join(root, "sirsi-signd.sh")
-	os.WriteFile(daemon, []byte(s), 0o700)
+	if err := os.WriteFile(daemon, []byte(s), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	// fake codesign: the signing call fails `codesignFails` times with failText, then succeeds; -dvv answers like a good signature
-	os.WriteFile(filepath.Join(bin, "codesign"), []byte(`#!/bin/sh
+	if err := os.WriteFile(fake, []byte(`#!/bin/sh
 case "$1" in -dvv) printf '%s\n' 'Authority=Developer ID Application: Sirsi Technologies Inc. (9D382WV988)' 'TeamIdentifier=9D382WV988' 'Timestamp=fixture' >&2; exit 0;; esac
 n=$(cat "$HOME/calls" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$HOME/calls"
 if [ $n -le `+strconv.Itoa(codesignFails)+` ]; then echo "`+failText+`" >&2; exit 1; fi
 echo "signed (fixture)"
-`), 0o700)
+`), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(fake)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o700 {
+		t.Fatalf("private fake codesign unavailable or has unexpected mode: %v", err)
+	}
 	home := filepath.Join(root, "home")
 	job := "11111111-2222-4333-8444-555555555555"
 	J := filepath.Join(home, "sirsi-sign", "inbox", job)
