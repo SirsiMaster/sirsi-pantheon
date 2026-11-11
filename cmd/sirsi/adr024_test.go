@@ -1,6 +1,10 @@
 package main_test
 
 import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -37,22 +41,46 @@ func setupTempRouter(t *testing.T) string {
 
 func registerThread(t *testing.T, dir, agent, surface string) adr024RegisterOutput {
 	t.Helper()
-	stdout, stderr, err := runSirsiInDir(t, dir, 10*time.Second,
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, testBinary,
 		"thread", "register",
 		"--agent", agent, "--surface", surface, "--repo", dir,
 		"--anchor-pid", strconv.Itoa(os.Getpid()), "--json")
+	cmd.Dir = dir
+	cmd.Env = adr024WatcherEnv(t, dir)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
 	if err != nil {
-		t.Fatalf("register failed: %v\nstdout:%s\nstderr:%s", err, stdout, stderr)
+		t.Fatalf("register failed: %v\nstdout:%s\nstderr:%s", err, stdout.String(), stderr.String())
 	}
 	var out adr024RegisterOutput
-	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
-		t.Fatalf("decode register --json: %v\nstdout:%s", err, stdout)
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		t.Fatalf("decode register --json: %v\nstdout:%s", err, stdout.String())
 	}
 	return out
 }
 
+// Per-fixture HOME, not a process-global override or a shared /tmp pidfile.
+func adr024WatcherEnv(t *testing.T, dir string) []string {
+	t.Helper()
+	home := filepath.Join(dir, "watcher-home")
+	if err := os.MkdirAll(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	return sirsiTestEnv(dir, filepath.Join(dir, "router-test.db"),
+		"HOME="+home, "XDG_CONFIG_HOME="+filepath.Join(home, ".config"),
+		"XDG_CACHE_HOME="+filepath.Join(home, ".cache"), "SIRSI_ROUTER_STORE_WAKE=0")
+}
+
+func adr024WatcherPidfile(dir, threadID string) string {
+	key := sha256.Sum256([]byte(threadID))
+	return filepath.Join(dir, "watcher-home", ".sirsi", "router-watchers", hex.EncodeToString(key[:])+".pid")
+}
+
 // Acceptance test 1: register --surface claude --json returns a watcher block
-// and does NOT spawn an fs-watcher (no /tmp/sirsi-router-watch-*.pid).
+// and does NOT spawn an fs-watcher or create a private watcher publication.
 func TestADR024_RegisterClaude_NoSpawn_ReturnsSpec(t *testing.T) {
 	t.Parallel()
 	tmp := setupTempRouter(t)
@@ -68,10 +96,11 @@ func TestADR024_RegisterClaude_NoSpawn_ReturnsSpec(t *testing.T) {
 		t.Errorf("arm_instruction must key on thread_id %q; got: %s", out.ThreadID, out.Watcher.ArmInstruction)
 	}
 	// The defining behavior: register no longer spawns the fs-watcher.
-	pidfile := "/tmp/sirsi-router-watch-" + out.ThreadID + ".pid"
-	if _, err := os.Stat(pidfile); err == nil {
-		os.Remove(pidfile)
+	pidfile := adr024WatcherPidfile(tmp, out.ThreadID)
+	if _, err := os.Lstat(pidfile); err == nil {
 		t.Errorf("register spawned an fs-watcher pidfile %s — ADR-024 forbids this", pidfile)
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
 	}
 }
 
@@ -132,30 +161,64 @@ func TestADR_DashboardActionShapesResolveToRealCLI(t *testing.T) {
 }
 
 // ADR-024 §6 (discover-bridge lifecycle guard, codex item 205359 #1):
-// `discover` adopts a running claude process by spawning an fs-watcher bridge.
-// When that same process self-registers, register hands back the canonical
-// loop-monitor spec — and MUST supersede the adoption bridge, else the bridge
-// AND /loop both run (duplicate accretion). Simulated here by planting a live
-// bridge pidfile, then self-registering the same (agent, pid): the bridge
-// process must be signaled dead and its pidfile removed.
+// A surface-armed watch-router must cooperatively yield to self-registration.
+// Use the actual command we own, never a numeric PID pointing at sleep or a
+// foreign process. Stale publications are retained, not mistaken for liveness.
 func TestADR024_SelfRegisterSupersedesDiscoverBridge(t *testing.T) {
 	tmp := setupTempRouter(t)
 
 	// First register creates the thread and yields its stable id.
 	first := registerThread(t, tmp, "test-adr024-bridge", "claude")
 
-	// Plant a live "bridge" the discover path would have spawned: a real
-	// process whose PID lives in the per-thread watcher pidfile.
-	bridge := exec.Command("sleep", "30")
+	// Context cleanup owns this exact child command; it is not the product's
+	// persisted-PID retirement path. No agent config/items exist to dispatch.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	bridge := exec.CommandContext(ctx, testBinary, "thread", "watch-router",
+		"--thread", first.ThreadID, "--agent", "test-adr024-bridge",
+		"--router-root", filepath.Join(tmp, ".agents", "idea-router"),
+		"--parent-pid", strconv.Itoa(os.Getpid()))
+	bridge.Dir = tmp
+	bridge.Env = adr024WatcherEnv(t, tmp)
+	var stderr bytes.Buffer
+	bridge.Stderr = &stderr
 	if err := bridge.Start(); err != nil {
-		t.Fatalf("start bridge stand-in: %v", err)
+		t.Fatalf("start owned watcher: %v", err)
 	}
-	t.Cleanup(func() { _ = bridge.Process.Kill() })
-	pidfile := "/tmp/sirsi-router-watch-" + first.ThreadID + ".pid"
-	if err := os.WriteFile(pidfile, []byte(strconv.Itoa(bridge.Process.Pid)), 0o644); err != nil {
-		t.Fatalf("plant bridge pidfile: %v", err)
+	done := make(chan error, 1)
+	go func() { done <- bridge.Wait() }()
+	waited := false
+	t.Cleanup(func() {
+		cancel()
+		if !waited {
+			<-done // reap only the child command this fixture actually started
+		}
+	})
+	pidfile := adr024WatcherPidfile(tmp, first.ThreadID)
+	ready := false
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+		if data, err := os.ReadFile(pidfile); err == nil {
+			var record struct {
+				Version     int    `json:"version"`
+				Kind        string `json:"kind"`
+				ThreadID    string `json:"thread_id"`
+				AgentID     string `json:"agent_id"`
+				RouterRoot  string `json:"router_root"`
+				PID         int    `json:"pid"`
+				Incarnation string `json:"incarnation"`
+			}
+			if json.Unmarshal(data, &record) == nil && record.Version == 1 && record.Kind == "sirsi-thread-watch-router" &&
+				record.ThreadID == first.ThreadID && record.AgentID == "test-adr024-bridge" &&
+				record.RouterRoot == filepath.Join(tmp, ".agents", "idea-router") && record.PID == bridge.Process.Pid && len(record.Incarnation) == 64 {
+				ready = true
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	t.Cleanup(func() { os.Remove(pidfile) })
+	if !ready {
+		t.Fatal("owned watch-router did not publish private custody")
+	}
 
 	// Self-register the same (agent, pid) — the authoritative session arriving.
 	second := registerThread(t, tmp, "test-adr024-bridge", "claude")
@@ -163,23 +226,24 @@ func TestADR024_SelfRegisterSupersedesDiscoverBridge(t *testing.T) {
 		t.Fatalf("idempotent register must reuse thread: %q != %q", first.ThreadID, second.ThreadID)
 	}
 
-	// The bridge must be superseded: pidfile gone, process signaled to exit.
-	if _, err := os.Stat(pidfile); err == nil {
-		t.Errorf("bridge pidfile %s survived self-register — guard did not fire", pidfile)
-	}
-	// Confirm the bridge actually terminated. We are its parent, so Wait()
-	// reaps it; a Wait that returns is proof the SIGTERM landed (a survivor
-	// would block until the 2s watchdog kills it and the test fails).
-	done := make(chan error, 1)
-	go func() { done <- bridge.Wait() }()
+	// Request persistence alone is not confirmation. Only this owned child's
+	// successful Wait proves watcher exit; it does not prove consumer quiet.
 	select {
 	case err := <-done:
-		// SIGTERM surfaces as an *exec.ExitError; nil would mean clean exit.
-		// Either way the process is gone — the guard superseded it.
-		_ = err
+		waited = true
+		if err != nil {
+			t.Fatalf("owned watcher did not retire cooperatively: %v\n%s", err, stderr.String())
+		}
 	case <-time.After(2 * time.Second):
-		_ = bridge.Process.Kill()
-		t.Errorf("bridge pid %d still alive after self-register — guard did not supersede it", bridge.Process.Pid)
+		t.Fatal("cooperative request did not confirm owned watcher exit")
+	}
+	publication, err := os.ReadFile(pidfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop, err := os.ReadFile(pidfile + ".stop")
+	if err != nil || !bytes.Equal(publication, stop) {
+		t.Fatalf("exact incarnation request missing: %v", err)
 	}
 }
 

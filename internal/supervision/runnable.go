@@ -26,8 +26,8 @@ import (
 // was measured by process existence. That is the failure mode the owner named:
 // "Process existence and heartbeat prove only session liveness — not work."
 //
-// Working is therefore defined by RECENT TASK-RECORD MUTATION — evidence the
-// lane changed the store — never by a process being up.
+// Working requires a RECENT MUTATION ON A CURRENTLY FENCED CLAIMED ROW —
+// never an arbitrary metadata update or a process being up.
 type LaneState string
 
 const (
@@ -97,6 +97,8 @@ type Lease struct {
 	ItemID    string
 	Holder    string
 	ExpiresAt time.Time
+	// LastMutation belongs to this fenced claimed row, not another task's metadata.
+	LastMutation time.Time
 }
 
 // Valid reports whether the lease still holds at now. An expired lease is not
@@ -111,8 +113,8 @@ func (l Lease) Valid(now time.Time) bool {
 type LaneInput struct {
 	Agent string
 	Sources
-	// LastTaskMutation is when this lane last CHANGED a task record. Zero
-	// means never observed. This is the only accepted evidence of working.
+	// LastTaskMutation is retained for compatibility as metadata only. Work
+	// evidence must be attached to the same currently valid fenced lease below.
 	LastTaskMutation time.Time
 	// Leases are the lane's outstanding claims, valid or not.
 	Leases []Lease
@@ -141,10 +143,10 @@ const DefaultWorkWindow = 15 * time.Minute
 //
 // Order matters and encodes the priorities:
 //  1. No work at all → COMPLETE. Nothing below can apply.
-//  2. Work exists but cannot be routed → UNROUTABLE. No wake fixes this, so it
-//     must not be reported as merely idle.
-//  3. Recent task mutation → WORKING. Evidence, not liveness.
-//  4. A VALID lease → ASSIGNED. Claimed, not yet evidenced.
+//  2. Recent mutation on a currently fenced claimed row → WORKING.
+//  3. A VALID lease → ASSIGNED. Claimed, not yet evidenced.
+//  4. Runnable work cannot be routed → UNROUTABLE. Wake availability does not
+//     erase existing work/claim evidence; this matches the canonical classifier.
 //  5. Every actionable task carries a recorded blocker → BLOCKED.
 //  6. Otherwise → IDLE_WITH_WORK. The honest default: work exists and nothing
 //     is happening. This is the fall-through on purpose — a lane must earn any
@@ -162,16 +164,20 @@ func Classify(in LaneInput, now time.Time, window time.Duration) LaneState {
 	if in.Empty() {
 		return StateComplete
 	}
-	if !in.Routable {
-		return StateUnroutable
-	}
-	if !in.LastTaskMutation.IsZero() && now.Sub(in.LastTaskMutation) <= window {
-		return StateWorking
-	}
+	claimed := false
 	for _, l := range in.Leases {
 		if l.Valid(now) {
-			return StateAssigned
+			claimed = true
+			if !l.LastMutation.IsZero() && now.Sub(l.LastMutation) <= window {
+				return StateWorking
+			}
 		}
+	}
+	if claimed {
+		return StateAssigned
+	}
+	if in.Runnable() && !in.Routable {
+		return StateUnroutable
 	}
 	// Blocked only when NO runnable work remains and a recorded blocker
 	// explains the rest. A lane with one blocked task and three runnable ones

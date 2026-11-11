@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/completionproof"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
@@ -149,6 +150,77 @@ Thread registration is handled separately by sirsi thread register.`,
 }
 
 var statusStaleHours int
+
+func newRouterCapacityCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "capacity <agent>",
+		Short: "Read canonical recipient admission backlog counts (read-only)",
+		Long: `Read RecipientLoad through the normal authenticated router store/relay.
+Counts are the service/store observation, not fleet counts. Warning and halt
+thresholds are this client's policy constants, not an attestation of the server's
+policy version. This is not a workability or routability check, and does not send,
+acknowledge, claim, close or update any item or task. No file mirror fallback.`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.ExactArgs(1)(cmd, args); err != nil {
+				return err
+			}
+			if args[0] == "" || strings.IndexFunc(args[0], func(r rune) bool {
+				return unicode.IsSpace(r) || unicode.IsControl(r)
+			}) >= 0 {
+				return fmt.Errorf("capacity: agent must be nonempty and contain no whitespace or control characters")
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := workRoot()
+			if err != nil {
+				return err
+			}
+			// OpenRoot delegates to dispatch.Open/Resolve; it neither ensures an
+			// items directory nor substitutes file/fleet counts for this RPC.
+			f, err := dispatch.OpenRoot(root)
+			if err != nil {
+				return fmt.Errorf("capacity: open canonical router: %w", err)
+			}
+			defer func() { _ = f.Close() }()
+			load, err := f.Store().RecipientLoad(args[0])
+			if err != nil {
+				return fmt.Errorf("capacity: read recipient load for %q: %w", args[0], err)
+			}
+			out := struct {
+				Agent             string `json:"agent"`
+				Unacked           int    `json:"unacked"`
+				Stalled           int    `json:"stalled"`
+				WarnAt            int    `json:"warn_at"`
+				HaltAt            int    `json:"halt_at"`
+				StallAfterSeconds int64  `json:"stall_after_seconds"`
+				ThresholdSource   string `json:"threshold_source"`
+				Warning           string `json:"warning"`
+				AtHaltThreshold   bool   `json:"at_halt_threshold"`
+				Scope             string `json:"scope"`
+			}{
+				Agent: args[0], Unacked: load.Unacked, Stalled: load.Stalled,
+				WarnAt: routerstore.RecipientWarnAt, HaltAt: routerstore.RecipientHaltAt,
+				StallAfterSeconds: int64(routerstore.RecipientStallAfter / time.Second),
+				ThresholdSource:   "client", Warning: load.Warning(args[0]),
+				AtHaltThreshold: max(load.Unacked, load.Stalled) >= routerstore.RecipientHaltAt,
+				Scope:           "recipient admission backlog only; not workability, routability or fleet counts",
+			}
+			if JsonOutput {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(out)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(),
+				"Recipient capacity: %s\n  unacked: %d\n  stalled: %d\n"+
+					"  client thresholds: warn=%d halt=%d stall_after_seconds=%d (server policy version not attested)\n"+
+					"  at client halt threshold: %t\n  warning: %q\n  scope: %s\n",
+				out.Agent, out.Unacked, out.Stalled, out.WarnAt, out.HaltAt, out.StallAfterSeconds,
+				out.AtHaltThreshold, out.Warning, out.Scope)
+			return err
+		},
+	}
+}
+
+var routerCapacityCmd = newRouterCapacityCmd()
 
 var routerStatusCmd = &cobra.Command{
 	Use:   "status",
@@ -517,6 +589,18 @@ legacy file-only sends. Returns after --timeout seconds even with no work
 			if err != nil {
 				return err
 			}
+			if ensure {
+				// The bounded wait may span a native generation change. Reuse the
+				// actual returned binding, not the original flag or a guessed ID,
+				// and finish the normal ensure before publishing any success.
+				ensured, err = runAttendedEnsure(filepath.Join(repoRoot, ".agents", "idea-router"), ensured.ThreadID, router.HeartbeatUpdate{}, observe)
+				if err != nil {
+					return err
+				}
+				if pinned := strings.TrimSpace(os.Getenv("SIRSI_THREAD_ID")); pinned != "" && pinned != ensured.ThreadID {
+					return fmt.Errorf("attended binding changed to %s; consume that binding before publishing attended wait success with SIRSI_THREAD_ID", ensured.ThreadID)
+				}
+			}
 			if ensure && JsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
 					Thread *router.Thread `json:"thread"`
@@ -537,7 +621,7 @@ legacy file-only sends. Returns after --timeout seconds even with no work
 		},
 	}
 	cmd.Flags().IntVar(&routerWaitTimeout, "timeout", 50, "Max seconds to block before returning empty (a shell loop calls wait repeatedly)")
-	cmd.Flags().BoolVar(&ensure, "ensure", false, "Verify this exact Codex session's generation before heartbeat and own-inbox wait")
+	cmd.Flags().BoolVar(&ensure, "ensure", false, "Verify this exact Codex session's generation and heartbeat before and after own-inbox wait")
 	cmd.Flags().StringVar(&explicitThread, "thread", "", "Exact existing caller thread for --ensure; unrelated IDs are refused")
 	return cmd
 }
@@ -1629,5 +1713,5 @@ func init() {
 	routerPruneCmd.Flags().BoolVar(&pruneLogsOnly, "logs-only", false, "prune only the router logs/ directory")
 	routerPruneCmd.Flags().BoolVar(&pruneNoHome, "no-home", false, "do not sweep ~/.sirsi runtime logs")
 	routerBreakersCmd.Flags().BoolVar(&routerBreakersJSON, "json", false, "emit the breaker states as JSON")
-	routerCmd.AddCommand(routerStatusCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerDismissCmd, routerRespondCmd, routerAckCmd, routerAcknowledgeCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd, routerBreakersCmd, routerBreakerResetCmd)
+	routerCmd.AddCommand(routerStatusCmd, routerCapacityCmd, routerSendCmd, routerPullCmd, routerWaitCmd, routerShowCmd, routerCloseCmd, routerDismissCmd, routerRespondCmd, routerAckCmd, routerAcknowledgeCmd, routerDoctorCmd, routerWakeInstallCmd, routerWakeLoopCmd, routerInstallDaemonsCmd, routerBoardCmd, routerFleetCmd, routerQuarantineWorkerCmd, routerQuarantineCmd, routerUnquarantineCmd, routerMigrateCmd, routerCutoverCmd, routerPruneCmd, routerDumpCmd, routerBreakersCmd, routerBreakerResetCmd)
 }

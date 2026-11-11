@@ -80,9 +80,10 @@ function inboxRows(items,o){
   var subs=[{t:'from '+esc(i.from||'unknown')+(i.to&&o.showTo?' → '+esc(i.to):'')+' · '+esc(age),c:'dim'}];
   var dep=i.blocked_by;
   if(dep)subs.push({t:'waits on: '+esc(dep),c:'wait'});
+  else if(i.blocker_recorded===true)subs.push({t:'Blocker recorded · details withheld; dependency status not evaluated.',c:'dim'});
   else if(i.blocked)subs.push({t:'blocked by an open dependency',c:'wait'});
   if(o.inspect)subs.push({t:i.acked_at?'acknowledged':'awaiting acknowledgment',c:'dim'});
-  return row({pill:pill(i.type||'item','info'),id:esc(i.id),rid:esc(i.id),text:title,subs:subs,changed:o.changed&&o.changed(o.scope,i.id,[i.title,i.blocked_by,i.blocked,i.acked_at].join('|'))});
+  return row({pill:pill(i.type||'item','info'),id:esc(i.id),rid:esc(i.id),text:title,subs:subs,changed:o.changed&&o.changed(o.scope,i.id,[i.title,i.blocked_by,i.blocked,i.acked_at].join('|')+(i.blocker_recorded===true?'|blocker-recorded':''))});
  });
 }
 

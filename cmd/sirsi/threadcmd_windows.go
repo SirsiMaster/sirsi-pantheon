@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -25,10 +26,10 @@ func processAlive(pid int) bool {
 	return len(strings.TrimSpace(s)) > 0 && !strings.Contains(s, "No tasks")
 }
 
-// terminateProcess sends a graceful kill (taskkill /PID <pid> /F) on Windows.
-// Mirrors the existing pattern in internal/ra/process_windows.go.
-func terminateProcess(pid int) error {
-	return exec.Command("taskkill", "/PID", fmt.Sprintf("%d", pid), "/F").Run()
+// No ACL/handle custody implementation is qualified here. Never fall back to
+// taskkill against a persisted PID; leave records and existing watchers alone.
+func openRouterWatcherFiles(_ func() (string, error), _ bool) (routerWatcherFiles, error) {
+	return nil, errors.New("cooperative watcher custody is not qualified on Windows; existing watcher retirement unverified; no signal sent")
 }
 
 // detachedSysProcAttr is a no-op on Windows: there is no setsid equivalent,

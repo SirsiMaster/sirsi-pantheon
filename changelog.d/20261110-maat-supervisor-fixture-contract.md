@@ -1,0 +1,1 @@
+- Align supervisor fixtures with exact child-exit cleanup and no-replay release recovery.

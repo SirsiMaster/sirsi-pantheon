@@ -173,6 +173,11 @@ func fabricFromFacts(s Snapshot, ns *router.NodeStatus, build string, evidence F
 		lane.StateLabel = lane.State
 		if lane.State == routerstore.LaneIdleWithWork {
 			lane.StateLabel = "IDLE with work"
+		} else if lane.State == routerstore.LaneUnroutable && lane.Runtime != nil &&
+			lane.Runtime.WakeRoutable && lane.Runtime.UnresolvedWakeFailures > 0 {
+			// Available routing does not resolve historical delivery failures.
+			// Presentation only: canonical state, gates and history stay intact.
+			lane.StateLabel = "DELIVERY NEEDS REVIEW"
 		}
 		lane.Role = fabricLaneRole(lane.State)
 		b.Lanes = append(b.Lanes, lane)
