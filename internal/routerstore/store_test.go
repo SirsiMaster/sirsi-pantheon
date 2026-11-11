@@ -623,7 +623,7 @@ func TestFieldFidelityWithWorkItem(t *testing.T) {
 		// renewed claim is auditable. Same class — store-only lifecycle state,
 		// never mirrored into the markdown item, so a mutated file cannot forge
 		// lease history (§2b axiom 8).
-		"lease_token": true, "lease_expires": true, "claimed_by": true, "lease_updated": true,
+		"lease_token": true, "lease_expires": true, "claimed_by": true, "lease_updated": true, "first_claimed_at": true,
 		"attempts": true, "idem_key": true, "source_item": true,
 		"failure_class": true, "occurrences": true, "first_seen": true, "last_seen": true,
 		// v21 (rs-32): project/namespace scope is SERVICE-DERIVED from the admitted
@@ -971,8 +971,8 @@ func TestConnEstablishRetriesReadonlyContention(t *testing.T) {
 // ceiling — 22 since the v22 read-ack column). Values stay empty —
 // derivation/backfill is rs-32b.
 func TestSchemaV21AddsScopeColumns(t *testing.T) {
-	if MaxSupportedSchemaVersion() != 26 {
-		t.Fatalf("MaxSupportedSchemaVersion = %d, want 26", MaxSupportedSchemaVersion())
+	if MaxSupportedSchemaVersion() != 27 {
+		t.Fatalf("MaxSupportedSchemaVersion = %d, want 27", MaxSupportedSchemaVersion())
 	}
 	path := filepath.Join(t.TempDir(), "v21.db")
 	s, err := OpenPath(path)
@@ -980,8 +980,8 @@ func TestSchemaV21AddsScopeColumns(t *testing.T) {
 		t.Fatalf("open (v21 migration must apply cleanly): %v", err)
 	}
 	defer s.Close()
-	if v, err := ReadSchemaVersion(path); err != nil || v != 26 {
-		t.Fatalf("fresh store version = %d (err %v), want 26", v, err)
+	if v, err := ReadSchemaVersion(path); err != nil || v != 27 {
+		t.Fatalf("fresh store version = %d (err %v), want 27", v, err)
 	}
 	// Columns must exist and be usable (WHERE 1=0 touches no rows but binds them).
 	if _, e := s.exec(`UPDATE items SET project_id='p', router_namespace='n' WHERE 1=0;`); e != nil {
@@ -1021,6 +1021,7 @@ func TestV20ToV21UpgradeWithExistingRows(t *testing.T) {
 		ALTER TABLE items DROP COLUMN project_id; ALTER TABLE items DROP COLUMN router_namespace;
 		ALTER TABLE tasks DROP COLUMN project_id; ALTER TABLE tasks DROP COLUMN router_namespace;
 		ALTER TABLE items DROP COLUMN acked_at;
+		ALTER TABLE items DROP COLUMN first_claimed_at; -- v27 rewound too
 		DROP INDEX idx_host_tokens_machine_id; ALTER TABLE host_tokens DROP COLUMN machine_id;
 		DROP INDEX idx_task_lease_log_task; DROP INDEX idx_task_lease_log_ts; DROP TABLE task_lease_log;
 		PRAGMA user_version=20;`); e != nil {
@@ -1035,8 +1036,8 @@ func TestV20ToV21UpgradeWithExistingRows(t *testing.T) {
 		t.Fatalf("v20 to v21 upgrade must apply cleanly: %v", err)
 	}
 	defer s2.Close()
-	if v, e := ReadSchemaVersion(path); e != nil || v != 26 {
-		t.Fatalf("post-upgrade version = %d (err %v), want 26 (v20 upgrades through v21 to the current ceiling, including later additions)", v, e)
+	if v, e := ReadSchemaVersion(path); e != nil || v != 27 {
+		t.Fatalf("post-upgrade version = %d (err %v), want 27 (v20 upgrades through v21 to the current ceiling, including later additions)", v, e)
 	}
 	// Existing rows survive with default-empty scope values (no backfill guess).
 	var proj, ns string
@@ -1086,6 +1087,7 @@ func TestV21MigrationFailsClosedOnPartialDrift(t *testing.T) {
 		ALTER TABLE tasks DROP COLUMN project_id; ALTER TABLE tasks DROP COLUMN router_namespace;
 		ALTER TABLE tasks ADD COLUMN project_id TEXT NOT NULL DEFAULT '';
 		ALTER TABLE items DROP COLUMN acked_at;
+		ALTER TABLE items DROP COLUMN first_claimed_at; -- v27 rewound too
 		PRAGMA user_version=20;`); e != nil {
 		t.Fatalf("construct drift fixture: %v", e)
 	}

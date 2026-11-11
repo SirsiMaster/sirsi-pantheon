@@ -190,8 +190,9 @@ type Store interface {
 	Wait(ctx context.Context, agent string, timeout time.Duration) (bool, error)
 	Waive(reqID, reason, ownerDecisionRef string) error
 	// WakeLatencySamples is the read-only M0-T4 instrument: opened -> first-claim
-	// (lease_updated) elapsed time per item, newest first. agent="" is every agent.
-	// lease_updated/opened are deliberately NOT exposed via Item/itemCols
+	// (first_claimed_at, set once at first claim) elapsed time per item, newest
+	// first. agent="" is every agent. Pre-v27 claims are excluded (no backfill).
+	// lease_updated/first_claimed_at are deliberately NOT exposed via Item/itemCols
 	// (TestFieldFidelityWithWorkItem) — this is a separate measurement-only path.
 	WakeLatencySamples(agent string, limit int) ([]WakeLatencySample, error)
 	WithdrawIdentifier(namespace string, number int) error
