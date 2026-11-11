@@ -1,0 +1,3 @@
+- **Router service: a database outage now fails calls in about 5 seconds with a retryable 503, not 30 seconds.**
+  - **What was wrong.** During the 2026-11-11 Cloud SQL maintenance restart, most store calls take no context, so nothing bounded the database connect; callers sat 28-35 s on the Cloud Run Cloud SQL proxy (whose own dial gives up after 30 s) while holding one of the 8 request slots per instance.
+  - **What changed.** The Postgres DSN now carries `connect_timeout=5` unless the operator set one, and a failed connect is answered `503 ledger unavailable: database unreachable (retry)` instead of a 500. The call never reached the database, so nothing was committed. Queries on established connections are not cut short. Client retry behaviour is unchanged.

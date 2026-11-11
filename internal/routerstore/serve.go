@@ -1015,7 +1015,22 @@ func (s *server) writeCallErr(w http.ResponseWriter, method string, err error) {
 		writeJSON(w, http.StatusOK, wireResponse{Error: &wireError{Name: sn, Message: err.Error()}})
 		return
 	}
+	if dbConnectFailed(err) {
+		// The call never reached the database, so nothing was committed and a
+		// retry is safe even for a mutation. The detail stays in the log: pgx's
+		// message carries the connection target.
+		s.logf("db unreachable on %s: %v", method, err)
+		writeErr(w, http.StatusServiceUnavailable, "", "ledger unavailable: database unreachable (retry)")
+		return
+	}
 	writeErr(w, http.StatusInternalServerError, "", method+": "+err.Error())
+}
+
+// dbConnectFailed reports a failure to ESTABLISH a database connection (pgx
+// wraps every such failure as "failed to connect to ..."), as opposed to a
+// query that ran and failed or ran out of its own deadline.
+func dbConnectFailed(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "failed to connect to ")
 }
 
 // Sign is the request signature both sides compute:
