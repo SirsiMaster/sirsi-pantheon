@@ -32,6 +32,24 @@ test('known empty missing incomplete and continuation pages retain distinct trut
  buttons[1].click();assert.deepEqual(selected,{offset:64,snapshot:'a'.repeat(64)});buttons[0].click();assert.equal(selected,null);
  delete b.tasks.next_offset;assert.equal(fabric.taskPage(b),null);
 });
+test('task rows group only supplied page and retain exact lane identities',()=>{
+ const b=tasksBoard(2);b.tasks.rows[0].agent='<lane>';b.tasks.rows[1].agent='other';b.tasks.rows[1].id=b.tasks.rows[0].id;
+ const html=fabric.render(b,escape);
+ assert.match(html,/Grouped by lane on this page only/);assert.match(html,/&lt;lane&gt;/);assert.doesNotMatch(html,/<lane>/);
+ b.tasks.rows[0].agent='lane-a';const buttons=Array.from(fabric.render(b,escape).matchAll(/data-fabric-task-agent="([^"]+)" data-fabric-task-id="([^"]+)"/g),m=>({dataset:{fabricTaskAgent:m[1],fabricTaskId:m[2]},addEventListener(_event,callback){this.click=callback}}));
+ assert.equal(buttons.length,2);const inspected=[];
+ fabric.bindTaskInspectors({querySelectorAll(selector){return selector==='[data-fabric-task-id]'?buttons:[]}},b,(_board,agent,id)=>inspected.push([agent,id]),()=>assert.fail('unexpected paging'));
+ buttons[0].click();buttons[1].click();assert.deepEqual(inspected,[['lane-a','task-0'],['other','task-0']]);
+});
+test('recent highlights require a fresh producer observation and matching transition',()=>{
+ const b=tasksBoard(2),now=Date.parse('2026-10-25T12:00:00Z');b.activity_seeded=true;
+ b.activity=[{at:'2026-10-25T11:59:55Z',agent:'lane',task_id:'task-0',from:'pending',to:'in-progress'}];
+ const html=fabric.render(b,escape,now,true);assert.match(html,/Observed transition: pending → in-progress/);assert.equal((html.match(/fabric-recent-row/g)||[]).length,1);
+ assert.doesNotMatch(fabric.render(b,escape,now,false),/fabric-recent-row/);
+ assert.doesNotMatch(fabric.render(b,escape,now+31000,true),/fabric-recent-row/);
+ b.activity_seeded=false;assert.doesNotMatch(fabric.render(b,escape,now,true),/fabric-recent-row/);
+ b.activity_seeded=true;b.activity[0].at='2026-10-25T11:58:00Z';assert.doesNotMatch(fabric.render(b,escape,now,true),/fabric-recent-row/);
+});
 test('semantic presentation uses producer role tokens and existing CSS palette only',()=>{
  const b=board();b.presentation={headlines:{completed:'ok',progress:'gold',stalled:'warn',messages:'ink2'}};b.lanes=[{agent:'lane',state_label:'WORKING',open:1,role:'dim'}];
  const html=fabric.render(b,escape);for(const role of ['ok','gold','warn','ink2','dim'])assert.match(html,new RegExp('fabric-role-'+role));
