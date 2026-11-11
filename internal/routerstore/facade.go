@@ -55,9 +55,23 @@ var (
 // its singleton saturation escalation was updated. Nothing was appended.
 var ErrRecipientSaturated = errors.New("routerstore: recipient saturated — nothing appended")
 
-// RecipientLoad is one recipient's backlog as admission reads it: open items it
-// has not acknowledged, and nonterminal ledger tasks whose row has not moved (no
-// claim, renewal or update) for RecipientStallAfter and that hold no live lease.
+// RecipientLoad is one recipient's backlog as admission reads it.
+//
+// Unacked: open items the recipient has not acknowledged.
+//
+// Stalled: ABANDONED work only (owner decision 2026-11-11, "count only abandoned
+// work"): a task someone STARTED and then left. Concretely, a nonterminal task
+// (not done/canceled/withdrawn) that has been claimed at least once
+// (attempts > 0, or status 'in-progress'), whose row has not moved for
+// RecipientStallAfter, and that holds no live lease. Planned work nobody has
+// started (never claimed, attempts = 0) is NOT counted, however large.
+//
+// The JSON name "stalled" is kept for wire compatibility; only its meaning narrows.
+//
+// What this does not see (A35): a started task whose evidence was erased
+// (ResetTaskAttempts zeroes attempts, and returns an exhausted blocked task to
+// pending, so a reset task reads as never started); a planned backlog of any
+// size; and work started outside the ledger (no claim, no status change).
 type RecipientLoad struct {
 	Unacked int `json:"unacked"`
 	Stalled int `json:"stalled"`
@@ -68,7 +82,7 @@ func (l RecipientLoad) Warning(agent string) string {
 	if max(l.Unacked, l.Stalled) < RecipientWarnAt {
 		return ""
 	}
-	return fmt.Sprintf("%s is backlogged: %d unacknowledged items, %d stalled tasks — new sends are refused at %d",
+	return fmt.Sprintf("%s is backlogged: %d unacknowledged items, %d started tasks untouched for 24h — new sends are refused at %d",
 		agent, l.Unacked, l.Stalled, RecipientHaltAt)
 }
 
@@ -81,7 +95,8 @@ func recipientLoad(q interface {
 	nowS, cutoff := now.Format(time.RFC3339), now.Add(-RecipientStallAfter).Format(time.RFC3339)
 	err := q.QueryRow(`SELECT
 	    (SELECT COUNT(*) FROM items WHERE to_agent = ? AND status = 'open' AND acked_at = ''),
-	    (SELECT COUNT(*) FROM tasks WHERE agent = ? AND status NOT IN ('done','canceled','withdrawn') AND updated < ?
+	    (SELECT COUNT(*) FROM tasks WHERE agent = ? AND status NOT IN ('done','canceled','withdrawn')
+	        AND (status = 'in-progress' OR attempts > 0) AND updated < ?
 	        AND (lease_expires IS NULL OR lease_expires = '' OR lease_expires < ?));`,
 		agent, agent, cutoff, nowS).Scan(&l.Unacked, &l.Stalled)
 	if err != nil {
@@ -202,7 +217,7 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 		if load.saturated() {
 			if _, err = s.escalateTx(tx, now, "saturated:"+r.To, "recipient_saturated",
 				fmt.Sprintf("saturated: %s refusing new sends", r.To),
-				fmt.Sprintf("%s has %d unacknowledged items and %d stalled tasks (limit %d). New sends are refused until it drains; refused sends are counted here, not appended.",
+				fmt.Sprintf("%s has %d unacknowledged items and %d started tasks untouched for 24h (limit %d). New sends are refused until it drains; refused sends are counted here, not appended.",
 					r.To, load.Unacked, load.Stalled, RecipientHaltAt),
 			); err != nil {
 				return "", false, err
@@ -210,7 +225,7 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 			if err = tx.Commit(); err != nil {
 				return "", false, fmt.Errorf("routerstore: SendGuarded: commit: %w", err)
 			}
-			return "", false, fmt.Errorf("%w: %s has %d unacknowledged items and %d stalled tasks (limit %d)",
+			return "", false, fmt.Errorf("%w: %s has %d unacknowledged items and %d started tasks untouched for 24h (limit %d)",
 				ErrRecipientSaturated, r.To, load.Unacked, load.Stalled, RecipientHaltAt)
 		}
 	}
