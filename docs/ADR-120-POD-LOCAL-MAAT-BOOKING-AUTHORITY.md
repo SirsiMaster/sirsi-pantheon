@@ -147,6 +147,30 @@ authority, whether or not the cloud is reachable.
   - The authority never manufactures authority on a second Mac. This is the
     owner's "no stale cached lease" rule, applied to the authority itself.
 
+*Amendment 2026-11-10 (adr120-s3-08, "forgiving sharing" part 5: waiters go
+first).* One lane took back-to-back `build` holds on a machine every 1-2
+minutes and another lane's measurement cells, queued behind it, never started.
+Not a cooldown timer: on the ordinary (non-delegated) path, when a request
+would be granted the FULL share and a lane that **queued behind this same
+holder** (`queued_behind`, a new additive row field set only by the queue
+branch) still waits on the resource with a live lease and an overlapping
+window, the requester gets no full hold. With `--queue` it is queued behind the
+waiter; otherwise it is refused (typed `ErrWaiterFirst`, nothing saved). It is
+never floor-granted. The oldest waiter (earliest `created`) is named; the
+reason code is `waiter-first`, or `waiter-bound` once that waiter has queued
+longer than the owner's standing 120 s. Rows queued before the field existed
+trigger nothing. A running hold keeps its hold (Heartbeat/Extend untouched);
+the authority paths (`ReserveAsAuthority`, `UpsertReservation`) are unchanged.
+**Known limit:** the rule protects only a lane that QUEUES. A lane that polls
+for "clear", takes a floor grant, or gives up is invisible to it. **Second
+known limit:** a queued row is never heartbeated (`Heartbeat` refuses
+non-active rows) and `reserve --queue` returns immediately, so a waiter is
+protected only for its row's lease (default 120 s from queueing, so
+`waiter-bound` cannot occur at the default lease; a longer `--lease-ttl` or
+re-queueing extends it). On a delegated resource `quiet` and `--queue` are
+refused earlier and the pod journal retains no queued rows, so the rule is
+inert there.
+
 ### 3. The fence
 
 - **The epoch.** Every new delegation, or change of `authority_machine`, bumps

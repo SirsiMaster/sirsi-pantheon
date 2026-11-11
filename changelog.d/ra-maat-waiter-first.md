@@ -1,0 +1,1 @@
+- Ma'at: a lane waiting with `--queue` now goes before the same lane's next full hold on that resource (waiters first, ADR-120). The repeat request is queued behind the waiter or refused with reason code `waiter-first` (`waiter-bound` after 120 s); `sirsi maat reserve --json` names the waiter and still exits non-zero. Only a lane that queues is protected.
