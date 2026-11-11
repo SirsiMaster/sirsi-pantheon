@@ -117,9 +117,21 @@ authority, whether or not the cloud is reachable.
     `--queue`, or when the canonical ledger holds a live overlapping authority
     `quiet`/`loaded` hold of the current epoch. **Known limit:** the canonical
     ledger sees only holds already replayed by reconciliation; an offline quiet
-    hold not yet replayed is invisible, so a floor grant can land beside it and
-    the pod's own conflict probe is what invalidates that measurement. No pod
-    authority runs on any Mac today.
+    hold not yet replayed is invisible, so a floor grant can land beside it.
+    *Correction (adr120-s3-06b):* the earlier text said the pod's own conflict
+    probe invalidates that measurement. No such probe exists: `PodJournal`
+    holds only the pod's own rows and never calls `CheckConflicts`. The only
+    detector is `sirsi maat conflict-check` against the canonical ledger;
+    floor-lane processes are `Shared` only if a probe attributes an owner, and
+    the default probe does not, so they are counted as intruders; the
+    `invalidated_by` text is the conflict summary, not the floor holder.
+    **Second known limit:** floor rows are bounded in size (capacity/4, min 1)
+    but not in number: N holders take N x floor (m1 10 cores, floor 2, passed at
+    6 holders; m5 18 cores, floor 4, passed at 5). The ordinary floor path is
+    equally uncapped and a holder may stack rows; a cap is left to a separate
+    design decision. **Handback margin:** a legacy writer may release its
+    unstamped floor row after expiry/revocation (capacity only returns);
+    nothing else is admitted. No pod authority runs on any Mac today.
 - **While online, the authority writes through.** Each grant it makes is copied
   to the canonical ledger immediately, so the cloud record stays current.
 - **Pod authority = `sirsi maat authority-serve`** on `authority_machine`.
