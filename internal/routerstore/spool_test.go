@@ -1527,8 +1527,19 @@ func TestLaneCreatesGroupWritableDirsWhenTrustGroupConfigured(t *testing.T) {
 	spool := t.TempDir()
 	setOwnedSpoolFixtureGroupAndMode(t, spool, 0o770)
 	tr := newSpoolTransport(spool, "trust-mode-lane")
-	req := httptest.NewRequest(http.MethodPost, "http://spool/v1/call/Status", nil)
-	go func() { _, _ = tr.RoundTrip(req) }() // will time out waiting for a response; only the mkdir matters here
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodPost, "http://spool/v1/call/Status", nil).WithContext(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if resp, _ := tr.RoundTrip(req); resp != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
 	deadline := time.Now().Add(2 * time.Second)
 	var st os.FileInfo
 	for time.Now().Before(deadline) {
