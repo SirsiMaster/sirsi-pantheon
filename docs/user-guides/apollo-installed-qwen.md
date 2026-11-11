@@ -1,4 +1,4 @@
-# Installed Apollo 2.2.6 Qwen bridge
+# Installed Apollo 2.3.9 Qwen bridge
 
 Platform-foundation source increment, not an installed-client or runtime certification.
 
@@ -11,9 +11,20 @@ sirsi apollo chat --model qwen3.5-9b --precision Q4-affine-g64-bf16 --mode plain
 ```
 
 `Q4-affine-g64-bf16` means MLX affine four-bit weights, group size 64, bf16
-activations. The exact model ID and the qualified `@apollo:2.2.0` route ID are
-also accepted. This route version identifies the engine contract, not the app's
-release version. The installed app binding is **2.2.6**.
+activations. The exact model ID and the qualified `@apollo:2.3.9` route ID are
+also accepted. The installed app binding is **2.3.9**.
+
+The earlier route IDs `@apollo:2.2.0`, `@apollo:2.3.0`, `@apollo:2.3.1` and `@apollo:2.3.2` are
+still accepted as input, so existing invocations keep working. They are always
+sent to the service as `@apollo:2.3.9`.
+
+Since 2.3.2 the Plain tier runs on Apollo's native front over the MLX C++ Qwen graph
+(`mlx_qwen`, no Python). Its response metadata carries extra fields (`front`,
+`runtime`, timings); the binding checks only engine `apollo-qwen`, model, tier and
+drafter, and ignores the rest.
+
+Apps still on 2.3.8 or earlier are no longer bound. Fleet Care moves enrolled Macs to the
+current release, and only one reviewed profile is supported at a time.
 
 Modes are deliberately distinct:
 
