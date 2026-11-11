@@ -170,28 +170,8 @@ func (s *SQLiteStore) SendGuarded(r SendReq) (string, bool, error) {
 // own senders are exempt so an escalation to a saturated owner still lands. Ra reaches
 // SSA because releases only go through SSA, and a lane over the limit could otherwise
 // never be asked for one (owner decision, 2026-11-04).
-func recipientLimitExempt(from, to string, now time.Time) bool {
-	return from == "routerstore" || (from == "ra" && to == "sirsi-software-admin") || finalWishesOverride(from, to, now)
-}
-
-// FinalWishes seven-day override. DELETE THIS BLOCK AFTER 2026-11-18.
-//
-// Owner decision 2026-11-11 (~05:50Z, confirmed to Ra at ~06:00Z): "for seven days, four lanes may
-// send to one another past the recipient limit, because FinalWishes must be finished in seven days."
-// Scope, exactly: a send is exempt iff BOTH its sender and its recipient are in finalWishesLanes AND
-// the store clock is before finalWishesOverrideEnds. The web lanes (claude-finalwishes-web,
-// codex-finalwishes-web) are NOT in the set. Nothing else changes: other lanes and routes keep the
-// limit; quota, breaker, idempotency, caller binding and audit rows are untouched. Not an admin grant.
-var (
-	finalWishesLanes = map[string]bool{
-		"claude-finalwishes-m1": true, "claude-finalwishes-m5": true,
-		"codex-finalwishes": true, "sirsi-software-admin": true,
-	}
-	finalWishesOverrideEnds = time.Date(2026, time.November, 18, 5, 50, 0, 0, time.UTC)
-)
-
-func finalWishesOverride(from, to string, now time.Time) bool {
-	return finalWishesLanes[from] && finalWishesLanes[to] && now.Before(finalWishesOverrideEnds)
+func recipientLimitExempt(from, to string) bool {
+	return from == "routerstore" || (from == "ra" && to == "sirsi-software-admin")
 }
 
 // sendGuardedOnce is one attempt of SendGuarded. Never call it directly —
@@ -229,20 +209,7 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 	}
 
 	// Recipient admission: a saturated recipient refuses new work.
-	if finalWishesOverride(r.From, r.To, now) {
-		// Audit (no schema): count each send admitted past a saturated recipient under the
-		// override. The item row records from/to/time. The raw Send path has no tx and no counter.
-		load, lerr := recipientLoad(tx, r.To, now)
-		if lerr != nil {
-			return "", false, lerr
-		}
-		if load.saturated() {
-			if err = bumpCounterTx(tx, "finalwishes_override_admits", 1); err != nil {
-				return "", false, err
-			}
-		}
-	}
-	if !recipientLimitExempt(r.From, r.To, now) {
+	if !recipientLimitExempt(r.From, r.To) {
 		load, lerr := recipientLoad(tx, r.To, now)
 		if lerr != nil {
 			return "", false, lerr
