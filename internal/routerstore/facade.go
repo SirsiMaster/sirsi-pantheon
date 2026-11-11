@@ -138,18 +138,6 @@ func (s *SQLiteStore) idemKey(r SendReq, now time.Time) string {
 //   - saturated recipient → ("", false, ErrRecipientSaturated); saturation singleton updated
 //   - tripped breaker → ("", false, ErrBreakerOpen)
 func (s *SQLiteStore) SendGuarded(r SendReq) (string, bool, error) {
-	return s.sendGuarded(r, false)
-}
-
-// sendGuardedVerified is SendGuarded for a sender the SERVER has bound to the caller: it is
-// reachable only from serve.go, after the lane-scope check proved r.From is inside a lane-scoped
-// token's scope. Unexported, so no client or other package can assert verification; it is not part
-// of the Store interface, so it is never an RPC method either.
-func (s *SQLiteStore) sendGuardedVerified(r SendReq) (string, bool, error) {
-	return s.sendGuarded(r, true)
-}
-
-func (s *SQLiteStore) sendGuarded(r SendReq, verified bool) (string, bool, error) {
 	if strings.TrimSpace(r.From) == "" || strings.TrimSpace(r.To) == "" {
 		return "", false, fmt.Errorf("%w: routerstore: SendGuarded: from and to are required", ErrInvalidInput)
 	}
@@ -166,7 +154,7 @@ func (s *SQLiteStore) sendGuarded(r SendReq, verified bool) (string, bool, error
 	var deduped bool
 	err := s.retryWrite(func() error {
 		var rerr error
-		id, deduped, rerr = s.sendGuardedOnce(r, verified)
+		id, deduped, rerr = s.sendGuardedOnce(r)
 		return rerr
 	})
 	if err != nil {
@@ -188,14 +176,18 @@ func recipientLimitExempt(from, to string) bool {
 
 // FinalWishes seven-day override. DELETE THIS BLOCK AFTER 2026-11-18.
 //
-// Owner decision 2026-11-11: for seven days the four lanes below may send to one another past the
-// recipient limit, because FinalWishes must be finished in seven days. Exempt iff the sender is
-// VERIFIED, BOTH ends are in finalWishesLanes, and the store clock is before finalWishesOverrideEnds.
-// Verified means the server authenticated the caller with a lane-scoped token whose scope contains
-// the sender (sendGuardedVerified). Bootstrap/unscoped host tokens, relays, local callers and the
-// raw Send path are NOT verified: they keep ordinary saturation handling. The two exemptions in
-// recipientLimitExempt are deliberately left as they were, with no verification requirement: they
-// are the router's own escalations and changing them is out of scope. The web lanes are not in the set.
+// Owner decision 2026-11-11: for seven days these four lanes may send to one another past the
+// recipient limit, because FinalWishes must be finished in seven days. Exempt iff BOTH ends are in
+// finalWishesLanes and the store clock is before finalWishesOverrideEnds. The web lanes are not in the set.
+//
+// Caveat, accepted by the owner: the sender name is client-supplied and the server binds it to the
+// caller only for lane-scoped tokens, which the Macs do not use today (they share one machine token).
+// SSA's review (item 20261111-064341) asked for verified caller identity; the owner, shown that a
+// verified-only rule would admit nothing, explicitly accepted name-keyed matching for this window.
+// Exposure: a lane on the same hosts can assert one of the four names and thereby send past the
+// recipient limit to those four lanes. Nothing else: no data access, no admin rights. Each admit is
+// counted. Applies to SendGuarded only; raw Send keeps the limit (no transaction to audit in).
+// DELETE THIS BLOCK AFTER 2026-11-18.
 var (
 	finalWishesLanes = map[string]bool{
 		"claude-finalwishes-m1": true, "claude-finalwishes-m5": true,
@@ -204,13 +196,13 @@ var (
 	finalWishesOverrideEnds = time.Date(2026, time.November, 18, 5, 50, 0, 0, time.UTC)
 )
 
-func finalWishesOverride(from, to string, now time.Time, verified bool) bool {
-	return verified && finalWishesLanes[from] && finalWishesLanes[to] && now.Before(finalWishesOverrideEnds)
+func finalWishesOverride(from, to string, now time.Time) bool {
+	return finalWishesLanes[from] && finalWishesLanes[to] && now.Before(finalWishesOverrideEnds)
 }
 
 // sendGuardedOnce is one attempt of SendGuarded. Never call it directly —
 // callers must go through SendGuarded so contention is retried.
-func (s *SQLiteStore) sendGuardedOnce(r SendReq, verified bool) (string, bool, error) {
+func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 	now := s.clock()
 	key := s.idemKey(r, now)
 
@@ -249,7 +241,7 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq, verified bool) (string, bool, e
 		if lerr != nil {
 			return "", false, lerr
 		}
-		if load.saturated() && finalWishesOverride(r.From, r.To, now, verified) {
+		if load.saturated() && finalWishesOverride(r.From, r.To, now) {
 			overrideAdmit = true // audited below, once the send is past quota
 		} else if load.saturated() {
 			if _, err = s.escalateTx(tx, now, "saturated:"+r.To, "recipient_saturated",
@@ -326,7 +318,7 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq, verified bool) (string, bool, e
 	id := fmt.Sprintf("%s-%s-%s-%s", now.Format("20060102-150405"), slugify(r.From), slugify(r.To), slugify(r.Title))
 	if overrideAdmit {
 		// Audit, no schema change: items carry no router-set provenance field, so each over-limit admit
-		// is recorded in the same tx as its item, by total and by item id.
+		// is recorded in the same tx as its item, by total and by item id (past quota, so refusals never count).
 		if err = bumpCounterTx(tx, "finalwishes_override_admits", 1); err != nil {
 			return "", false, err
 		}

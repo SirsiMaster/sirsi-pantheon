@@ -761,19 +761,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		var err error
 		outs = []reflect.Value{reflect.ValueOf(true), reflect.ValueOf(&err).Elem()}
 	} else {
-		vs, canVerify := s.store.(interface {
-			sendGuardedVerified(SendReq) (string, bool, error)
-		})
-		if canVerify && name == "SendGuarded" && tokenScope != nil && !observer && !editor {
-			// Verified sender: this token is lane-scoped and laneScope (6a above, which returns on
-			// refusal) has just proved in[0].From is inside its scope. Only this server-side branch can
-			// reach sendGuardedVerified; bootstrap and unscoped host tokens (tokenScope == nil) and any
-			// store that is not the SQLite/Postgres backend take the ordinary call below: unverified.
-			id, deduped, err := vs.sendGuardedVerified(in[0].Interface().(SendReq))
-			outs = []reflect.Value{reflect.ValueOf(id), reflect.ValueOf(deduped), reflect.ValueOf(&err).Elem()}
-		} else {
-			outs = s.sv.MethodByName(name).Call(in)
-		}
+		outs = s.sv.MethodByName(name).Call(in)
 	}
 
 	var callErr error
