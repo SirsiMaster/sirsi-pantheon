@@ -65,6 +65,14 @@ var notServed = map[string]bool{
 	// — and it was Rule-of-Ra exempt as a "read-only view". It has no remote
 	// caller; a node that wants an audit dump renders locally from ListAll.
 	"ExportMarkdown": true,
+	// IngestDecision's host/session parameters are server-stamped identity,
+	// not caller input (SSA gate 20261009-184021, binding requirement #1) —
+	// same shape as AdoptTokenMachineID's host. Dispatch does not yet inject
+	// the authenticated session in place of them (that wiring is a separate
+	// slice), so leaving this reachable would let any caller claim an
+	// arbitrary producer_host/producer_session verbatim. Blocked until that
+	// wiring lands.
+	"IngestDecision": true,
 }
 
 // itemOwnership: method → index of the item id argument. The caller's session

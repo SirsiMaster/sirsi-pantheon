@@ -58,6 +58,7 @@ var migratedTables = []migratedTable{
 	// Without its scope rows a scoped token reads as UNSCOPED (tokenAgents: no rows = unscoped),
 	// so a copy that carries host_tokens must carry host_token_scopes too (SSA 20261106-164621).
 	{"host_token_scopes", []string{"token_id", "agent"}},
+	{"maat_decisions", []string{"id"}},
 }
 
 // unmigratedTables are left out on purpose; TestMigratedTablesCoverSchema refuses any other omission.
