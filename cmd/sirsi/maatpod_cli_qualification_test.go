@@ -402,7 +402,12 @@ func (c *nativeCLIQualificationChild) logFailureStderr(t *testing.T, limit int) 
 func nativeCLIQualificationReady(t *testing.T, child *nativeCLIQualificationChild, address string, config *tls.Config) {
 	t.Helper()
 	started := time.Now()
-	deadline := time.NewTimer(2 * time.Second)
+	// authority-serve shells out to `git rev-parse --git-common-dir` before it
+	// listens (FindRepoRoot, internal/router/router.go:241,332). On the hosted
+	// runner that subprocess was still running after 2s (CI run 42958098771,
+	// goroutine 1 in os/exec.(*Cmd).Output), so the window is startup latency of
+	// that subprocess, bounded at 10s; the SIGQUIT dump below still fires on a real hang.
+	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
 	for {
 		connection, err := tls.DialWithDialer(&net.Dialer{Timeout: 100 * time.Millisecond}, "tcp", address, config)
@@ -430,7 +435,7 @@ func nativeCLIQualificationReady(t *testing.T, child *nativeCLIQualificationChil
 			case <-time.After(1500 * time.Millisecond):
 			}
 			child.logFailureStderr(t, 32<<10)
-			t.Fatal("native CLI authority did not become mutually authenticated within two seconds")
+			t.Fatal("native CLI authority did not become mutually authenticated within ten seconds")
 		case <-time.After(25 * time.Millisecond):
 		}
 	}

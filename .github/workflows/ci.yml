@@ -199,9 +199,17 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/ci-private-sdk.sh go build -o "$RUNNER_TEMP/sirsi-native-cli" ./cmd/sirsi
-          # Cheap sanity exec: the binary runs at all before the test drives it. This
-          # is NOT the fix for the readiness timeout (runs 42951452188, 42955592828).
-          "$RUNNER_TEMP/sirsi-native-cli" version >/dev/null
+          # Evidence, not a fix: authority-serve runs `git rev-parse --git-common-dir`
+          # at startup (internal/router/router.go:332) with this exact PATH, and run
+          # 42958098771 showed it still blocked after 2s. Print its wall time with
+          # fresh HOME/TMPDIR (first) and reused ones (second) so the log shows
+          # whether the git shim is the slow, cold part on this runner.
+          GT="$(mktemp -d)"; mkdir -p "$GT/repo" "$GT/h" "$GT/t"
+          for pass in cold warm; do
+            echo "git --git-common-dir ($pass):"
+            ( cd "$GT/repo" && /usr/bin/time -p env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$GT/h" TMPDIR="$GT/t" GIT_CEILING_DIRECTORIES="$GT" /usr/bin/git rev-parse --path-format=absolute --git-common-dir ) >/dev/null 2>"$GT/err" || true
+            tail -n 3 "$GT/err"
+          done
           PANTHEON_NATIVE_CLI="$RUNNER_TEMP/sirsi-native-cli" \
             bash scripts/ci-private-sdk.sh go test -count=1 -v -run '^TestNativeCLIPodAuthorityQualification$' ./cmd/sirsi/ | tee "$RUNNER_TEMP/native-cli-qualification.log"
           grep -q -e '--- PASS: TestNativeCLIPodAuthorityQualification' "$RUNNER_TEMP/native-cli-qualification.log" \
