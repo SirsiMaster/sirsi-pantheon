@@ -206,3 +206,80 @@ func TestLegacyWrite_DelegatedResourceOnlyAdmitsFloorRow(t *testing.T) {
 		}
 	})
 }
+
+// A holder that finished must be able to hand its floor row back even after
+// the delegation ends (handback margin); capacity returns, nothing else moves.
+func TestLegacyWrite_FloorRowReleaseInHandbackMargin(t *testing.T) {
+	floorRow := func(l *Ledger, edit func(*Reservation)) Reservation {
+		floor, err := l.FloorShare("studio")
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := mkReq("studio", "claude-io", floorNow, floorEnd, RegimeBuild)
+		r.ID, r.Status, r.Share, r.Cores = "legacy-1", StatusActive, ShareFloor, floor
+		r.Created, r.HeartbeatAt = floorNow, floorNow
+		if edit != nil {
+			edit(&r)
+		}
+		return r
+	}
+	doc := func(rows ...Reservation) string {
+		raw, _ := json.Marshal(map[string][]Reservation{"reservations": rows})
+		return string(raw)
+	}
+	code := 0
+	phases := []struct {
+		name   string
+		margin bool
+		setup  func(*testing.T, *Ledger)
+	}{
+		{"live", false, func(*testing.T, *Ledger) {}},
+		{"expired by time, inside margin", true, func(_ *testing.T, l *Ledger) {
+			l.now = func() time.Time { return at("2026-10-22T18:02:00Z") }
+		}},
+		{"revoked", true, func(t *testing.T, l *Ledger) {
+			if _, err := l.Revoke("studio-m5"); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, p := range phases {
+		t.Run(p.name, func(t *testing.T) {
+			l, d := delegatedLedger(t)
+			p.setup(t, l)
+			stamp := func(r *Reservation) { r.Authority, r.Epoch, r.Seq = "pod:"+d.Pod, d.Epoch, 1 }
+			active := doc(floorRow(l, nil))
+			released := doc(floorRow(l, func(r *Reservation) { r.Status = StatusReleased }))
+			for _, tc := range []struct {
+				name             string
+				oldRaw, newRaw   string
+				refusedInMargin  bool
+				refusedWhileLive bool
+			}{
+				{"release", active, released, false, false},
+				{"release with exit code", active, doc(floorRow(l, func(r *Reservation) { r.Status = StatusReleased; r.ExitCode = &code })), false, false},
+				{"done", active, doc(floorRow(l, func(r *Reservation) { r.Status = StatusDone })), false, false},
+				{"expired projection", active, doc(floorRow(l, func(r *Reservation) { r.Status = StatusExpired })), false, false},
+				{"invalidated", active, doc(floorRow(l, func(r *Reservation) { r.Status = StatusInvalidated; r.InvalidatedBy = "x" })), false, false},
+				{"release but over-floor cores", active, doc(floorRow(l, func(r *Reservation) { r.Status = StatusReleased; r.Cores += 9 })), true, true},
+				{"release but window changed", active, doc(floorRow(l, func(r *Reservation) { r.Status = StatusReleased; r.EstEnd = "2026-10-22T11:00:00Z" })), true, false},
+				{"release but holder changed", active, doc(floorRow(l, func(r *Reservation) { r.Status = StatusReleased; r.Holder = "other" })), true, false},
+				{"heartbeat", active, doc(floorRow(l, func(r *Reservation) { r.HeartbeatAt = "2026-10-22T10:01:00Z" })), true, false},
+				{"extend", active, doc(floorRow(l, func(r *Reservation) { r.EstEnd = "2026-10-22T11:00:00Z" })), true, false},
+				{"share upgrade", active, doc(floorRow(l, func(r *Reservation) { r.Share = ShareFull })), true, true},
+				{"new floor row", active, doc(floorRow(l, nil), floorRow(l, func(r *Reservation) { r.ID = "legacy-2" })), true, false},
+				{"removal", active, doc(), true, true},
+				{"resurrect released row", released, active, true, true},
+				{"authority-stamped release", doc(floorRow(l, stamp)), doc(floorRow(l, func(r *Reservation) { stamp(r); r.Status = StatusReleased })), true, true},
+			} {
+				want := tc.refusedWhileLive
+				if p.margin {
+					want = tc.refusedInMargin
+				}
+				if err := l.CheckLegacyReservationWrite(tc.oldRaw, tc.newRaw); (err != nil) != want {
+					t.Errorf("%s: err=%v wantRefused=%v", tc.name, err, want)
+				}
+			}
+		})
+	}
+}

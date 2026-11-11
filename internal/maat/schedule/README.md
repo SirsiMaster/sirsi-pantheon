@@ -87,9 +87,23 @@ runner calls `should-defer <machine>` before starting a job.
   of the current epoch in `quiet` or `loaded` regime. **Known limit:** the
   canonical ledger sees only authority holds already replayed to it
   (`ReconcileAuthority`). A quiet hold the pod granted offline and has not
-  replayed is invisible, so a floor grant can land beside it; the pod's own
-  conflict probe is what invalidates that measurement. No pod authority runs
-  on any Mac today.
+  replayed is invisible, so a floor grant can land beside it. The pod has no
+  probe of its own (`PodJournal` holds only its own rows and never calls
+  `CheckConflicts`); the only detector is `sirsi maat conflict-check` against
+  the canonical ledger. A process attributed to a floor holder is recorded as
+  `Shared`, but the default probe attributes no owners, so an unattributed
+  floor-lane process invalidates a quiet/loaded hold, and `invalidated_by` is
+  the conflict summary (names the process, not the floor row's holder).
+  **Known limit:** floor rows are bounded in size (capacity/4, min 1: m1 = 2,
+  m5 = 4 cores) but not in number, so N holders take N x floor (m1 is passed
+  at 6 holders, m5 at 5); the ordinary floor path is equally uncapped and one
+  holder may stack rows. A cap is a design decision, not made here.
+  **Handback margin:** once the delegation is expired or revoked, a legacy
+  (CAS) writer may still *release* its unstamped floor row (active ->
+  released/done/expired/invalidated, no other field changed) so capacity
+  returns; heartbeat, extend and every other change stay refused. The server
+  transactional path (`MaatMutate`) applies no delegation check to
+  release/heartbeat/extend/invalidate. No pod authority runs on any Mac today.
 - The default `ActivityProbe` is a process classifier. **Per-rail traffic
   counters** (attributing load to a specific cable) are a deeper detector that
   plugs into the same interface — framework built, rail detector is a follow-up.
