@@ -304,27 +304,3 @@ func routerWatcherObservationError(err error, open bool) error {
 	}
 	return fmt.Errorf("watch-router: filesystem observation failed; custody lost: %w", err)
 }
-
-// Each subscribed ancestor must still name the exact retained directory. A
-// watch on a temporarily substituted inode cannot establish custody.
-type routerWatcherAncestorBinding struct {
-	path string
-	file *os.File
-}
-
-func revalidateRouterWatcherAncestors(bindings []routerWatcherAncestorBinding) error {
-	for _, binding := range bindings {
-		opened, err := binding.file.Stat()
-		if err != nil {
-			return fmt.Errorf("stat retained custody ancestor %s: %w", binding.path, err)
-		}
-		named, err := os.Lstat(binding.path)
-		if err != nil {
-			return fmt.Errorf("lstat custody ancestor %s: %w", binding.path, err)
-		}
-		if !opened.IsDir() || !named.IsDir() || named.Mode()&os.ModeSymlink != 0 || !os.SameFile(opened, named) {
-			return fmt.Errorf("watch-router: custody ancestor %s changed after subscription", binding.path)
-		}
-	}
-	return nil
-}

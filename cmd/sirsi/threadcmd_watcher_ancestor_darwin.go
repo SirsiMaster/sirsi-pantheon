@@ -10,6 +10,30 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// Each subscribed ancestor must still name the exact retained directory. A
+// watch on a temporarily substituted inode cannot establish custody.
+type routerWatcherAncestorBinding struct {
+	path string
+	file *os.File
+}
+
+func revalidateRouterWatcherAncestors(bindings []routerWatcherAncestorBinding) error {
+	for _, binding := range bindings {
+		opened, err := binding.file.Stat()
+		if err != nil {
+			return fmt.Errorf("stat retained custody ancestor %s: %w", binding.path, err)
+		}
+		named, err := os.Lstat(binding.path)
+		if err != nil {
+			return fmt.Errorf("lstat custody ancestor %s: %w", binding.path, err)
+		}
+		if !opened.IsDir() || !named.IsDir() || named.Mode()&os.ModeSymlink != 0 || !os.SameFile(opened, named) {
+			return fmt.Errorf("watch-router: custody ancestor %s changed after subscription", binding.path)
+		}
+	}
+	return nil
+}
+
 // Monitor directory identities without fsnotify's kqueue directory scan.
 // The root is immutable by rename and is not opened; the private custody
 // directory and every named ancestor are watched directly as vnodes.
