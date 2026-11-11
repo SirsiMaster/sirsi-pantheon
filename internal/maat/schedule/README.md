@@ -104,6 +104,29 @@ runner calls `should-defer <machine>` before starting a job.
   returns; heartbeat, extend and every other change stay refused. The server
   transactional path (`MaatMutate`) applies no delegation check to
   release/heartbeat/extend/invalidate. No pod authority runs on any Mac today.
+- **Waiters go first (adr120-s3-08).** If a `Reserve` would be granted the FULL
+  share and a lane that queued behind this same holder (`queued_behind` on its
+  `queued` row) is still waiting on the resource (live lease, overlapping
+  window, not since served), the requester gets no full hold: `--queue` queues
+  it behind the waiter, otherwise it is refused with `ErrWaiterFirst` (nothing
+  saved, never floor-granted). Result/JSON carry `reason_code` (`waiter-first`,
+  or `waiter-bound` once the oldest waiter has queued more than 120 s) and
+  `waiter {holder, work, queued_at}`; `reserve --json` prints that object and
+  still exits 1. Rows queued before `queued_behind` existed trigger nothing.
+  **Known limit:** it protects only a lane that QUEUES; a lane that polls for
+  "clear", takes a floor grant, or gives up is invisible to it. **Known
+  limit:** a queued row is never heartbeated (`Heartbeat` refuses non-active
+  rows; `reserve --queue` returns at once), so a waiter is protected only for
+  its lease (default 120 s from queueing, capped at 600 s for a queued row
+  until `reserve --queue --wait` exists; `waiter-bound` is therefore reachable
+  only with a lease of 121-600 s). Nothing promotes a queued row: the waiter
+  re-Reserves. **Precedence:** a queued row does not count against a requester
+  that has its own older live queued row on the resource (ties by id), so
+  mutual/cyclic queueing never starves the oldest waiter. **Served** means the
+  waiter's holder was granted a FULL share (not floor) on an overlapping window
+  at or after queueing; active, released, done, invalidated and expired-after-grant
+  rows count, queued ones do not.
+  Inert on delegated resources (pod journal keeps no queued rows).
 - The default `ActivityProbe` is a process classifier. **Per-rail traffic
   counters** (attributing load to a specific cable) are a deeper detector that
   plugs into the same interface — framework built, rail detector is a follow-up.

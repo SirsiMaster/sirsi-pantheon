@@ -127,6 +127,11 @@ type Reservation struct {
 	Authority string `json:"authority,omitempty"`
 	Epoch     int    `json:"epoch,omitempty"`
 	Seq       int64  `json:"seq,omitempty"`
+	// QueuedBehind is set only on a StatusQueued row: the HOLDER the request
+	// waited behind when it queued. waiterFor (waiterfirst.go) reads it to tell
+	// which lane's next full hold a waiter is owed ahead of. Additive: rows
+	// queued before this field existed read as empty and trigger nothing.
+	QueuedBehind string `json:"queued_behind,omitempty"`
 }
 
 // ShareFull and ShareFloor are the two values Reservation.Share takes.
@@ -324,6 +329,11 @@ type ReserveResult struct {
 	Conflict     *Reservation `json:"conflict,omitempty"` // the live holder that caused a floor grant (or a queue wait)
 	Queued       bool         `json:"queued,omitempty"`
 	PendingCedes []string     `json:"pending_cedes,omitempty"` // open cede ids that capped this grant to the floor
+	// ReasonCode and Waiter are set when a waiting lane goes first (waiter-first
+	// or waiter-bound, waiterfirst.go) — for the queued outcome here, and for the
+	// refusal on the typed *WaiterFirstError. Additive: absent otherwise.
+	ReasonCode string      `json:"reason_code,omitempty"`
+	Waiter     *WaiterInfo `json:"waiter,omitempty"`
 }
 
 // Reserve attempts to hold resource for the given window.
@@ -468,6 +478,8 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 		// full window; otherwise grant the floor share now (never a lockout).
 		if queue {
 			req.Status = StatusQueued
+			req.QueuedBehind = r.Holder
+			capQueuedLease(&req)
 			reservations = append(reservations, req)
 			if err := l.save(raw, exists, reservations); err != nil {
 				return ReserveResult{}, err
@@ -485,6 +497,27 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 		}
 		conflict := r
 		return ReserveResult{Granted: true, Reservation: &req, Conflict: &conflict}, nil
+	}
+
+	// Waiters go first (ADR-120 amendment 2026-11-10 part 2, task
+	// adr120-s3-08): the request would now be granted the FULL share. If a lane
+	// that queued behind THIS holder is still waiting, this holder does not chain
+	// another full hold ahead of it — queued (--queue) or refused, never
+	// floor-granted. Applies to this ordinary path only; delegated resources
+	// returned above (quiet and --queue are refused there).
+	if w := waiterFor(reservations, req, now); w != nil {
+		code, info := waiterReason(*w, now)
+		if !queue {
+			return ReserveResult{ReasonCode: code, Waiter: &info}, newWaiterFirstError(req.Resource, code, info)
+		}
+		req.Status = StatusQueued
+		req.QueuedBehind = w.Holder
+		capQueuedLease(&req)
+		reservations = append(reservations, req)
+		if err := l.save(raw, exists, reservations); err != nil {
+			return ReserveResult{}, err
+		}
+		return ReserveResult{Queued: true, Reservation: &req, ReasonCode: code, Waiter: &info}, nil
 	}
 
 	req.Share = ShareFull
