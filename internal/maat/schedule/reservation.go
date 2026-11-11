@@ -105,6 +105,9 @@ type Reservation struct {
 	LeaseTTLSec   int      `json:"lease_ttl_sec"`           // reservation void if heartbeat older than this
 	Status        Status   `json:"status"`
 	InvalidatedBy string   `json:"invalidated_by,omitempty"` // intruder description
+	// BlockingSince is when this hold first stood in another lane's way. See
+	// yieldsAfterBlock.
+	BlockingSince string `json:"blocking_since,omitempty"` // RFC3339
 	// ExitCode is the guarded run's exit status, recorded by ReleaseExit. nil
 	// means the release carried no outcome (older launchers): a completion
 	// receipt naming this reservation cannot then prove the run succeeded.
@@ -439,7 +442,8 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 		return ReserveResult{Granted: true, Reservation: &req, PendingCedes: pendingCedes}, nil
 	}
 
-	for _, r := range reservations {
+	for i := range reservations {
+		r := reservations[i]
 		if !sameResource(r.Resource, req.Resource) || r.Status != StatusActive {
 			continue
 		}
@@ -463,6 +467,9 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 		}
 		if r.Holder == req.Holder {
 			continue // own overlapping hold — the new one is additive/refresh, allow
+		}
+		if yieldsAfterBlock(&reservations[i], reservations, req, floor, now) {
+			continue
 		}
 		// A live foreign holder is on the window — --queue waits for the
 		// full window; otherwise grant the floor share now (never a lockout).
@@ -494,6 +501,56 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 		return ReserveResult{}, err
 	}
 	return ReserveResult{Granted: true, Reservation: &req}, nil
+}
+
+// maxBuildBlock is the owner's cap on how long one lane's build may stand in
+// another lane's way (forgiving-sharing directive 2026-10-25).
+const maxBuildBlock = 120 * time.Second
+
+// yieldsAfterBlock reports whether holder r has used up its time in req's way.
+// Only a build with no memory ask yields: measurements stay protected, and two
+// models side by side can exhaust a machine's memory. A quiet request never gets
+// through, because a foreign build would spoil its measurement. Nothing is
+// stopped or throttled: Share is advisory, so the holder keeps running and the
+// downgrade and Reason are how it finds out.
+// ponytail: a pod journal projects rows for each decision, so BlockingSince does
+// not persist there and pod-admitted holds never yield. That is the safe side;
+// persist it in the journal when a pod authority is deployed.
+func yieldsAfterBlock(r *Reservation, rows []Reservation, req Reservation, floor int, now time.Time) bool {
+	if r.Regime != RegimeBuild || r.MemGB != 0 || req.Regime == RegimeQuiet {
+		return false
+	}
+	if r.Share == ShareFloor && r.Cores > 0 && r.Cores <= floor {
+		return true // otherwise each floored lane would start its own 120s in turn
+	}
+	since, err := time.Parse(time.RFC3339, r.BlockingSince)
+	if err != nil || !waiterStillLive(*r, rows, now) {
+		r.BlockingSince = now.Format(time.RFC3339)
+		return false
+	}
+	if now.Sub(since) < maxBuildBlock {
+		return false
+	}
+	if r.Share != ShareFloor {
+		r.Share = ShareFloor
+		r.Reason = fmt.Sprintf("held up %s past %s: downgraded to the floor share; nothing was stopped", req.Holder, maxBuildBlock)
+	}
+	return true
+}
+
+// waiterStillLive reports whether a lane r already held up is still waiting
+// beside it: a live floor grant or a queued request from another holder. When
+// every earlier waiter has gone, the clock restarts for the current request.
+func waiterStillLive(r Reservation, rows []Reservation, now time.Time) bool {
+	for _, q := range rows {
+		if q.ID == r.ID || q.Holder == r.Holder || !sameResource(q.Resource, r.Resource) || q.leaseExpired(now) {
+			continue
+		}
+		if (q.Status == StatusActive && q.Share == ShareFloor) || q.Status == StatusQueued {
+			return true
+		}
+	}
+	return false
 }
 
 // orOpen renders an est-end for a Reason string ("open" if unset).
