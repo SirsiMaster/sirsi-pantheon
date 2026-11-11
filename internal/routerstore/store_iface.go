@@ -98,6 +98,10 @@ type Store interface {
 	HostIdentity(id string) (string, error)
 	ImportThreadsIfEmpty(records []ThreadRecord) error
 	Inbox(agent string) ([]Item, error)
+	// IngestDecision durably records one Ma'at decision ledger record
+	// (SSA gate 20261009-184021). host/session are the server-verified
+	// caller identity, never taken from the payload.
+	IngestDecision(host, session string, rec DecisionIngest) (DecisionIngestReceipt, error)
 	ItemSession(id string) (string, error)
 	ListAgents() ([]Agent, error)
 	ListAll(ctx context.Context) ([]Item, error)
