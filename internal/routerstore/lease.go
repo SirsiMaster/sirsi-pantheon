@@ -234,8 +234,8 @@ func (s *SQLiteStore) claimItemSessionOnce(agent, id string, ttl time.Duration, 
 	}
 	expires := now.Add(ttl)
 	res, err := tx.Exec(
-		`UPDATE items AS i SET status='claimed', claimed_by=?, lease_token=?, lease_expires=?, lease_updated=? WHERE id=? AND to_agent=? AND status='open' AND `+actionableItemDependency("i")+`;`,
-		agent, token, expires.Format(time.RFC3339), now.Format(time.RFC3339), id, agent,
+		`UPDATE items AS i SET status='claimed', claimed_by=?, lease_token=?, lease_expires=?, lease_updated=?, first_claimed_at=CASE WHEN first_claimed_at='' THEN ? ELSE first_claimed_at END WHERE id=? AND to_agent=? AND status='open' AND `+actionableItemDependency("i")+`;`,
+		agent, token, expires.Format(time.RFC3339), now.Format(time.RFC3339), now.Format(time.RFC3339), id, agent,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: ClaimItem: claim: %w", err)
@@ -320,8 +320,8 @@ func (s *SQLiteStore) claimNextSessionOnce(agent string, ttl time.Duration, sess
 
 	expires := now.Add(ttl)
 	res, err := tx.Exec(
-		`UPDATE items AS i SET status='claimed', claimed_by=?, lease_token=?, lease_expires=?, lease_updated=? WHERE id=? AND status='open' AND `+actionableItemDependency("i")+`;`,
-		agent, token, expires.Format(time.RFC3339), now.Format(time.RFC3339), id,
+		`UPDATE items AS i SET status='claimed', claimed_by=?, lease_token=?, lease_expires=?, lease_updated=?, first_claimed_at=CASE WHEN first_claimed_at='' THEN ? ELSE first_claimed_at END WHERE id=? AND status='open' AND `+actionableItemDependency("i")+`;`,
+		agent, token, expires.Format(time.RFC3339), now.Format(time.RFC3339), now.Format(time.RFC3339), id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: ClaimNext: claim: %w", err)

@@ -284,6 +284,10 @@ CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(project_id, router_namespace
 -- A2A property 6). First-ack-wins; never touches status. Same IF NOT EXISTS
 -- idiom as v21 so it upgrades a live ledger and equips a fresh one.
 ALTER TABLE items ADD COLUMN IF NOT EXISTS acked_at TEXT NOT NULL DEFAULT '';
+-- v27 — first-claim timestamp (Ra charter M0 T4, wake latency). Written once by
+-- the claim UPDATEs (CASE WHEN first_claimed_at='' ...), never by renew/start/
+-- requeue; no backfill, so rows claimed before v27 stay '' and are excluded.
+ALTER TABLE items ADD COLUMN IF NOT EXISTS first_claimed_at TEXT NOT NULL DEFAULT '';
 
 
 -- Which session holds each lease. A side table, not columns on items/tasks:
@@ -555,6 +559,6 @@ DO $$ BEGIN
 END $$;
 
 -- ── version — last, so a partial apply never publishes a version it does not have ──
-INSERT INTO schema_version(version, applied_at) VALUES (26, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 26, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 26;
+INSERT INTO schema_version(version, applied_at) VALUES (27, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 27, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 27;

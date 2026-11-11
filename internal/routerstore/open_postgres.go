@@ -28,7 +28,7 @@ var PostgresRolesSQL string
 // postgresSchemaVersion pairs with SQLite's PRAGMA user_version high-water
 // mark that pg/schema.sql was translated from. OpenPostgres refuses any other
 // value: a ledger this binary does not understand must never be written.
-const postgresSchemaVersion = 26
+const postgresSchemaVersion = 27
 
 // postgresMaxConns is the pool cap per process: 4 by default (the ADR-062 §2
 // per-node limit), or SIRSI_ROUTER_PG_MAX_CONNS (1-64) on the router service,
