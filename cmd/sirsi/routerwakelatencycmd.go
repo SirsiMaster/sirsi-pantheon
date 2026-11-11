@@ -25,7 +25,8 @@ const wakeLatencyScope = `Measured: first claim minus opened, per item, from the
 (items.first_claimed_at, written once by the first claim and never by a renew,
 start-work or re-claim after requeue).
 Excluded: items first claimed before schema v27 added the column (no backfill),
-and never-claimed items - neither appears in the percentiles.`
+and never-claimed items - neither appears in the percentiles.
+Percentiles are nearest-rank (p95 of n samples is the ceil(0.95*n)-th smallest).`
 
 var routerWakeLatencyCmd = &cobra.Command{
 	Use:   "wake-latency",

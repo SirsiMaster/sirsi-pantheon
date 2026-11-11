@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"strings"
@@ -260,11 +261,20 @@ func capDelay(d time.Duration) time.Duration {
 	return d
 }
 
+// pct is the nearest-rank percentile of an ASCENDING-sorted slice (it does not
+// sort or mutate): index = ceil(p*n/100)-1, clamped to [0,n-1]; empty is 0.
 func pct(sorted []float64, p float64) float64 {
-	if len(sorted) == 0 {
+	n := len(sorted)
+	if n == 0 {
 		return 0
 	}
-	i := int(float64(len(sorted)-1) * p / 100)
+	i := int(math.Ceil(p*float64(n)/100)) - 1
+	if i < 0 {
+		i = 0
+	}
+	if i > n-1 {
+		i = n - 1
+	}
 	return sorted[i]
 }
 
