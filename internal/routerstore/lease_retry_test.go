@@ -94,7 +94,13 @@ func TestClaimNextGoesThroughRetryWrite(t *testing.T) {
 // 20260809-060146/061333: 3x route-blocker drops in /tmp/sirsi-liveness-watch.err).
 func TestSendGuardedGoesThroughRetryWrite(t *testing.T) {
 	src := mustReadSource(t, "facade.go")
-	send := sliceFunc(src, "func (s *SQLiteStore) SendGuarded(")
+	// SendGuarded and the server-only sendGuardedVerified both delegate to sendGuarded, which owns the retry.
+	for _, wrapper := range []string{"func (s *SQLiteStore) SendGuarded(", "func (s *SQLiteStore) sendGuardedVerified("} {
+		if !strings.Contains(sliceFunc(src, wrapper), "s.sendGuarded(") {
+			t.Errorf("%s no longer delegates to sendGuarded", wrapper)
+		}
+	}
+	send := sliceFunc(src, "func (s *SQLiteStore) sendGuarded(")
 	if !strings.Contains(send, "s.retryWrite(") {
 		t.Error("SendGuarded no longer wraps its transaction in retryWrite — lock " +
 			"contention on a busy host will silently drop the send")

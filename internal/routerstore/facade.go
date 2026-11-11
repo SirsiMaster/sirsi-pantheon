@@ -138,6 +138,18 @@ func (s *SQLiteStore) idemKey(r SendReq, now time.Time) string {
 //   - saturated recipient → ("", false, ErrRecipientSaturated); saturation singleton updated
 //   - tripped breaker → ("", false, ErrBreakerOpen)
 func (s *SQLiteStore) SendGuarded(r SendReq) (string, bool, error) {
+	return s.sendGuarded(r, false)
+}
+
+// sendGuardedVerified is SendGuarded for a sender the SERVER has bound to the caller: it is
+// reachable only from serve.go, after the lane-scope check proved r.From is inside a lane-scoped
+// token's scope. Unexported, so no client or other package can assert verification; it is not part
+// of the Store interface, so it is never an RPC method either.
+func (s *SQLiteStore) sendGuardedVerified(r SendReq) (string, bool, error) {
+	return s.sendGuarded(r, true)
+}
+
+func (s *SQLiteStore) sendGuarded(r SendReq, verified bool) (string, bool, error) {
 	if strings.TrimSpace(r.From) == "" || strings.TrimSpace(r.To) == "" {
 		return "", false, fmt.Errorf("%w: routerstore: SendGuarded: from and to are required", ErrInvalidInput)
 	}
@@ -154,7 +166,7 @@ func (s *SQLiteStore) SendGuarded(r SendReq) (string, bool, error) {
 	var deduped bool
 	err := s.retryWrite(func() error {
 		var rerr error
-		id, deduped, rerr = s.sendGuardedOnce(r)
+		id, deduped, rerr = s.sendGuardedOnce(r, verified)
 		return rerr
 	})
 	if err != nil {
@@ -174,9 +186,31 @@ func recipientLimitExempt(from, to string) bool {
 	return from == "routerstore" || (from == "ra" && to == "sirsi-software-admin")
 }
 
+// FinalWishes seven-day override. DELETE THIS BLOCK AFTER 2026-11-18.
+//
+// Owner decision 2026-11-11: for seven days the four lanes below may send to one another past the
+// recipient limit, because FinalWishes must be finished in seven days. Exempt iff the sender is
+// VERIFIED, BOTH ends are in finalWishesLanes, and the store clock is before finalWishesOverrideEnds.
+// Verified means the server authenticated the caller with a lane-scoped token whose scope contains
+// the sender (sendGuardedVerified). Bootstrap/unscoped host tokens, relays, local callers and the
+// raw Send path are NOT verified: they keep ordinary saturation handling. The two exemptions in
+// recipientLimitExempt are deliberately left as they were, with no verification requirement: they
+// are the router's own escalations and changing them is out of scope. The web lanes are not in the set.
+var (
+	finalWishesLanes = map[string]bool{
+		"claude-finalwishes-m1": true, "claude-finalwishes-m5": true,
+		"codex-finalwishes": true, "sirsi-software-admin": true,
+	}
+	finalWishesOverrideEnds = time.Date(2026, time.November, 18, 5, 50, 0, 0, time.UTC)
+)
+
+func finalWishesOverride(from, to string, now time.Time, verified bool) bool {
+	return verified && finalWishesLanes[from] && finalWishesLanes[to] && now.Before(finalWishesOverrideEnds)
+}
+
 // sendGuardedOnce is one attempt of SendGuarded. Never call it directly —
 // callers must go through SendGuarded so contention is retried.
-func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
+func (s *SQLiteStore) sendGuardedOnce(r SendReq, verified bool) (string, bool, error) {
 	now := s.clock()
 	key := s.idemKey(r, now)
 
@@ -209,12 +243,15 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 	}
 
 	// Recipient admission: a saturated recipient refuses new work.
+	overrideAdmit := false
 	if !recipientLimitExempt(r.From, r.To) {
 		load, lerr := recipientLoad(tx, r.To, now)
 		if lerr != nil {
 			return "", false, lerr
 		}
-		if load.saturated() {
+		if load.saturated() && finalWishesOverride(r.From, r.To, now, verified) {
+			overrideAdmit = true // audited below, once the send is past quota
+		} else if load.saturated() {
 			if _, err = s.escalateTx(tx, now, "saturated:"+r.To, "recipient_saturated",
 				fmt.Sprintf("saturated: %s refusing new sends", r.To),
 				fmt.Sprintf("%s has %d unacknowledged items and %d started tasks untouched for 24h (limit %d). New sends are refused until it drains; refused sends are counted here, not appended.",
@@ -287,6 +324,16 @@ func (s *SQLiteStore) sendGuardedOnce(r SendReq) (string, bool, error) {
 	}
 
 	id := fmt.Sprintf("%s-%s-%s-%s", now.Format("20060102-150405"), slugify(r.From), slugify(r.To), slugify(r.Title))
+	if overrideAdmit {
+		// Audit, no schema change: items carry no router-set provenance field, so each over-limit admit
+		// is recorded in the same tx as its item, by total and by item id.
+		if err = bumpCounterTx(tx, "finalwishes_override_admits", 1); err != nil {
+			return "", false, err
+		}
+		if err = bumpCounterTx(tx, "finalwishes_override_admit:"+id, 1); err != nil {
+			return "", false, err
+		}
+	}
 	_, err = tx.Exec(
 		`INSERT INTO items (id, from_agent, to_agent, title, type, status, opened, instructions, idem_key, source_item, first_seen, last_seen)
 		 VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?);`,
