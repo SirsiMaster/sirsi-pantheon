@@ -10,14 +10,16 @@ function router(){return {version:'router-build',generated_at:'router-other-time
 function host(view='fleet',initial={}){
  let clock=at,dialog=null,tick,reply={fabric:board(),router:router(),...initial},elements={},listeners={},requests=[];
  class Element {
-  constructor(){this.dataset={};this.handlers={};this.classList={add(){},remove(){},contains(){return false}};this.isConnected=true;this.hidden=false;this._html=''}
+  constructor(){this.tagName='BUTTON';this.dataset={};this.handlers={};this.classList={add(){},remove(){},contains(){return false}};this.isConnected=true;this.hidden=false;this._html=''}
   set innerHTML(s){this._html=s;this.buttons=[];this.taskButtons=[];this.pageButtons=[];this.filterButtons=[];this.messageButtons=[];for(const m of s.matchAll(/data-fabric-filter="([^"]+)"/g)){const b=new Element();b.dataset.fabricFilter=m[1];this.filterButtons.push(b)}if(s.includes('data-fabric-messages'))this.messageButtons.push(new Element());for(const m of s.matchAll(/data-fabric-inspect="([^"]+)"/g)){const b=new Element();b.dataset.fabricInspect=m[1];this.buttons.push(b)}for(const m of s.matchAll(/data-fabric-task-agent="([^"]+)" data-fabric-task-id="([^"]+)"/g)){const b=new Element();b.dataset.fabricTaskAgent=m[1];b.dataset.fabricTaskId=m[2];this.taskButtons.push(b)}for(const m of s.matchAll(/data-fabric-task-page="([^"]+)"/g)){const b=new Element();b.dataset.fabricTaskPage=m[1];this.pageButtons.push(b)}this.receipt= s.includes('fabric-receipt') ? new Element():null}
   get innerHTML(){return this._html}
-  querySelectorAll(s){return s==='[data-fabric-filter]'?this.filterButtons||[]:s==='[data-fabric-messages]'?this.messageButtons||[]:s==='[data-fabric-inspect]'?this.buttons||[]:s==='[data-fabric-task-id]'?this.taskButtons||[]:s==='[data-fabric-task-page]'?this.pageButtons||[]:[]}
+  querySelectorAll(s){if(s==='button,a,summary,input')return [...this.taskButtons||[],...this.buttons||[],...this.filterButtons||[],...this.pageButtons||[],...this.messageButtons||[]];return s==='[data-fabric-filter]'?this.filterButtons||[]:s==='[data-fabric-messages]'?this.messageButtons||[]:s==='[data-fabric-inspect]'?this.buttons||[]:s==='[data-fabric-task-id]'?this.taskButtons||[]:s==='[data-fabric-task-page]'?this.pageButtons||[]:[]}
+  contains(el){return el===elements['#fabric-task-heading']||this.querySelectorAll('button,a,summary,input').includes(el)}
+  getAttribute(){return null}
   querySelector(){return new Element()}
   addEventListener(k,f){this.handlers[k]=f}
   setAttribute(k,v){this[k]=v}
-  focus(){this.focused=true} scrollIntoView(){this.scrolled=true} showModal(){this.open=true} show(){this.open=true} close(){this.open=false} remove(){if(dialog===this)dialog=null}
+  focus(){this.focused=true;doc.activeElement=this} scrollIntoView(){this.scrolled=true} showModal(){this.open=true} show(){this.open=true} close(){this.open=false} remove(){if(dialog===this)dialog=null}
  }
  const doc={hidden:false,activeElement:null,
   querySelector(s){if(s==='.inspector'||s==='.inspector.persistent')return dialog;return elements[s]||(elements[s]=new Element())},
@@ -108,6 +110,20 @@ test('actual Fabric button binds clicked board even with router absent or contra
 });
 
 function snapshotWithFabric(f){return {...router(),fabric:f,fabric_generation:'fixture-bound-generation'}}
+test('visible Fleet refreshes its bound ledger without polling while hidden',async()=>{
+ const h=host('fleet',{router:snapshotWithFabric(taskBoard())});await h.settle();
+ const next=taskBoard();next.generated_at=new Date(at+10000).toISOString();next.tasks.rows[0].subject='Updated task from producer';h.reply.router=snapshotWithFabric(next);
+ const before=h.requests.filter(url=>url==='/api/router/v1/snapshot').length;h.advance(10000);await h.settle();
+ assert.equal(h.requests.filter(url=>url==='/api/router/v1/snapshot').length,before+1);assert.match(h.elements['#view'].innerHTML,/Updated task from producer/);
+ h.doc.hidden=true;const count=h.requests.length;h.advance(10000);await h.settle();assert.equal(h.requests.length,count);
+});
+test('periodic Fleet refresh preserves task focus and falls back when the task disappears',async()=>{
+ const h=host('fleet',{router:snapshotWithFabric(taskBoard())});await h.settle();
+ h.elements['#view'].taskButtons[0].focus();h.advance(10000);await h.settle();
+ assert.equal(h.doc.activeElement.dataset.fabricTaskAgent,'own-lane');assert.equal(h.doc.activeElement.dataset.fabricTaskId,'task-0');
+ const changed=taskBoard();changed.tasks.rows[0].id='replacement';h.reply.router=snapshotWithFabric(changed);h.advance(10000);await h.settle();
+ assert.equal(h.doc.activeElement,h.elements['#fabric-task-heading']);
+});
 function blockedTaskBoard(offset=0){
  const b=taskBoard(offset);b.tasks.filter='blocked';b.tasks.rows.forEach(row=>row.status='blocked');b.work.blocked=65;b.work.assigned_not_started=0;return b;
 }

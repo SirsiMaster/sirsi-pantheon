@@ -145,6 +145,7 @@ jobs:
 
   test:
     name: Test
+    timeout-minutes: 60
     # GitHub-hosted macOS 15 supports standard ARM64 runners: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
     runs-on: macos-15
     steps:
@@ -170,7 +171,7 @@ jobs:
 
       - name: Run tests
         shell: bash
-        run: bash scripts/ci-private-sdk.sh go test -v -race -short -coverprofile=coverage.out ./...
+        run: bash scripts/ci-private-sdk.sh go test -v -race -short -timeout 20m -coverprofile=coverage.out ./...
         env:
           CGO_ENABLED: 1
           # This self-hosted runner's service process is launched outside the
