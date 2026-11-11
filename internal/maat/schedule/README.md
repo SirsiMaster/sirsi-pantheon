@@ -78,6 +78,18 @@ runner calls `should-defer <machine>` before starting a job.
 - `SetState("maat:reservations", ...)` is refused at the canonical store so
   old clients cannot erase fenced changes. See the server-first deployment
   sequence in the user guide and ADR-062 amendment. No fallback ledger exists.
+- **Delegated resources (ADR-120): floor, not lockout.** A non-authority
+  `Reserve` on a resource delegated to a pod authority gets the bounded floor
+  share (`Share=floor`, no authority stamp) instead of a hard refusal. It is
+  still refused, with "book through the pod authority", when: the delegation is
+  revoked/expired but inside the handback margin; the request is `quiet`; it is
+  `--queue`; or the canonical ledger holds a live, overlapping authority hold
+  of the current epoch in `quiet` or `loaded` regime. **Known limit:** the
+  canonical ledger sees only authority holds already replayed to it
+  (`ReconcileAuthority`). A quiet hold the pod granted offline and has not
+  replayed is invisible, so a floor grant can land beside it; the pod's own
+  conflict probe is what invalidates that measurement. No pod authority runs
+  on any Mac today.
 - The default `ActivityProbe` is a process classifier. **Per-rail traffic
   counters** (attributing load to a specific cable) are a deeper detector that
   plugs into the same interface — framework built, rail detector is a follow-up.

@@ -108,6 +108,18 @@ authority, whether or not the cloud is reachable.
 - **The cloud ledger refuses direct bookings.** `Reserve` on a delegated
   resource returns "delegated to pod `<pod>` (epoch N) at `<addr>`" and grants
   nothing.
+  - *Amendment 2026-11-10 (adr120-s3-06, "forgiving sharing").* A hard refusal
+    locked a lane out of a machine (incident 2026-10-24), against the standing
+    "never totally block lanes" directive. A non-authority `Reserve` on a
+    delegated resource now gets the bounded **floor share** (no authority
+    stamp). It is still refused when the delegation is revoked or expired
+    inside the handback margin, when the request is `quiet`, when it is
+    `--queue`, or when the canonical ledger holds a live overlapping authority
+    `quiet`/`loaded` hold of the current epoch. **Known limit:** the canonical
+    ledger sees only holds already replayed by reconciliation; an offline quiet
+    hold not yet replayed is invisible, so a floor grant can land beside it and
+    the pod's own conflict probe is what invalidates that measurement. No pod
+    authority runs on any Mac today.
 - **While online, the authority writes through.** Each grant it makes is copied
   to the canonical ledger immediately, so the cloud record stays current.
 - **Pod authority = `sirsi maat authority-serve`** on `authority_machine`.
