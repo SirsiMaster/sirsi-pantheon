@@ -311,10 +311,30 @@ func (l *Ledger) delegationFor(resource string, now time.Time) (*Delegation, err
 //  3. --queue: this ledger does not run the authority's queue;
 //  4. a protected authority hold (quiet or loaded) overlaps the window.
 //
-// KNOWN LIMIT: only authority holds already replayed here (ReconcileAuthority)
-// are visible. A quiet hold the pod granted offline and has not replayed is
-// invisible, so a floor grant can land beside it; the pod's own conflict probe
-// is what invalidates that measurement. No pod authority runs on any Mac today.
+// KNOWN LIMIT 1 (invisible offline holds): only authority holds already
+// replayed here (ReconcileAuthority) are visible. A quiet hold the pod granted
+// offline and has not replayed is invisible, so a floor grant can land beside
+// it. Nothing at admission detects that, and the pod has no probe of its own:
+// PodJournal projects only its own retained rows (never canonical floor rows)
+// and never calls CheckConflicts. The one detector is `sirsi maat
+// conflict-check`, which runs CheckConflicts against THIS ledger and samples
+// this host's process table. A process attributed (Actor.Owner) to a floor
+// holder goes to Shared and invalidates nothing, but the default probe never
+// sets Owner, so an unattributed build/bench/model process from the floor lane
+// is an Intruder and invalidates a quiet/loaded hold. InvalidatedBy is then
+// the conflict summary: it names the process (and its owner only if
+// attributed), not the floor row's holder.
+//
+// KNOWN LIMIT 2 (floor rows are not counted): each row is bounded to the floor
+// (capacity/FairShareLanes, min 1: m1 10 cores -> 2, m5 18 -> 4), but the
+// number of rows is not. N holders take N x floor; m1 passes its 10 cores at 6
+// distinct holders, m5 passes 18 at 5, sooner beside an authority hold. The
+// ordinary (non-delegated) floor path in reserveAttempt has the same property,
+// so no cap is invented here for delegated resources only. One holder can also
+// stack several floor rows on the same window; the ordinary path likewise lets
+// a holder's own overlapping hold through as additive. A cap is a design call.
+//
+// No pod authority runs on any Mac today.
 func delegatedFloor(d *Delegation, req Reservation, queue bool, rows []Reservation, now time.Time) (*Reservation, error) {
 	const guide = "book through the pod authority, not the canonical ledger directly"
 	if d.expired(now) {
@@ -562,15 +582,41 @@ func validateAuthorityReplay(r Reservation, d Delegation) error {
 // share with a bounded core count, delegation not expired, and any prior
 // version of the row was itself such a floor row. A non-authority FULL row, an
 // unbounded one, or any authority-stamped row is still rejected.
+//
+// A terminal row never goes back to another status (no resurrection). Once the
+// delegation is expired/revoked (handback margin) the ONLY admitted change is
+// isFloorRelease.
 func (l *Ledger) isDelegatedFloorRow(d *Delegation, before Reservation, existed bool, r Reservation) bool {
-	if d.expired(l.now()) || r.Authority != "" || r.Seq != 0 || r.Epoch != 0 || r.Share != ShareFloor {
+	if r.Authority != "" || r.Seq != 0 || r.Epoch != 0 || r.Share != ShareFloor {
 		return false
 	}
-	if existed && (before.Share != ShareFloor || before.Resource != r.Resource) {
+	if existed && (before.Share != ShareFloor || before.Resource != r.Resource ||
+		(isTerminal(before.Status) && r.Status != before.Status)) {
 		return false
+	}
+	if d.expired(l.now()) {
+		return existed && isFloorRelease(before, r)
 	}
 	floor, err := l.FloorShare(r.Resource)
 	return err == nil && r.Cores > 0 && r.Cores <= floor
+}
+
+// isFloorRelease: after the delegation ends, a floor-row holder may still hand
+// its capacity back. That is safe for the authority because a release only
+// frees capacity; it cannot grant, extend or move anything. The transition is
+// exactly active -> released/done/expired/invalidated (all end the hold and
+// free the capacity; expired is what every legacy write also persists for other
+// lapsed leases in the snapshot) with only the fields a terminal change sets
+// (status, exit code, invalidated_by) differing. Heartbeat, extend, any
+// cores/share/window/holder change and anything else stay refused.
+func isFloorRelease(before, r Reservation) bool {
+	if before.Status != StatusActive || !isTerminal(r.Status) {
+		return false
+	}
+	r.Status, r.ExitCode, r.InvalidatedBy = before.Status, before.ExitCode, before.InvalidatedBy
+	a, _ := json.Marshal(before)
+	b, _ := json.Marshal(r)
+	return string(a) == string(b)
 }
 
 // CheckLegacyReservationWrite preserves the compatible CAS path for resources
