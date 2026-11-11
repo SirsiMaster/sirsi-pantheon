@@ -199,8 +199,8 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/ci-private-sdk.sh go build -o "$RUNNER_TEMP/sirsi-native-cli" ./cmd/sirsi
-          # Pay the first-exec cost of the freshly linked unsigned binary here, not
-          # inside the test's two-second authority readiness window (run 42951452188).
+          # Cheap sanity exec: the binary runs at all before the test drives it. This
+          # is NOT the fix for the readiness timeout (runs 42951452188, 42955592828).
           "$RUNNER_TEMP/sirsi-native-cli" version >/dev/null
           PANTHEON_NATIVE_CLI="$RUNNER_TEMP/sirsi-native-cli" \
             bash scripts/ci-private-sdk.sh go test -count=1 -v -run '^TestNativeCLIPodAuthorityQualification$' ./cmd/sirsi/ | tee "$RUNNER_TEMP/native-cli-qualification.log"
