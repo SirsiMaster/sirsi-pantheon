@@ -37,6 +37,8 @@ import (
 // not build a payload or use the installed owner's router, identities or keys.
 // For this exact test alone, MAAT_SUBMIT_HELPER=1 selects the existing TestMain
 // m.Run fast path, avoiding its otherwise redundant integration CLI build.
+// CI (.github/workflows/ci.yml, Test job) builds the CLI and runs this on every
+// non-docs PR/push, failing if it skips.
 func TestNativeCLIPodAuthorityQualification(t *testing.T) {
 	cli, optedIn := os.LookupEnv("PANTHEON_NATIVE_CLI")
 	if !optedIn {
