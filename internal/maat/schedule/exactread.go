@@ -36,6 +36,13 @@ func (l *Ledger) ExactReservation(id string) ([]Reservation, error) {
 			}
 		}
 	}
+	if len(out) == 0 {
+		if row, _, ok, err := l.findArchived(id); err != nil {
+			return nil, err
+		} else if ok {
+			out = append(out, row)
+		}
+	}
 	b, err := json.Marshal(out)
 	if err != nil {
 		return nil, err

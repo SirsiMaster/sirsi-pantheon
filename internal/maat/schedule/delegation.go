@@ -394,50 +394,71 @@ func (l *Ledger) upsertAttempt(req Reservation) (*Reservation, error) {
 		}
 	}
 	reservations := doc.Reservations
-	replaced := false
+	at := -1
 	for i, r := range reservations {
 		if r.ID == req.ID {
-			// A replay is not a new owner and cannot resurrect terminal work.
-			if r.Resource != req.Resource || r.Holder != req.Holder || r.Authority != req.Authority || r.Epoch != req.Epoch {
-				return nil, fmt.Errorf("maat: reconcile reservation %q ownership/epoch mismatch", req.ID)
-			}
-			if req.Seq < r.Seq {
-				return nil, fmt.Errorf("maat: stale reservation replay sequence")
-			}
-			continuous := false
-			if req.Status == StatusActive && req.Seq > r.Seq {
-				oldHB, e1 := time.Parse(time.RFC3339, r.HeartbeatAt)
-				newHB, e2 := time.Parse(time.RFC3339, req.HeartbeatAt)
-				continuous = e1 == nil && e2 == nil && !newHB.Before(oldHB) && !newHB.After(oldHB.Add(time.Duration(r.LeaseTTLSec)*time.Second))
-				if !continuous {
-					return nil, fmt.Errorf("maat: heartbeat replay breaks prior finite lease")
-				}
-			}
-			switch r.Status {
-			case StatusExpired:
-				if req.Status == StatusActive && continuous && strings.HasPrefix(r.Authority, "pod:") {
-					break
-				}
-				if req.Status == StatusActive {
-					return nil, fmt.Errorf("maat: expired grant cannot be resurrected")
-				}
-			case StatusReleased, StatusInvalidated, StatusDone:
-				if req.Status != r.Status {
-					return nil, fmt.Errorf("maat: terminal reservation cannot be resurrected by replay")
-				}
-			}
-			reservations[i] = req
-			replaced = true
+			at = i
 			break
 		}
 	}
-	if !replaced {
+	// A replayed id that left the hot document is the same reservation, never a
+	// new one: it is checked against, and replaced in, the archive.
+	var r Reservation
+	var archRaw json.RawMessage
+	inArchive := false
+	if at >= 0 {
+		r = reservations[at]
+	} else if r, archRaw, inArchive, err = l.findArchived(req.ID); err != nil {
+		return nil, err
+	}
+	if at >= 0 || inArchive {
+		// A replay is not a new owner and cannot resurrect terminal work.
+		if r.Resource != req.Resource || r.Holder != req.Holder || r.Authority != req.Authority || r.Epoch != req.Epoch {
+			return nil, fmt.Errorf("maat: reconcile reservation %q ownership/epoch mismatch", req.ID)
+		}
+		if req.Seq < r.Seq {
+			return nil, fmt.Errorf("maat: stale reservation replay sequence")
+		}
+		continuous := false
+		if req.Status == StatusActive && req.Seq > r.Seq {
+			oldHB, e1 := time.Parse(time.RFC3339, r.HeartbeatAt)
+			newHB, e2 := time.Parse(time.RFC3339, req.HeartbeatAt)
+			continuous = e1 == nil && e2 == nil && !newHB.Before(oldHB) && !newHB.After(oldHB.Add(time.Duration(r.LeaseTTLSec)*time.Second))
+			if !continuous {
+				return nil, fmt.Errorf("maat: heartbeat replay breaks prior finite lease")
+			}
+		}
+		switch r.Status {
+		case StatusExpired:
+			if req.Status == StatusActive && continuous && strings.HasPrefix(r.Authority, "pod:") {
+				break
+			}
+			if req.Status == StatusActive {
+				return nil, fmt.Errorf("maat: expired grant cannot be resurrected")
+			}
+		case StatusReleased, StatusInvalidated, StatusDone:
+			if req.Status != r.Status {
+				return nil, fmt.Errorf("maat: terminal reservation cannot be resurrected by replay")
+			}
+		}
+	}
+	out := req
+	if inArchive && isTerminal(req.Status) {
+		return &out, l.putArchived(req.ID, archRaw, &out)
+	}
+	if at >= 0 {
+		reservations[at] = req
+	} else {
 		reservations = append(reservations, req)
 	}
 	if err := l.save(raw, exists, reservations); err != nil {
 		return nil, err
 	}
-	out := req
+	if inArchive { // a live replay of an archived expired row: it is hot again
+		if err := l.store.(ArchiveStore).ReplaceArchived(req.ID, nil); err != nil {
+			return nil, err
+		}
+	}
 	return &out, nil
 }
 
@@ -518,12 +539,22 @@ func (l *Ledger) ReconcileAuthority(machine, pod string, epoch int, batch []Rese
 			if e != nil {
 				return 0, e
 			}
+			same := func(old Reservation) bool {
+				return old.ID == req.ID && old.Authority == req.Authority && old.Epoch == req.Epoch && old.Seq >= req.Seq && old.Holder == req.Holder && old.Resource == req.Resource
+			}
 			found := false
 			for _, old := range known {
-				if old.ID == req.ID && old.Authority == req.Authority && old.Epoch == req.Epoch && old.Seq >= req.Seq && old.Holder == req.Holder && old.Resource == req.Resource {
+				if same(old) {
 					found = true
 					break
 				}
+			}
+			if !found {
+				arch, _, ok, e := l.findArchived(req.ID)
+				if e != nil {
+					return 0, e
+				}
+				found = ok && same(arch)
 			}
 			if !found {
 				return 0, fmt.Errorf("maat: replay sequence aliases unknown/different reservation")
@@ -607,13 +638,13 @@ func (l *Ledger) isDelegatedFloorRow(d *Delegation, before Reservation, existed 
 // exactly active -> released/done/expired/invalidated (all end the hold and
 // free the capacity; expired is what every legacy write also persists for other
 // lapsed leases in the snapshot) with only the fields a terminal change sets
-// (status, exit code, invalidated_by) differing. Heartbeat, extend, any
+// (status, exit code, invalidated_by, ended_at) differing. Heartbeat, extend, any
 // cores/share/window/holder change and anything else stay refused.
 func isFloorRelease(before, r Reservation) bool {
 	if before.Status != StatusActive || !isTerminal(r.Status) {
 		return false
 	}
-	r.Status, r.ExitCode, r.InvalidatedBy = before.Status, before.ExitCode, before.InvalidatedBy
+	r.Status, r.ExitCode, r.InvalidatedBy, r.EndedAt = before.Status, before.ExitCode, before.InvalidatedBy, before.EndedAt
 	a, _ := json.Marshal(before)
 	b, _ := json.Marshal(r)
 	return string(a) == string(b)
