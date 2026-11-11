@@ -145,6 +145,11 @@ commit hash, and every reviewer verdict above are unchanged — only the
 number and this file's name moved. ADR-076 remains available for #1017 if
 it merges first.
 
+**Status entry 2026-11-11 (owner decision given to Ra directly): stays Proposed for implementation; verifier library with fixtures only is authorized.**
+Authorized: the verifier library with fixtures, namely canonical signed-envelope parse, namespace and key-format checks, epoch, wall-clock ratchet, and the replay-admission store.
+NOT authorized: the daemon, anything running as root, key enrollment, `anchor-grants.allow`, `authorized_keys` changes, and verb execution. The daemon and verbs need a separate owner decision with working code in hand. Ledger: `rs-42-recovery-anchor-implementation`.
+(Also: ADR-076 is no longer claimed by an open PR; #1017 is CLOSED unmerged. The number note above is historical.)
+
 ## Context
 Owner direction: every Sirsi machine must be recoverable without an
 interactive owner physically present. Today that recovery happens two ways,
