@@ -505,14 +505,28 @@ var maatConflictCheckCmd = &cobra.Command{
 			for _, s := range rep.Shared {
 				fmt.Printf("    %s\n", s)
 			}
+			printFloorHolders(rep)
 		} else {
 			fmt.Printf("𓆄 CONFLICT — %s\n  measurement in %s INVALIDATED; %s keeps the hold\n", rep.Summary, rep.Reservation, rep.Holder)
+			printFloorHolders(rep)
 		}
 		if !rep.Clean {
 			os.Exit(admissionRefusedExit)
 		}
 		return nil
 	},
+}
+
+// printFloorHolders shows the lanes holding a live floor share at sample time
+// (co-presence only, not attribution) so the measuring lane knows whom to ask.
+func printFloorHolders(rep schedule.ConflictReport) {
+	if len(rep.FloorHolders) == 0 {
+		return
+	}
+	fmt.Println("  floor holders live at sample time (co-present, not attributed):")
+	for _, f := range rep.FloorHolders {
+		fmt.Printf("    %s  work=%s  reservation=%s  cores=%d\n", f.Holder, f.Work, f.Reservation, f.Cores)
+	}
 }
 
 // notifyIntruders sends a router item to any intruder that could be attributed
