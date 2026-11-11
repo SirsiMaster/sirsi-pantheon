@@ -813,6 +813,13 @@ CREATE TABLE IF NOT EXISTS maat_decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_maat_decisions_host_time ON maat_decisions(producer_host, receipt_time);
 `},
+	// v27 — first-claim timestamp (Ra charter M0 T4, wake latency). Set ONCE by
+	// the two claim UPDATEs (ClaimNext/ClaimItem) and never overwritten, unlike
+	// lease_updated which RenewLease/StartWork rewrite. No backfill: rows claimed
+	// before this column existed keep '' and are excluded from the report.
+	{27, `
+ALTER TABLE items ADD COLUMN first_claimed_at TEXT NOT NULL DEFAULT '';
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
