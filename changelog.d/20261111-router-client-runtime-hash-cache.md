@@ -1,0 +1,1 @@
+- Cache the router client's runtime hash on disk (`~/.sirsi/runtime-hash/`, 0600, atomic) keyed by the binary's resolved path, size, mtime, ctime, inode and device, so each `sirsi` process no longer SHA-256s its whole ~40 MB binary; any key mismatch or unreadable cache falls back to hashing.

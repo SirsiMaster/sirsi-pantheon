@@ -23,9 +23,7 @@ package routerstore
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -287,21 +285,7 @@ var (
 // identity claim bound into a session at mint (ADR-062 §3). Computed once.
 func RuntimeHash() string {
 	runtimeOnce.Do(func() {
-		runtimeHash = "unknown"
-		exe, err := os.Executable()
-		if err != nil {
-			return
-		}
-		f, err := os.Open(exe)
-		if err != nil {
-			return
-		}
-		defer func() { _ = f.Close() }()
-		h := sha256.New()
-		if _, err := io.Copy(h, f); err != nil {
-			return
-		}
-		runtimeHash = hex.EncodeToString(h.Sum(nil))
+		runtimeHash = computeRuntimeHash() // runtimehash.go: disk-cached by binary identity
 	})
 	return runtimeHash
 }
