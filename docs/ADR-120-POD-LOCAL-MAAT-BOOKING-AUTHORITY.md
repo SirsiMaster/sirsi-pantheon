@@ -165,9 +165,16 @@ the authority paths (`ReserveAsAuthority`, `UpsertReservation`) are unchanged.
 for "clear", takes a floor grant, or gives up is invisible to it. **Second
 known limit:** a queued row is never heartbeated (`Heartbeat` refuses
 non-active rows) and `reserve --queue` returns immediately, so a waiter is
-protected only for its row's lease (default 120 s from queueing, so
-`waiter-bound` cannot occur at the default lease; a longer `--lease-ttl` or
-re-queueing extends it). On a delegated resource `quiet` and `--queue` are
+protected only for its row's lease: default 120 s from queueing, capped at
+600 s for a queued row (Mercury review, so a dead queuer cannot block for an
+hour), until `reserve --queue --wait` exists. `waiter-bound` (queued > 120 s) is
+therefore reachable only with a lease of 121-600 s; re-queueing extends it.
+**Precedence and service (SSA review 20261111-072352):** a queued row does not
+count against a requester holding its own older live queued row on the resource
+(ties by row id), so cyclic queueing cannot starve the oldest waiter; a waiter
+is served only by a FULL-share row of its holder, created at or after it
+queued, overlapping its window (active, released, done, invalidated or
+expired-after-grant all count: the turn was granted; queued rows do not). On a delegated resource `quiet` and `--queue` are
 refused earlier and the pod journal retains no queued rows, so the rule is
 inert there.
 

@@ -479,6 +479,7 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 		if queue {
 			req.Status = StatusQueued
 			req.QueuedBehind = r.Holder
+			capQueuedLease(&req)
 			reservations = append(reservations, req)
 			if err := l.save(raw, exists, reservations); err != nil {
 				return ReserveResult{}, err
@@ -511,6 +512,7 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 		}
 		req.Status = StatusQueued
 		req.QueuedBehind = w.Holder
+		capQueuedLease(&req)
 		reservations = append(reservations, req)
 		if err := l.save(raw, exists, reservations); err != nil {
 			return ReserveResult{}, err

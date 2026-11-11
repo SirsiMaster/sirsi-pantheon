@@ -15,8 +15,8 @@ package schedule
 // "clear", takes a floor grant, or gives up is invisible to it. A queued row is
 // also never heartbeated (Heartbeat refuses non-active rows, and `reserve
 // --queue` returns at once), so a waiter is protected only for its row's lease
-// (LeaseTTLSec, default 120 s from queueing) unless it queued with a longer
-// --lease-ttl or re-queues.
+// (LeaseTTLSec, default 120 s from queueing, capped at maxQueuedLeaseSec) or
+// until it re-queues, pending a `reserve --queue --wait`.
 
 import (
 	"errors"
@@ -71,9 +71,14 @@ func (e *WaiterFirstError) Is(target error) bool { return target == ErrWaiterFir
 // StatusQueued row on the same resource, a different holder, a live lease, a
 // window overlapping the request, that queued behind req.Holder. Rows queued
 // before QueuedBehind existed read as empty and never match. A waiter that has
-// since been served (the same holder later holds a non-floor row created at or
-// after its queueing) no longer counts — its stale queued row must not penalize
-// the lane it already got its turn from.
+// since been served (waiterServed) no longer counts.
+//
+// Precedence (breaks every cycle): a candidate does NOT count against the
+// requester if the requester has its own live, unserved queued row on the same
+// resource that is OLDER than the candidate (Created, ties by ID). The requester
+// was waiting first, so it is the owed turn, not the repeater. In any cycle of
+// mutual QueuedBehind the oldest queued row's holder always finds every
+// candidate younger than its own row and is grantable.
 func waiterFor(rows []Reservation, req Reservation, now time.Time) *Reservation {
 	var oldest *Reservation
 	var oldestAt time.Time
@@ -84,7 +89,7 @@ func waiterFor(rows []Reservation, req Reservation, now time.Time) *Reservation 
 			continue
 		}
 		at, err := time.Parse(time.RFC3339, w.Created)
-		if err != nil || waiterServed(rows, w, at) {
+		if err != nil || waiterServed(rows, w, at) || ownOlderQueued(rows, req, w, at, now) {
 			continue
 		}
 		if oldest == nil || at.Before(oldestAt) {
@@ -94,9 +99,32 @@ func waiterFor(rows []Reservation, req Reservation, now time.Time) *Reservation 
 	return oldest
 }
 
+// ownOlderQueued reports whether req.Holder has a live, unserved queued row on
+// w's resource that precedes w (earlier Created, ties by smaller ID).
+func ownOlderQueued(rows []Reservation, req, w Reservation, wAt, now time.Time) bool {
+	for _, o := range rows {
+		if o.Status != StatusQueued || o.Holder != req.Holder || o.ID == w.ID ||
+			!sameResource(o.Resource, w.Resource) || o.leaseExpired(now) {
+			continue
+		}
+		oAt, err := time.Parse(time.RFC3339, o.Created)
+		if err != nil || !(oAt.Before(wAt) || (oAt.Equal(wAt) && o.ID < w.ID)) || waiterServed(rows, o, oAt) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// waiterServed: the waiter's holder was granted a FULL turn on the resource that
+// overlaps the owed window, at or after it queued. Status may be anything but
+// queued: a full grant that was later released, finished, expired or
+// invalidated by a conflict WAS the turn the waiter was owed. Floor co-runs are
+// not the turn; neither are unrelated bookings on a non-overlapping window.
 func waiterServed(rows []Reservation, w Reservation, queuedAt time.Time) bool {
 	for _, s := range rows {
-		if s.ID == w.ID || s.Holder != w.Holder || s.Status == StatusQueued || s.Share == ShareFloor || !sameResource(s.Resource, w.Resource) {
+		if s.ID == w.ID || s.Holder != w.Holder || s.Status == StatusQueued || s.Share != ShareFull ||
+			!sameResource(s.Resource, w.Resource) || !s.windowOverlaps(w) {
 			continue
 		}
 		if c, err := time.Parse(time.RFC3339, s.Created); err == nil && !c.Before(queuedAt) {
@@ -104,6 +132,19 @@ func waiterServed(rows []Reservation, w Reservation, queuedAt time.Time) bool {
 		}
 	}
 	return false
+}
+
+// maxQueuedLeaseSec caps a QUEUED row's lease (Mercury review 20261111-065127):
+// a lane that queues with a huge --lease-ttl and dies would otherwise hold the
+// repeater off the resource for that long. Active rows are unaffected. Lift when
+// `reserve --queue --wait` exists.
+const maxQueuedLeaseSec = 600
+
+func capQueuedLease(r *Reservation) {
+	if r.LeaseTTLSec > maxQueuedLeaseSec {
+		r.LeaseTTLSec = maxQueuedLeaseSec
+		r.Reason = fmt.Sprintf("queued lease capped at %d s", maxQueuedLeaseSec)
+	}
 }
 
 func waiterReason(w Reservation, now time.Time) (string, WaiterInfo) {
