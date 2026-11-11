@@ -299,6 +299,50 @@ func (l *Ledger) delegationFor(resource string, now time.Time) (*Delegation, err
 	return nil, nil
 }
 
+// delegatedFloor decides whether a non-authority Reserve on a delegated
+// resource may take the bounded floor share. It returns nil error when the
+// floor may be granted (conflict is the authority's live build row, if any).
+//
+// Refused, all telling the caller to book through the pod authority:
+//  1. the delegation is revoked/expired but still inside the handback margin:
+//     the pod may hold a cached lease this ledger cannot see;
+//  2. a quiet request: this ledger cannot promise quiet on a resource it has
+//     delegated;
+//  3. --queue: this ledger does not run the authority's queue;
+//  4. a protected authority hold (quiet or loaded) overlaps the window.
+//
+// KNOWN LIMIT: only authority holds already replayed here (ReconcileAuthority)
+// are visible. A quiet hold the pod granted offline and has not replayed is
+// invisible, so a floor grant can land beside it; the pod's own conflict probe
+// is what invalidates that measurement. No pod authority runs on any Mac today.
+func delegatedFloor(d *Delegation, req Reservation, queue bool, rows []Reservation, now time.Time) (*Reservation, error) {
+	const guide = "book through the pod authority, not the canonical ledger directly"
+	if d.expired(now) {
+		return nil, fmt.Errorf("maat: %s delegated to pod %q (epoch %d) — delegation revoked or expired, inside the handback margin; %s", req.Resource, d.Pod, d.Epoch, guide)
+	}
+	if req.Regime == RegimeQuiet {
+		return nil, fmt.Errorf("maat: %s delegated to pod %q (epoch %d) — a quiet window cannot be promised here; %s", req.Resource, d.Pod, d.Epoch, guide)
+	}
+	if queue {
+		return nil, fmt.Errorf("maat: %s delegated to pod %q (epoch %d) — cannot queue behind the pod authority; %s", req.Resource, d.Pod, d.Epoch, guide)
+	}
+	var conflict *Reservation
+	for _, r := range rows {
+		if !sameResource(r.Resource, req.Resource) || r.Authority != "pod:"+d.Pod || r.Epoch != d.Epoch ||
+			r.Status != StatusActive || r.leaseExpired(now) || !r.windowOverlaps(req) {
+			continue
+		}
+		if r.Regime == RegimeQuiet || r.Regime == RegimeLoaded {
+			return nil, fmt.Errorf("maat: %s delegated to pod %q (epoch %d) — pod authority hold by %s (%s) until %s protects the window; %s", req.Resource, d.Pod, d.Epoch, r.Holder, r.Regime, orOpen(r.EstEnd), guide)
+		}
+		if conflict == nil && r.Regime == RegimeBuild {
+			c := r
+			conflict = &c
+		}
+	}
+	return conflict, nil
+}
+
 // UpsertReservation inserts req, or replaces the existing reservation with
 // the same ID in place. The primitive step 2's catch-up (replaying a pod
 // authority's offline grants) calls repeatedly: a retried replay after a
@@ -513,6 +557,22 @@ func validateAuthorityReplay(r Reservation, d Delegation) error {
 	return nil
 }
 
+// isDelegatedFloorRow is the one shape a CAS-only (legacy) writer may put on a
+// delegated resource: the floor row delegatedFloor grants. Non-authority, floor
+// share with a bounded core count, delegation not expired, and any prior
+// version of the row was itself such a floor row. A non-authority FULL row, an
+// unbounded one, or any authority-stamped row is still rejected.
+func (l *Ledger) isDelegatedFloorRow(d *Delegation, before Reservation, existed bool, r Reservation) bool {
+	if d.expired(l.now()) || r.Authority != "" || r.Seq != 0 || r.Epoch != 0 || r.Share != ShareFloor {
+		return false
+	}
+	if existed && (before.Share != ShareFloor || before.Resource != r.Resource) {
+		return false
+	}
+	floor, err := l.FloorShare(r.Resource)
+	return err == nil && r.Cores > 0 && r.Cores <= floor
+}
+
 // CheckLegacyReservationWrite preserves the compatible CAS path for resources
 // not delegated, while checking changed rows under the same canonical lock.
 func (l *Ledger) CheckLegacyReservationWrite(oldRaw, newRaw string) error {
@@ -544,7 +604,7 @@ func (l *Ledger) CheckLegacyReservationWrite(oldRaw, newRaw string) error {
 		}
 		if d, err := l.delegationFor(r.Resource, l.now()); err != nil {
 			return err
-		} else if d != nil {
+		} else if d != nil && !l.isDelegatedFloorRow(d, before, exists, r) {
 			return fmt.Errorf("maat: legacy write changes delegated resource %q", r.Resource)
 		}
 	}

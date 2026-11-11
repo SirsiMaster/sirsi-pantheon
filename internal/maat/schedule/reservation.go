@@ -372,15 +372,15 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 	if err := validate(req); err != nil {
 		return ReserveResult{}, err
 	}
-	// ADR-120 §2: while a delegation is live, its resources are booked only
-	// through the pod authority (ReserveAsAuthority) — never by a direct
-	// Reserve call, cloud-reachable or not. This is the single admission
-	// chokepoint every Reserve (local or server-transactional) already goes
-	// through, so the fence is real, not advisory.
-	if d, derr := l.delegationFor(req.Resource, l.now()); derr != nil {
-		return ReserveResult{}, derr
-	} else if d != nil {
-		return ReserveResult{}, fmt.Errorf("maat: %s delegated to pod %q (epoch %d) — book through the pod authority, not the canonical ledger directly", req.Resource, d.Pod, d.Epoch)
+	// ADR-120 §2: a delegated resource is admitted by the pod authority
+	// (ReserveAsAuthority), not here. This is the single admission chokepoint
+	// every Reserve (local or server-transactional) goes through. A caller
+	// that cannot be served by the authority still gets the bounded floor
+	// share (owner directive 2026-09-26, never totally block a lane) unless
+	// delegatedFloor refuses it below.
+	d, err := l.delegationFor(req.Resource, l.now())
+	if err != nil {
+		return ReserveResult{}, err
 	}
 	pendingCedes, err := l.pendingCedeIDs(req.Holder)
 	if err != nil {
@@ -407,6 +407,23 @@ func (l *Ledger) reserveAttempt(req Reservation, queue bool) (ReserveResult, err
 	}
 	if req.ID == "" {
 		req.ID = newID(req.Resource, req.Holder, now)
+	}
+
+	if d != nil {
+		conflict, ferr := delegatedFloor(d, req, queue, reservations, now)
+		if ferr != nil {
+			return ReserveResult{}, ferr
+		}
+		req.Cores = floor
+		req.Share = ShareFloor
+		req.Reason = fmt.Sprintf("%s is delegated to pod %s (epoch %d) — granted the floor share; book through the pod authority for more", req.Resource, d.Pod, d.Epoch)
+		req.PendingCedes = pendingCedes
+		req.Status = StatusActive
+		reservations = append(reservations, req)
+		if err := l.save(raw, exists, reservations); err != nil {
+			return ReserveResult{}, err
+		}
+		return ReserveResult{Granted: true, Reservation: &req, Conflict: conflict, PendingCedes: pendingCedes}, nil
 	}
 
 	if len(pendingCedes) > 0 {
