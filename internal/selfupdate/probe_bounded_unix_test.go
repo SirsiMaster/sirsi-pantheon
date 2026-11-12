@@ -62,7 +62,7 @@ func TestProbeBinaryContextBoundsChildRetainingStdout(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { waitForProbeFixtureChildExit(t, pidFile) })
+	t.Cleanup(func() { waitForProbeFixtureChildExit(t, pidFile, true) })
 	started := time.Now()
 	if _, err := probeBinaryContext(context.Background(), path); err == nil {
 		t.Fatal("probe accepted output whose inherited pipe did not reach EOF")
@@ -122,13 +122,22 @@ func delayedVersionFixture(t *testing.T, binary string) string {
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { waitForProbeFixtureChildExit(t, pidFile) })
+	// The probe may kill this script (short budget or parent deadline) before
+	// the shell has spawned its child and written the pid, so a missing pid
+	// file is legitimate here: there is no child to wait for.
+	t.Cleanup(func() { waitForProbeFixtureChildExit(t, pidFile, false) })
 	return path
 }
 
-func waitForProbeFixtureChildExit(t *testing.T, pidFile string) {
+// waitForProbeFixtureChildExit checks the fixture's child exited on its own.
+// With mustExist=false, an absent or still-empty pid file means the probe killed
+// the fixture before it spawned the child, so the check is vacuous.
+func waitForProbeFixtureChildExit(t *testing.T, pidFile string, mustExist bool) {
 	t.Helper()
 	data, err := os.ReadFile(pidFile)
+	if !mustExist && (os.IsNotExist(err) || (err == nil && len(strings.TrimSpace(string(data))) == 0)) {
+		return
+	}
 	if err != nil {
 		t.Errorf("read probe fixture child PID for natural-exit check: %v", err)
 		return
