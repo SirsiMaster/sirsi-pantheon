@@ -1,0 +1,2 @@
+### Added
+- **`routerstore.DeliveryStateOf(Item)`: one derived, A2A-style delivery state per router item (SUBMITTED, ACKNOWLEDGED, WORKING, BLOCKED, COMPLETED, FAILED, CLOSED, UNKNOWN).** A pure function of the existing status and `acked_at`; no schema change, no new writes, no behaviour change. Each state's doc comment says what it does not prove (an ack means the lane read it, not that it will act). Contract tests fail if a status constant is added without a mapping. Refs: ADR-065 Decision 2, task router-owned-delivery-a2a.
