@@ -323,7 +323,8 @@ func (l *Ledger) delegationFor(resource string, now time.Time) (*Delegation, err
 // sets Owner, so an unattributed build/bench/model process from the floor lane
 // is an Intruder and invalidates a quiet/loaded hold. InvalidatedBy is then
 // the conflict summary: it names the process (and its owner only if
-// attributed), not the floor row's holder.
+// attributed), and appends the live floor holders as co-presence (also listed
+// in ConflictReport.FloorHolders), never as the cause.
 //
 // KNOWN LIMIT 2 (floor rows are not counted): each row is bounded to the floor
 // (capacity/FairShareLanes, min 1: m1 10 cores -> 2, m5 18 -> 4), but the

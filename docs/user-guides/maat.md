@@ -56,7 +56,12 @@ checks now include a `measurement_observation` in JSON and the decision
 explanation. It identifies a completed point sample, observed admitted floor
 shares, and other admitted foreign activity. A point sample never qualifies a
 quiet interval; no-holder and build-regime early returns remain unverified.
-Floor-share activity remains policy clean and keeps its reservation active.
+Floor-share activity remains policy clean and keeps its reservation active
+only when the probe attributes the process to the floor holder; the default
+probe does not, so an unattributed process from a floor lane counts as foreign
+load and marks a quiet or loaded measurement contaminated. The result lists
+`floor_holders` (the lanes holding a live floor share at that moment) so you
+know whom to ask; this is co-presence, not a finding that they caused the load.
 
 ### GitHub submission attribution (Phase 1)
 ```bash
