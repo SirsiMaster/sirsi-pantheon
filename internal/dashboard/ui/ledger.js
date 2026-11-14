@@ -108,7 +108,7 @@ function overview(snap,fabric,o){
   if(nx)subs.push(nx);
   if(a.agent)subs.push({t:'<button class="link" data-inspect="'+esc(a.agent)+'">Inspect lane</button>',c:''});
   return row({pill:pill(a.severity,SEV[a.severity]||'dim'),id:esc(a.id||''),rid:esc(a.id||''),text:esc(a.title),subs:subs});
- })):muted('Nothing needs attention in this snapshot.');
+ })):muted(snap.private_details_withheld?'Attention details are withheld on the shared hosted board.':'Nothing needs attention in this snapshot.');
  h+=heading('Where work is waiting',{note:open+' open items',extra:'<button class="link" data-queue="*">View all '+open+' items</button>'});
  h+=ranked.length?table(ranked.map(function(l){
   return row({pill:pill(String(l.verdict||'unknown').replace('_',' ').toLowerCase(),VERDICT[l.verdict]||'dim'),id:laneLink(l.agent),rid:esc(l.agent),
