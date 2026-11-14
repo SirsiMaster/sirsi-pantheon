@@ -1,10 +1,13 @@
 #!/bin/bash
 # Proven same-endpoint/own-UID work uses the normal local executor. Network
-# transport defaults to proxy; direct never bypasses a runtime-provided proxy.
+# transport defaults to direct only without a runtime proxy; never bypass one.
 set -euo pipefail
 usage() { printf 'usage: sirsi-fabric-run [--plan] [--transport socks|direct] m1|m5|studio --work ID [--cpu-cores N] [--timeout SECONDS] -- COMMAND [ARG...]\n' >&2; exit 64; }
 plan=0
 transport_mode=socks
+if [[ -z "${ALL_PROXY:-}${all_proxy:-}${HTTP_PROXY:-}${http_proxy:-}${HTTPS_PROXY:-}${https_proxy:-}" ]]; then
+  transport_mode=direct
+fi
 while [[ "${1:-}" == --plan || "${1:-}" == --transport ]]; do
   case "$1" in
     --plan) plan=1; shift;;

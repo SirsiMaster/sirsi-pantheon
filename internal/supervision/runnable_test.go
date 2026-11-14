@@ -32,6 +32,7 @@ func TestClassify_RecentTaskMutationIsWorking(t *testing.T) {
 	now := time.Now()
 	in := lane(Sources{OpenItems: 3, ActionableTasks: 2})
 	in.LastTaskMutation = now.Add(-2 * time.Minute)
+	in.Leases = []Lease{{LeaseID: "current-fenced-claim", ItemID: "private-task", Holder: "private-worker", ExpiresAt: now.Add(time.Minute), LastMutation: in.LastTaskMutation}}
 
 	if got := Classify(in, now, DefaultWorkWindow); got != StateWorking {
 		t.Errorf("got %q, want %q — a recent task-record mutation is the evidence of working", got, StateWorking)
@@ -110,6 +111,56 @@ func TestClassify_UnroutableEscalatesRatherThanReadingIdle(t *testing.T) {
 	}
 	if !Escalates(got) {
 		t.Error("UNROUTABLE must escalate")
+	}
+}
+
+func TestClassify_WorkEvidencePrecedesUnavailableWake(t *testing.T) {
+	now := time.Date(2026, time.November, 10, 18, 9, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name           string
+		mutation       time.Time
+		lease          time.Time
+		fencedMutation bool
+		want           LaneState
+	}{
+		{"metadata without claim", now.Add(-time.Minute), time.Time{}, false, StateUnroutable},
+		{"valid claim", time.Time{}, now.Add(time.Minute), false, StateAssigned},
+		{"fenced mutation before unavailable wake", now.Add(-time.Minute), now.Add(time.Minute), true, StateWorking},
+		{"metadata with unrelated claim", now.Add(-time.Minute), now.Add(time.Minute), false, StateAssigned},
+		{"old claimed-row mutation", now.Add(-time.Hour), now.Add(time.Minute), true, StateAssigned},
+		{"stale evidence", now.Add(-time.Hour), now.Add(-time.Minute), true, StateUnroutable},
+		{"no evidence", time.Time{}, time.Time{}, false, StateUnroutable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := lane(Sources{ActionableTasks: 1})
+			in.Routable = false
+			in.LastTaskMutation = tc.mutation
+			if !tc.lease.IsZero() {
+				in.Leases = []Lease{{LeaseID: "private-claim", ExpiresAt: tc.lease}}
+				if tc.fencedMutation {
+					in.Leases[0].LastMutation = tc.mutation
+				}
+			}
+			if got := Classify(in, now, DefaultWorkWindow); got != tc.want {
+				t.Fatalf("unavailable wake hid work evidence: got %q, want %q", got, tc.want)
+			}
+			if in.Routable {
+				t.Fatal("classification must not grant wake readiness")
+			}
+		})
+	}
+	if got := Classify(LaneInput{Sources: Sources{BlockedTasks: 1}}, now, DefaultWorkWindow); got != StateBlocked {
+		t.Fatalf("recorded blocked-only work is not runnable: got %q", got)
+	}
+	if got := Classify(LaneInput{LastTaskMutation: now}, now, DefaultWorkWindow); got != StateComplete {
+		t.Fatalf("empty work sources must not become synthetic WORKING: got %q", got)
+	}
+	in := LaneInput{Sources: Sources{ActionableTasks: 2}, Leases: []Lease{
+		{LeaseID: "older-live-claim", ExpiresAt: now.Add(time.Minute), LastMutation: now.Add(-time.Hour)},
+		{LeaseID: "recent-live-claim", ExpiresAt: now.Add(time.Minute), LastMutation: now.Add(-time.Minute)},
+	}}
+	if got := Classify(in, now, DefaultWorkWindow); got != StateWorking {
+		t.Fatalf("first old claim hid a different current claimed-row mutation: got %q", got)
 	}
 }
 

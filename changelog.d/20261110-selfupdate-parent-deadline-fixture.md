@@ -1,0 +1,1 @@
+- **Self-update probe test:** synchronize the parent-deadline check with an owned direct-exec fixture, so cleanup does not assume a background child wrote a PID file before cancellation. The parent deadline and child reaping remain checked; production behavior is unchanged.

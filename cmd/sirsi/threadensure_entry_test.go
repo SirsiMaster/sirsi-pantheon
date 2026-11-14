@@ -32,6 +32,7 @@ type ensureHTTPEntry struct {
 	trace          []string
 	beforeInsert   func(routerstore.ThreadRecord) error
 	beforeInsertID string
+	afterInbox     func()
 }
 
 func newEnsureHTTPEntry(t *testing.T) *ensureHTTPEntry {
@@ -132,6 +133,27 @@ func newEnsureHTTPEntry(t *testing.T) *ensureHTTPEntry {
 				return
 			}
 		}
+		if method == "Inbox" {
+			// Complete the real authenticated Inbox before the test transition,
+			// but do not release its response to the caller until that transition
+			// is installed. No sleep or OS process is generation evidence here.
+			response := httptest.NewRecorder()
+			h.ServeHTTP(response, r)
+			f.mu.Lock()
+			f.trace = append(f.trace, "after-"+label)
+			after := f.afterInbox
+			f.afterInbox = nil
+			f.mu.Unlock()
+			if after != nil {
+				after()
+			}
+			for key, values := range response.Header() {
+				w.Header()[key] = append([]string(nil), values...)
+			}
+			w.WriteHeader(response.Code)
+			_, _ = w.Write(response.Body.Bytes())
+			return
+		}
 		h.ServeHTTP(w, r)
 	}))
 	t.Cleanup(srv.Close)
@@ -179,7 +201,11 @@ func (f *ensureHTTPEntry) seedRecord(thread *router.Thread) error {
 	return nil
 }
 
-func (f *ensureHTTPEntry) observe() (int, string, error) { return f.pid, f.start, f.kernelErr }
+func (f *ensureHTTPEntry) observe() (int, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pid, f.start, f.kernelErr
+}
 
 func (f *ensureHTTPEntry) command(wait bool, args ...string) ([]byte, error) {
 	f.t.Helper()
@@ -227,6 +253,11 @@ func TestAttendedEnsureCobraHTTPGenerationAndWait(t *testing.T) {
 			}
 			old := f.record(f.old.ThreadID)
 			f.pid, f.start = 500, "generation-B"
+			if wait {
+				// Preflight must accept this current explicit binding, then the
+				// post-Wait ensure must use its returned B binding, not this A flag.
+				args = append(args, "--thread", f.old.ThreadID)
+			}
 			out, err := f.command(wait, args...)
 			if err != nil {
 				t.Fatal("actual B preflight", err)
@@ -251,22 +282,32 @@ func TestAttendedEnsureCobraHTTPGenerationAndWait(t *testing.T) {
 				t.Fatal("marker not real or predecessor changed")
 			}
 			trace := f.traceCopy()
-			insert, heartbeat, inbox := -1, -1, -1
+			insert, heartbeat, inbox, afterInbox, postHeartbeat := -1, -1, -1, -1, -1
 			for i, s := range trace {
 				if s == "insert:"+want {
 					insert = i
 				}
 				if s == "write:"+want {
-					heartbeat = i
+					if heartbeat < 0 {
+						heartbeat = i
+					} else {
+						postHeartbeat = i
+					}
 				}
 				if s == "Inbox:"+want {
 					inbox = i
 				}
+				if s == "after-Inbox:"+want {
+					afterInbox = i
+				}
 			}
-			if insert < 0 || heartbeat <= insert || (wait && inbox <= heartbeat) {
+			if insert < 0 || heartbeat <= insert || (wait && (inbox <= heartbeat || afterInbox <= inbox || postHeartbeat <= afterInbox)) {
 				t.Fatalf("production register/heartbeat/wait ordering wrong: %v", trace)
 			}
 			before := len(trace)
+			if wait {
+				args[len(args)-1] = want // caller explicitly consumes returned B for its next invocation
+			}
 			if _, err := f.command(wait, args...); err != nil {
 				t.Fatal("B stable actual entry", err)
 			}
@@ -274,6 +315,104 @@ func TestAttendedEnsureCobraHTTPGenerationAndWait(t *testing.T) {
 				if strings.HasPrefix(s, "insert:") {
 					t.Fatal("repeated same generation registration")
 				}
+			}
+		})
+	}
+	for _, mode := range []string{"same-generation", "generation-change", "kernel-failure", "pinned-generation-change"} {
+		t.Run("wait-after-inbox/"+mode, func(t *testing.T) {
+			f := newEnsureHTTPEntry(t)
+			if mode == "pinned-generation-change" {
+				t.Setenv("SIRSI_THREAD_ID", f.old.ThreadID)
+			}
+			var beforePost routerstore.ThreadRecord
+			var snapshotErr error
+			f.mu.Lock()
+			f.afterInbox = func() {
+				before, err := f.backend.GetThreadRecord(f.old.ThreadID)
+				f.mu.Lock()
+				defer f.mu.Unlock()
+				beforePost, snapshotErr = before, err
+				switch mode {
+				case "generation-change", "pinned-generation-change":
+					f.pid, f.start = 500, "generation-B"
+				case "kernel-failure":
+					f.kernelErr = fmt.Errorf("fixture post-wait kernel unavailable")
+				}
+			}
+			f.mu.Unlock()
+			out, err := f.command(true, f.old.AgentID, "--ensure", "--thread", f.old.ThreadID, "--timeout", "0")
+			f.mu.Lock()
+			before, readErr := beforePost, snapshotErr
+			f.mu.Unlock()
+			if readErr != nil || before.ThreadID != f.old.ThreadID {
+				t.Fatal("actual Inbox transition was not observed", readErr)
+			}
+			trace := f.traceCopy()
+			inboxDone, oldWrites, successorInsert, successorWrite, successorWrites := -1, 0, -1, -1, 0
+			want := f.old.ThreadID
+			if mode == "generation-change" || mode == "pinned-generation-change" {
+				want = attendedSuccessorID(f.old, 500, "generation-B")
+			}
+			for i, step := range trace {
+				if step == "after-Inbox:"+f.old.ThreadID {
+					inboxDone = i
+				}
+				if step == "write:"+f.old.ThreadID {
+					oldWrites++
+					if oldWrites == 1 && inboxDone >= 0 {
+						t.Fatal("initial heartbeat did not precede Inbox")
+					}
+					if oldWrites > 1 && inboxDone < 0 {
+						t.Fatal("second heartbeat did not follow completed Inbox")
+					}
+				}
+				if strings.HasPrefix(step, "insert:") {
+					if step != "insert:"+want || want == f.old.ThreadID || successorInsert >= 0 {
+						t.Fatalf("unexpected/duplicate generation registration: %v", trace)
+					}
+					successorInsert = i
+				}
+				if want != f.old.ThreadID && step == "write:"+want {
+					successorWrites++
+					successorWrite = i
+				}
+			}
+			if inboxDone < 0 {
+				t.Fatal("completed Inbox missing", trace)
+			}
+			if mode == "kernel-failure" {
+				if err == nil || !strings.Contains(err.Error(), "fixture post-wait kernel unavailable") || oldWrites != 1 || successorInsert >= 0 || !reflect.DeepEqual(before, f.record(f.old.ThreadID)) {
+					t.Fatalf("post-Wait failure was hidden or wrote heartbeat: err=%v trace=%v", err, trace)
+				}
+			} else if want == f.old.ThreadID {
+				if oldWrites != 2 || successorInsert >= 0 {
+					t.Fatal("same generation must renew exactly before and after Inbox without registration", trace)
+				}
+			} else if oldWrites != 1 || successorWrites != 1 || successorInsert <= inboxDone || successorWrite <= successorInsert || !reflect.DeepEqual(before, f.record(f.old.ThreadID)) || router.ReadSessionThreadMarker(f.session) != want {
+				t.Fatal("post-Inbox successor ordering/scope/marker failed", trace)
+			}
+			if mode == "kernel-failure" || mode == "pinned-generation-change" {
+				if err == nil || bytes.Contains(out, []byte(`"thread":`)) || bytes.Contains(out, []byte(`"items":`)) || bytes.Contains(out, []byte("No open items")) {
+					t.Fatalf("failed post-ensure published JSON/success: err=%v output=%s", err, out)
+				}
+				if mode == "pinned-generation-change" && (!strings.Contains(err.Error(), want) || os.Getenv("SIRSI_THREAD_ID") != f.old.ThreadID) {
+					t.Fatal("post-Wait pinned divergence hidden or environment rewritten", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal("successful post-Wait ensure refused", err)
+			}
+			var result struct {
+				Thread router.Thread `json:"thread"`
+			}
+			if err := json.Unmarshal(out, &result); err != nil {
+				t.Fatal(err)
+			}
+			canonical := f.record(want)
+			var current router.Thread
+			if err := json.Unmarshal(canonical.Payload, &current); err != nil || !reflect.DeepEqual(result.Thread, current) || result.Thread.ThreadID != want {
+				t.Fatal("wait returned pre-wait/stale binding instead of post-ensure canonical result", err)
 			}
 		})
 	}

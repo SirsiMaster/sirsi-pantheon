@@ -68,7 +68,7 @@ func KnownFailure(tail string) string {
 
 // Ping verdicts.
 const (
-	VerdictLive         = "LIVE"          // an attended session is consuming now
+	VerdictLive         = "LIVE"          // an attended session is heartbeat-fresh and available
 	VerdictWakeable     = "WAKEABLE"      // a worker loop with a working consumer; it will start one
 	VerdictHeld         = "HELD"          // would work, but is gated right now
 	VerdictAuthRequired = "AUTH_REQUIRED" // the consumer cannot log in
@@ -82,8 +82,8 @@ type PingResult struct {
 	Agent   string `json:"agent"`
 	Verdict string `json:"verdict"`
 	Detail  string `json:"detail"`
-	// Workable is true when sending will lead to the item being worked without
-	// anyone doing anything else (LIVE, WAKEABLE, or a HELD that will clear).
+	// Workable is published routing availability (LIVE, WAKEABLE, or a HELD
+	// expected to clear), not proof of delivery, consumption or autonomous work.
 	Workable bool   `json:"workable"`
 	Thread   string `json:"thread,omitempty"`
 	// ReportedAt and ReportSummary project the worker's OWN published lane state
@@ -98,8 +98,14 @@ type PingResult struct {
 // the registry shows: a stale heartbeat proves neither that the session is gone nor that it will
 // read the inbox, so name the gap and leave consumption unknown.
 func idleSession(now time.Time, t *Thread) string {
-	return "attended " + t.Surface + " session " + t.ThreadID + " on " + hostOrUnknown(t.Host) + ": last heartbeat " +
-		ago(now, t.LastSeenAt) + "; the session may still be open and may read the inbox when it next runs"
+	stamp, age := "unknown", "unknown"
+	if !t.LastSeenAt.IsZero() {
+		stamp = t.LastSeenAt.UTC().Format(time.RFC3339Nano)
+		age = now.Sub(t.LastSeenAt).String()
+	}
+	return "registered attended " + t.Surface + " session " + t.ThreadID + " on " + hostOrUnknown(t.Host) +
+		": last heartbeat " + stamp + " (age " + age + "; freshness limit " + DefaultThreadStaleAfter.String() +
+		"); heartbeat freshness and inbox consumption are unproven"
 }
 
 // attendedSurface reports whether a thread surface is an interactive session
@@ -149,7 +155,7 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 	switch {
 	case attended != nil:
 		res.Verdict, res.Workable, res.Thread = VerdictLive, true, attended.ThreadID
-		res.Detail = "an attended " + attended.Surface + " session is consuming this inbox"
+		res.Detail = "a fresh attended " + attended.Surface + " session is available; inbox consumption is unproven"
 	case worker != nil:
 		res.Thread = worker.ThreadID
 		l := worker.Lane
@@ -191,14 +197,15 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 				if idle != nil {
 					res.Detail += " (no fresh attended session visible in this view; " + idleSession(now, idle) + ")"
 				} else {
-					res.Detail += " (no registered session visible in this view for the worker to defer to — needs-owner until a session `sirsi thread register`s and is seen)"
+					res.Detail += " (no registered session visible in this view for the worker to defer to; actual attended session activity and inbox consumption are unknown)"
 				}
 			case HoldQuarantine:
-				// This branch is reached only when no attended session is heartbeat-fresh,
-				// so the hold describes the background loop, not the lane. An attended
-				// session whose thread was reaped (e.g. a resumed session with a new PID)
-				// is invisible here until it registers again.
-				res.Detail += " (background loop quarantined; no fresh attended session visible in this view — a live session must `sirsi thread register` to be seen)"
+				// Quarantine describes the background loop, not the existence of a session.
+				res.Detail += " (background loop quarantined; no fresh attended session visible in this view"
+				if idle != nil {
+					res.Detail += "; " + idleSession(now, idle)
+				}
+				res.Detail += "; actual attended session activity is unknown)"
 			}
 		case l != nil && l.LastOutcome == OutcomeRelay:
 			res.Verdict = VerdictHeld

@@ -4,6 +4,7 @@ package selfupdate
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -100,11 +101,49 @@ func TestProbeBinaryUsesLongerBudgetOnlyForMenubar(t *testing.T) {
 }
 
 func TestProbeBinaryContextParentDeadlineStillBoundsMenubar(t *testing.T) {
-	path := delayedVersionFixture(t, "sirsi-menubar")
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
-	defer cancel()
+	root := t.TempDir()
+	path := filepath.Join(root, "sirsi-menubar")
+	ready := filepath.Join(root, "ready")
+	// Replace the shell with the delayed fixture: CommandContext owns and
+	// reaps that exact process, with no background sleep to lose before a PID
+	// file can be written. The marker proves that the fixture actually started.
+	body := "#!/bin/sh\nprintf ready > " + strconv.Quote(ready) + "\nexec /bin/sleep 5\n"
+	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	result := make(chan error, 1)
+	finished := make(chan struct{})
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-finished:
+		case <-time.After(2 * time.Second):
+			t.Error("owned probe did not return after cancellation")
+		}
+	})
 	started := time.Now()
-	if _, err := probeBinaryContext(ctx, path); err == nil || ctx.Err() == nil {
+	go func() {
+		defer close(finished)
+		_, err := probeBinaryContext(ctx, path)
+		result <- err
+	}()
+	for {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		} else if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("read fixture readiness: %v", err)
+		}
+		select {
+		case err := <-result:
+			t.Fatalf("probe returned before fixture readiness: %v", err)
+		case <-ctx.Done():
+			t.Fatal("parent deadline elapsed before fixture readiness")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	err := <-result
+	if err == nil || !errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		t.Fatalf("short parent deadline did not refuse delayed native probe: err=%v context=%v", err, ctx.Err())
 	}
 	if elapsed := time.Since(started); elapsed >= menubarProbeTimeout {

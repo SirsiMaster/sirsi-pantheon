@@ -48,9 +48,9 @@ func TestPingLaneVerdicts(t *testing.T) {
 		{"quarantine is not workable", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldQuarantine}, time.Minute)), AgentConfig{}, VerdictHeld, false, "no fresh attended session visible in this view"},
 		// No lead/attended session these holds defer to is visible here.
 		{"no_grant without a live session has no consumer", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldNoGrant}, time.Minute)), AgentConfig{}, VerdictHeld, false, "no registered session visible in this view"},
-		{"attended hold without a live session has no consumer", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldAttended}, time.Minute)), AgentConfig{}, VerdictHeld, false, "needs-owner"},
+		{"attended hold without a live session has no consumer", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldAttended}, time.Minute)), AgentConfig{}, VerdictHeld, false, "no registered session visible in this view"},
 		// What a declared-attended loop actually publishes (wakeLoopConsumerCapable is false for it).
-		{"declared-attended loop reads held, not watch-only", regWith(worker("a", false, &LaneState{Hold: HoldAttended}, time.Minute)), AgentConfig{}, VerdictHeld, false, "needs-owner"},
+		{"declared-attended loop reads held, not watch-only", regWith(worker("a", false, &LaneState{Hold: HoldAttended}, time.Minute)), AgentConfig{}, VerdictHeld, false, "no registered session visible in this view"},
 		{"relay unreachable", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, LastOutcome: OutcomeRelay, LastDetail: "64 requests in flight"}, time.Minute)), AgentConfig{}, VerdictHeld, false, "relay"},
 		{"stale worker", regWith(worker("a", true, ok, time.Hour)), AgentConfig{}, VerdictUnreachable, false, "last reported"},
 		{"no thread, wake none", regWith(), AgentConfig{}, VerdictUnstaffed, false, "no worker path"},
@@ -84,6 +84,7 @@ func TestPingLaneIdleSessionIsNotUnregistered(t *testing.T) {
 	}{
 		{"no_grant hold", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldNoGrant}, time.Minute), idle()), VerdictHeld},
 		{"attended hold", regWith(worker("a", false, &LaneState{Hold: HoldAttended}, time.Minute), idle()), VerdictHeld},
+		{"quarantined worker", regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldQuarantine}, time.Minute), idle()), VerdictHeld},
 		{"watch-only loop", regWith(worker("a", false, &LaneState{}, time.Minute), idle()), VerdictWatchOnly},
 		{"only the idle session", regWith(idle()), VerdictUnreachable},
 	}
@@ -92,16 +93,91 @@ func TestPingLaneIdleSessionIsNotUnregistered(t *testing.T) {
 		if got.Verdict != c.verdict || got.Workable {
 			t.Errorf("%s: verdict %s workable=%v, want %s not workable (wording only, no dispatch change)", c.name, got.Verdict, got.Workable, c.verdict)
 		}
-		want := "thr-idle on m5: last heartbeat 25m0s ago; the session may still be open and may read the inbox when it next runs"
+		want := "thr-idle on m5: last heartbeat " + pingNow.Add(-25*time.Minute).UTC().Format(time.RFC3339Nano) +
+			" (age 25m0s; freshness limit 5m0s); heartbeat freshness and inbox consumption are unproven"
 		if !strings.Contains(got.Detail, want) || strings.Contains(got.Detail, "not registered") || strings.Contains(got.Detail, "gone away") {
 			t.Errorf("%s: detail %q must report the stale heartbeat as observed, without claiming absence or future consumption", c.name, got.Detail)
 		}
 	}
-	// A suspended or closed session is still not counted as idle-registered.
-	s := idle()
-	s.Status = ThreadStatusSuspended
-	if got := PingLane(regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldNoGrant}, time.Minute), s), AgentConfig{}, "a", pingNow); !strings.Contains(got.Detail, "no registered session visible in this view") {
-		t.Errorf("suspended session must keep the no-visible-session wording: %q", got.Detail)
+	// Suspended and terminal rows cannot supply stale attended evidence either.
+	for _, status := range []ThreadStatus{ThreadStatusSuspended, ThreadStatusClosed, ThreadStatusReaped} {
+		s := idle()
+		s.Status = status
+		if got := PingLane(regWith(worker("a", true, &LaneState{ConsumerDeclared: true, Hold: HoldNoGrant}, time.Minute), s), AgentConfig{}, "a", pingNow); !strings.Contains(got.Detail, "no registered session visible in this view") || strings.Contains(got.Detail, s.ThreadID) {
+			t.Errorf("%s session must keep the no-visible-session wording: %q", status, got.Detail)
+		}
+	}
+}
+
+// Mixed rows use private in-memory registries and a fixed clock. A newer held
+// worker never overrides a fresh attended session; a PID/session binding never
+// promotes a stale heartbeat. The same Workable result feeds routability.
+func TestPingLaneAttendedFreshnessWithNewerHeldWorker(t *testing.T) {
+	cases := []struct {
+		name     string
+		present  bool
+		age      time.Duration
+		status   ThreadStatus
+		verdict  string
+		workable bool
+		stale    bool
+	}{
+		{"fresh beats newer held worker", true, 4 * time.Minute, ThreadStatusActive, VerdictLive, true, false},
+		{"exact five-minute boundary is fresh", true, DefaultThreadStaleAfter, ThreadStatusActive, VerdictLive, true, false},
+		{"one nanosecond beyond boundary is stale", true, DefaultThreadStaleAfter + time.Nanosecond, ThreadStatusActive, VerdictHeld, false, true},
+		{"registered seven-minute heartbeat is not absent", true, 7 * time.Minute, ThreadStatusActive, VerdictHeld, false, true},
+		{"no attended registration in view", false, 0, "", VerdictHeld, false, false},
+		{"fresh closed session excluded", true, time.Minute, ThreadStatusClosed, VerdictHeld, false, false},
+		{"fresh reaped session excluded", true, time.Minute, ThreadStatusReaped, VerdictHeld, false, false},
+		{"fresh suspended session excluded", true, time.Minute, ThreadStatusSuspended, VerdictHeld, false, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			w := worker("a", false, &LaneState{Hold: HoldAttended}, time.Second)
+			w.ThreadID = "thr-held-worker"
+			rows := []*Thread{w}
+			var session *Thread
+			stamp := pingNow.Add(-c.age)
+			if c.present {
+				session = &Thread{ThreadID: "thr-attended", AgentID: "a", Surface: "codex", Status: c.status,
+					Host: "fixture-host", LastSeenAt: stamp, PID: os.Getpid(), SessionID: "fixture-session"}
+				rows = append(rows, session)
+			}
+			reg := regWith(rows...)
+			cfg := AgentConfig{ID: "a", Attended: true}
+			got := PingLane(reg, cfg, "a", pingNow)
+			wantThread := w.ThreadID
+			if c.workable {
+				wantThread = session.ThreadID
+			}
+			if got.Verdict != c.verdict || got.Workable != c.workable || got.Thread != wantThread {
+				t.Fatalf("got %+v, want %s workable=%v thread=%s", got, c.verdict, c.workable, wantThread)
+			}
+			if c.stale {
+				for _, want := range []string{"registered attended codex session thr-attended", stamp.UTC().Format(time.RFC3339Nano),
+					"age " + c.age.String(), "freshness limit 5m0s", "heartbeat freshness and inbox consumption are unproven"} {
+					if !strings.Contains(got.Detail, want) {
+						t.Errorf("detail %q lacks %q", got.Detail, want)
+					}
+				}
+			} else if !c.workable {
+				if !strings.Contains(got.Detail, "no registered session visible in this view") || strings.Contains(got.Detail, "thr-attended") {
+					t.Errorf("absent/excluded session must not supply attended evidence: %q", got.Detail)
+				}
+			}
+			for _, bad := range []string{"not registered", "needs-owner", "must `sirsi thread register`", "may read the inbox"} {
+				if strings.Contains(got.Detail, bad) {
+					t.Errorf("unproven absence/action/consumption claim %q in %q", bad, got.Detail)
+				}
+			}
+			unroutable := UnroutableFromRuntime(&Registry{Agents: map[string]AgentConfig{"a": cfg}}, reg, pingNow)
+			if value, ok := unroutable["a"]; !ok || value != !c.workable {
+				t.Errorf("routability diverges from Workable: %v", unroutable)
+			}
+			if session != nil && (!session.LastSeenAt.Equal(stamp) || session.Status != c.status || session.PID != os.Getpid()) {
+				t.Fatal("passive classification changed the attended binding")
+			}
+		})
 	}
 }
 

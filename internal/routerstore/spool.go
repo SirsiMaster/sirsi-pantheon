@@ -265,6 +265,13 @@ const (
 	spoolPoll        = 150 * time.Millisecond
 )
 
+const (
+	// Initial Ma'at reads only: leave time for response publication/polling.
+	// This is headroom, not a delivery guarantee under scheduler/FS failure.
+	spoolReadSettlementReserve = 2 * time.Second
+	spoolReadForwardBudget     = 25 * time.Second
+)
+
 // spoolRefused lists the methods the relay never forwards: a lane must not be
 // able to mint, list or revoke host tokens through the relay's own token.
 var spoolRefused = map[string]bool{"MintHostToken": true, "MintScopedHostToken": true, "RevokeHostToken": true, "ListHostTokens": true}
@@ -274,17 +281,31 @@ var errRelaySettlementUnresolved = errors.New("relay: response settlement remain
 
 // spoolRequest is one file in <spool>/<agent>/req/.
 type spoolRequest struct {
-	Method  string            `json:"method"`
-	Headers map[string]string `json:"headers"` // X-Sirsi-* only; never Authorization
-	Body    []byte            `json:"body"`    // opaque bytes (base64 in the file): never re-validated as JSON
+	Method               string            `json:"method"`
+	Headers              map[string]string `json:"headers"`                           // X-Sirsi-* only; never Authorization
+	Body                 []byte            `json:"body"`                              // opaque bytes (base64 in the file): never re-validated as JSON
+	ReadDeadlineUnixNano json.RawMessage   `json:"read_deadline_unix_nano,omitempty"` // initial explicitly ephemeral reads only
 }
 
 // spoolResponse is one file in <spool>/<agent>/res/.
 type spoolResponse struct {
-	Status         int    `json:"status"`
-	Body           []byte `json:"body"`
-	outcomeUnknown bool
-	unsentMaatRead bool
+	Status           int    `json:"status"`
+	Body             []byte `json:"body"`
+	outcomeUnknown   bool
+	unsentReadMethod string
+}
+
+// Only these two existing read RPCs opt out of durable initial retry. Do not
+// infer read safety from a method prefix or change already-owned outbox custody.
+func ephemeralSpoolReadLabel(method string) string {
+	switch method {
+	case "MaatRead":
+		return "Ma'at read"
+	case "RecipientLoad":
+		return "recipient-capacity read"
+	default:
+		return ""
+	}
 }
 
 // SpoolDir returns the spool directory named by a spool:// URL, or "" when the
@@ -441,6 +462,16 @@ func (t *spoolTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	defer func() { _ = root.Remove(slot) }()
 	if err := callCtx.Err(); err != nil {
 		return nil, fmt.Errorf("spool admission: request not published: %w", err)
+	}
+	if label := ephemeralSpoolReadLabel(method); label != "" {
+		// The caller's original context includes time spent awaiting admission;
+		// the absolute cutoff also charges later lane/discovery delay. Older
+		// relays ignore this optional field and do not gain the timing bound.
+		deadline, ok := callCtx.Deadline()
+		if !ok || time.Until(deadline) <= spoolReadSettlementReserve {
+			return nil, fmt.Errorf("spool: %s unavailable; insufficient deadline, request not published", label)
+		}
+		req.ReadDeadlineUnixNano = json.RawMessage(strconv.FormatInt(deadline.Add(-spoolReadSettlementReserve).UnixNano(), 10))
 	}
 	id := t.nextID()
 	reqPath := filepath.Join(reqDir, id+".json")
@@ -1026,11 +1057,18 @@ func (rl *Relay) laneWorkerTracked(ctx context.Context, agent string, wake <-cha
 	sem := make(chan struct{}, relayLaneParallel)
 	var mu sync.Mutex
 	started := map[string]bool{}
+	continuePass := false
 	for {
-		select {
-		case <-ctx.Done():
+		if !continuePass {
+			select {
+			case <-ctx.Done():
+				return
+			case <-wake:
+			}
+		}
+		continuePass = false
+		if ctx.Err() != nil {
 			return
-		case <-wake:
 		}
 		files, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "req", "*.json"))
 		sort.Strings(files)
@@ -1079,11 +1117,15 @@ func (rl *Relay) laneWorkerTracked(ctx context.Context, agent string, wake <-cha
 		if ctx.Err() != nil {
 			return
 		}
-		// ADR-069: re-forward any messages held during a prior outage, in order.
-		// If some are still unreachable, schedule a backed-off re-wake so they
-		// drain when the cloud returns — without hot-looping.
-		if rl.drainOutbox(ctx, agent) > 0 && ctx.Err() == nil {
-			rl.scheduleOutboxRewake(ctx, agent)
+		// One ordered retry per pass: a delivered prefix must yield to a
+		// normal req rescan, not monopolize this worker until the outbox empties.
+		remaining, yielded := rl.drainOutboxPass(ctx, agent, 1)
+		if remaining > 0 && ctx.Err() == nil {
+			if yielded {
+				continuePass = true // Positive progress only; no new wake/timer.
+			} else {
+				rl.scheduleOutboxRewake(ctx, agent)
+			}
 		}
 	}
 }
@@ -1121,10 +1163,10 @@ func (rl *Relay) handleOne(ctx context.Context, agent, f string) bool {
 	}
 	rl.handled.Add(1)
 	sr := rl.forward(agent, id, inflight)
-	if sr.Status == statusHoldForRetry && sr.unsentMaatRead {
+	if sr.Status == statusHoldForRetry && sr.unsentReadMethod != "" {
 		// Only initial, provably unsent reads fail without queueing; existing
 		// outbox entries keep their existing retry custody.
-		body, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: "relay: Ma'at read unavailable; service not reached and read not queued"}})
+		body, _ := json.Marshal(wireResponse{Error: &wireError{Name: "relay", Message: "relay: " + ephemeralSpoolReadLabel(sr.unsentReadMethod) + " unavailable; service not reached and read not queued"}})
 		sr = spoolResponse{Status: http.StatusServiceUnavailable, Body: body}
 	}
 	if sr.Status == statusHoldForRetry {
@@ -1340,16 +1382,31 @@ func (rl *Relay) retryOutboxOne(ctx context.Context, agent, f string) outboxOutc
 // ordered-release guarantee. The frontier (the first non-delivered item and
 // everything after it) is left for the next wake.
 func (rl *Relay) drainOutbox(ctx context.Context, agent string) int {
+	remaining, _ := rl.drainOutboxPass(ctx, agent, 0)
+	return remaining
+}
+
+// drainOutboxPass bounds retry invocations, not duration or HTTP attempts.
+// A nonpositive limit retains the unlimited wrapper's behavior. Yield only
+// after a delivered prefix exhausts the budget with untouched tail remaining;
+// any non-delivery keeps its existing frontier and backoff, never continuation.
+func (rl *Relay) drainOutboxPass(ctx context.Context, agent string, limit int) (remaining int, yielded bool) {
 	held, _ := filepath.Glob(filepath.Join(rl.Spool, agent, "outbox", "*.json"))
 	sort.Strings(held)
 	for i, f := range held {
-		if ctx.Err() != nil || rl.retryOutboxOne(ctx, agent, f) != outboxDelivered {
+		if ctx.Err() != nil {
+			return len(held) - i, false
+		}
+		if limit > 0 && i >= limit {
+			return len(held) - i, true
+		}
+		if rl.retryOutboxOne(ctx, agent, f) != outboxDelivered {
 			// Stop at the frontier. Count the rest as unresolved so the caller
 			// schedules a backed-off re-wake to drain from here next time.
-			return len(held) - i
+			return len(held) - i, false
 		}
 	}
-	return 0
+	return 0, false
 }
 
 // scheduleOutboxRewake re-wakes a lane after a backoff so a persistent outage
@@ -1536,7 +1593,7 @@ func neverReachedService(err error) bool {
 
 // A nested DNS/dial cause is not sufficient when another wrapper identifies
 // a read/write phase or several competing causes. Leave those outcomes unknown.
-// This stricter check applies to initial MaatRead forwards only. Legacy queued
+// This stricter check applies to the explicitly ephemeral initial reads. Legacy queued
 // reads keep their old classification until an independently safe durable
 // frontier exists; that compatibility retains the legacy replay risk.
 func maatReadNeverReached(err error) bool {
@@ -1640,11 +1697,31 @@ func (rl *Relay) forwardWithQueuePolicy(agent, id, path string, queued bool) spo
 		rl.Log.Warn("relay: refused token method", "agent", agent, "method", req.Method, "id", id)
 		return fail(http.StatusForbidden, "relay: "+req.Method+" is never forwarded (token management stays on the service host)")
 	}
+	requestCtx := context.Background()
+	if ephemeralSpoolReadLabel(req.Method) != "" && !queued && len(req.ReadDeadlineUnixNano) != 0 {
+		// Never apply a client cutoff to mutations or already-owned outbox
+		// entries. A malformed/expired initial read has not been attempted.
+		var nanos int64
+		if err := json.Unmarshal(req.ReadDeadlineUnixNano, &nanos); err != nil || nanos <= 0 {
+			return spoolResponse{Status: statusHoldForRetry, unsentReadMethod: req.Method}
+		}
+		now := time.Now()
+		deadline := time.Unix(0, nanos)
+		if max := now.Add(spoolReadForwardBudget); deadline.After(max) {
+			deadline = max
+		}
+		if !deadline.After(now) {
+			return spoolResponse{Status: statusHoldForRetry, unsentReadMethod: req.Method}
+		}
+		var cancel context.CancelFunc
+		requestCtx, cancel = context.WithDeadline(requestCtx, deadline)
+		defer cancel() // Shared by BOTH attempts and the response body read.
+	}
 	// buildReq is called once per attempt: each attempt needs its own body
 	// reader (a bytes.Reader is consumed once) and its own *http.Request, so a
 	// safe re-dial below re-sends the identical bytes on a fresh request.
 	buildReq := func() (*http.Request, error) {
-		hr, herr := http.NewRequest(http.MethodPost, strings.TrimRight(rl.Base, "/")+"/v1/call/"+req.Method, bytes.NewReader(req.Body))
+		hr, herr := http.NewRequestWithContext(requestCtx, http.MethodPost, strings.TrimRight(rl.Base, "/")+"/v1/call/"+req.Method, bytes.NewReader(req.Body))
 		if herr != nil {
 			return nil, herr
 		}
@@ -1693,10 +1770,10 @@ func (rl *Relay) forwardWithQueuePolicy(agent, id, path string, queued bool) spo
 	// (response lost mid-flight) is NEVER retried here; it falls through to the
 	// OUTCOME-UNKNOWN branch below, the exact discipline the durable outbox uses.
 	neverReached := neverReachedService
-	if req.Method == "MaatRead" && !queued {
+	if ephemeralSpoolReadLabel(req.Method) != "" && !queued {
 		neverReached = maatReadNeverReached
 	}
-	if err != nil && neverReached(err) {
+	if err != nil && neverReached(err) && requestCtx.Err() == nil {
 		forwardClient.CloseIdleConnections()
 		if hr2, berr := buildReq(); berr == nil {
 			rl.Log.Warn("relay: forward never reached service, re-dialing once on a fresh connection", "agent", agent, "method", req.Method, "id", id, "err", err.Error())
@@ -1704,11 +1781,18 @@ func (rl *Relay) forwardWithQueuePolicy(agent, id, path string, queued bool) spo
 		}
 	}
 	if err != nil {
+		// Deadline expiry alone is NOT never-sent evidence. Only the existing
+		// phase-aware classifier may produce the initial read's no-queue error.
+		// In particular a bare context deadline remains UNKNOWN/non-retryable.
 		if neverReached(err) {
 			// Every attempted forward was classified never sent. The caller
 			// decides whether to hold the request or return a read failure.
 			rl.Log.Warn("relay: service unreachable before request was sent", "agent", agent, "method", req.Method, "id", id, "err", err.Error())
-			return spoolResponse{Status: statusHoldForRetry, unsentMaatRead: req.Method == "MaatRead"}
+			sr := spoolResponse{Status: statusHoldForRetry}
+			if !queued && ephemeralSpoolReadLabel(req.Method) != "" {
+				sr.unsentReadMethod = req.Method
+			}
+			return sr
 		}
 		return unknown("service unreachable or connection lost: " + err.Error())
 	}

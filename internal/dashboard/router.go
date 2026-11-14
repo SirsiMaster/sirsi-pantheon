@@ -147,10 +147,14 @@ func (s *Server) apiRouter(w http.ResponseWriter, r *http.Request) {
 	snap, err := s.cfg.RouterFn()
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		message := "router producer unavailable"
+		if !s.cfg.CloudBoard {
+			message = err.Error()
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 		return
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(snap)
+	_ = enc.Encode(s.routerResponse(snap))
 }

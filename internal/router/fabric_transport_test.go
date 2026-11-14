@@ -115,7 +115,7 @@ func TestFabricTransportPlanRejectsMissingOrBroadAuthority(t *testing.T) {
 		env, args []string
 	}{
 		{"unknown host", nil, []string{"example.com", "--work", "x", "--", "/usr/bin/true"}},
-		{"no proxy", []string{"ALL_PROXY="}, []string{"m1", "--work", "x", "--", "/usr/bin/true"}},
+		{"explicit socks without proxy", []string{"ALL_PROXY="}, []string{"--transport", "socks", "m1", "--work", "x", "--", "/usr/bin/true"}},
 		{"remote proxy", []string{"ALL_PROXY=socks5://example.com:1080"}, []string{"m1", "--work", "x", "--", "/usr/bin/true"}},
 		{"conflicting identity", []string{"SIRSI_ROUTER_AGENT=ra"}, []string{"m1", "--work", "x", "--", "/usr/bin/true"}},
 		{"injected work", nil, []string{"m1", "--work", "x;touch bad", "--", "/usr/bin/true"}},
@@ -127,5 +127,55 @@ func TestFabricTransportPlanRejectsMissingOrBroadAuthority(t *testing.T) {
 				t.Fatalf("refusal missing: %s", out)
 			}
 		})
+	}
+}
+
+func TestFabricTransportPlanDefaultWithoutProxyMatchesExplicitDirect(t *testing.T) {
+	proxyKeys := []string{"ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"}
+	for _, host := range []string{"m1", "m5", "studio"} {
+		for _, allEmpty := range []bool{false, true} {
+			name := host + "/absent"
+			if allEmpty {
+				name = host + "/empty"
+			}
+			t.Run(name, func(t *testing.T) {
+				cmd := fabricPlanCommand(t, nil, host, "--work", "default-proof", "--", "/usr/bin/true")
+				env := make([]string, 0, len(cmd.Env)+len(proxyKeys))
+				for _, entry := range cmd.Env {
+					key, _, _ := strings.Cut(entry, "=")
+					switch key {
+					case "ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy":
+						continue
+					}
+					env = append(env, entry)
+				}
+				if allEmpty {
+					for _, key := range proxyKeys {
+						env = append(env, key+"=")
+					}
+				}
+				cmd.Env = env
+				out, err := cmd.CombinedOutput()
+				if err != nil {
+					t.Fatalf("default plan: %s: %v", out, err)
+				}
+				explicit := exec.Command("/bin/bash", "../../scripts/maat/fabric-run.sh", "--plan", "--transport", "direct",
+					host, "--work", "default-proof", "--", "/usr/bin/true")
+				explicit.Env = append([]string(nil), env...)
+				direct, err := explicit.CombinedOutput()
+				if err != nil {
+					t.Fatalf("explicit direct plan: %s: %v", direct, err)
+				}
+				if !bytes.Equal(out, direct) {
+					t.Fatalf("default differs from explicit direct:\ndefault: %s\nexplicit: %s", out, direct)
+				}
+				for _, required := range []string{"PLAN_ONLY_NO_EXECUTION", "StrictHostKeyChecking=yes",
+					"HostKeyAlias=sirsi-" + host, "ENDPOINT_POLICY=thunderbolt,thunderbolt-relay,classified-lan,tailscale"} {
+					if !strings.Contains(string(out), required) {
+						t.Errorf("missing direct-plan boundary %s", required)
+					}
+				}
+			})
+		}
 	}
 }

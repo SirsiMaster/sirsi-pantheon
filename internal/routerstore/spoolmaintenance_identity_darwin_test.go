@@ -73,12 +73,38 @@ func TestMaintenanceStartupIntentOpensWithResolvedGroup(t *testing.T) {
 	if err := os.Chmod(filepath.Join(path, servicedrain.MaintenanceMarkerName), 0640); err != nil {
 		t.Fatal(err)
 	}
+	// Darwin temp children inherit the private directory's group, which need
+	// not be the process primary group. This is owned fixture policy only;
+	// production must still resolve and enforce its enrolled named group.
+	fixtureGID := st.Gid
+	file, err := root.OpenFile(servicedrain.MaintenanceMarkerName, os.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	var markerStat unix.Stat_t
+	if err := unix.Fstat(int(file.Fd()), &markerStat); err != nil {
+		t.Fatal(err)
+	}
+	owner := uint32(os.Getuid())
+	if markerStat.Gid != fixtureGID || !maintenanceStartupIntentMetadataAllowed(markerStat, owner, fixtureGID) {
+		t.Fatalf("fixture metadata uid=%d gid=%d mode=%#o; retained directory gid=%d, primary gid=%d", markerStat.Uid, markerStat.Gid, markerStat.Mode, fixtureGID, os.Getgid())
+	}
+	// Exercise the primary-group mismatch when present, and a different group
+	// even on hosts where primary and inherited fixture groups happen to agree.
+	wrongGID := uint32(os.Getgid())
+	if wrongGID == fixtureGID {
+		wrongGID = fixtureGID ^ 1
+	}
+	if maintenanceStartupIntentMetadataAllowed(markerStat, owner, wrongGID) {
+		t.Fatalf("fixture marker accepted mismatched policy gid=%d, actual gid=%d", wrongGID, fixtureGID)
+	}
 	lookups := 0
-	intent, err := openMaintenanceStartupIntentForRelay(root, uint32(os.Getuid()), func() (int, int, error) {
+	intent, err := openMaintenanceStartupIntentForRelay(root, owner, func() (int, int, error) {
 		lookups++
-		return os.Getuid(), os.Getgid(), nil
+		return os.Getuid(), int(fixtureGID), nil
 	})
-	if err != nil || intent == nil || lookups != 1 || intent.Marker != marker {
+	if err != nil || intent == nil || lookups != 1 || intent.Marker != marker || intent.gid != fixtureGID || intent.owner != owner {
 		t.Fatalf("resolved startup intent = %v, %v, identity calls=%d", intent, err, lookups)
 	}
 	if err := intent.Close(); err != nil {

@@ -38,7 +38,7 @@ func FromGeneration(generation *ledger.FabricGeneration, uiBuild string) (Payloa
 		for _, t := range v.Read.Node.LiveThreads {
 			c := consumers[t.AgentID]
 			if c == nil {
-				c = &Consumer{}
+				c = &Consumer{Consumption: "unknown"}
 				consumers[t.AgentID] = c
 			}
 			c.Armed = c.Armed || t.Armed
@@ -48,7 +48,7 @@ func FromGeneration(generation *ledger.FabricGeneration, uiBuild string) (Payloa
 		}
 		for _, t := range v.Read.Node.StaleThreads {
 			if consumers[t.AgentID] == nil {
-				consumers[t.AgentID] = &Consumer{Loop: "unknown"}
+				consumers[t.AgentID] = &Consumer{Loop: "unknown", Consumption: "unknown"}
 			}
 		}
 	}
@@ -58,6 +58,14 @@ func FromGeneration(generation *ledger.FabricGeneration, uiBuild string) (Payloa
 	for _, a := range v.Read.Snapshot.OrderedAgents() {
 		f := v.Facts.Lanes[a.AgentID]
 		c := canonical[a.AgentID]
+		if consumer := consumers[a.AgentID]; consumer != nil {
+			// Keep availability separate from watcher liveness and consumption.
+			// Fresh attended LIVE needs no autonomous worker answering grant.
+			if c.Runtime != nil {
+				available := c.Runtime.WakeRoutable
+				consumer.RoutingAvailable = &available
+			}
+		}
 		meta := v.Read.Metadata.Lanes[a.AgentID]
 		kind := meta.Type
 		if kind == "" {
