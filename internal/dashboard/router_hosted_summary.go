@@ -63,7 +63,7 @@ func (s *Server) routerSnapshotResponse(snap RouterSnapshot) any {
 		out.Lanes.List = append(out.Lanes.List, hostedRouterLane{Agent: lane.Agent, Verdict: verdict, Open: lane.Open})
 	}
 	for _, row := range snap.Queue {
-		out.Queue = append(out.Queue, hostedRouterQueue{Agent: row.Agent, Open: row.Open})
+		out.Queue = append(out.Queue, hostedRouterQueue(row))
 	}
 	if snap.Fabric != nil {
 		fabric := projectHostedFabric(*snap.Fabric)
