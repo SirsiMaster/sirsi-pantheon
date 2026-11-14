@@ -33,6 +33,31 @@ function host(hash,replies){
 const base=()=>({'/api/router/v1/snapshot':snapshot,'/api/fabric':new Error('no fabric'),'/api/stats':{},'/api/macs':{}});
 const jobsNone=Object.assign(new Error('no source connected'),{status:404});
 
+test('shared hosted lane keeps refreshing counts and labels withheld detail',async()=>{
+ const summary=(open)=>({private_details_withheld:true,generated_at:new Date(at).toISOString(),build:'fixture',
+  work:{open,done:3,total:open+3,in_progress:1,assigned_not_started:open-1,stalled:0,blocked:0},
+  messages:{open:2,stranded:0,oldest_age_seconds:0},health:{engine:'withheld',engine_state:'withheld',issues:[]},
+  lanes:[{agent:'lane-a',open,active:1,stalled:0,blocked:0}],activity:[],activity_seeded:false,runtime_available:false});
+ let open=5;
+ const h=host('#lane/lane-a',{...base(),'/api/router/v1/snapshot':()=>({...snapshot,items:undefined,
+  private_details_withheld:true,queue:[{agent:'lane-a',open:2}],fabric:summary(open)}),
+  '/api/router/v1/ledger':Object.assign(new Error('withheld'),{status:403}),'/api/router/v1/jobs':jobsNone});
+ await h.settle();
+ assert.match(h.html,/5 open tasks · 1 active/);
+ assert.match(h.html,/2 open inbox messages/);
+ assert.match(h.html,/Lane ledger details are withheld/);
+ assert.doesNotMatch(h.html,/Empty: nothing waiting/);
+ open=6;
+ h.advance(11000);await h.settle();
+ assert.match(h.html,/6 open tasks · 1 active/);
+ h.hashchange('queue');await h.settle();
+ assert.match(h.html,/Message details are withheld/);
+ assert.doesNotMatch(h.html,/Snapshot mismatch|No open items/);
+ h.hashchange('fleet');await h.settle();
+ assert.match(h.html,/Lane task counts/);
+ assert.doesNotMatch(h.html,/data-fabric-filter=/);
+});
+
 test('#lane/<agent> loads that lane ledger and renders the CompassPoint view',async()=>{
  const h=host('#lane/lane-a',{...base(),'/api/router/v1/ledger':ledgerBody,'/api/router/v1/jobs':jobsNone});await h.settle();
  assert.ok(h.requests.includes('/api/router/v1/ledger?agent=lane-a'));assert.ok(h.requests.includes('/api/router/v1/jobs?agent=lane-a'));
