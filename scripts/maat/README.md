@@ -152,6 +152,14 @@ For an existing runtime that supplies the scoped local SOCKS proxy, use:
 
     ~/.local/bin/sirsi-fabric-run m1 --work my-own-work --cpu-cores 1 --timeout 90 -- /usr/bin/true
 
+For remote dispatch, the default selects direct transport when no runtime proxy
+is configured and uses a valid loopback SOCKS proxy when supplied. Conflicting
+proxy variables, unsupported types and invalid ports are refused. Explicit
+`--transport socks` requires a proxy; `--transport direct` refuses to bypass
+one. A proven same-host dispatch remains local and preserves the payload's
+environment. Planning does not select or probe a route; actual dispatch retains
+the existing admission and strict host-key checks.
+
 For a proven own target, the adjacent selector checks exact enrolled numeric
 endpoint ownership in the kernel, non-loopback UP interface, native UUID and
 real/effective UID against the existing target account. It uses the existing
@@ -171,18 +179,29 @@ account. For network routes, missing pins, keys, helper, proxy or supported mana
 closed. Native destinations retain their own CLI/runtime/identity and the one
 canonical router; no router database is copied.
 
-The ONE endpoint table is in `fabric-endpoints.py`. Fresh connections prefer
-surveyed direct Thunderbolt, then the existing pinned Studio SSH-forwarding
-path for M1↔M5, then RFC1918 LAN answers from the target's actual LocalHostName,
-then Tailscale. `.local` alone does not mean LAN: Thunderbolt, link-local,
+The endpoint policy is in `fabric-endpoints.py`. When local link-monitor
+metadata is available, it supplies current direct Thunderbolt candidates whose
+local route uses a Thunderbolt port or Thunderbolt Bridge. When metadata is unavailable,
+the policy tries surveyed direct Thunderbolt. It also classifies direct addresses
+discovered via mDNS before trying the existing pinned Studio SSH-forwarding
+path for M1↔M5, followed by RFC1918 LAN and Tailscale. Local metadata and route classification
+do not prove peer identity or successful traffic, and the local route does not
+prove a proxy's egress path. `.local` alone does not mean LAN: Thunderbolt, link-local,
 loopback and public answers are not relabeled as Wi-Fi. Both hop identities
 remain pinned; there is no new relay daemon or network bridge. If no enrolled
 local path is permitted/reachable through a supplied SOCKS proxy, selection
 uses that same proxy for later candidates; it never probes around the mask.
 
+The bounded local link-monitor response is decoded as strict UTF-8. Invalid,
+unavailable or oversized metadata remains unavailable; a reported address is
+only a candidate until the pinned SSH connection authenticates its peer.
+
 `/usr/bin/python3 ~/.local/bin/fabric-endpoints.py ssh-config` renders the native
 `~/.ssh/sirsi_fleet.conf` profile from the same selector, without DNS or network
-probes. SHA owns reviewed per-host installation/readback. Preserve the old
+probes. OpenSSH takes the first value it finds: an earlier matching block can
+override this profile's trust settings. Place the include before matching
+settings and verify each effective alias with `ssh -G` before relying on its
+dedicated host-key file. SHA owns reviewed per-host installation/readback. Preserve the old
 profile as evidence and publish the complete new profile only after validating
 it with `ssh -G`; do not restart sessions or rewrite keys. New connections use
 the new policy; existing streams finish untouched. A host-key/authentication
