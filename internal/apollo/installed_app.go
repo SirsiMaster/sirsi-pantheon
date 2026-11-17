@@ -15,13 +15,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 	"unicode/utf8"
 )
 
 const (
 	InstalledAppModel     = "mlx-community/Qwen3.5-9B-4bit"
-	InstalledAppRoute     = InstalledAppModel + "@apollo:2.2.0"
+	InstalledAppRoute     = InstalledAppModel + "@apollo:2.3.9"
 	InstalledAppPrecision = "Q4-affine-g64-bf16"
 	installedAppEndpoint  = "http://127.0.0.1:8520/v1"
 	// Public checkpoint identity, not a transport credential. A named digest
@@ -45,7 +46,7 @@ type InstalledAppProfile struct {
 
 func installedAppProfile() InstalledAppProfile {
 	return InstalledAppProfile{
-		Version: "2.2.6", Model: InstalledAppModel, Route: InstalledAppRoute,
+		Version: "2.3.9", Model: InstalledAppModel, Route: InstalledAppRoute,
 		Precision: InstalledAppPrecision, Endpoint: installedAppEndpoint,
 		Modes:              []string{"plain", "flash", "mlx-certified"},
 		CheckpointRevision: "8b2b98c00a6b4d291155e4890773ca8f769aee53",
@@ -54,16 +55,25 @@ func installedAppProfile() InstalledAppProfile {
 	}
 }
 
+// installedAppLegacyRoutes are earlier documented route IDs. They stay accepted as input and are always
+// normalized to InstalledAppRoute on the wire, so pinned invocations keep working across releases.
+var installedAppLegacyRoutes = []string{
+	InstalledAppModel + "@apollo:2.2.0",
+	InstalledAppModel + "@apollo:2.3.0",
+	InstalledAppModel + "@apollo:2.3.1",
+	InstalledAppModel + "@apollo:2.3.2",
+}
+
 func IsInstalledAppModel(model string) bool {
-	return model == "qwen3.5-9b" || model == InstalledAppModel || model == InstalledAppRoute
+	return model == "qwen3.5-9b" || model == InstalledAppModel || model == InstalledAppRoute || slices.Contains(installedAppLegacyRoutes, model)
 }
 
 var installedAppFiles = map[string]string{
-	"Helpers/apollo-router":               "2aa330c40c09f947bbda69cbb7e1bbbd3089205559ea5d31742d0f66e4c6f769",
-	"Helpers/qwen35_serve":                "1c3ede1cacc7bb9b6c3b57517596a52166fb832771e6e4a30dcf15b4aa672a3a",
-	"Helpers/qwen35_flash":                "27bbe5cac64b43911cb2a325f39dc69b254aaebf49e023d9620fabb2a3f4677a",
-	"Resources/qwen/apollo_qwen_serve.py": "15fa38b17ac4bf29f870f13ba8273239d725c14ac59d021b564bb6bc707d2257",
-	"MacOS/Apollo":                        "7d8b43cf9a3fcfb677f918ffc1aba4fb42b3eb069eaeb4e2c76d962c50463ad3",
+	"Helpers/apollo-router":               "ba3ad2e49bafd19e2185863ac7be17b7ff19005d6babe404008c3ebfdd2f02d7",
+	"Helpers/qwen35_serve":                "8a6f4a90146033fe526f6a801eb3ac06796eb920205248aefb7ee3b0a3a1bd68",
+	"Helpers/qwen35_flash":                "d33b62723096b276f780f220900319b9babb7bf31b97040bb7275f62bbfefc98",
+	"Resources/qwen/apollo_qwen_serve.py": "bbd46d8e8fb695908f45629160550ecede861ef4230411058ad29df85eedbadf",
+	"MacOS/Apollo":                        "adba5101ceea95dd98d1eb84cc5979a2a2d9d9f85a5fcabb42d786e42e1cb190",
 }
 
 // InstalledApp reads only fixed installation locations. It accepts no profile,
@@ -77,11 +87,11 @@ func InstalledApp(home string) (InstalledAppProfile, error) {
 		// The first existing installation is authoritative. Never hide drift
 		// in the per-user app by finding a stale system-wide copy instead.
 		if err := verifyInstalledApp(bundle, installedAppFiles); err != nil {
-			return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.2.6 binding unavailable: %w", err)
+			return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.3.9 binding unavailable: %w", err)
 		}
 		return installedAppProfile(), nil
 	}
-	return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.2.6 app is unavailable")
+	return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.3.9 app is unavailable")
 }
 
 func verifyInstalledApp(bundle string, files map[string]string) error {
@@ -108,7 +118,7 @@ func verifyInstalledApp(bundle string, files map[string]string) error {
 			return fmt.Errorf("close installed Apollo artifact %s: %w", path, closeErr)
 		}
 		if hex.EncodeToString(h.Sum(nil)) != expected {
-			return fmt.Errorf("installed Apollo artifact %s differs from release 2.2.6", path)
+			return fmt.Errorf("installed Apollo artifact %s differs from release 2.3.9", path)
 		}
 	}
 	return nil
