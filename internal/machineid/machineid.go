@@ -113,7 +113,7 @@ func probeMachineID() string {
 	switch runtime.GOOS {
 	case "darwin":
 		// IOPlatformUUID — stable across renames, reinstalls, and networks.
-		out, err := exec.Command("ioreg", "-rd1", "-c", "IOPlatformExpertDevice").Output()
+		out, err := exec.Command("/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice").Output()
 		if err != nil {
 			return ""
 		}
