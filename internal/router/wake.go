@@ -33,6 +33,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -1163,6 +1164,12 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 	if interval <= 0 {
 		interval = DefaultWakeLoopInterval
 	}
+	// Memory discipline (owner, 2026-11-04): an idle waiter held ~41 MB private footprint, mostly Go heap left
+	// over from each tick's inbox/ledger reads (~10-14 MB live) at GOGC=100. Collect harder and hand pages back
+	// to the OS at every idle boundary (see the end of the loop). ponytail: interim; the real fix is counts-only
+	// reads + store event-wait (single-digit MB), then one multiplexed waker (KB per lane).
+	debug.SetGCPercent(25)
+	debug.SetMemoryLimit(24 << 20)
 	// Bind the lane before the first store session is resolved. launchd does not
 	// supply a lane identity; hostname fallback would share sessions across lanes.
 	_ = os.Setenv("SIRSI_AGENT_ID", agentID)
@@ -1626,6 +1633,9 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			}
 		}
 
+		// Idle boundary: return this tick's garbage to the OS before sleeping, so an idle lane's footprint is
+		// its live state, not the high-water mark of its last read.
+		debug.FreeOSMemory()
 		select {
 		case <-ctx.Done():
 			return nil
