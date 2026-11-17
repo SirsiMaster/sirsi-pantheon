@@ -59,3 +59,47 @@ func TestSharedReaperRequiresKnownMatchingMachine(t *testing.T) {
 		})
 	}
 }
+
+func TestSharedStrayReaperProtectsUnknownAndForeignRows(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SIRSI_ROUTER_DB", filepath.Join(root, "router.db"))
+	t.Setenv(routercfg.StoreWakeEnv, "0")
+	reg := &ThreadRegistry{Threads: map[string]*Thread{
+		"anchor":  {ThreadID: "anchor", AgentID: "agent", Surface: "fixture", PID: 4001, MachineID: "m5", Status: ThreadStatusActive},
+		"local":   {ThreadID: "local", AgentID: "agent", Surface: "fixture", PID: 4002, MachineID: "m5", Status: ThreadStatusActive},
+		"foreign": {ThreadID: "foreign", AgentID: "agent", Surface: "fixture", PID: 4003, MachineID: "studio", Status: ThreadStatusActive},
+		"unknown": {ThreadID: "unknown", AgentID: "agent", Surface: "fixture", PID: 4004, Status: ThreadStatusActive},
+	}}
+	if err := SaveThreadRegistry(root, reg); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(routercfg.StoreWakeEnv, "1")
+	oldMachine, oldPID := getMachineIDFn(), getPIDStateFn()
+	setMachineIDFn(func() string { return "m5" })
+	setPIDStateFn(func(pid int) PIDState {
+		if pid == 4001 {
+			return PIDAlive
+		}
+		if pid == 4003 || pid == 4004 {
+			t.Errorf("probed nonlocal or unknown PID %d", pid)
+		}
+		return PIDGone
+	})
+	t.Cleanup(func() { setMachineIDFn(oldMachine); setPIDStateFn(oldPID) })
+	retired, err := ReapStrayThreads(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(retired) != 1 || retired[0].ThreadID != "local" {
+		t.Fatalf("retired = %+v", retired)
+	}
+	out, err := LoadThreadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"foreign", "unknown"} {
+		if out.Threads[id].Status != ThreadStatusActive {
+			t.Errorf("%s status = %s", id, out.Threads[id].Status)
+		}
+	}
+}
