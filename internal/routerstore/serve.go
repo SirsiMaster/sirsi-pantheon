@@ -38,6 +38,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
 
 var (
@@ -1012,7 +1014,12 @@ func (s *server) writeCallErr(w http.ResponseWriter, method string, err error) {
 		return
 	}
 	if sn := sentinelName(err); sn != "" {
-		writeJSON(w, http.StatusOK, wireResponse{Error: &wireError{Name: sn, Message: err.Error()}})
+		we := &wireError{Name: sn, Message: err.Error()}
+		var wf *schedule.WaiterFirstError
+		if errors.As(err, &wf) {
+			we.Detail, _ = json.Marshal(wf)
+		}
+		writeJSON(w, http.StatusOK, wireResponse{Error: we})
 		return
 	}
 	writeErr(w, http.StatusInternalServerError, "", method+": "+err.Error())

@@ -38,6 +38,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/machineid"
 )
 
@@ -75,6 +76,7 @@ var sentinelErrors = map[string]error{
 	"ErrWorkerAnswers":        ErrWorkerAnswers,
 	"ErrReceiptInvalid":       ErrReceiptInvalid,
 	"ErrReceiptUnverifiable":  ErrReceiptUnverifiable,
+	"ErrWaiterFirst":          schedule.ErrWaiterFirst,
 }
 
 // ErrServiceUnavailable is a transient service/database failure (HTTP 503):
@@ -93,6 +95,10 @@ func sentinelName(err error) string {
 type wireError struct {
 	Name    string `json:"name,omitempty"`
 	Message string `json:"message"`
+	// Detail carries the structured payload of a typed refusal (today only
+	// *schedule.WaiterFirstError) so the client can rebuild it. Additive: old
+	// peers ignore it and still see the sentinel by Name.
+	Detail json.RawMessage `json:"detail,omitempty"`
 }
 
 type wireRequest struct {
@@ -565,6 +571,12 @@ func (rs *RemoteStore) do(ctx context.Context, method string, args []any, sess *
 	}
 	if wr.Error != nil {
 		if s, ok := sentinelErrors[wr.Error.Name]; ok {
+			if s == schedule.ErrWaiterFirst && len(wr.Error.Detail) > 0 {
+				var wf schedule.WaiterFirstError
+				if json.Unmarshal(wr.Error.Detail, &wf) == nil {
+					return &wf
+				}
+			}
 			return s
 		}
 		if resp.StatusCode == http.StatusServiceUnavailable {
