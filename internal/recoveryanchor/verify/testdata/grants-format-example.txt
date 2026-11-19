@@ -1,0 +1,6 @@
+# FORMAT EXAMPLE ONLY. Fake fingerprints; not an anchor-grants.allow and not
+# for any real path. One line per signing key: fingerprint, uid, verbs,
+# optional override=true.
+SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA uid=501 verbs=restart-broker,re-arm-supervisor
+
+SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA uid=502 verbs=fetch-known-good-config override=true
