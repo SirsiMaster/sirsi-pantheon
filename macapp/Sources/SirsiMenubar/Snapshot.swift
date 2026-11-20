@@ -76,6 +76,7 @@ func runSnapshotMode(outDir: String, width: CGFloat = 380, appearance: ColorSche
         var shots: [(name: String, view: AnyView)] = [
             ("home", AnyView(RootView(engine: engine))),
             ("all-tools", AnyView(PantheonLibraryView(engine: engine))),
+            ("universal-control", AnyView(UniversalControlHelp(initialExpanded: true))),
             ("insight", AnyView(InsightView(engine: engine, preloaded: insight))),
             ("anubis-hygiene", AnyView(AnubisView(engine: engine))),
             ("horus-ops", AnyView(HorusView(engine: engine))),

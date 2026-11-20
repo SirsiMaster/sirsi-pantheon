@@ -8,7 +8,7 @@ final class UniversalControlBluetoothTests: XCTestCase {
     }
 
     func testValidReportWithoutConnectedDevicesIsEmpty() {
-        let data = #"{"SPBluetoothDataType":[{"controller_properties":{"controller_state":"attrib_on"}}]}"#.data(using: .utf8)!
+        let data = #"{"SPBluetoothDataType":[{"controller_properties":{"controller_state":"attrib_on"},"device_not_connected":[{"Paired Mouse":{"device_minorType":"Mouse"}}]}]}"#.data(using: .utf8)!
         XCTAssertEqual(UniversalControlBluetooth.mouseNames(in: data), [])
     }
 
