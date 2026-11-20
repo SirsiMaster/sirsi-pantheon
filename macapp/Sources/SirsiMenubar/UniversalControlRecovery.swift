@@ -32,6 +32,7 @@ enum UniversalControlRecoveryResult: Equatable {
     case stateChangedAfterPossibleDisconnect
     case stateChangedAfterPossibleConnection
     case alreadyRunning
+    case lockUnavailable
     case cancelled
     case cancelledAfterPossibleDisconnect
     case cancelledAfterPossibleConnection
@@ -45,12 +46,26 @@ enum UniversalControlRecoveryResult: Equatable {
 @MainActor
 final class UniversalControlRecovery {
     private static var running = false
+    private let lockPath: String
+
+    init(lockPath: String = UniversalControlProcessLock.defaultPath) {
+        self.lockPath = lockPath
+    }
 
     func reconnect(id: String, adapter: UniversalControlPeerAdapter) async -> UniversalControlRecoveryResult {
         guard !Self.running else { return .alreadyRunning }
         guard !id.isEmpty else { return .targetUnavailable }
         Self.running = true
         defer { Self.running = false }
+        let processLock: UniversalControlProcessLock
+        do {
+            processLock = try UniversalControlProcessLock(path: lockPath)
+        } catch UniversalControlLockError.busy {
+            return .alreadyRunning
+        } catch {
+            return .lockUnavailable
+        }
+        defer { withExtendedLifetime(processLock) {} }
         var mayHaveDisconnected = false
         var mayHaveConnected = false
         do {
@@ -63,6 +78,7 @@ final class UniversalControlRecovery {
             guard let wasLinked = original.linked else { return .connectionStateUnknown }
             if wasLinked {
                 try Task.checkCancellation()
+                guard processLock.isStillValid() else { return .lockUnavailable }
                 // An adapter error may arrive after the selection took effect.
                 mayHaveDisconnected = true
                 try await adapter.selectPeer(id: id, expectedLinked: true)
@@ -70,13 +86,15 @@ final class UniversalControlRecovery {
                       disconnected.selectable, disconnected.linked == false else { return .stateChangedAfterPossibleDisconnect }
             }
             try Task.checkCancellation()
+            guard processLock.isStillValid() else {
+                return mayHaveDisconnected ? .stateChangedAfterPossibleDisconnect : .lockUnavailable
+            }
             // The action can succeed even if the adapter then reports an error.
             mayHaveConnected = true
             try await adapter.selectPeer(id: id, expectedLinked: false)
             guard let linked = try await uniquePeer(id: id, adapter: adapter), linked.linked == true else {
                 return mayHaveDisconnected ? .stateChangedAfterPossibleDisconnect : .stateChangedAfterPossibleConnection
             }
-            try Task.checkCancellation()
             return .linkedNeedsInputVerification
         } catch let error as UniversalControlAdapterError {
             if mayHaveDisconnected { return .failedAfterPossibleDisconnect }
