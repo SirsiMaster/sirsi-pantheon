@@ -16,6 +16,9 @@ struct UniversalControlHelp: View {
                 Text("After linking, move the pointer and type on the other Mac to confirm both work. Opening settings does not change a connection.")
                     .sirsiFont(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Text("If the pointer crosses but typing does not, check which Mac the keyboard and mouse are connected to. For a switchable mouse, select the channel paired with the keyboard's Mac and try again.")
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button("Open Displays Settings") {
                     guard let url = URL(string: "x-apple.systempreferences:com.apple.Displays-Settings.extension") else {
                         openFailed = true
