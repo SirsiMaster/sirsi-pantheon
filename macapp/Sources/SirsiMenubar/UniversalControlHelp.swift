@@ -1,4 +1,6 @@
 import AppKit
+import CoreWLAN
+import IOBluetooth
 import SwiftUI
 
 // The supported macOS control is opened on demand. This is a guided route;
@@ -6,6 +8,7 @@ import SwiftUI
 struct UniversalControlHelp: View {
     @State private var expanded = false
     @State private var openFailed = false
+    @State private var radioCheck: String?
 
     var body: some View {
         DisclosureGroup("Keyboard and mouse sharing", isExpanded: $expanded) {
@@ -19,6 +22,30 @@ struct UniversalControlHelp: View {
                 Text("If the pointer crosses but typing does not, check which Mac the keyboard and mouse are connected to. For a switchable mouse, select the channel paired with the keyboard's Mac and try again.")
                     .sirsiFont(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Text("On both Macs, check Wi-Fi, Bluetooth and Handoff are on, the same Apple Account is signed in, and both are on the same Wi-Fi network. Keep the Macs nearby.")
+                    .sirsiFont(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Link("Apple's Universal Control troubleshooting", destination: URL(string: "https://support.apple.com/guide/mac-help/mchl412faecf/mac")!)
+                    .sirsiFont(.caption)
+                Button("Check Wi-Fi and Bluetooth on this Mac") {
+                    let wifi = CWWiFiClient.shared().interface().map { $0.powerOn() ? "On" : "Off" } ?? "Unavailable"
+                    let bluetooth: String
+                    if let state = IOBluetoothHostController.default()?.powerState {
+                        switch state {
+                        case kBluetoothHCIPowerStateON: bluetooth = "On"
+                        case kBluetoothHCIPowerStateOFF: bluetooth = "Off"
+                        default: bluetooth = "Unavailable"
+                        }
+                    } else {
+                        bluetooth = "Unavailable"
+                    }
+                    radioCheck = "This Mac — Wi-Fi: \(wifi); Bluetooth: \(bluetooth). This does not check the other Mac or confirm that sharing is connected."
+                }
+                if let radioCheck {
+                    Text(radioCheck)
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Button("Open Displays Settings") {
                     guard let url = URL(string: "x-apple.systempreferences:com.apple.Displays-Settings.extension") else {
                         openFailed = true
