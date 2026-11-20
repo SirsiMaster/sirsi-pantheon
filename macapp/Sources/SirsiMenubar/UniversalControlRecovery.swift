@@ -19,13 +19,15 @@ protocol UniversalControlPeerAdapter {
 enum UniversalControlRecoveryResult: Equatable {
     case linkedNeedsInputVerification
     case targetUnavailable
-    case stateChanged
     case stateChangedAfterPossibleDisconnect
+    case stateChangedAfterPossibleConnection
     case alreadyRunning
     case cancelled
     case cancelledAfterPossibleDisconnect
+    case cancelledAfterPossibleConnection
     case failed
     case failedAfterPossibleDisconnect
+    case failedAfterPossibleConnection
 }
 
 // No global process restart. Always re-read the exact peer before the next
@@ -40,6 +42,7 @@ final class UniversalControlRecovery {
         Self.running = true
         defer { Self.running = false }
         var mayHaveDisconnected = false
+        var mayHaveConnected = false
         do {
             try Task.checkCancellation()
             guard let original = try await uniquePeer(id: id, adapter: adapter), original.selectable else {
@@ -54,15 +57,20 @@ final class UniversalControlRecovery {
                       disconnected.selectable, !disconnected.linked else { return .stateChangedAfterPossibleDisconnect }
             }
             try Task.checkCancellation()
+            // The action can succeed even if the adapter then reports an error.
+            mayHaveConnected = true
             try await adapter.selectPeer(id: id, expectedLinked: false)
             guard let linked = try await uniquePeer(id: id, adapter: adapter), linked.linked else {
-                return mayHaveDisconnected ? .stateChangedAfterPossibleDisconnect : .stateChanged
+                return mayHaveDisconnected ? .stateChangedAfterPossibleDisconnect : .stateChangedAfterPossibleConnection
             }
+            try Task.checkCancellation()
             return .linkedNeedsInputVerification
         } catch is CancellationError {
-            return mayHaveDisconnected ? .cancelledAfterPossibleDisconnect : .cancelled
+            if mayHaveDisconnected { return .cancelledAfterPossibleDisconnect }
+            return mayHaveConnected ? .cancelledAfterPossibleConnection : .cancelled
         } catch {
-            return mayHaveDisconnected ? .failedAfterPossibleDisconnect : .failed
+            if mayHaveDisconnected { return .failedAfterPossibleDisconnect }
+            return mayHaveConnected ? .failedAfterPossibleConnection : .failed
         }
     }
 

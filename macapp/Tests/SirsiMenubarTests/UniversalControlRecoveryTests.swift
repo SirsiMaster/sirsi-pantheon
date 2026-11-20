@@ -80,6 +80,22 @@ final class UniversalControlRecoveryTests: XCTestCase {
         XCTAssertEqual(adapter.selections, ["studio"])
     }
 
+    @MainActor func testFailedConnectReportsPossibleConnection() async {
+        let adapter = FakePeerAdapter([[disconnected]])
+        adapter.selectionError = NSError(domain: "test", code: 1)
+        let result = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
+        XCTAssertEqual(result, .failedAfterPossibleConnection)
+        XCTAssertEqual(adapter.expectedStates, [false])
+    }
+
+    @MainActor func testCancelledConnectReportsPossibleConnection() async {
+        let adapter = FakePeerAdapter([[disconnected]])
+        adapter.selectionError = CancellationError()
+        let result = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
+        XCTAssertEqual(result, .cancelledAfterPossibleConnection)
+        XCTAssertEqual(adapter.expectedStates, [false])
+    }
+
     @MainActor func testConnectingAnUnlinkedPeerDoesNotFirstDisconnectIt() async {
         let adapter = FakePeerAdapter([[disconnected], [linked]])
         let result = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
