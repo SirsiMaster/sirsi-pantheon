@@ -45,7 +45,7 @@ final class UniversalControlRecoveryTests: XCTestCase {
     @MainActor func testAmbiguousTargetNeverActs() async {
         let adapter = FakePeerAdapter([[linked, linked]])
         let result = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
-        XCTAssertEqual(result, .targetUnavailable)
+        XCTAssertEqual(result, .targetAmbiguous)
         XCTAssertTrue(adapter.selections.isEmpty)
     }
 
@@ -61,7 +61,7 @@ final class UniversalControlRecoveryTests: XCTestCase {
         let unknown = UniversalControlPeer(id: "studio", linked: nil, selectable: true)
         let adapter = FakePeerAdapter([[unknown]])
         let result = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
-        XCTAssertEqual(result, .targetUnavailable)
+        XCTAssertEqual(result, .connectionStateUnknown)
         XCTAssertTrue(adapter.selections.isEmpty)
     }
 

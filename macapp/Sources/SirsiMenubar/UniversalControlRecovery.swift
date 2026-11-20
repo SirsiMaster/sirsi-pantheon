@@ -20,6 +20,8 @@ protocol UniversalControlPeerAdapter {
 enum UniversalControlRecoveryResult: Equatable {
     case linkedNeedsInputVerification
     case targetUnavailable
+    case targetAmbiguous
+    case connectionStateUnknown
     case stateChangedAfterPossibleDisconnect
     case stateChangedAfterPossibleConnection
     case alreadyRunning
@@ -46,10 +48,12 @@ final class UniversalControlRecovery {
         var mayHaveConnected = false
         do {
             try Task.checkCancellation()
-            guard let original = try await uniquePeer(id: id, adapter: adapter),
-                  original.selectable, let wasLinked = original.linked else {
+            let matches = try await adapter.peers().filter { $0.id == id }
+            guard matches.count < 2 else { return .targetAmbiguous }
+            guard let original = matches.first, original.selectable else {
                 return .targetUnavailable
             }
+            guard let wasLinked = original.linked else { return .connectionStateUnknown }
             if wasLinked {
                 try Task.checkCancellation()
                 // An adapter error may arrive after the selection took effect.
