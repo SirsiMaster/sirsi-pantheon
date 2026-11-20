@@ -9,6 +9,8 @@ struct UniversalControlHelp: View {
     @State private var expanded = false
     @State private var openFailed = false
     @State private var radioCheck: String?
+    @State private var mouseCheck: String?
+    @State private var checkingMouse = false
 
     var body: some View {
         DisclosureGroup("Keyboard and mouse sharing", isExpanded: $expanded) {
@@ -43,6 +45,26 @@ struct UniversalControlHelp: View {
                 }
                 if let radioCheck {
                     Text(radioCheck)
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button(checkingMouse ? "Checking this Mac…" : "Check Bluetooth mouse on this Mac") {
+                    checkingMouse = true
+                    Task {
+                        let names = await Task.detached(priority: .utility) { UniversalControlBluetooth.inspect() }.value
+                        if let names {
+                            mouseCheck = names.isEmpty
+                                ? "No Bluetooth mouse was reported on this Mac. USB receivers and unavailable data may not appear."
+                                : "Bluetooth mouse reported on this Mac: \(names.joined(separator: ", ")). Verify the keyboard is attached to the same Mac."
+                        } else {
+                            mouseCheck = "The Bluetooth device report was unavailable. Mouse ownership is unknown."
+                        }
+                        checkingMouse = false
+                    }
+                }
+                .disabled(checkingMouse)
+                if let mouseCheck {
+                    Text(mouseCheck)
                         .sirsiFont(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
