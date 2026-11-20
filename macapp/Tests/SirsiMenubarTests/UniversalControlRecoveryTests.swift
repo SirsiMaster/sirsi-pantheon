@@ -57,8 +57,24 @@ final class UniversalControlRecoveryTests: XCTestCase {
         XCTAssertTrue(adapter.selections.isEmpty)
     }
 
+    @MainActor func testUnknownConnectionStateNeverActs() async {
+        let unknown = UniversalControlPeer(id: "studio", linked: nil, selectable: true)
+        let adapter = FakePeerAdapter([[unknown]])
+        let result = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
+        XCTAssertEqual(result, .targetUnavailable)
+        XCTAssertTrue(adapter.selections.isEmpty)
+    }
+
     @MainActor func testDoesNotReconnectAfterUnexpectedDisconnectState() async {
         let adapter = FakePeerAdapter([[linked], [linked]])
+        let result = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
+        XCTAssertEqual(result, .stateChangedAfterPossibleDisconnect)
+        XCTAssertEqual(adapter.selections, ["studio"])
+    }
+
+    @MainActor func testUnknownStateAfterDisconnectDoesNotSelectAgain() async {
+        let unknown = UniversalControlPeer(id: "studio", linked: nil, selectable: true)
+        let adapter = FakePeerAdapter([[linked], [unknown]])
         let result = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
         XCTAssertEqual(result, .stateChangedAfterPossibleDisconnect)
         XCTAssertEqual(adapter.selections, ["studio"])

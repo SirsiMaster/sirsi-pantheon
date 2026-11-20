@@ -4,7 +4,8 @@ import Foundation
 // A peer name alone is not sufficient unless it is unique in the current menu.
 struct UniversalControlPeer: Equatable {
     let id: String
-    let linked: Bool
+    // nil means macOS did not provide a reliable connection state.
+    let linked: Bool?
     let selectable: Bool
 }
 
@@ -45,22 +46,23 @@ final class UniversalControlRecovery {
         var mayHaveConnected = false
         do {
             try Task.checkCancellation()
-            guard let original = try await uniquePeer(id: id, adapter: adapter), original.selectable else {
+            guard let original = try await uniquePeer(id: id, adapter: adapter),
+                  original.selectable, let wasLinked = original.linked else {
                 return .targetUnavailable
             }
-            if original.linked {
+            if wasLinked {
                 try Task.checkCancellation()
                 // An adapter error may arrive after the selection took effect.
                 mayHaveDisconnected = true
                 try await adapter.selectPeer(id: id, expectedLinked: true)
                 guard let disconnected = try await uniquePeer(id: id, adapter: adapter),
-                      disconnected.selectable, !disconnected.linked else { return .stateChangedAfterPossibleDisconnect }
+                      disconnected.selectable, disconnected.linked == false else { return .stateChangedAfterPossibleDisconnect }
             }
             try Task.checkCancellation()
             // The action can succeed even if the adapter then reports an error.
             mayHaveConnected = true
             try await adapter.selectPeer(id: id, expectedLinked: false)
-            guard let linked = try await uniquePeer(id: id, adapter: adapter), linked.linked else {
+            guard let linked = try await uniquePeer(id: id, adapter: adapter), linked.linked == true else {
                 return mayHaveDisconnected ? .stateChangedAfterPossibleDisconnect : .stateChangedAfterPossibleConnection
             }
             try Task.checkCancellation()
