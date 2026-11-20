@@ -7,8 +7,12 @@ private final class FakePeerAdapter: UniversalControlPeerAdapter {
     var selections: [String] = []
     var expectedStates: [Bool] = []
     var selectionError: Error?
+    var observationError: Error?
     init(_ snapshots: [[UniversalControlPeer]]) { self.snapshots = snapshots }
-    func peers() async throws -> [UniversalControlPeer] { snapshots.removeFirst() }
+    func peers() async throws -> [UniversalControlPeer] {
+        if let observationError { throw observationError }
+        return snapshots.removeFirst()
+    }
     func selectPeer(id: String, expectedLinked: Bool) async throws {
         selections.append(id)
         expectedStates.append(expectedLinked)
@@ -65,6 +69,17 @@ final class UniversalControlRecoveryTests: XCTestCase {
         XCTAssertTrue(adapter.selections.isEmpty)
     }
 
+    @MainActor func testPermissionAndLockedConsoleRefuseBeforeActing() async {
+        let adapter = FakePeerAdapter([])
+        adapter.observationError = UniversalControlAdapterError.accessibilityPermissionRequired
+        let permission = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
+        XCTAssertEqual(permission, .accessibilityPermissionRequired)
+        adapter.observationError = UniversalControlAdapterError.consoleLocked
+        let locked = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
+        XCTAssertEqual(locked, .consoleLocked)
+        XCTAssertTrue(adapter.selections.isEmpty)
+    }
+
     @MainActor func testDoesNotReconnectAfterUnexpectedDisconnectState() async {
         let adapter = FakePeerAdapter([[linked], [linked]])
         let result = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
@@ -83,6 +98,14 @@ final class UniversalControlRecoveryTests: XCTestCase {
     @MainActor func testSelectionFailureWarnsThatThePeerMayBeDisconnected() async {
         let adapter = FakePeerAdapter([[linked]])
         adapter.selectionError = NSError(domain: "test", code: 1)
+        let result = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
+        XCTAssertEqual(result, .failedAfterPossibleDisconnect)
+        XCTAssertEqual(adapter.selections, ["studio"])
+    }
+
+    @MainActor func testLockDuringSelectionKeepsOutcomeUncertain() async {
+        let adapter = FakePeerAdapter([[linked]])
+        adapter.selectionError = UniversalControlAdapterError.consoleLocked
         let result = await UniversalControlRecovery().reconnect(id: "studio", adapter: adapter)
         XCTAssertEqual(result, .failedAfterPossibleDisconnect)
         XCTAssertEqual(adapter.selections, ["studio"])

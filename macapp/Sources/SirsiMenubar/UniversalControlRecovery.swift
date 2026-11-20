@@ -17,11 +17,18 @@ protocol UniversalControlPeerAdapter {
     func selectPeer(id: String, expectedLinked: Bool) async throws
 }
 
+enum UniversalControlAdapterError: Error {
+    case accessibilityPermissionRequired
+    case consoleLocked
+}
+
 enum UniversalControlRecoveryResult: Equatable {
     case linkedNeedsInputVerification
     case targetUnavailable
     case targetAmbiguous
     case connectionStateUnknown
+    case accessibilityPermissionRequired
+    case consoleLocked
     case stateChangedAfterPossibleDisconnect
     case stateChangedAfterPossibleConnection
     case alreadyRunning
@@ -71,6 +78,13 @@ final class UniversalControlRecovery {
             }
             try Task.checkCancellation()
             return .linkedNeedsInputVerification
+        } catch let error as UniversalControlAdapterError {
+            if mayHaveDisconnected { return .failedAfterPossibleDisconnect }
+            if mayHaveConnected { return .failedAfterPossibleConnection }
+            switch error {
+            case .accessibilityPermissionRequired: return .accessibilityPermissionRequired
+            case .consoleLocked: return .consoleLocked
+            }
         } catch is CancellationError {
             if mayHaveDisconnected { return .cancelledAfterPossibleDisconnect }
             return mayHaveConnected ? .cancelledAfterPossibleConnection : .cancelled
