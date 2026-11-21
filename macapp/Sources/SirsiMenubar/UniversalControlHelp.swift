@@ -13,6 +13,7 @@ struct UniversalControlHelp: View {
     @State private var mouseCheck: String?
     @State private var checkingMouse = false
     @State private var keyboardCheck: String?
+    @State private var serviceCheck: String?
 
     init(initialExpanded: Bool = false) {
         _expanded = State(initialValue: initialExpanded)
@@ -37,6 +38,7 @@ struct UniversalControlHelp: View {
                     radioCheck = "This Mac — Wi-Fi: \(wifi); Bluetooth: \(bluetooth). This does not check the other Mac or confirm that sharing is connected."
                     mouseCheck = nil
                     keyboardCheck = nil
+                    serviceCheck = nil
                     checkingMouse = true
                     Task {
                         let result = await Task.detached(priority: .utility) {
@@ -55,6 +57,14 @@ struct UniversalControlHelp: View {
                                 : "USB keyboard reported on this Mac: \(names.joined(separator: ", ")). This does not verify that typing works."
                         } else {
                             keyboardCheck = "The USB keyboard report was unavailable. Keyboard ownership is unknown."
+                        }
+                        switch await UniversalControlService.inspect() {
+                        case .running:
+                            serviceCheck = "Universal Control service: running on this Mac. This does not confirm that the other Mac is linked or that input works."
+                        case .notRunning:
+                            serviceCheck = "Universal Control service: waiting on this Mac. Its connection state is unknown."
+                        case .unknown:
+                            serviceCheck = "Universal Control service status is unavailable on this Mac."
                         }
                         checkingMouse = false
                     }
@@ -84,6 +94,11 @@ struct UniversalControlHelp: View {
                 }
                 if let keyboardCheck {
                     Text(keyboardCheck)
+                        .sirsiFont(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let serviceCheck {
+                    Text(serviceCheck)
                         .sirsiFont(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
