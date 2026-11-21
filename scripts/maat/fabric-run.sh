@@ -1,17 +1,17 @@
 #!/bin/bash
 # Proven same-endpoint/own-UID work uses the normal local executor. Network
-# transport defaults to proxy; direct never bypasses a runtime-provided proxy.
+# transport defaults to auto; direct never bypasses a runtime-provided proxy.
 set -euo pipefail
-usage() { printf 'usage: sirsi-fabric-run [--plan] [--transport socks|direct] m1|m5|studio --work ID [--cpu-cores N] [--timeout SECONDS] -- COMMAND [ARG...]\n' >&2; exit 64; }
+usage() { printf 'usage: sirsi-fabric-run [--plan] [--transport auto|socks|direct] m1|m5|studio --work ID [--cpu-cores N] [--timeout SECONDS] -- COMMAND [ARG...]\n' >&2; exit 64; }
 plan=0
-transport_mode=socks
+transport_mode=auto
 while [[ "${1:-}" == --plan || "${1:-}" == --transport ]]; do
   case "$1" in
     --plan) plan=1; shift;;
     --transport) [[ $# -ge 2 ]] || usage; transport_mode=$2; shift 2;;
   esac
 done
-[[ "$transport_mode" == socks || "$transport_mode" == direct ]] || usage
+[[ "$transport_mode" == auto || "$transport_mode" == socks || "$transport_mode" == direct ]] || usage
 host=${1:-}; [[ -n "$host" ]] || usage; shift
 case "$host" in m1|m5|studio) ;; *) usage;; esac
 work=; cores=1; timeout=90
@@ -53,16 +53,33 @@ if [[ "$plan" != 1 ]]; then
   fi
 fi
 proxy_url=${ALL_PROXY:-${all_proxy:-}}
+configured_proxy=
+for value in "${ALL_PROXY:-}" "${all_proxy:-}" "${HTTP_PROXY:-}" "${http_proxy:-}" "${HTTPS_PROXY:-}" "${https_proxy:-}"; do
+  [[ -n "$value" ]] || continue
+  if [[ -n "$configured_proxy" && "$value" != "$configured_proxy" ]]; then
+    printf 'REFUSED: conflicting runtime proxy settings\n' >&2; exit 78
+  fi
+  configured_proxy=$value
+done
+if [[ "$transport_mode" == auto ]]; then
+  if [[ -n "$configured_proxy" ]]; then transport_mode=socks; else transport_mode=direct; fi
+fi
 if [[ "$transport_mode" == socks ]]; then
   case "$proxy_url" in socks5://*|socks5h://*) ;; *) printf 'REFUSED: supported runtime SOCKS proxy required\n' >&2; exit 78;; esac
   proxy=${proxy_url#*://}
   [[ "$proxy" =~ ^127\.0\.0\.1:[0-9]+$ ]] || { printf 'REFUSED: proxy must be loopback\n' >&2; exit 78; }
+  port=${proxy#127.0.0.1:}
+  [[ ${#port} -le 16 ]] || { printf 'REFUSED: invalid proxy port\n' >&2; exit 78; }
+  while [[ "$port" == 0* && ${#port} -gt 1 ]]; do port=${port#0}; done
+  [[ ${#port} -le 5 ]] && (( 10#$port >= 1 && 10#$port <= 65535 )) || { printf 'REFUSED: invalid proxy port\n' >&2; exit 78; }
 else
-  [[ -z "$proxy_url${HTTP_PROXY:-}${http_proxy:-}${HTTPS_PROXY:-}${https_proxy:-}" ]] || { printf 'REFUSED: configured runtime proxy must not be bypassed\n' >&2; exit 78; }
+  [[ -z "$configured_proxy" ]] || { printf 'REFUSED: configured runtime proxy must not be bypassed\n' >&2; exit 78; }
   # Prevent ambient SSH config from silently adding a proxy/jump to an explicit
   # direct transaction. Host authentication and known_hosts stay unchanged.
 fi
-trust=(-oUserKnownHostsFile="$HOME/.ssh/sirsi_known_hosts" -oHostKeyAlias="sirsi-$host" -oHostKeyAlgorithms=ssh-ed25519)
+trust=(-oUserKnownHostsFile="$HOME/.ssh/sirsi_known_hosts" -oGlobalKnownHostsFile=/dev/null
+  -oKnownHostsCommand=none -oVerifyHostKeyDNS=no -oUpdateHostKeys=no
+  -oHostKeyAlias="sirsi-$host" -oHostKeyAlgorithms=ssh-ed25519)
 case "$host" in
   m1)
     destination=sirsimasterdev@sirsi-m1

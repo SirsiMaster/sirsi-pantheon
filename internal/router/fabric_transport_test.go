@@ -115,7 +115,7 @@ func TestFabricTransportPlanRejectsMissingOrBroadAuthority(t *testing.T) {
 		env, args []string
 	}{
 		{"unknown host", nil, []string{"example.com", "--work", "x", "--", "/usr/bin/true"}},
-		{"no proxy", []string{"ALL_PROXY="}, []string{"m1", "--work", "x", "--", "/usr/bin/true"}},
+		{"explicit socks without proxy", []string{"ALL_PROXY="}, []string{"--transport", "socks", "m1", "--work", "x", "--", "/usr/bin/true"}},
 		{"remote proxy", []string{"ALL_PROXY=socks5://example.com:1080"}, []string{"m1", "--work", "x", "--", "/usr/bin/true"}},
 		{"conflicting identity", []string{"SIRSI_ROUTER_AGENT=ra"}, []string{"m1", "--work", "x", "--", "/usr/bin/true"}},
 		{"injected work", nil, []string{"m1", "--work", "x;touch bad", "--", "/usr/bin/true"}},
@@ -127,5 +127,12 @@ func TestFabricTransportPlanRejectsMissingOrBroadAuthority(t *testing.T) {
 				t.Fatalf("refusal missing: %s", out)
 			}
 		})
+	}
+}
+
+func TestFabricTransportDefaultUsesDirectWithoutProxy(t *testing.T) {
+	out, err := fabricPlanCommand(t, []string{"ALL_PROXY="}, "m1", "--work", "x", "--", "/usr/bin/true").CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "direct") || !strings.Contains(string(out), "StrictHostKeyChecking=yes") {
+		t.Fatalf("expected strict direct plan: %s: %v", out, err)
 	}
 }

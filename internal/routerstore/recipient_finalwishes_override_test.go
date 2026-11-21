@@ -9,8 +9,8 @@ import (
 )
 
 // FinalWishes seven-day override (owner decision 2026-11-11, name-keyed by owner ruling): the four
-// lanes may send to one another past the recipient limit until 2026-11-18T05:50:00Z.
-// Delete with the block in facade.go after 2026-11-18.
+// lanes may send to one another past the recipient limit until 2026-11-28T05:50:00Z
+// (extended 2026-11-21 by owner decision). Delete with the block in facade.go after 2026-11-28.
 
 var fwSet = []string{"claude-finalwishes-m1", "claude-finalwishes-m5", "codex-finalwishes", "sirsi-software-admin"}
 
@@ -63,6 +63,17 @@ func TestFinalWishesOverrideAdmitsInSetPairs(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// The 2026-11-21 extension: a clock between the old (11-18) and new (11-28) expiry admits in-set pairs.
+func TestFinalWishesOverrideExtendedWindowAdmits(t *testing.T) {
+	at := time.Date(2026, time.November, 21, 12, 0, 0, 0, time.UTC)
+	s := openTestStore(t)
+	s.now = func() time.Time { return at }
+	seedOpen(t, s, "codex-finalwishes", 99)
+	if err := fwSend(s, fwPair{"claude-finalwishes-m1", "codex-finalwishes"}); err != nil {
+		t.Fatalf("in-set pair at %s refused: %v", at.Format(time.RFC3339), err)
 	}
 }
 

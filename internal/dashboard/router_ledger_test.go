@@ -100,7 +100,7 @@ func TestRouterLedgerPhaseIsCleanedLikeTheSubject(t *testing.T) {
 
 func TestRouterLedgerExcludesPrivateTaskPayloadAcrossPages(t *testing.T) {
 	const secret = "PRIVATE-LEASE-JOURNAL-CREDENTIAL-CANARY"
-	s := New(Config{CloudBoard: true, LedgerAgentFn: func(agent string) (ledger.Snapshot, error) {
+	s := New(Config{LedgerAgentFn: func(agent string) (ledger.Snapshot, error) {
 		a := ledger.Agent{AgentID: agent}
 		for i := 0; i < 130; i++ {
 			a.Tasks = append(a.Tasks, routerstore.Task{TaskID: fmt.Sprintf("task-%03d", i), Subject: "safe", Status: "pending", Phase: "safe phase", BlockedBy: secret})
@@ -287,10 +287,10 @@ func TestRouterLedgerProducerFailureAndMissingAre503(t *testing.T) {
 	}
 }
 
-func TestRouterLedgerAndJobsAreGETOnlyAndCloudBoardAllowed(t *testing.T) {
+func TestRouterLedgerAndJobsAreGETOnlyAndHostedLedgerWithholdsDetail(t *testing.T) {
 	s := New(Config{CloudBoard: true, LedgerAgentFn: ledgerFixture})
-	if code, _, _ := getJSON(t, s, "/api/router/v1/ledger?agent=claude-m5-compasspoint"); code != 200 {
-		t.Fatalf("cloud board ledger = %d, want 200", code)
+	if code, _, _ := getJSON(t, s, "/api/router/v1/ledger?agent=claude-m5-compasspoint"); code != http.StatusForbidden {
+		t.Fatalf("cloud board ledger = %d, want 403", code)
 	}
 	for _, p := range []string{"/api/router/v1/ledger?agent=a", "/api/router/v1/jobs?agent=a"} {
 		rec := httptest.NewRecorder()

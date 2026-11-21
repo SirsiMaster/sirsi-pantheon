@@ -174,7 +174,9 @@ func recipientLimitExempt(from, to string) bool {
 	return from == "routerstore" || (from == "ra" && to == "sirsi-software-admin")
 }
 
-// FinalWishes seven-day override. DELETE THIS BLOCK AFTER 2026-11-18.
+// FinalWishes seven-day override. DELETE THIS BLOCK AFTER 2026-11-28.
+//
+// Extended 2026-11-21 by owner decision (given directly to Ra) to 2026-11-28T05:50Z, same four lanes.
 //
 // Owner decision 2026-11-11: for seven days these four lanes may send to one another past the
 // recipient limit, because FinalWishes must be finished in seven days. Exempt iff BOTH ends are in
@@ -187,13 +189,13 @@ func recipientLimitExempt(from, to string) bool {
 // Exposure: a lane on the same hosts can assert one of the four names and thereby send past the
 // recipient limit to those four lanes. Nothing else: no data access, no admin rights. Each admit is
 // counted. Applies to SendGuarded only; raw Send keeps the limit (no transaction to audit in).
-// DELETE THIS BLOCK AFTER 2026-11-18.
+// DELETE THIS BLOCK AFTER 2026-11-28.
 var (
 	finalWishesLanes = map[string]bool{
 		"claude-finalwishes-m1": true, "claude-finalwishes-m5": true,
 		"codex-finalwishes": true, "sirsi-software-admin": true,
 	}
-	finalWishesOverrideEnds = time.Date(2026, time.November, 18, 5, 50, 0, 0, time.UTC)
+	finalWishesOverrideEnds = time.Date(2026, time.November, 28, 5, 50, 0, 0, time.UTC)
 )
 
 func finalWishesOverride(from, to string, now time.Time) bool {

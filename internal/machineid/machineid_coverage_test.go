@@ -2,6 +2,35 @@ package machineid
 
 import "testing"
 
+func TestMachineIDRetriesFailedProbe(t *testing.T) {
+	machineIDCacheMu.Lock()
+	oldID, oldDone := machineIDCache, machineIDDone
+	machineIDCache, machineIDDone = "", false
+	machineIDCacheMu.Unlock()
+	t.Cleanup(func() {
+		machineIDCacheMu.Lock()
+		machineIDCache, machineIDDone = oldID, oldDone
+		machineIDCacheMu.Unlock()
+	})
+	calls := 0
+	probe := func() string {
+		calls++
+		if calls == 1 {
+			return ""
+		}
+		return "machine-a"
+	}
+	if got := cachedMachineID(probe); got != "" {
+		t.Fatalf("first probe = %q", got)
+	}
+	if got := cachedMachineID(probe); got != "machine-a" {
+		t.Fatalf("retry = %q", got)
+	}
+	if got := cachedMachineID(probe); got != "machine-a" || calls != 2 {
+		t.Fatalf("cache = %q, probes = %d", got, calls)
+	}
+}
+
 func TestMachineIDProbeInjectionAndSameMachine(t *testing.T) {
 	old := GetProbe()
 	defer SetProbe(old)
