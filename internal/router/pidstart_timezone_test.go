@@ -38,6 +38,32 @@ func TestAmbiguousConsumerIsPreservedAndOccupiesSlot(t *testing.T) {
 	}
 }
 
+func TestUncertainConsumerClearsOnceExitIsConfirmed(t *testing.T) {
+	root := t.TempDir()
+	writeConsumerPIDFile(root, "existing", 4242, "Tue Nov 17 21:19:09 2026")
+	restore := probeStubs(t, PIDAlive, "Wed Nov 18 03:19:09 2026")
+	adopted := adoptRunningConsumer(root, "existing")
+	if adopted == nil || !adopted.running() {
+		restore()
+		t.Fatal("uncertain consumer was not preserved")
+	}
+	restore()
+	restore = probeStubs(t, PIDGone, "")
+	defer restore()
+	if adopted.running() {
+		t.Fatal("confirmed exited consumer still counted as running")
+	}
+	if again := adoptRunningConsumer(root, "existing"); again != nil {
+		t.Fatal("confirmed exited consumer was adopted")
+	}
+	if _, err := os.Stat(consumerPIDFilePath(root, "existing")); !os.IsNotExist(err) {
+		t.Fatalf("confirmed exited consumer marker remains: %v", err)
+	}
+	if n := runningConsumersExcept(root, "different"); n != 0 {
+		t.Fatalf("exited consumer still occupies %d slots", n)
+	}
+}
+
 func TestAmbiguousLegacyRegistrationDoesNotMintOrAdopt(t *testing.T) {
 	root := t.TempDir()
 	first, err := RegisterThread(root, &Thread{AgentID: "same", Surface: "worker", PID: 4242,
