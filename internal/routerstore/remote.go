@@ -90,6 +90,15 @@ func sentinelName(err error) string {
 	return ""
 }
 
+// wireSentinel is a sentinel the service returned, carrying its full message.
+type wireSentinel struct {
+	sentinel error
+	msg      string
+}
+
+func (e *wireSentinel) Error() string { return e.msg }
+func (e *wireSentinel) Unwrap() error { return e.sentinel }
+
 type wireError struct {
 	Name    string `json:"name,omitempty"`
 	Message string `json:"message"`
@@ -565,6 +574,11 @@ func (rs *RemoteStore) do(ctx context.Context, method string, args []any, sess *
 	}
 	if wr.Error != nil {
 		if s, ok := sentinelErrors[wr.Error.Name]; ok {
+			// Keep the service's reason: a bare sentinel ("completion receipt
+			// invalid") hid whether the receipt was unmerged, unreadable or already used.
+			if msg := wr.Error.Message; msg != s.Error() && strings.Contains(msg, s.Error()) {
+				return &wireSentinel{s, msg}
+			}
 			return s
 		}
 		if resp.StatusCode == http.StatusServiceUnavailable {
