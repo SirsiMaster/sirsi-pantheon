@@ -41,9 +41,11 @@ struct UniversalControlHelp: View {
                     serviceCheck = nil
                     checkingMouse = true
                     Task {
-                        let result = await Task.detached(priority: .utility) {
-                            (mouse: UniversalControlBluetooth.inspect(), keyboard: UniversalControlUSBKeyboard.inspect())
+                        async let mouse = UniversalControlBluetooth.inspect()
+                        let keyboard = await Task.detached(priority: .utility) {
+                            UniversalControlUSBKeyboard.inspect()
                         }.value
+                        let result = (mouse: await mouse, keyboard: keyboard)
                         if let names = result.mouse {
                             mouseCheck = names.isEmpty
                                 ? "No Bluetooth mouse was reported on this Mac. USB receivers and unavailable data may not appear."

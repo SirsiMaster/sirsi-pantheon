@@ -26,17 +26,16 @@ enum UniversalControlBluetooth {
         return names.sorted()
     }
 
-    static func inspect() -> [String]? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
-        process.arguments = ["SPBluetoothDataType", "-detailLevel", "mini", "-json", "-timeout", "5"]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { return nil }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { return nil }
-        return mouseNames(in: data)
+    static func parseCapture(_ output: String, complete: Bool, exitCode: Int32?) -> [String]? {
+        guard complete, exitCode == 0 else { return nil }
+        return mouseNames(in: Data(output.utf8))
+    }
+
+    static func inspect() async -> [String]? {
+        let result = await SirsiEngine.captureProcess(executable: "/usr/sbin/system_profiler",
+            args: ["SPBluetoothDataType", "-detailLevel", "mini", "-json", "-timeout", "5"],
+            timeout: 7, outputLimit: 256 * 1024,
+            environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C"])
+        return parseCapture(result.stdout, complete: result.complete, exitCode: result.exitCode)
     }
 }
