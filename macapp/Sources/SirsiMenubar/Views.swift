@@ -1018,6 +1018,7 @@ struct HorusView: View {
     var body: some View {
         VStack(spacing: 0) {
             BackBar(title: "Horus — Ops")
+            UniversalControlHelp()
             if engine.health.isEmpty {
                 VStack(spacing: 10) {
                     if engine.healthLoading { ProgressView() }
