@@ -132,6 +132,91 @@ func TestWaiterServedNeedsOverlappingFullGrant(t *testing.T) {
 	}
 }
 
+// jrowTTL is jrow with an explicit lease_ttl_sec (legacy/hostile stored rows).
+func jrowTTL(ttl int, id, holder, created, behind, start, end string) string {
+	return strings.Replace(jrow(id, holder, "queued", "", created, behind, start, end),
+		`"lease_ttl_sec":120`, fmt.Sprintf(`"lease_ttl_sec":%d`, ttl), 1)
+}
+
+// SSA 20261119-051245 finding 1: the requester's older queued row waives a
+// waiter only if its window overlaps the contested interval (req ∩ waiter).
+func TestWaiterPrecedenceOwnOlderRowNeedsRelevantWindow(t *testing.T) {
+	now := at("2026-11-10T10:00:30Z")
+	owed := jrow("b-owed", "B", "queued", "", "2026-11-10T10:00:10Z", "A", pStart, pEnd)
+	broad := pReq("A")
+	broad.EstEnd = "2026-11-10T13:00:00Z" // overlaps the old row, but not the waiter
+	for _, tc := range []struct {
+		name       string
+		oldStart   string
+		oldEnd     string
+		req        Reservation
+		wantRefuse bool
+	}{
+		{"disjoint window does not waive", "2026-11-10T12:00:00Z", "2026-11-10T13:00:00Z", pReq("A"), true},
+		{"same window waives", pStart, pEnd, pReq("A"), false},
+		{"partial overlap with contested interval waives", "2026-11-10T10:30:00Z", "2026-11-10T12:00:00Z", pReq("A"), false},
+		{"adjacent (half-open) does not waive", pEnd, "2026-11-10T12:00:00Z", pReq("A"), true},
+		{"broad request: old row overlaps request but not waiter, no waiver", "2026-11-10T12:00:00Z", "2026-11-10T13:00:00Z", broad, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			old := jrow("a-old", "A", "queued", "", "2026-11-10T10:00:00Z", "X", tc.oldStart, tc.oldEnd)
+			_, err := stateLedger(t, now, old, owed).Reserve(tc.req, false)
+			if tc.wantRefuse != errors.Is(err, ErrWaiterFirst) {
+				t.Fatalf("wantRefuse=%v, got %v", tc.wantRefuse, err)
+			}
+		})
+	}
+}
+
+// SSA finding 2: a stored queued row with a non-positive TTL is never a live
+// waiter and never a live precedence row.
+func TestLegacyNonPositiveQueuedTTLIsNotLive(t *testing.T) {
+	now := at("2026-11-10T10:00:30Z")
+	for _, ttl := range []int{0, -1} {
+		owed := jrowTTL(ttl, "b-owed", "B", "2026-11-10T10:00:10Z", "A", pStart, pEnd)
+		if res, err := stateLedger(t, now, owed).Reserve(pReq("A"), false); err != nil || !res.Granted {
+			t.Fatalf("ttl %d waiter must not hold A off: %+v %v", ttl, res, err)
+		}
+		live := jrowTTL(120, "b-owed", "B", "2026-11-10T10:00:10Z", "A", pStart, pEnd)
+		old := jrowTTL(ttl, "a-old", "A", "2026-11-10T10:00:00Z", "X", pStart, pEnd)
+		if _, err := stateLedger(t, now, old, live).Reserve(pReq("A"), false); !errors.Is(err, ErrWaiterFirst) {
+			t.Fatalf("ttl %d own row must not waive a live waiter: %v", ttl, err)
+		}
+	}
+}
+
+// Queued rows are always finite and positive, in both queue branches.
+func TestQueuedLeaseAlwaysFinitePositive(t *testing.T) {
+	for _, ttl := range []int{0, -1, -3600} {
+		f := newWaiterFixture(t, 120)
+		r := f.req("m1", "other", RegimeBuild) // contention branch
+		r.LeaseTTLSec = ttl
+		r.Reason = "caller note"
+		q, err := f.l.Reserve(r, true)
+		if err != nil || !q.Queued || q.Reservation.LeaseTTLSec != defaultQueuedLeaseSec {
+			t.Fatalf("ttl %d contention: want %d: %+v %v", ttl, defaultQueuedLeaseSec, q.Reservation, err)
+		}
+		if ttl < 0 && !strings.HasPrefix(q.Reservation.Reason, "caller note; ") {
+			t.Fatalf("reason must append, got %q", q.Reservation.Reason)
+		}
+		f.release(t, f.rep.ID) // waiter-first branch
+		r = f.req("m1", "rep", RegimeBuild)
+		r.LeaseTTLSec = ttl
+		q, err = f.l.Reserve(r, true)
+		if err != nil || !q.Queued || q.Reservation.LeaseTTLSec != defaultQueuedLeaseSec {
+			t.Fatalf("ttl %d waiter-first: %+v %v", ttl, q.Reservation, err)
+		}
+	}
+}
+
+func TestQueuedLeaseCapAppendsReason(t *testing.T) {
+	r := Reservation{LeaseTTLSec: 3600, Reason: "keep me"}
+	capQueuedLease(&r)
+	if r.LeaseTTLSec != maxQueuedLeaseSec || r.Reason != "keep me; queued lease capped at 600 s" {
+		t.Fatalf("got %d %q", r.LeaseTTLSec, r.Reason)
+	}
+}
+
 func TestQueuedLeaseCap(t *testing.T) {
 	f := newWaiterFixture(t, 120)
 	// contention-branch queue with a huge lease

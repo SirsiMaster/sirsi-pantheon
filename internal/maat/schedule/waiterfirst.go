@@ -85,7 +85,7 @@ func waiterFor(rows []Reservation, req Reservation, now time.Time) *Reservation 
 	for i := range rows {
 		w := rows[i]
 		if w.Status != StatusQueued || w.Holder == req.Holder || w.QueuedBehind != req.Holder ||
-			!sameResource(w.Resource, req.Resource) || w.leaseExpired(now) || !w.windowOverlaps(req) {
+			!sameResource(w.Resource, req.Resource) || !w.queuedLive(now) || !w.windowOverlaps(req) {
 			continue
 		}
 		at, err := time.Parse(time.RFC3339, w.Created)
@@ -101,10 +101,21 @@ func waiterFor(rows []Reservation, req Reservation, now time.Time) *Reservation 
 
 // ownOlderQueued reports whether req.Holder has a live, unserved queued row on
 // w's resource that precedes w (earlier Created, ties by smaller ID).
+//
+// The row must be RELEVANT to this contention (SSA 20261119-051245): its window
+// must overlap the part of the request the waiter is owed, i.e. the
+// intersection of req's and w's windows. An older queued row for an unrelated
+// window waives nothing.
 func ownOlderQueued(rows []Reservation, req, w Reservation, wAt, now time.Time) bool {
+	rs, re := parseWindow(req)
+	ws, we := parseWindow(w)
+	is, ie := latest(rs, ws), earliest(re, we) // contested interval [is, ie)
 	for _, o := range rows {
 		if o.Status != StatusQueued || o.Holder != req.Holder || o.ID == w.ID ||
-			!sameResource(o.Resource, w.Resource) || o.leaseExpired(now) {
+			!sameResource(o.Resource, w.Resource) || !o.queuedLive(now) {
+			continue
+		}
+		if os, oe := parseWindow(o); !(os.Before(ie) && is.Before(oe)) {
 			continue
 		}
 		oAt, err := time.Parse(time.RFC3339, o.Created)
@@ -140,11 +151,51 @@ func waiterServed(rows []Reservation, w Reservation, queuedAt time.Time) bool {
 // `reserve --queue --wait` exists.
 const maxQueuedLeaseSec = 600
 
+// defaultQueuedLeaseSec is the finite lease a queued row gets when the request
+// carries none (zero: the usual default) or a non-positive value.
+const defaultQueuedLeaseSec = 120
+
+// capQueuedLease makes a queued row's lease finite and positive: <= 0 becomes
+// the 120 s default, > 600 is capped. Both notes APPEND to any existing Reason.
+// (leaseExpired treats a non-positive TTL as "never expires", which is right
+// for nothing a waiter may rely on.)
 func capQueuedLease(r *Reservation) {
-	if r.LeaseTTLSec > maxQueuedLeaseSec {
+	note := ""
+	switch {
+	case r.LeaseTTLSec <= 0:
+		note = fmt.Sprintf("queued lease %d s is not positive; set to %d s", r.LeaseTTLSec, defaultQueuedLeaseSec)
+		r.LeaseTTLSec = defaultQueuedLeaseSec
+	case r.LeaseTTLSec > maxQueuedLeaseSec:
+		note = fmt.Sprintf("queued lease capped at %d s", maxQueuedLeaseSec)
 		r.LeaseTTLSec = maxQueuedLeaseSec
-		r.Reason = fmt.Sprintf("queued lease capped at %d s", maxQueuedLeaseSec)
+	default:
+		return
 	}
+	if r.Reason != "" {
+		note = r.Reason + "; " + note
+	}
+	r.Reason = note
+}
+
+// queuedLive: a queued row counts as a waiter only while its lease is positive
+// and unexpired. A stored legacy row with TTL <= 0 never counts (it would
+// otherwise be immortal).
+func (r Reservation) queuedLive(now time.Time) bool {
+	return r.LeaseTTLSec > 0 && !r.leaseExpired(now)
+}
+
+func latest(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
+func earliest(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
 }
 
 func waiterReason(w Reservation, now time.Time) (string, WaiterInfo) {
