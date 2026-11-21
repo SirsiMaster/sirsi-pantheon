@@ -69,6 +69,10 @@ func (s *Server) apiRouterLedger(w http.ResponseWriter, r *http.Request) {
 	if !s.readGET(w, r) {
 		return
 	}
+	if s.cfg.CloudBoard {
+		writeError(w, "Private lane ledger details are withheld on the shared hosted board", http.StatusForbidden)
+		return
+	}
 	agent := r.URL.Query().Get("agent")
 	if !ledgerAgentRE.MatchString(agent) {
 		writeError(w, "agent query parameter required", http.StatusBadRequest)

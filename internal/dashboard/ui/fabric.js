@@ -98,7 +98,7 @@ function bindLaneInspectors(element,b,inspect){
 function headlines(b,e){
  if(!valid(b))return '<p role="status" class="banner b-warn">Fabric unavailable — no task or message counts observed.</p>';
  var w=b.work;
- function metric(filter,value,label){return '<button type="button" class="fabric-metric" data-fabric-filter="'+filter+'" aria-label="Show '+value+' '+label+'">'+value+'</button>'}
+ function metric(filter,value,label){return b.private_details_withheld?e(value):'<button type="button" class="fabric-metric" data-fabric-filter="'+filter+'" aria-label="Show '+value+' '+label+'">'+value+'</button>'}
  function card(role,cls,n,label,sub){return '<div class="card count '+headlineRole(b,role)+'"><div class="n '+cls+'">'+n+'</div><div class="l">'+label+'</div>'+(sub?'<div class="s">'+sub+'</div>':'')+'</div>'}
  // Stalled counts include pending tasks that are also "not started", so the stack uses the
  // stalled-while-in-progress remainder: open minus the other disjoint buckets. Words and numbers are in the aria-label.
@@ -108,7 +108,7 @@ function headlines(b,e){
  var bar='<div class="bar" role="img" aria-label="Task distribution: '+(segs.length?segs.map(function(s){return s[0]+' '+s[1]}).join(', '):'no tasks')+'">'+segs.map(function(s){return '<span class="'+s[2]+'" style="width:'+(100*s[1]/total).toFixed(2)+'%" title="'+s[0]+' '+s[1]+'"></span>'}).join('')+'</div>';
  return '<section aria-label="Canonical fabric tasks and messages"><div class="cards">'+
  card('progress','r-ink',w.total,'Tasks')+
- card('completed','r-ok','<button type="button" class="fabric-metric" data-fabric-filter="done" aria-label="Show '+w.done+' completed tasks">'+w.done+'</button>','Done')+
+ card('completed','r-ok',metric('done',w.done,'completed tasks'),'Done')+
  card('progress','r-warn',metric('in_progress',w.in_progress,'in-progress tasks'),'In progress')+
  card('progress','r-info',metric('assigned_not_started',w.assigned_not_started,'assigned tasks not started'),'Not started')+
  card('stalled','r-warn',metric('stalled',w.stalled,'stalled tasks'),'Stalled')+
@@ -118,6 +118,10 @@ function headlines(b,e){
 }
 function render(b,e,now,showRecent){
  if(!valid(b))return headlines(b,e);
+ if(b.private_details_withheld){
+  return headlines(b,e)+'<p role="status">Task rows, host diagnostics and transition details are withheld on the shared hosted board.</p><h2>Lane task counts</h2><ul>'+
+   b.lanes.map(function(l){return '<li><a href="#lane/'+encodeURIComponent(l.agent)+'">'+e(l.agent)+'</a> · '+e(l.open)+' open · '+e(l.active)+' active · '+e(l.stalled)+' stalled · '+e(l.blocked)+' blocked</li>'}).join('')+'</ul>';
+ }
  if(!Number.isFinite(now))now=Date.now();
  if(showRecent===undefined)showRecent=true;
  var h=headlines(b,e),v=b.health;

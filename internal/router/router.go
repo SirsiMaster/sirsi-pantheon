@@ -5,6 +5,7 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -329,7 +330,25 @@ func setGitCommonDirFn(fn func() (string, bool)) func() (string, bool) {
 // the shared `.git`. In a linked worktree this returns the main tree's `.git`,
 // so its parent is the canonical repo root.
 func defaultGitCommonDir() (string, bool) {
-	out, err := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	return gitCommonDirWithin(gitCommonDirTimeout)
+}
+
+// gitCommonDirTimeout bounds the git probe. CI run 42958098771: `sirsi maat
+// authority-serve` blocked at startup in this exec for >2 s (stack dump), and an
+// unbounded exec lets any daemon or hook calling FindRepoRoot hang forever. A
+// cold macOS xcrun git shim measures ~0.26 s here; 5 s is ~20x that and well
+// above the runner's >2 s stall, while still failing fast enough for startup.
+// A timeout is treated exactly like "git failed": FindRepoRoot falls through.
+const gitCommonDirTimeout = 5 * time.Second
+
+func gitCommonDirWithin(timeout time.Duration) (string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	// A git (or grandchild) that keeps the stdout pipe open after the kill must
+	// not keep Output() blocked.
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
 	if err != nil {
 		return "", false
 	}
