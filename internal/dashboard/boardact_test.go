@@ -8,6 +8,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -148,6 +150,40 @@ func TestBoardActWithoutAudienceRefusesEverything(t *testing.T) {
 	f := newBoardFixture(t, "")
 	if rec := f.do("POST", boardActPrefix+"close", signIAP(t, f.key, "k1", goodClaims()), true); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("POST with unset audience = %d, want 401", rec.Code)
+	}
+}
+
+func TestBoardActResponseNeverEchoesBackendData(t *testing.T) {
+	const marker = "synthetic-private-task-detail"
+	for _, tc := range []struct {
+		name, verb string
+		err        error
+		status     int
+		body       string
+	}{
+		{"update", "update-task", nil, http.StatusOK, "{\"ok\":true}\n"},
+		{"reassign", "reassign-task", nil, http.StatusOK, "{\"ok\":true}\n"},
+		{"backend refusal", "update-task", errors.New(marker), http.StatusUnprocessableEntity,
+			"{\"error\":\"board action did not report success\"}\n"},
+		{"wrapped unknown", "unknown", fmt.Errorf("%s: %w", marker, ErrBoardVerb), http.StatusNotFound,
+			"{\"error\":\"unknown board action\"}\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newBoardFixture(t, testAud)
+			calls := 0
+			f.srv.cfg.BoardActFn = func(_ context.Context, actor, verb string, _ []byte) (any, error) {
+				calls++
+				if actor != "board:owner@sirsi.ai" || verb != tc.verb {
+					t.Fatalf("unexpected action: %q %q", actor, verb)
+				}
+				return map[string]any{"subject": marker, "timeline": []string{marker}}, tc.err
+			}
+			rec := f.do(http.MethodPost, boardActPrefix+tc.verb, signIAP(t, f.key, "k1", goodClaims()), true)
+			if calls != 1 || rec.Code != tc.status || rec.Body.String() != tc.body ||
+				rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("Content-Type") != "application/json" {
+				t.Fatalf("calls=%d response=%d %v %q", calls, rec.Code, rec.Header(), rec.Body.String())
+			}
+		})
 	}
 }
 

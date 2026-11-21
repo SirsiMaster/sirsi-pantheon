@@ -60,6 +60,18 @@ type ObservedFloorShare struct {
 	Cores         int    `json:"cores"`
 }
 
+// FloorHolder is a live floor-share reservation on the checked resource at
+// sample time (ConflictReport.FloorHolders).
+type FloorHolder struct {
+	Holder      string `json:"holder"`
+	Work        string `json:"work,omitempty"`
+	Reservation string `json:"reservation_id"`
+	Cores       int    `json:"cores,omitempty"`
+}
+
+// maxNamedFloorHolders bounds how many floor holders the Summary names.
+const maxNamedFloorHolders = 5
+
 // ActivityProbe samples the load/traffic actors on a machine. It is injectable so
 // tests drive it deterministically and hosts plug rail-specific detectors later
 // (A16). The default probeProcesses walks `ps` for the process classes that
@@ -95,8 +107,12 @@ type ConflictReport struct {
 	Holder      string   `json:"holder"`
 	Clean       bool     `json:"clean"`
 	Intruders   []Actor  `json:"intruders,omitempty"`
-	Shared      []string `json:"shared,omitempty"` // granted floor-share lanes seen active alongside the holder — not intruders
-	Summary     string   `json:"summary,omitempty"`
+	Shared      []string `json:"shared,omitempty"` // floor-share lanes whose process the probe ATTRIBUTED (Actor.Owner) — not intruders
+	// FloorHolders lists every lane holding a live floor share on the resource at
+	// sample time, whether or not any of its processes were seen. It is
+	// co-presence only: it never says a given intruder belongs to one of them.
+	FloorHolders []FloorHolder `json:"floor_holders,omitempty"`
+	Summary      string        `json:"summary,omitempty"`
 	// Pressure/PressureSource/FloorMemGB are reported alongside the process
 	// scan, never folded into Clean/Intruders: memory pressure isn't an Actor
 	// (no process is "wrong"), so it doesn't become an Intruder — it's a
@@ -111,10 +127,15 @@ type ConflictReport struct {
 
 // CheckConflicts samples current activity on the resource's machine and reports
 // policy intruders for a quiet or loaded reservation that is live now. A
-// build-regime reservation tolerates foreign build load. A floor-share lane is
-// recorded in Shared (owner directive 2026-09-26: Ma'at grants floor shares
-// deliberately, so a lane running on one is expected activity, never a
-// contaminant to invalidate). MeasurementObservation describes only the
+// build-regime reservation tolerates foreign build load. A process is recorded
+// in Shared (not as an Intruder) only when the probe attributes it to a live
+// floor holder via Actor.Owner (owner directive 2026-09-26: a lane on a granted
+// floor share is expected activity). The default probe attributes no owner, so
+// today a floor lane's processes are Intruders and invalidate a quiet or loaded
+// hold; for a quiet measurement any foreign load is a contaminant. Nothing here
+// guesses which process belongs to which lane: FloorHolders instead lists every
+// live floor share at sample time, and an invalidating Summary names them as
+// co-present, never as the cause. MeasurementObservation describes only the
 // successful point sample and never qualifies the reservation interval.
 // This DETECTS and reports; the caller decides whether to Invalidate and
 // notify (the CLI does both). `machine` is the machine to probe; for a rail
@@ -150,6 +171,9 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 	known := make(map[string]Reservation, len(holders))
 	for _, h := range holders {
 		known[h.Holder] = h
+		if h.Share == ShareFloor && h.Holder != cur.Holder {
+			rep.FloorHolders = append(rep.FloorHolders, FloorHolder{Holder: h.Holder, Work: h.Work, Reservation: h.ID, Cores: h.Cores})
+		}
 	}
 
 	actors, err := getActivityProbe()(machine)
@@ -237,7 +261,32 @@ func (l *Ledger) CheckConflicts(resource, machine string) (ConflictReport, error
 		rep.MeasurementObservation.Status = SampleNoForeignActorObserved
 		rep.Summary += " — no foreign actor observed in this point sample; quiet interval unverified"
 	}
+	if len(rep.Intruders) > 0 {
+		rep.Summary += floorHoldersClause(rep.FloorHolders)
+	}
 	return rep, nil
+}
+
+// floorHoldersClause is the factual co-presence suffix for an invalidating
+// Summary ("" when no floor share was live). At most maxNamedFloorHolders are
+// named, then "+N more".
+func floorHoldersClause(fh []FloorHolder) string {
+	if len(fh) == 0 {
+		return ""
+	}
+	var names []string
+	for i, f := range fh {
+		if i == maxNamedFloorHolders {
+			names = append(names, fmt.Sprintf("+%d more", len(fh)-i))
+			break
+		}
+		n := f.Holder
+		if f.Work != "" {
+			n += " (" + f.Work + ")"
+		}
+		names = append(names, n)
+	}
+	return "; floor shares live at sample time: " + strings.Join(names, ", ")
 }
 
 // primaryHolder picks the reservation CheckConflicts reports as "the"

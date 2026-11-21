@@ -58,6 +58,7 @@ function loadFleet(taskPage,focusTasks){var selected=taskPage===undefined?state.
 // One lane's ledger. 404 means the router does not know the lane; any other failure keeps the last good
 // ledger on screen and says so. Neither is ever drawn as an empty ledger.
 function loadLane(agent){
+ if(state.data&&state.data.private_details_withheld)return;
  var L=state.ledgers[agent]||(state.ledgers[agent]={});
  if(L.busy)return L.busy;
  L.busy=get('/api/router/v1/ledger?agent='+encodeURIComponent(agent)).then(function(d){L.data=d;L.err=null;L.notFound=false;L.at=Date.now();L.staleShown=false;arrived()},function(e){if(e.status===404){L.notFound=true;L.err=null;L.data=null}else L.err=e.message}).then(function(){L.busy=null;if(state.view==='lane'&&state.laneAgent===agent)render()});
@@ -98,7 +99,8 @@ var ORDER=['LIVE','WAKEABLE','HELD','WATCH_ONLY','AUTH_REQUIRED','UNREACHABLE','
 
 function vOverview(d){
  var counts=(d.lanes||{}).counts||{};
- return PantheonLedger.overview(d,PantheonFabric.valid(state.fleet)?state.fleet:null,{now:Date.now(),changed:changed})+
+ var detail=d.private_details_withheld?'<p role="status">Private details are withheld on the shared hosted board. The latest received counts and routing verdicts remain available.</p>':'';
+ return detail+PantheonLedger.overview(d,PantheonFabric.valid(state.fleet)?state.fleet:null,{now:Date.now(),changed:changed})+
   '<footer class="fabric-provenance"><span>Service reports '+esc(counts.LIVE??'unknown')+' live · '+esc(counts.WAKEABLE??'unknown')+' wakeable · '+esc(counts.HELD??'unknown')+' held lanes</span><span>Received '+esc(d.generated_at||'time unavailable')+'</span><span>'+esc(d.version||'Build unavailable')+' · '+esc(d.built_ms??'unknown')+' ms collection</span><span>Read-only · no competing local store</span></footer>';
 }
 function rel(t){if(!t)return '—';var m=Math.round((Date.now()-new Date(t).getTime())/60000);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' d ago'}
@@ -120,6 +122,7 @@ function bindLanes(){
 function vQueue(d){
  var q=d.queue||[],items=d.items,all=q.reduce(function(n,x){return n+x.open},0);
  var h='<div class="section-heading"><h2>Open messages</h2><button class="btn" data-queue="*">All recipients · '+all+'</button></div><div class="toolbar">'+q.map(function(x){return '<button class="btn" data-queue="'+esc(x.agent)+'" aria-pressed="'+(state.recipient===x.agent)+'">'+esc(x.agent)+' · '+x.open+'</button>'}).join('')+'</div>';
+ if(d.private_details_withheld)return h+'<p role="status">Message details are withheld on the shared hosted board. The counts above are from the last received snapshot; this is not an empty inbox.</p>';
  if(!Array.isArray(items))return h+'<p class="empty">This producer does not provide message details. Refresh after the dashboard upgrade; counts are not a message list.</p>';
  if(items.length!==all)return h+'<p role="alert" class="banner b-danger">Snapshot mismatch: '+all+' counted items but '+items.length+' records. Refresh before relying on this queue.</p>';
  var rows=items.filter(function(x){return state.recipient==='*'||x.to===state.recipient});
@@ -129,6 +132,14 @@ function vQueue(d){
 function itemInspector(id){var x=(state.data.items||[]).find(function(x){return x.id===id});if(!x)return;showInspector(x.title||x.id,'<p class="mono">'+esc(x.id)+'</p><p>'+esc(x.from)+' → '+esc(x.to)+'</p><p class="sub">Opened '+esc(x.opened)+' · '+esc(x.type||'Request')+'</p><h3>Request</h3><pre class="message-body">'+esc(x.instructions||'No request body supplied.')+'</pre>',true)}
 function vLane(){
  var a=state.laneAgent;
+ if(state.data&&state.data.private_details_withheld){
+  var lanes=PantheonFabric.valid(state.fleet)?state.fleet.lanes:[],lane=lanes.find(function(l){return l.agent===a});
+  var queue=(state.data.queue||[]).find(function(l){return l.agent===a});
+  return '<h2>'+esc(a)+'</h2>'+fabricReceipt()+
+   (state.err?'<p role="status">Router refresh failed. Inbox count is from the last received snapshot.</p>':'')+
+   (lane?'<p>'+esc(lane.open)+' open tasks · '+esc(lane.active)+' active · '+esc(lane.stalled)+' stalled · '+esc(lane.blocked)+' blocked</p>':'<p>Lane task counts not observed.</p>')+
+   '<p>'+ (queue?esc(queue.open)+' open inbox messages':'Inbox count not observed')+'</p><p role="status">Lane ledger details are withheld on the shared hosted board.</p>';
+ }
  return PantheonLedger.laneLedger({agent:a,ledger:state.ledgers[a]||{},jobs:state.jobs[a],now:Date.now(),changed:changed});
 }
 function vReleases(d){return '<div class="card">'+(d.releases||[]).map(function(x,i){return '<details class="release" data-release="'+i+'"><summary><strong>'+esc(x.version)+'</strong><span class="sub">'+esc(x.date||'Date not supplied')+' · '+plural((x.items||[]).length,'entry','entries')+'</span><p>'+esc((x.items||[])[0]||'No changes recorded for this release.')+'</p></summary><ul>'+(x.items||[]).map(function(t){return '<li>'+esc(t)+'</li>'}).join('')+'</ul></details>'}).join('')+'</div>'}

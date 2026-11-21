@@ -35,7 +35,14 @@ a control.
   or another admitted actor was observed, and the UTC completion time. Its
   `point_sample` coverage never establishes a quiet interval; no-holder and
   build-regime early returns remain `unverified` with `none` coverage. The
-  existing `Shared` strings and policy result remain compatible.
+  existing `Shared` strings and policy result remain compatible. A process is
+  `Shared` (not an intruder) only when the probe attributes it to a live floor
+  holder (`Actor.Owner`); the default probe attributes none, so a floor lane's
+  processes are intruders today. The additive `floor_holders` field lists every
+  lane holding a live floor share at sample time (`holder`, `work`,
+  `reservation_id`, `cores`), and an invalidating summary appends
+  `; floor shares live at sample time: ...` (max 5 named, then `+N more`). Both
+  are co-presence, never attribution.
 - **Dashboard read-model.** `Coverage` computes per-resource utilization %,
   the current holder, upcoming windows, and conflicts caught in 24h — the JSON a
   dashboard tile consumes (`sirsi maat coverage <resource> --json`).
