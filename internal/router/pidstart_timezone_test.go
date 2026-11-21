@@ -68,6 +68,20 @@ func TestLegacyDifferentStartTimesRemainUnknown(t *testing.T) {
 	}
 }
 
+func TestMixedSignatureFormatsRemainUnknown(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"Tue Nov 17 21:19:09 2026", "epoch:1794971949"},
+		{"epoch:1794971949", "Wed Nov 18 03:19:09 2026"},
+	} {
+		restore := probeStubs(t, PIDAlive, pair[1])
+		got := PIDStateOf(4242, pair[0])
+		restore()
+		if got != PIDUnknown || DeadByOSTruth(got) {
+			t.Fatalf("mixed formats falsely classified a live PID as dead: %s", got)
+		}
+	}
+}
+
 func TestMatchingLegacyStartRemainsAlive(t *testing.T) {
 	stamp := "Tue Nov 17 21:19:09 2026"
 	restore := probeStubs(t, PIDAlive, stamp)

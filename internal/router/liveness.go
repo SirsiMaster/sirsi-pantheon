@@ -132,8 +132,8 @@ func setPIDCommandFn(fn func(int) string) {
 // is the start signature recorded at registration; pass "" for legacy records
 // (or callers that never captured one), which falls back to bare-PID semantics
 // with zero behavior change. When the live process at pid has a DIFFERENT start
-// time than startedAt, the PID was recycled unless both signatures are legacy
-// local wall times, whose missing time zones make a mismatch inconclusive.
+// time than startedAt, the PID was recycled unless either signature is a legacy
+// local wall time, whose missing time zone makes a mismatch inconclusive.
 // A non-positive pid is PIDUnknown.
 func PIDStateOf(pid int, startedAt string) PIDState {
 	if pid < minAgentPID {
@@ -152,9 +152,9 @@ func PIDStateOf(pid int, startedAt string) PIDState {
 	}
 	if live != startedAt {
 		// Legacy ps-style signatures omit the originating timezone. A different
-		// wall time can describe the same process, so a live PID must not be
-		// reaped on that mismatch. Keep the on-disk format unchanged while old
-		// readers remain in the fleet; this is not an epoch-format migration.
+		// wall time or a different signature format cannot prove a new process.
+		// Keep the on-disk format unchanged while old readers remain in the
+		// fleet; this is not an epoch-format migration.
 		if legacyStartMismatchAmbiguous(startedAt, live) {
 			return PIDUnknown
 		}
@@ -169,7 +169,7 @@ func legacyStartMismatchAmbiguous(a, b string) bool {
 	}
 	_, firstErr := time.Parse(time.ANSIC, a)
 	_, secondErr := time.Parse(time.ANSIC, b)
-	return firstErr == nil && secondErr == nil
+	return firstErr == nil || secondErr == nil
 }
 
 // PIDStateOfThread extends PIDStateOf with a surface command-line check for
