@@ -1,6 +1,8 @@
 package schedule
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -294,5 +296,135 @@ func TestClassifyProcIgnoresShellWrappers(t *testing.T) {
 		if got := classifyProc(c); got != want {
 			t.Errorf("classifyProc(%q) = %q, want %q", c, got, want)
 		}
+	}
+}
+
+// --- floor holders are reported as co-presence, never as attribution ---
+
+// floorHolderLedger books a primary hold of the given regime on m1 plus n
+// floor-share holders (floor1..floorN, work w1..wN) over the same window.
+func floorHolderLedger(t *testing.T, primary Regime, n int) (*Ledger, Reservation) {
+	t.Helper()
+	setNormalPressureFixture(t)
+	l := fixedLedger("2026-09-24T10:00:00Z")
+	p, err := l.Reserve(mkReq("m1", "measurer", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", primary), false)
+	if err != nil || p.Reservation == nil {
+		t.Fatalf("primary setup: %+v %v", p, err)
+	}
+	for i := 1; i <= n; i++ {
+		req := mkReq("m1", fmt.Sprintf("floor%d", i), "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeBuild)
+		req.Work = fmt.Sprintf("w%d", i)
+		r, err := l.Reserve(req, false)
+		if err != nil || r.Reservation == nil || r.Reservation.Share != ShareFloor {
+			t.Fatalf("floor setup %d: %+v %v", i, r, err)
+		}
+	}
+	return l, *p.Reservation
+}
+
+func probeReturning(actors ...Actor) {
+	SetActivityProbe(func(string) ([]Actor, error) { return actors, nil })
+}
+
+var forbiddenAttribution = []string{"may be", "caused by", "belongs to", "belong to", "attributed to"}
+
+func TestCheckConflicts_FloorHoldersNamedAsCoPresence(t *testing.T) {
+	for _, primary := range []Regime{RegimeQuiet, RegimeLoaded} {
+		t.Run(string(primary)+" unattributed intruder", func(t *testing.T) {
+			l, p := floorHolderLedger(t, primary, 1)
+			probeReturning(Actor{Kind: "bench", Detail: "foreign bench"})
+			t.Cleanup(func() { SetActivityProbe(probeProcesses) })
+			rep, err := l.CheckConflicts("m1", "m1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rep.Clean || len(rep.Intruders) != 1 {
+				t.Fatalf("an unattributed process is an intruder, got %+v", rep)
+			}
+			if len(rep.FloorHolders) != 1 || rep.FloorHolders[0].Holder != "floor1" || rep.FloorHolders[0].Work != "w1" || rep.FloorHolders[0].Reservation == "" || rep.FloorHolders[0].Cores == 0 {
+				t.Fatalf("floor holder must be listed with work/reservation/cores, got %+v", rep.FloorHolders)
+			}
+			want := "foreign bench:foreign bench during " + string(primary) + " reservation " + p.ID + " held by measurer" +
+				" — foreign activity observed in this point sample; quiet interval unverified" +
+				"; floor shares live at sample time: floor1 (w1)"
+			if rep.Summary != want {
+				t.Fatalf("summary\n got %q\nwant %q", rep.Summary, want)
+			}
+			for _, w := range forbiddenAttribution {
+				if strings.Contains(rep.Summary, w) {
+					t.Fatalf("summary must state co-presence only, found %q in %q", w, rep.Summary)
+				}
+			}
+		})
+	}
+}
+
+func TestCheckConflicts_AttributedFloorProcessStaysSharedAndLists(t *testing.T) {
+	l, _ := floorHolderLedger(t, RegimeQuiet, 1)
+	probeReturning(Actor{Kind: "build", Detail: "floor build", Owner: "floor1"})
+	t.Cleanup(func() { SetActivityProbe(probeProcesses) })
+	rep, err := l.CheckConflicts("m1", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Clean || len(rep.Intruders) != 0 || len(rep.Shared) != 1 {
+		t.Fatalf("attributed floor process must stay Shared and Clean, got %+v", rep)
+	}
+	if len(rep.FloorHolders) != 1 || rep.FloorHolders[0].Holder != "floor1" {
+		t.Fatalf("floor holder must still be listed, got %+v", rep.FloorHolders)
+	}
+	if strings.Contains(rep.Summary, "floor shares live at sample time") {
+		t.Fatalf("clause is only for invalidating summaries, got %q", rep.Summary)
+	}
+}
+
+func TestCheckConflicts_NoFloorHoldersSummaryUnchanged(t *testing.T) {
+	l, p := floorHolderLedger(t, RegimeQuiet, 0)
+	probeReturning(Actor{Kind: "bench", Detail: "foreign bench"})
+	t.Cleanup(func() { SetActivityProbe(probeProcesses) })
+	rep, err := l.CheckConflicts("m1", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Pinned byte-for-byte: changing this string must be a deliberate edit.
+	want := "foreign bench:foreign bench during quiet reservation " + p.ID + " held by measurer" +
+		" — foreign activity observed in this point sample; quiet interval unverified"
+	if rep.Summary != want || rep.FloorHolders != nil {
+		t.Fatalf("no floor holders: summary and field must be unchanged, got %q / %+v", rep.Summary, rep.FloorHolders)
+	}
+	if b, _ := json.Marshal(rep); strings.Contains(string(b), "floor_holders") {
+		t.Fatalf("floor_holders must be omitted when empty: %s", b)
+	}
+}
+
+func TestCheckConflicts_FloorHoldersBoundedToFiveThenMore(t *testing.T) {
+	l, _ := floorHolderLedger(t, RegimeQuiet, 7)
+	probeReturning(Actor{Kind: "model", Detail: "mlx_lm"})
+	t.Cleanup(func() { SetActivityProbe(probeProcesses) })
+	rep, err := l.CheckConflicts("m1", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.FloorHolders) != 7 {
+		t.Fatalf("the field lists every floor holder, got %d", len(rep.FloorHolders))
+	}
+	tail := "; floor shares live at sample time: floor1 (w1), floor2 (w2), floor3 (w3), floor4 (w4), floor5 (w5), +2 more"
+	if !strings.HasSuffix(rep.Summary, tail) || strings.Contains(rep.Summary, "floor6") {
+		t.Fatalf("want five named then +2 more, got %q", rep.Summary)
+	}
+}
+
+func TestCheckConflicts_BuildPrimaryHasNoFloorHolders(t *testing.T) {
+	setNormalPressureFixture(t)
+	l := fixedLedger("2026-09-24T10:00:00Z")
+	if _, err := l.Reserve(mkReq("m1", "builder", "2026-09-24T09:00:00Z", "2026-09-24T11:00:00Z", RegimeBuild), false); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := l.CheckConflicts("m1", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.FloorHolders != nil || rep.Summary != "build-regime reservation tolerates foreign load" {
+		t.Fatalf("build-regime early return must be unchanged, got %+v", rep)
 	}
 }

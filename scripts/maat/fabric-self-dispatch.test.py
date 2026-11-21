@@ -68,11 +68,24 @@ class SameHostDispatch(unittest.TestCase):
             self.assertIn(flag,args)
         self.assertIn("'--cpu-cores' '2' '--timeout' '37'",args[-1])
 
-    def test_remote_unknown_requires_proxy_and_never_bypasses_present_proxy(self):
-        for options in ({'decision':3},{'decision':3,'transport':'direct','proxy':'socks5://127.0.0.1:19001'}):
-            with self.subTest(options=options):
-                result,calls,_,_=self.invoke(**options)
-                self.assertEqual(result.returncode,78);self.assertEqual(calls,[])
+    def test_remote_default_uses_admitted_direct_without_proxy(self):
+        result,calls,_,_=self.invoke(decision=3)
+        self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(len(calls),1)
+        args=calls[0]['argv'];self.assertIn('/usr/bin/ssh',args)
+        command=next(arg for arg in args if arg.startswith('ProxyCommand='))
+        self.assertIn("--transport 'direct'",command)
+
+    def test_remote_explicit_direct_never_bypasses_proxy(self):
+        result,calls,_,_=self.invoke(decision=3,transport='direct',proxy='socks5://127.0.0.1:19001')
+        self.assertEqual(result.returncode,78);self.assertEqual(calls,[])
+
+    def test_remote_default_uses_admitted_socks_when_configured(self):
+        proxy='socks5://127.0.0.1:19001'
+        result,calls,_,_=self.invoke(decision=3,proxy=proxy)
+        self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(len(calls),1)
+        self.assertEqual(calls[0]['proxy'],proxy)
+        command=next(arg for arg in calls[0]['argv'] if arg.startswith('ProxyCommand='))
+        self.assertIn("--transport 'socks'",command)
 
     def test_selector_refusal_missing_native_and_scope_conflict_never_fall_back(self):
         for options in ({'decision':78,'transport':'direct'},{'decision':0,'missing':True,'transport':'direct'},

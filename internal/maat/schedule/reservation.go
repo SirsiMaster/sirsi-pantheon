@@ -109,6 +109,10 @@ type Reservation struct {
 	// means the release carried no outcome (older launchers): a completion
 	// receipt naming this reservation cannot then prove the run succeeded.
 	ExitCode *int `json:"exit_code,omitempty"`
+	// EndedAt is when the reservation turned terminal (RFC3339), stamped by the
+	// transition itself. The router archives finished rows by this end time, not
+	// by start. Older rows lack it; the archiver then falls back conservatively.
+	EndedAt string `json:"ended_at,omitempty"`
 	// ExemptPID is the PID of the process tree that runs this reservation's own
 	// guarded work (e.g. the run-guard script that later spawns a same-run ssh
 	// launcher). CheckConflicts never counts a process in the same ancestry
@@ -225,6 +229,9 @@ func (l *Ledger) snapshot() (raw string, exists bool, rows []Reservation, change
 	for i := range doc.Reservations {
 		if doc.Reservations[i].Status == StatusActive && doc.Reservations[i].leaseExpired(now) {
 			doc.Reservations[i].Status = StatusExpired
+			if doc.Reservations[i].EndedAt == "" {
+				doc.Reservations[i].EndedAt = expiryInstant(doc.Reservations[i], now)
+			}
 			changed = true
 		}
 	}
@@ -263,29 +270,15 @@ func (l *Ledger) save(raw string, exists bool, reservations []Reservation) error
 	}
 	rows := make([]map[string]json.RawMessage, len(reservations))
 	for i, r := range reservations {
-		fields := map[string]json.RawMessage{}
+		var fields map[string]json.RawMessage
 		if i < len(previous) {
-			if previous[i] != nil {
-				fields = previous[i]
-			}
+			fields = previous[i]
 		}
-		encoded, err := json.Marshal(r)
+		merged, err := mergeRow(fields, r)
 		if err != nil {
-			return fmt.Errorf("maat: marshal reservation: %w", err)
-		}
-		var current map[string]json.RawMessage
-		if err := json.Unmarshal(encoded, &current); err != nil {
 			return err
 		}
-		// Remove all known fields (including omitted values), retaining future fields.
-		kind := reflect.TypeFor[Reservation]()
-		for field := 0; field < kind.NumField(); field++ {
-			delete(fields, strings.Split(kind.Field(field).Tag.Get("json"), ",")[0])
-		}
-		for k, v := range current {
-			fields[k] = v
-		}
-		rows[i] = fields
+		rows[i] = merged
 	}
 	encoded, err := json.Marshal(rows)
 	if err != nil {
@@ -304,6 +297,40 @@ func (l *Ledger) save(raw string, exists bool, reservations []Reservation) error
 		return errLedgerConflict
 	}
 	return nil
+}
+
+// mergeRow overlays r's known fields on the stored row, keeping fields this
+// build does not know (mixed-version writers). prev may be nil.
+func mergeRow(prev map[string]json.RawMessage, r Reservation) (map[string]json.RawMessage, error) {
+	fields := prev
+	if fields == nil {
+		fields = map[string]json.RawMessage{}
+	}
+	encoded, err := json.Marshal(r)
+	if err != nil {
+		return nil, fmt.Errorf("maat: marshal reservation: %w", err)
+	}
+	var current map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &current); err != nil {
+		return nil, err
+	}
+	// Remove all known fields (including omitted values), retaining future fields.
+	kind := reflect.TypeFor[Reservation]()
+	for field := 0; field < kind.NumField(); field++ {
+		delete(fields, strings.Split(kind.Field(field).Tag.Get("json"), ",")[0])
+	}
+	for k, v := range current {
+		fields[k] = v
+	}
+	return fields, nil
+}
+
+// expiryInstant is the moment a lapsed lease ended: heartbeat plus TTL.
+func expiryInstant(r Reservation, now time.Time) string {
+	if hb, err := time.Parse(time.RFC3339, r.HeartbeatAt); err == nil {
+		return hb.Add(time.Duration(r.LeaseTTLSec) * time.Second).UTC().Format(time.RFC3339)
+	}
+	return now.UTC().Format(time.RFC3339)
 }
 
 func isTerminal(s Status) bool {
@@ -358,6 +385,10 @@ func (l *Ledger) Reserve(req Reservation, queue bool) (ReserveResult, error) {
 			return ReserveResult{}, fmt.Errorf("maat: reservation identity: %w", err)
 		}
 		req.ID = newID(req.Resource, req.Holder, l.now()) + "-" + hex.EncodeToString(nonce[:])
+	} else if _, _, archived, err := l.findArchived(req.ID); err != nil {
+		return ReserveResult{}, err
+	} else if archived {
+		return ReserveResult{}, fmt.Errorf("maat: duplicate reservation id %s", req.ID)
 	}
 	for attempt := 0; attempt < maxLedgerAttempts; attempt++ {
 		result, err := l.reserveAttempt(req, queue)
@@ -569,6 +600,7 @@ func (l *Ledger) Release(id string) (*Reservation, error) {
 			return fmt.Errorf("maat: reservation %s already %s", id, r.Status)
 		}
 		r.Status = StatusReleased
+		r.EndedAt = l.now().UTC().Format(time.RFC3339)
 		return nil
 	})
 }
@@ -584,6 +616,7 @@ func (l *Ledger) ReleaseExit(id string, exitCode int) (*Reservation, error) {
 			return fmt.Errorf("maat: reservation %s already %s", id, r.Status)
 		}
 		r.Status = StatusReleased
+		r.EndedAt = l.now().UTC().Format(time.RFC3339)
 		code := exitCode
 		r.ExitCode = &code
 		return nil
@@ -607,6 +640,9 @@ func (l *Ledger) Invalidate(id, intruder string) (*Reservation, error) {
 				r.InvalidatedBy = intruder
 			}
 			return nil
+		}
+		if !isTerminal(r.Status) {
+			r.EndedAt = l.now().UTC().Format(time.RFC3339)
 		}
 		r.Status = StatusInvalidated
 		r.InvalidatedBy = intruder
@@ -640,6 +676,21 @@ func (l *Ledger) mutateAttempt(id string, fn func(*Reservation) error) (*Reserva
 			out := reservations[i]
 			return &out, nil
 		}
+	}
+	// Finished rows move to the archive; a mutation by id must behave exactly
+	// as it would on the same row in the hot document.
+	row, archRaw, ok, err := l.findArchived(id)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		if err := fn(&row); err != nil {
+			return nil, err
+		}
+		if err := l.putArchived(id, archRaw, &row); err != nil {
+			return nil, err
+		}
+		return &row, nil
 	}
 	return nil, fmt.Errorf("maat: reservation %s not found", id)
 }
