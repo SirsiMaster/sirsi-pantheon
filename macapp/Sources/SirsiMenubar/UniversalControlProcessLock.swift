@@ -27,7 +27,7 @@ final class UniversalControlProcessLock {
             close(fd)
             throw UniversalControlLockError.unavailable
         }
-        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+        guard lockFileDescriptor(fd, LOCK_EX | LOCK_NB) == 0 else {
             let lockErrno = errno
             close(fd)
             throw lockErrno == EWOULDBLOCK ? UniversalControlLockError.busy : UniversalControlLockError.unavailable
