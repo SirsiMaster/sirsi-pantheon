@@ -28,6 +28,10 @@ func (s *Server) apiFabric(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "invalid fabric task page selection", http.StatusBadRequest)
 		return
 	}
+	if s.cfg.CloudBoard && selected {
+		writeError(w, "Task rows are withheld on the shared hosted board", http.StatusForbidden)
+		return
+	}
 	if s.cfg.FabricSource != nil {
 		var generation *ledger.FabricGeneration
 		if filter != "" {
@@ -74,7 +78,7 @@ func (s *Server) apiFabric(w http.ResponseWriter, r *http.Request) {
 			board.Tasks = page
 		}
 		w.Header().Set("X-Sirsi-Fabric-Generation", view.ID)
-		writeJSON(w, board)
+		writeJSON(w, s.fabricResponse(board))
 		return
 	}
 	if s.cfg.FabricFn == nil {
@@ -90,7 +94,7 @@ func (s *Server) apiFabric(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "fabric production failed", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, board)
+	writeJSON(w, s.fabricResponse(board))
 }
 
 func fabricTaskQuery(raw string) (int, string, string, bool, error) {
