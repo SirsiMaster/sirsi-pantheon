@@ -869,10 +869,10 @@ func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mi
 				// mismatch means the OS recycled this PID onto a DIFFERENT
 				// process — adopting the stale record would resurrect a dead
 				// thread, so mint a fresh one instead.
-				if existing.StartTime != "" && newStart != "" && existing.StartTime != newStart {
-					if legacyStartMismatchAmbiguous(existing.StartTime, newStart) {
-						return nil, fmt.Errorf("PID %d has ambiguous legacy start times; refusing to adopt or duplicate the existing thread", t.PID)
-					}
+				// An offset-shaped gap is the same process printed under another
+				// local zone: adopt. Any other gap is a recycled PID: mint fresh.
+				if existing.StartTime != "" && newStart != "" && existing.StartTime != newStart &&
+					!legacyStartMismatchAmbiguous(existing.StartTime, newStart) {
 					continue
 				}
 				existing.LastSeenAt = now
