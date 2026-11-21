@@ -1091,3 +1091,28 @@ func TestRegisterThread_CrossLaneIdentityGuard(t *testing.T) {
 		t.Errorf("same-agent pinned re-register must be allowed, got: %v", err)
 	}
 }
+
+func TestThreadReapMachineMatches(t *testing.T) {
+	cases := []struct {
+		name   string
+		record string
+		local  string
+		shared bool
+		want   bool
+	}{
+		{"shared local", "studio", "studio", true, true},
+		{"shared foreign", "studio", "m5", true, false},
+		{"shared observer unknown", "studio", "", true, false},
+		{"shared owner unknown", "", "m5", true, false},
+		{"shared both unknown", "", "", true, false},
+		{"legacy local old record", "", "m5", false, true},
+		{"legacy local observer unknown", "m5", "", false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := threadReapMachineMatches(tc.record, tc.local, tc.shared); got != tc.want {
+				t.Fatalf("reap placement = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

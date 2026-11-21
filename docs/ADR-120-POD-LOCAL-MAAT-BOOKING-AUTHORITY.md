@@ -125,6 +125,9 @@ authority, whether or not the cloud is reachable.
     floor-lane processes are `Shared` only if a probe attributes an owner, and
     the default probe does not, so they are counted as intruders; the
     `invalidated_by` text is the conflict summary, not the floor holder.
+    *Update 2026-11-11 (maat-conflict-probe-owner-attribution):* the report now
+    carries `floor_holders` and the summary appends the live floor holders as
+    co-presence (never attribution); invalidation itself is unchanged.
     **Second known limit:** floor rows are bounded in size (capacity/4, min 1)
     but not in number: N holders take N x floor (m1 10 cores, floor 2, passed at
     6 holders; m5 18 cores, floor 4, passed at 5). The ordinary floor path is

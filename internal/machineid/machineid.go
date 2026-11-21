@@ -96,16 +96,20 @@ var (
 	machineIDDone    bool
 )
 
-// defaultMachineID probes the OS once and caches: the id never changes within a
-// process, and the macOS probe shells out to ioreg.
+// defaultMachineID caches a successful OS probe. An unavailable identity must
+// be retried so a transient failure does not disable local maintenance forever.
 func defaultMachineID() string {
+	return cachedMachineID(probeMachineID)
+}
+
+func cachedMachineID(probe func() string) string {
 	machineIDCacheMu.Lock()
 	defer machineIDCacheMu.Unlock()
 	if machineIDDone {
 		return machineIDCache
 	}
-	machineIDDone = true
-	machineIDCache = probeMachineID()
+	machineIDCache = probe()
+	machineIDDone = machineIDCache != ""
 	return machineIDCache
 }
 
@@ -113,7 +117,7 @@ func probeMachineID() string {
 	switch runtime.GOOS {
 	case "darwin":
 		// IOPlatformUUID — stable across renames, reinstalls, and networks.
-		out, err := exec.Command("ioreg", "-rd1", "-c", "IOPlatformExpertDevice").Output()
+		out, err := exec.Command("/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice").Output()
 		if err != nil {
 			return ""
 		}

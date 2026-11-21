@@ -48,14 +48,18 @@ func (s *Server) apiBoardAct(w http.ResponseWriter, r *http.Request) {
 		writeBoardErr(w, http.StatusBadRequest, "unreadable body")
 		return
 	}
-	out, err := s.cfg.BoardActFn(r.Context(), "board:"+email, verb, body)
+	// An edit is not a read grant. Never serialize a backend record or its
+	// diagnostic text, even if the edit succeeds for a verified board user.
+	_, err = s.cfg.BoardActFn(r.Context(), "board:"+email, verb, body)
 	switch {
 	case errors.Is(err, ErrBoardVerb):
-		writeBoardErr(w, http.StatusNotFound, err.Error())
+		writeBoardErr(w, http.StatusNotFound, "unknown board action")
 	case err != nil:
-		writeBoardErr(w, http.StatusUnprocessableEntity, err.Error())
+		writeBoardErr(w, http.StatusUnprocessableEntity, "board action did not report success")
 	default:
-		_ = json.NewEncoder(w).Encode(out)
+		_ = json.NewEncoder(w).Encode(struct {
+			OK bool `json:"ok"`
+		}{OK: true})
 	}
 }
 
