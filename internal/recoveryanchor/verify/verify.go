@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 )
 
@@ -39,6 +40,9 @@ func NewVerifier(cfg Config) (*Verifier, error) {
 	case cfg.Clock == nil || cfg.Store == nil:
 		return nil, errors.New("verify: Clock and Store are required")
 	}
+	// Own the map before validating it, so later caller writes cannot change
+	// what was validated. The caller must not write it concurrently with this call.
+	cfg.Verbs = maps.Clone(cfg.Verbs)
 	for v, id := range cfg.Verbs {
 		if !IsVerb(v) || !reTarget.MatchString(id.Target) || !reDigest.MatchString(id.ConfigDigest) {
 			return nil, fmt.Errorf("verify: bad approved identity for verb %q", v)

@@ -206,5 +206,6 @@ func (p *Policy) Lookup(fingerprint string) (Grant, bool) {
 		return Grant{}, false
 	}
 	g, ok := p.byFP[fingerprint]
+	g.Verbs = slices.Clone(g.Verbs) // the caller must not alias policy storage
 	return g, ok
 }
