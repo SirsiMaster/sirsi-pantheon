@@ -11,7 +11,7 @@ enum UniversalControlBluetooth {
             guard let controller = report["controller_properties"] as? [String: Any],
                   let state = controller["controller_state"] as? String,
                   !state.isEmpty else { return nil }
-            guard let connected = report["device_connected"] else { continue }
+            guard let connected = report["device_connected"] else { return nil }
             guard let devices = connected as? [[String: Any]] else { return nil }
             for device in devices {
                 guard device.count == 1 else { return nil }
