@@ -7,6 +7,7 @@ private final class FakePeerAdapter: UniversalControlPeerAdapter {
     var selections: [String] = []
     var expectedStates: [Bool] = []
     var selectionError: Error?
+    var onSelection: ((Int) throws -> Void)?
     var observationError: Error?
     var onObservation: (() -> Void)?
     init(_ snapshots: [[UniversalControlPeer]]) { self.snapshots = snapshots }
@@ -19,6 +20,7 @@ private final class FakePeerAdapter: UniversalControlPeerAdapter {
     func selectPeer(id: String, expectedLinked: Bool) async throws {
         selections.append(id)
         expectedStates.append(expectedLinked)
+        try onSelection?(selections.count)
         if let selectionError { throw selectionError }
     }
 }
@@ -143,6 +145,29 @@ final class UniversalControlRecoveryTests: XCTestCase {
         let result = await UniversalControlRecovery(lockPath: testLockPath).reconnect(id: "studio", adapter: adapter)
         XCTAssertEqual(result, .cancelledAfterPossibleConnection)
         XCTAssertEqual(adapter.expectedStates, [false])
+    }
+
+    @MainActor func testUncertainReconnectAfterDisconnectReportsLatestAction() async {
+        let adapter = FakePeerAdapter([[linked], [disconnected], [disconnected]])
+        let result = await UniversalControlRecovery(lockPath: testLockPath).reconnect(id: "studio", adapter: adapter)
+        XCTAssertEqual(result, .stateChangedAfterPossibleConnection)
+        XCTAssertEqual(adapter.expectedStates, [true, false])
+    }
+
+    @MainActor func testFailedReconnectAfterDisconnectReportsPossibleConnection() async {
+        let adapter = FakePeerAdapter([[linked], [disconnected]])
+        adapter.onSelection = { if $0 == 2 { throw NSError(domain: "test", code: 1) } }
+        let result = await UniversalControlRecovery(lockPath: testLockPath).reconnect(id: "studio", adapter: adapter)
+        XCTAssertEqual(result, .failedAfterPossibleConnection)
+        XCTAssertEqual(adapter.expectedStates, [true, false])
+    }
+
+    @MainActor func testCancelledReconnectAfterDisconnectReportsPossibleConnection() async {
+        let adapter = FakePeerAdapter([[linked], [disconnected]])
+        adapter.onSelection = { if $0 == 2 { throw CancellationError() } }
+        let result = await UniversalControlRecovery(lockPath: testLockPath).reconnect(id: "studio", adapter: adapter)
+        XCTAssertEqual(result, .cancelledAfterPossibleConnection)
+        XCTAssertEqual(adapter.expectedStates, [true, false])
     }
 
     @MainActor func testConnectingAnUnlinkedPeerDoesNotFirstDisconnectIt() async {

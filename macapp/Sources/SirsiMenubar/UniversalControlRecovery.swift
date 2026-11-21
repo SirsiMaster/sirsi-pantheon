@@ -93,22 +93,22 @@ final class UniversalControlRecovery {
             mayHaveConnected = true
             try await adapter.selectPeer(id: id, expectedLinked: false)
             guard let linked = try await uniquePeer(id: id, adapter: adapter), linked.linked == true else {
-                return mayHaveDisconnected ? .stateChangedAfterPossibleDisconnect : .stateChangedAfterPossibleConnection
+                return .stateChangedAfterPossibleConnection
             }
             return .linkedNeedsInputVerification
         } catch let error as UniversalControlAdapterError {
-            if mayHaveDisconnected { return .failedAfterPossibleDisconnect }
             if mayHaveConnected { return .failedAfterPossibleConnection }
+            if mayHaveDisconnected { return .failedAfterPossibleDisconnect }
             switch error {
             case .accessibilityPermissionRequired: return .accessibilityPermissionRequired
             case .consoleLocked: return .consoleLocked
             }
         } catch is CancellationError {
-            if mayHaveDisconnected { return .cancelledAfterPossibleDisconnect }
-            return mayHaveConnected ? .cancelledAfterPossibleConnection : .cancelled
+            if mayHaveConnected { return .cancelledAfterPossibleConnection }
+            return mayHaveDisconnected ? .cancelledAfterPossibleDisconnect : .cancelled
         } catch {
-            if mayHaveDisconnected { return .failedAfterPossibleDisconnect }
-            return mayHaveConnected ? .failedAfterPossibleConnection : .failed
+            if mayHaveConnected { return .failedAfterPossibleConnection }
+            return mayHaveDisconnected ? .failedAfterPossibleDisconnect : .failed
         }
     }
 
