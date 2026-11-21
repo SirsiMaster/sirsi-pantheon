@@ -870,6 +870,9 @@ func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mi
 				// process — adopting the stale record would resurrect a dead
 				// thread, so mint a fresh one instead.
 				if existing.StartTime != "" && newStart != "" && existing.StartTime != newStart {
+					if legacyStartMismatchAmbiguous(existing.StartTime, newStart) {
+						return nil, fmt.Errorf("PID %d has ambiguous legacy start times; refusing to adopt or duplicate the existing thread", t.PID)
+					}
 					continue
 				}
 				existing.LastSeenAt = now
@@ -1572,7 +1575,9 @@ func reapStrayThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 		if t == nil || !threadReapMachineMatches(t.MachineID, thisMachine, shared) {
 			continue
 		}
-		if !isLiveWatcher(t) {
+		// Unknown liveness protects this record from retirement, but cannot
+		// prove it is a live successor that supersedes another session.
+		if !isLiveWatcher(t) || PIDStateOfThread(t) != PIDAlive {
 			continue
 		}
 		k := groupKey{t.AgentID, t.Surface}

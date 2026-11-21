@@ -14,7 +14,10 @@
 // agree with `ps`.
 package router
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 const minAgentPID = 2
 
@@ -129,8 +132,9 @@ func setPIDCommandFn(fn func(int) string) {
 // is the start signature recorded at registration; pass "" for legacy records
 // (or callers that never captured one), which falls back to bare-PID semantics
 // with zero behavior change. When the live process at pid has a DIFFERENT start
-// time than startedAt, the PID was recycled onto another process and the result
-// is PIDRecycled (dead-for-reaping). A non-positive pid is PIDUnknown.
+// time than startedAt, the PID was recycled unless both signatures are legacy
+// local wall times, whose missing time zones make a mismatch inconclusive.
+// A non-positive pid is PIDUnknown.
 func PIDStateOf(pid int, startedAt string) PIDState {
 	if pid < minAgentPID {
 		return PIDUnknown
@@ -147,9 +151,25 @@ func PIDStateOf(pid int, startedAt string) PIDState {
 		return PIDAlive // cannot read start time — never falsely reap a live PID
 	}
 	if live != startedAt {
+		// Legacy ps-style signatures omit the originating timezone. A different
+		// wall time can describe the same process, so a live PID must not be
+		// reaped on that mismatch. Keep the on-disk format unchanged while old
+		// readers remain in the fleet; this is not an epoch-format migration.
+		if legacyStartMismatchAmbiguous(startedAt, live) {
+			return PIDUnknown
+		}
 		return PIDRecycled // same PID number, different process — the recorded one is gone
 	}
 	return PIDAlive
+}
+
+func legacyStartMismatchAmbiguous(a, b string) bool {
+	if a == b || a == "" || b == "" {
+		return false
+	}
+	_, firstErr := time.Parse(time.ANSIC, a)
+	_, secondErr := time.Parse(time.ANSIC, b)
+	return firstErr == nil && secondErr == nil
 }
 
 // PIDStateOfThread extends PIDStateOf with a surface command-line check for

@@ -46,14 +46,14 @@ func runningConsumersExcept(routerRoot, agentID string) int {
 		}
 		lines := strings.SplitN(strings.TrimSpace(string(data)), "\n", 2)
 		pid, perr := strconv.Atoi(strings.TrimSpace(lines[0]))
-		if perr != nil || pid <= 0 {
+		if perr != nil || pid < minAgentPID {
 			continue
 		}
 		started := ""
 		if len(lines) > 1 {
 			started = strings.TrimSpace(lines[1])
 		}
-		if PIDStateOf(pid, started) == PIDAlive {
+		if !DeadByOSTruth(PIDStateOf(pid, started)) {
 			n++
 		}
 	}
