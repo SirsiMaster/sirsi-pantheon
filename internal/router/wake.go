@@ -815,7 +815,9 @@ func (r *consumerRun) running() bool {
 		return false
 	}
 	if r.done == nil {
-		return PIDStateOf(r.pid, r.startedAt) == PIDAlive
+		// An unverified identity is not evidence of exit; do not dispatch a
+		// second consumer while the original may still be running.
+		return !DeadByOSTruth(PIDStateOf(r.pid, r.startedAt))
 	}
 	select {
 	case <-r.done:
@@ -1144,7 +1146,7 @@ func adoptRunningConsumer(routerRoot, agentID string) *consumerRun {
 	}
 	lines := strings.SplitN(strings.TrimSpace(string(data)), "\n", 2)
 	pid, perr := strconv.Atoi(strings.TrimSpace(lines[0]))
-	if perr != nil || pid <= 0 {
+	if perr != nil || pid < minAgentPID {
 		clearConsumerPIDFile(routerRoot, agentID)
 		return nil
 	}
@@ -1152,7 +1154,7 @@ func adoptRunningConsumer(routerRoot, agentID string) *consumerRun {
 	if len(lines) > 1 {
 		startedAt = strings.TrimSpace(lines[1])
 	}
-	if PIDStateOf(pid, startedAt) != PIDAlive {
+	if DeadByOSTruth(PIDStateOf(pid, startedAt)) {
 		clearConsumerPIDFile(routerRoot, agentID)
 		return nil
 	}
