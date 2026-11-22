@@ -552,6 +552,9 @@ func TestOwnerDispositionReconcilesEachRetainedPhaseAndFinalJournalFailure(t *te
 				// Hold the actual journal mutation primitive, rather than guessing
 				// its private lock filename. The second nonblocking acquisition
 				// must fail; the outer helper always releases, including Fatal.
+				oldWait := journalLockWait
+				journalLockWait = 0
+				defer func() { journalLockWait = oldWait }()
 				if err := withJournalMutationLock(f.journal.Path, func() error {
 					_, err := f.store.ReconcileLocalPreventionDisposition(preview.PlanSHA256)
 					if err == nil {
