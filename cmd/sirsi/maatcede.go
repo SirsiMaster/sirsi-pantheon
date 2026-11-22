@@ -181,11 +181,12 @@ var maatCedeRequestCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		var journalErr string
 		if err := logCedeDecision("cede-request", "pending", c.Requester, c.Resource, cedeAssessed(c), c.Holder, c.Reason, c.ID); err != nil {
-			return cedeProjectionErr("request", c.ID, err)
+			journalErr = journalWarn("cede request "+c.ID, err)
 		}
 		if maatJSON {
-			return emitJSON(c)
+			return emitJSONWithJournalError(c, journalErr)
 		}
 		fmt.Printf("𓆄 cede requested: %s asks %s to cede %s on %s for %d min  (id %s)\n",
 			c.Requester, c.Holder, c.Ask, c.Resource, c.Minutes, c.ID)
@@ -221,11 +222,12 @@ func respondCedeCmd(use, short string, status schedule.CedeStatus) *cobra.Comman
 			if err != nil {
 				return err
 			}
+			var journalErr string
 			if err := logCedeDecision(info.Kind, info.Determination, by, c.Resource, cedeAssessed(c), c.Requester, why, c.ID); err != nil {
-				return cedeProjectionErr(info.Determination, c.ID, err)
+				journalErr = journalWarn("cede "+info.Determination+" "+c.ID, err)
 			}
 			if maatJSON {
-				return emitJSON(c)
+				return emitJSONWithJournalError(c, journalErr)
 			}
 			fmt.Printf("𓆄 cede %s: %s (by %s)\n", c.ID, c.Status, by)
 			return nil
@@ -251,11 +253,12 @@ var maatCedeWithdrawCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		var journalErr string
 		if err := logCedeDecision("cede-withdraw", "withdraw", by, c.Resource, cedeAssessed(c), c.Holder, c.Reason, c.ID); err != nil {
-			return cedeProjectionErr("withdraw", c.ID, err)
+			journalErr = journalWarn("cede withdraw "+c.ID, err)
 		}
 		if maatJSON {
-			return emitJSON(c)
+			return emitJSONWithJournalError(c, journalErr)
 		}
 		fmt.Printf("𓆄 cede %s withdrawn (by %s)\n", c.ID, by)
 		return nil
