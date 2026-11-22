@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -57,6 +58,29 @@ func isOwnedRegular(identity journalObjectIdentity) bool {
 	return identity.mode&unix.S_IFMT == unix.S_IFREG && identity.nlink == 1 && identity.uid == uint32(os.Geteuid())
 }
 
+// journalLockWait bounds how long a writer waits for another local writer.
+// The flock is released by the kernel when its holder dies, so a leftover
+// zero-byte lock file is never "stale"; the only way to see it held is a live
+// writer, and holders keep it for one append+fsync (or a readback scan of a
+// large journal), i.e. milliseconds. A non-waiting try-lock turned that
+// overlap into a spurious failure. Tests lower it to 0 to assert refusal.
+var journalLockWait = 3 * time.Second
+
+// flockWithin retries a non-blocking exclusive flock with jitter until wait elapses.
+func flockWithin(fd int, wait time.Duration) error {
+	deadline := time.Now().Add(wait)
+	for {
+		err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB)
+		if err != unix.EWOULDBLOCK && err != unix.EINTR {
+			return err
+		}
+		if !time.Now().Before(deadline) {
+			return err
+		}
+		time.Sleep(time.Duration(5+time.Now().UnixNano()%20) * time.Millisecond) // jitter de-syncs waiters
+	}
+}
+
 func withJournalMutationLock(path string, fn func() error) error {
 	parentFD, _, base, err := openJournalParent(path)
 	if err != nil {
@@ -75,7 +99,7 @@ func withJournalMutationLock(path string, fn func() error) error {
 	if !isPrivateRegular(lockIdentity) || lockIdentity.uid != uint32(os.Geteuid()) {
 		return fmt.Errorf("maat decision journal: mutation lock is not an owned private singly-linked regular file")
 	}
-	if err := unix.Flock(lockFD, unix.LOCK_EX|unix.LOCK_NB); err != nil {
+	if err := flockWithin(lockFD, journalLockWait); err != nil {
 		return fmt.Errorf("maat decision journal: another local write or repair is in progress; retry after it finishes")
 	}
 	defer func() { _ = unix.Flock(lockFD, unix.LOCK_UN) }()

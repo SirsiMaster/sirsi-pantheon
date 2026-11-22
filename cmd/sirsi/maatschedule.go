@@ -108,6 +108,41 @@ func recordReservationDecision(req schedule.Reservation, result schedule.Reserve
 	return nil
 }
 
+// journalWarn reports, on stderr, that the authoritative action committed but
+// its local decision-journal projection failed, and returns the joined message
+// ("" when there was no failure) for the additive journal_error JSON field.
+func journalWarn(what string, errs ...error) string {
+	msgs := make([]string, 0, len(errs))
+	for _, e := range errs {
+		if e != nil {
+			msgs = append(msgs, e.Error())
+		}
+	}
+	if len(msgs) == 0 {
+		return ""
+	}
+	msg := strings.Join(msgs, "; ")
+	fmt.Fprintf(os.Stderr, "warning: %s committed but the local decision journal write failed (the router outcome stands; do not retry): %s\n", what, msg)
+	return msg
+}
+
+// emitJSONWithJournalError prints v, adding "journal_error" when non-empty.
+func emitJSONWithJournalError(v any, journalErr string) error {
+	if journalErr == "" {
+		return emitJSON(v)
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	fields["journal_error"], _ = json.Marshal(journalErr)
+	return emitJSON(fields)
+}
+
 func emitJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
@@ -163,24 +198,27 @@ a cable; it is the rails.lock replacement.`,
 		if err != nil {
 			return err
 		}
+		// The router's grant is the authoritative outcome and is already
+		// durable. A failure to project it into the host-local decision journal
+		// must never turn the command into a refusal (the caller would retry
+		// and orphan the real hold): warn, expose journal_error, exit 0.
+		var journalErrs []error
 		if res.Granted && res.Reservation.Share == schedule.ShareFloor {
 			conflictHolder := ""
 			if res.Conflict != nil {
 				conflictHolder = res.Conflict.Holder
 			}
 			if err := logFloorGrant(l, req.Holder, req.Resource, res.Reservation, conflictHolder); err != nil {
-				return err
+				journalErrs = append(journalErrs, err)
 			}
 		}
 		if err := recordReservationDecision(req, res); err != nil {
-			// The scheduler state is already durable. Return the append failure
-			// explicitly so a caller never mistakes an unprojected decision for a
-			// complete, drillable outcome.
-			return err
+			journalErrs = append(journalErrs, err)
 		}
+		journalErr := journalWarn("reservation", journalErrs...)
 		switch {
 		case maatJSON:
-			_ = emitJSON(res)
+			_ = emitJSONWithJournalError(res, journalErr)
 		case res.Queued:
 			fmt.Printf("𓆄 QUEUED behind %s on %s (held until %s)\n", res.Conflict.Holder, req.Resource, orNow(res.Conflict.EstEnd))
 		case res.Reservation.Share == schedule.ShareFloor:
@@ -355,13 +393,14 @@ var maatExtendCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		var journalErr string
 		if r.Share == schedule.ShareFloor && len(r.PendingCedes) > 0 {
 			if err := logFloorGrant(l, r.Holder, r.Resource, r, ""); err != nil {
-				return err
+				journalErr = journalWarn("extend", err)
 			}
 		}
 		if maatJSON {
-			return emitJSON(r)
+			return emitJSONWithJournalError(r, journalErr)
 		}
 		if r.Share == schedule.ShareFloor {
 			fmt.Printf("𓆄 extended %s until %s — kept at FLOOR (%d cores): %s\n", r.ID, r.EstEnd, r.Cores, r.Reason)
