@@ -14,7 +14,10 @@
 // agree with `ps`.
 package router
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 const minAgentPID = 2
 
@@ -129,27 +132,58 @@ func setPIDCommandFn(fn func(int) string) {
 // is the start signature recorded at registration; pass "" for legacy records
 // (or callers that never captured one), which falls back to bare-PID semantics
 // with zero behavior change. When the live process at pid has a DIFFERENT start
-// time than startedAt, the PID was recycled onto another process and the result
-// is PIDRecycled (dead-for-reaping). A non-positive pid is PIDUnknown.
+// time than startedAt, the PID was recycled unless either signature is a legacy
+// local wall time, whose missing time zone makes a mismatch inconclusive.
+// A non-positive pid is PIDUnknown.
 func PIDStateOf(pid int, startedAt string) PIDState {
+	state, _ := pidStateOf(pid, startedAt)
+	return state
+}
+
+// pidStateOf is PIDStateOf plus a flag: true when PIDUnknown was returned only
+// because the start-time gap is zone-offset-shaped (same process, other zone).
+func pidStateOf(pid int, startedAt string) (PIDState, bool) {
 	if pid < minAgentPID {
-		return PIDUnknown
+		return PIDUnknown, false
 	}
 	state := getPIDStateFn()(pid)
 	if state != PIDAlive {
-		return state // gone/defunct/unknown already terminal — no need to disambiguate
+		return state, false // gone/defunct/unknown already terminal — no need to disambiguate
 	}
 	if startedAt == "" {
-		return PIDAlive // legacy record: no discriminator captured, keep bare-PID behavior
+		return PIDAlive, false // legacy record: no discriminator captured, keep bare-PID behavior
 	}
 	live := getPIDStartFn()(pid)
 	if live == "" {
-		return PIDAlive // cannot read start time — never falsely reap a live PID
+		return PIDAlive, false // cannot read start time — never falsely reap a live PID
 	}
 	if live != startedAt {
-		return PIDRecycled // same PID number, different process — the recorded one is gone
+		// Legacy ps-style signatures omit the originating timezone, so only a
+		// zone-offset-shaped gap is inconclusive; anything else is a new process.
+		if legacyStartMismatchAmbiguous(startedAt, live) {
+			return PIDUnknown, true
+		}
+		return PIDRecycled, false // same PID number, different process — the recorded one is gone
 	}
-	return PIDAlive
+	return PIDAlive, false
+}
+
+// legacyStartMismatchAmbiguous reports whether two zone-less ps-style start
+// strings could be the SAME process printed under different local zones: both
+// parse, the wall-clock gap is non-zero, at most 26 h, and an exact multiple of
+// 15 minutes (every real zone offset is). Anything else is a different process.
+// ponytail: ~1/900 chance a recycled PID matches by luck; epoch format would remove it.
+func legacyStartMismatchAmbiguous(a, b string) bool {
+	ta, errA := time.Parse(time.ANSIC, a)
+	tb, errB := time.Parse(time.ANSIC, b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	d := ta.Sub(tb)
+	if d < 0 {
+		d = -d
+	}
+	return d != 0 && d <= 26*time.Hour && d%(15*time.Minute) == 0
 }
 
 // PIDStateOfThread extends PIDStateOf with a surface command-line check for
@@ -160,22 +194,24 @@ func PIDStateOfThread(t *Thread) PIDState {
 	if t == nil {
 		return PIDUnknown
 	}
-	state := PIDStateOf(t.PID, t.StartTime)
-	if state != PIDAlive {
+	state, ambiguous := pidStateOf(t.PID, t.StartTime)
+	if state != PIDAlive && !ambiguous {
 		return state
 	}
+	// Ambiguous (zone-offset) keeps its unknown verdict but still gets the
+	// command-line check, so a recycled PID running something else is caught.
 	want := expectedAgentCommandNeedle(t.Surface, t.AgentID)
 	if want == "" {
-		return PIDAlive
+		return state
 	}
 	cmd := getPIDCommandFn()(t.PID)
 	if cmd == "" {
-		return PIDAlive
+		return state
 	}
 	if !containsFold(cmd, want) {
 		return PIDMismatched
 	}
-	return PIDAlive
+	return state
 }
 
 func expectedAgentCommandNeedle(surface, agentID string) string {
