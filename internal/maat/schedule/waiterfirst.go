@@ -107,12 +107,24 @@ func waiterFor(rows []Reservation, req Reservation, now time.Time) *Reservation 
 // intersection of req's and w's windows. An older queued row for an unrelated
 // window waives nothing.
 func ownOlderQueued(rows []Reservation, req, w Reservation, wAt, now time.Time) bool {
+	// Fail closed (SSA 20261122-004747): precedence needs a well-formed,
+	// non-empty contested interval and a well-formed older window; anything
+	// else leaves the waiter its turn.
+	if !wellFormedWindow(req) || !wellFormedWindow(w) {
+		return false
+	}
 	rs, re := parseWindow(req)
 	ws, we := parseWindow(w)
 	is, ie := latest(rs, ws), earliest(re, we) // contested interval [is, ie)
+	if !is.Before(ie) {
+		return false
+	}
 	for _, o := range rows {
 		if o.Status != StatusQueued || o.Holder != req.Holder || o.ID == w.ID ||
 			!sameResource(o.Resource, w.Resource) || !o.queuedLive(now) {
+			continue
+		}
+		if !wellFormedWindow(o) {
 			continue
 		}
 		if os, oe := parseWindow(o); !(os.Before(ie) && is.Before(oe)) {
@@ -125,6 +137,18 @@ func ownOlderQueued(rows []Reservation, req, w Reservation, wAt, now time.Time) 
 		return true
 	}
 	return false
+}
+
+// wellFormedWindow: Start parses as RFC3339 and the window is non-empty and
+// ordered (start < end). Empty EstEnd is open-ended (parseWindow: start+24h) and
+// so well-formed; an unparseable EstEnd reads the same way, as in parseWindow.
+// Used only for waiver precedence; ordinary admission is unchanged.
+func wellFormedWindow(r Reservation) bool {
+	if _, err := time.Parse(time.RFC3339, r.Start); err != nil {
+		return false
+	}
+	s, e := parseWindow(r)
+	return s.Before(e)
 }
 
 // waiterServed: the waiter's holder was granted a FULL turn on the resource that
