@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,8 +38,9 @@ func seedAgent(t *testing.T, dir, agentID, agentType string) {
 // runThreadWatch runs `sirsi thread watch ...` in an isolated router dir with HOME
 // pinned to a temp home, so the wake LaunchAgent is written/read under
 // <home>/Library/LaunchAgents — never the developer's real ~/Library/LaunchAgents
-// or launchd domain (the launchctl bootout is a harmless no-op on an unloaded
-// label). This is the injected-writer boundary for the CLI path (Rule A16).
+// or the real launchd controller. A temporary HOME does not isolate the logged-in
+// user's GUI domain: the child also gets a private inert launchctl on PATH.
+// This is a fixture transport boundary, not a product uninstall bypass.
 func runThreadWatch(t *testing.T, dir, home string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	return runThreadWatchEnv(t, dir, home, nil, args...)
@@ -48,6 +50,20 @@ func runThreadWatch(t *testing.T, dir, home string, args ...string) (stdout, std
 // own SIRSI_AGENT_ID, which --uninstall requires to match --agent).
 func runThreadWatchEnv(t *testing.T, dir, home string, extra []string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
+	stdout, stderr, _, err = runThreadWatchEnvCaptured(t, dir, home, extra, args...)
+	return stdout, stderr, err
+}
+
+// Capture external-controller argv without invoking any real service controller.
+// A fresh executable/log per invocation avoids sharing fixture state across tests.
+func runThreadWatchEnvCaptured(t *testing.T, dir, home string, extra []string, args ...string) (stdout, stderr, calls string, err error) {
+	t.Helper()
+	controllerDir := t.TempDir()
+	controllerLog := filepath.Join(controllerDir, "launchctl-args")
+	controller := filepath.Join(controllerDir, "launchctl")
+	if werr := os.WriteFile(controller, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$SIRSI_TEST_LAUNCHCTL_LOG\"\n"), 0o700); werr != nil {
+		t.Fatal(werr)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, testBinary, append([]string{"thread", "watch"}, args...)...)
@@ -59,12 +75,23 @@ func runThreadWatchEnv(t *testing.T, dir, home string, extra []string, args ...s
 		"XDG_CACHE_HOME="+filepath.Join(home, ".cache"),
 	)
 	env = append(env, extra...)
+	// Last entries win; callers cannot accidentally restore the real controller
+	// through an extra PATH. Keep other tools available after this inert front door.
+	env = append(env,
+		"PATH="+controllerDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"SIRSI_TEST_LAUNCHCTL_LOG="+controllerLog,
+	)
 	cmd.Env = env
 	cmd.Stdin = nil
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &outBuf, &errBuf
 	err = cmd.Run()
-	return outBuf.String(), errBuf.String(), err
+	if raw, rerr := os.ReadFile(controllerLog); rerr == nil {
+		calls = string(raw)
+	} else if !os.IsNotExist(rerr) {
+		t.Fatal(rerr)
+	}
+	return outBuf.String(), errBuf.String(), calls, err
 }
 
 // TestThreadWatchInstallUninstall exercises the thin alias end to end: with
@@ -108,8 +135,12 @@ func TestThreadWatchInstallUninstall(t *testing.T) {
 
 	// Uninstall → plist gone.
 	own := []string{"SIRSI_AGENT_ID=gemma-tw"}
-	if _, stderr, err = runThreadWatchEnv(t, tmp, home, own, "--agent", "gemma-tw", "--uninstall"); err != nil {
+	_, stderr, calls, err := runThreadWatchEnvCaptured(t, tmp, home, own, "--agent", "gemma-tw", "--uninstall")
+	if err != nil {
 		t.Fatalf("uninstall: %v\n%s", err, stderr)
+	}
+	if want := fmt.Sprintf("bootout\ngui/%d/%s\n", os.Getuid(), label); calls != want {
+		t.Fatalf("owned uninstall must reach only the inert controller with exact argv: %q, want %q", calls, want)
 	}
 	if _, statErr := os.Stat(plist); !os.IsNotExist(statErr) {
 		t.Fatalf("wake plist must be gone after uninstall; stat err=%v", statErr)
@@ -164,19 +195,57 @@ func TestThreadWatchUninstallRefusesAnotherLane(t *testing.T) {
 	}
 	// Another lane, and an unidentified session, are both refused.
 	for _, env := range [][]string{{"SIRSI_AGENT_ID=gemma-b"}, nil} {
-		if _, stderr, err := runThreadWatchEnv(t, tmp, home, env, "--agent", "gemma-a", "--uninstall"); err == nil {
+		_, stderr, calls, err := runThreadWatchEnvCaptured(t, tmp, home, env, "--agent", "gemma-a", "--uninstall")
+		if err == nil {
 			t.Fatalf("env %v: uninstall of another lane must be refused", env)
 		} else if !bytes.Contains([]byte(stderr), []byte("never disarms another lane")) {
 			t.Fatalf("env %v: wrong refusal: %s", env, stderr)
+		}
+		if calls != "" {
+			t.Fatalf("refused uninstall reached the controller: %q", calls)
 		}
 		if _, statErr := os.Stat(plist); statErr != nil {
 			t.Fatalf("env %v: plist must survive a refused uninstall: %v", env, statErr)
 		}
 	}
-	if _, stderr, err := runThreadWatchEnv(t, tmp, home, []string{"SIRSI_AGENT_ID=gemma-a"}, "--agent", "gemma-a", "--uninstall"); err != nil {
+	_, stderr, calls, err := runThreadWatchEnvCaptured(t, tmp, home, []string{"SIRSI_AGENT_ID=gemma-a"}, "--agent", "gemma-a", "--uninstall")
+	if err != nil {
 		t.Fatalf("own-lane uninstall: %v\n%s", err, stderr)
+	}
+	if want := fmt.Sprintf("bootout\ngui/%d/ai.sirsi.router.wake.gemma-a\n", os.Getuid()); calls != want {
+		t.Fatalf("own-lane uninstall did not reach the exact inert controller: got %q, want %q", calls, want)
 	}
 	if _, statErr := os.Stat(plist); !os.IsNotExist(statErr) {
 		t.Fatalf("own-lane uninstall must remove the plist; stat err=%v", statErr)
+	}
+}
+
+// Even when a controller exists in the inherited PATH, the fixture must shadow
+// it. The ambient controller here is itself an inert spy, so a regression in the
+// fixture boundary can be shown red without reaching real launchctl.
+func TestThreadWatchFixtureShadowsAmbientLaunchctl(t *testing.T) {
+	tmp := setupTempRouter(t)
+	home := t.TempDir()
+	seedAgent(t, tmp, "gemma-tw", "gemma")
+	ambientDir := t.TempDir()
+	marker := filepath.Join(ambientDir, "ambient-reached")
+	spy := "#!/bin/sh\nprintf reached > \"$SIRSI_TEST_AMBIENT_LAUNCHCTL_MARKER\"\nexit 99\n"
+	if err := os.WriteFile(filepath.Join(ambientDir, "launchctl"), []byte(spy), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", ambientDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SIRSI_TEST_AMBIENT_LAUNCHCTL_MARKER", marker)
+	if _, stderr, err := runThreadWatch(t, tmp, home, "--agent", "gemma-tw", "--install"); err != nil {
+		t.Fatalf("install: %v\n%s", err, stderr)
+	}
+	_, stderr, calls, err := runThreadWatchEnvCaptured(t, tmp, home, []string{"SIRSI_AGENT_ID=gemma-tw"}, "--agent", "gemma-tw", "--uninstall")
+	if err != nil {
+		t.Fatalf("uninstall: %v\n%s", err, stderr)
+	}
+	if want := fmt.Sprintf("bootout\ngui/%d/ai.sirsi.router.wake.gemma-tw\n", os.Getuid()); calls != want {
+		t.Errorf("private controller did not capture exact uninstall: got %q, want %q", calls, want)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("fixture reached ambient launchctl, or cannot verify isolation: %v", err)
 	}
 }

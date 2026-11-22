@@ -3,6 +3,29 @@
 # Each entry is timestamped with context and reasoning.
 # This is the "why" behind every decision.
 
+## 2026-11-22 — Combined diagnostic and inert-fixture candidate, unrun
+
+Classification: platform-foundation. Source composition on main7e56 applies the
+eight non-memory paths from TaskWhybaca and two from thread-watch fixture4b757,
+without changing their code/test/document blobs. Independent review of this
+composition and fresh exact-source qualification remain required. Separatebaca
+positive5+13, six diagnostic reds and pristine5+13 pass; subsequent full current-
+platform vet/lint pass under declared tooling/config. Separate fixture4b757 five
+positive tests, safe ambient-spy red and five pristine tests pass. Both packets
+were independently inspected, but none is silently promoted to this new tree.
+
+The row diagnostic remains additive metadata/presentation only; actual claim and
+session authorization is unchanged. Private inert launchctl is a test-helper
+boundary, not a product uninstall exception, service restart or proof of general
+hostile-code isolation. A temporary HOME alone did not isolate GUI launchd;
+the source-derived conditional risk was not an observed consumer incident.
+
+Remaining: combined-source review/testing/race and required full gates, approved
+completion-validator custody, normal source publication and three-home document
+access. No installed change, live job controller, counter-retention action or
+product completion is claimed. Root105 and its legacy canonical-outcome gap stay
+separate; no unrelated proof receipt may be substituted.
+
 ## 2026-11-08 — Isolated recipient terminal-task accounting candidate
 
 Classification: platform-foundation; source preparation only. Owner requested
