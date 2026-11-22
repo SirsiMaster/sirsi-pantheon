@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+// setRuntimeSeams is the mutex-guarded (Rule A21) setter for the runtime-hash
+// seams; only tests call it, so it lives here rather than in production code.
+func setRuntimeSeams(exe func() (string, error), hash func(io.Reader) (string, error), cachePath func(string) string) {
+	runtimeSeamMu.Lock()
+	defer runtimeSeamMu.Unlock()
+	runtimeExeFn, runtimeHashFn, runtimeCachePath = exe, hash, cachePath
+}
+
 // rtFixture installs a fake executable + counting hasher + temp cache path.
 type rtFixture struct {
 	exe, cache string

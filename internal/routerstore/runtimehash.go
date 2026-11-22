@@ -43,7 +43,7 @@ type runtimeCacheEntry struct {
 	Hash string     `json:"hash"`
 }
 
-// Injectable seams (Rules A16/A21): mutex-guarded, set only through setRuntimeSeams.
+// Injectable seams (Rules A16/A21): mutex-guarded, set only through setRuntimeSeams (test code).
 var (
 	runtimeSeamMu    sync.RWMutex
 	runtimeExeFn     = os.Executable
@@ -55,12 +55,6 @@ func runtimeSeams() (func() (string, error), func(io.Reader) (string, error), fu
 	runtimeSeamMu.RLock()
 	defer runtimeSeamMu.RUnlock()
 	return runtimeExeFn, runtimeHashFn, runtimeCachePath
-}
-
-func setRuntimeSeams(exe func() (string, error), hash func(io.Reader) (string, error), cachePath func(string) string) {
-	runtimeSeamMu.Lock()
-	defer runtimeSeamMu.Unlock()
-	runtimeExeFn, runtimeHashFn, runtimeCachePath = exe, hash, cachePath
 }
 
 func hashReader(r io.Reader) (string, error) {
