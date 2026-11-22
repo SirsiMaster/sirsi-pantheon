@@ -73,6 +73,12 @@ func TestMaintenanceStartupIntentOpensWithResolvedGroup(t *testing.T) {
 	if err := os.Chmod(filepath.Join(path, servicedrain.MaintenanceMarkerName), 0640); err != nil {
 		t.Fatal(err)
 	}
+	// The marker inherits its group from the temp dir's parent (TMPDIR), which
+	// differs per host (e.g. wheel under /tmp). The test asserts acceptance
+	// under the resolved gid, so pin the group to it rather than the host's.
+	if err := os.Chown(filepath.Join(path, servicedrain.MaintenanceMarkerName), -1, os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
 	lookups := 0
 	intent, err := openMaintenanceStartupIntentForRelay(root, uint32(os.Getuid()), func() (int, int, error) {
 		lookups++
