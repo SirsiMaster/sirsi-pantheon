@@ -183,13 +183,21 @@ type Policy struct {
 // independently and the restricted sets are unioned. Sources are never
 // concatenated: an unterminated last line in one source must not be able to
 // swallow the first line of the next.
-func BuildPolicy(generation uint64, grantsSrc []byte, restrictionsSrcs ...[]byte) (*Policy, error) {
+//
+// restrictionsSrc is required (it may be nil/empty for "no restrictions"):
+// a call that omits it does not compile, so zero sources can never silently
+// mean unrestricted.
+func BuildPolicy(generation uint64, grantsSrc, restrictionsSrc []byte, moreRestrictions ...[]byte) (*Policy, error) {
 	grants, err := ParseGrants(grantsSrc)
 	if err != nil {
 		return nil, err
 	}
 	restricted := map[string]bool{}
 	rh := sha256.New()
+	// fresh slice: never append into the caller's variadic backing array
+	restrictionsSrcs := make([][]byte, 0, 1+len(moreRestrictions))
+	restrictionsSrcs = append(restrictionsSrcs, restrictionsSrc)
+	restrictionsSrcs = append(restrictionsSrcs, moreRestrictions...)
 	for _, src := range restrictionsSrcs {
 		r, err := ParseRestrictions(src)
 		if err != nil {
