@@ -117,6 +117,15 @@ jobs:
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
         run: /bin/bash scripts/maat/release-supervisor.sh verify
 
+      - name: Verify v164 signer before reserving a draft
+        if: github.ref == 'refs/tags/v0.24.164' && github.run_attempt == 1
+        run: |
+          set -euo pipefail
+          cmp -s "$HOME/sirsi-sign/bin/sirsi-signd.sh" tools/signing/sirsi-signd.sh || {
+            echo 'installed signer does not match release source' >&2; exit 1;
+          }
+          launchctl print "gui/$(id -u)/ai.sirsi.signd" >/dev/null
+
       - name: Reserve exact source-bound release draft
         if: github.run_attempt == 1
         env:

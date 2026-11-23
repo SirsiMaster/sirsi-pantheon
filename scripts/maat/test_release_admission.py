@@ -31,6 +31,11 @@ class ReleaseAdmissionContract(unittest.TestCase):
         self.assertNotIn('security ', delegated)
         self.assertLess(source.index('      - name: Verify v164 release supervisor before reserving a draft'),
                         source.index('      - name: Reserve exact source-bound release draft'))
+        signer = source.split('      - name: Verify v164 signer before reserving a draft', 1)[1].split('      - name:', 1)[0]
+        self.assertIn('cmp -s "$HOME/sirsi-sign/bin/sirsi-signd.sh" tools/signing/sirsi-signd.sh', signer)
+        self.assertIn('launchctl print', signer)
+        self.assertLess(source.index('      - name: Verify v164 signer before reserving a draft'),
+                        source.index('      - name: Reserve exact source-bound release draft'))
 
     def test_v164_excludes_npm_before_job_starts(self):
         source = (ROOT / '.github/workflows/release.yml').read_text()
