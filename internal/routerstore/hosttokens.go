@@ -106,27 +106,115 @@ func (s *SQLiteStore) MintScopedHostToken(host, label string, agents []string) (
 	now := s.clock().Format(time.RFC3339)
 	// One transaction: no reader (or backup) can ever see this token without its scope,
 	// which would read as UNSCOPED (SSA 20261106-164621).
-	tx, err := s.beginImmediate()
-	if err != nil {
+	if err := s.mintScopedTx(id, tok, host, label, now, list, mintFaults{}); err != nil {
 		return "", HostToken{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`INSERT INTO host_tokens(token_id,token_hash,host,label,created,revoked) VALUES(?,?,?,?,?,'')`,
-		id, hashToken(tok), host, label, now); err != nil {
-		return "", HostToken{}, fmt.Errorf("routerstore: MintScopedHostToken: %w", err)
-	}
-	for _, a := range list {
-		if _, err := tx.Exec(`INSERT INTO host_token_scopes(token_id,agent) VALUES(?,?)`, id, a); err != nil {
-			return "", HostToken{}, fmt.Errorf("routerstore: MintScopedHostToken: record scope: %w", err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return "", HostToken{}, fmt.Errorf("routerstore: MintScopedHostToken: %w", err)
 	}
 	rec := HostToken{ID: id, Host: host, Label: label, Created: now}
 	sort.Strings(list)
 	rec.Agents = list
 	return tok, rec, nil
+}
+
+// Structured outcomes of a failed scoped mint (errors.Is-able on the returned *MintError). They are
+// nonsecret: a MintError names the attempt id (the token id) and never the token or its hash.
+var (
+	// ErrMintRolledBack: the transaction failed and was rolled back; no token row exists.
+	ErrMintRolledBack = errors.New("routerstore: scoped mint rolled back")
+	// ErrMintRollbackFailed: the rollback itself failed; the attempt id MUST be checked with ListHostTokens.
+	ErrMintRollbackFailed = errors.New("routerstore: scoped mint rollback failed")
+	// ErrMintCommitUncertain: Commit returned an error; the token may or may not exist (attempt id names it).
+	ErrMintCommitUncertain = errors.New("routerstore: scoped mint commit outcome uncertain")
+	// ErrMintPanic: the mint transaction panicked (it was rolled back first; see Outcomes for the rollback result).
+	ErrMintPanic = errors.New("routerstore: scoped mint panicked")
+)
+
+// MintError is a failed scoped mint. AttemptID is the nonsecret token id of the attempt.
+type MintError struct {
+	AttemptID string
+	Outcomes  []error // one or more of the ErrMint* sentinels
+	Cause     string  // sanitized cause text (token and hash redacted)
+}
+
+func (e *MintError) Error() string {
+	parts := make([]string, len(e.Outcomes))
+	for i, o := range e.Outcomes {
+		parts[i] = o.Error()
+	}
+	return fmt.Sprintf("routerstore: MintScopedHostToken attempt %s: %s: %s", e.AttemptID, strings.Join(parts, "; "), e.Cause)
+}
+
+// Unwrap exposes every outcome sentinel to errors.Is.
+func (e *MintError) Unwrap() []error { return e.Outcomes }
+
+// mintFaults lets tests inject failures at the real side-effect points; the zero value is real behaviour.
+type mintFaults struct {
+	afterInsert func() error
+	commit      func(*txHandle) error
+	rollback    func(*txHandle) error
+}
+
+func (s *SQLiteStore) mintScopedTx(id, tok, host, label, now string, list []string, f mintFaults) (err error) {
+	tx, berr := s.beginImmediate()
+	if berr != nil {
+		return berr // nothing was started
+	}
+	redact := func(m string) string {
+		return strings.NewReplacer(tok, "[redacted]", hashToken(tok), "[redacted]").Replace(m)
+	}
+	rollback := func() error {
+		e := tx.Rollback()
+		if f.rollback != nil {
+			e = f.rollback(tx)
+		}
+		if e != nil && !errors.Is(e, sql.ErrTxDone) {
+			return e
+		}
+		return nil
+	}
+	// outcome rolls back and reports; base is nil for a plain failure (reported as rolled back / rollback failed).
+	outcome := func(base error, cause string) *MintError {
+		me := &MintError{AttemptID: id, Cause: redact(cause)}
+		if base != nil {
+			me.Outcomes = append(me.Outcomes, base)
+		}
+		if rbErr := rollback(); rbErr != nil {
+			me.Outcomes = append(me.Outcomes, ErrMintRollbackFailed)
+			me.Cause += "; rollback: " + redact(rbErr.Error())
+		} else {
+			me.Outcomes = append(me.Outcomes, ErrMintRolledBack)
+		}
+		return me
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// the panic value is never printed: it could carry the token
+			err = outcome(ErrMintPanic, "panic during mint transaction")
+		}
+	}()
+	fail := func(cause error) error { return outcome(nil, cause.Error()) }
+	if _, e := tx.Exec(`INSERT INTO host_tokens(token_id,token_hash,host,label,created,revoked) VALUES(?,?,?,?,?,'')`,
+		id, hashToken(tok), host, label, now); e != nil {
+		return fail(fmt.Errorf("insert token: %w", e))
+	}
+	for _, a := range list {
+		if _, e := tx.Exec(`INSERT INTO host_token_scopes(token_id,agent) VALUES(?,?)`, id, a); e != nil {
+			return fail(fmt.Errorf("record scope: %w", e))
+		}
+	}
+	if f.afterInsert != nil {
+		if e := f.afterInsert(); e != nil {
+			return fail(e)
+		}
+	}
+	commit := tx.Commit
+	if f.commit != nil {
+		commit = func() error { return f.commit(tx) }
+	}
+	if e := commit(); e != nil {
+		// no rollback: after a failed Commit the outcome is unknown, not "not applied"
+		return &MintError{AttemptID: id, Outcomes: []error{ErrMintCommitUncertain}, Cause: redact(e.Error())}
+	}
+	return nil
 }
 
 // tokenAgents returns the lane scope of a token, sorted; nil = unscoped.
