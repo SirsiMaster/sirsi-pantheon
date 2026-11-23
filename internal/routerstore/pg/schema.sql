@@ -284,6 +284,10 @@ CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(project_id, router_namespace
 -- A2A property 6). First-ack-wins; never touches status. Same IF NOT EXISTS
 -- idiom as v21 so it upgrades a live ledger and equips a fresh one.
 ALTER TABLE items ADD COLUMN IF NOT EXISTS acked_at TEXT NOT NULL DEFAULT '';
+-- v27 — first-claim timestamp (Ra charter M0 T4, wake latency). Written once by
+-- the claim UPDATEs (CASE WHEN first_claimed_at='' ...), never by renew/start/
+-- requeue; no backfill, so rows claimed before v27 stay '' and are excluded.
+ALTER TABLE items ADD COLUMN IF NOT EXISTS first_claimed_at TEXT NOT NULL DEFAULT '';
 
 
 -- Which session holds each lease. A side table, not columns on items/tasks:
@@ -519,6 +523,18 @@ CREATE TABLE IF NOT EXISTS host_token_scopes (
     PRIMARY KEY (token_id, agent)
 );
 
+-- v26 — Ma'at decision ledger (see store.go v26). Append-only; not granted to router_reader.
+CREATE TABLE IF NOT EXISTS maat_decisions (
+    id               TEXT PRIMARY KEY,
+    producer_host    TEXT NOT NULL,
+    producer_session TEXT NOT NULL,
+    receipt_time     TEXT NOT NULL,
+    source_time      TEXT NOT NULL DEFAULT '',
+    payload_version  TEXT NOT NULL DEFAULT 'v1',
+    raw_bytes        BYTEA NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_maat_decisions_host_time ON maat_decisions(producer_host, receipt_time);
+
 -- ── grants: the service is DML-only; DDL belongs to router_migrator ────────
 GRANT USAGE ON SCHEMA router TO router_service;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA router TO router_service;
@@ -543,6 +559,6 @@ DO $$ BEGIN
 END $$;
 
 -- ── version — last, so a partial apply never publishes a version it does not have ──
-INSERT INTO schema_version(version, applied_at) VALUES (25, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 25, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 25;
+INSERT INTO schema_version(version, applied_at) VALUES (27, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 27, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 27;

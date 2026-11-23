@@ -138,27 +138,32 @@ func capacitySeed(t *testing.T, db *sql.DB, unacked, stalled int) {
 			fmt.Sprintf("open-%d", i), "fixture-sender", "fixture-recipient", "owned", "open")
 	}
 	for i := 0; i < stalled; i++ {
-		// Blocked is still included in recipient admission's stale backlog.
-		capacitySQL(t, db, `INSERT INTO tasks(agent,task_id,subject,status,responsible_party,created,updated) VALUES(?,?,?,?,?,?,?)`,
-			"fixture-recipient", fmt.Sprintf("stalled-%d", i), "owned", "blocked", "fixture-recipient", old, old)
+		// Main's owner-ratified policy counts started-then-blocked work, not
+		// never-started plans. The attempt records that this fixture was started.
+		capacitySQL(t, db, `INSERT INTO tasks(agent,task_id,subject,status,responsible_party,created,updated,attempts) VALUES(?,?,?,?,?,?,?,?)`,
+			"fixture-recipient", fmt.Sprintf("stalled-%d", i), "owned", "blocked", "fixture-recipient", old, old, 1)
 	}
 	// Discriminators: do not count acknowledged/closed/other-recipient items,
-	// done/canceled/fresh/live-leased tasks, or another owner's stale task.
+	// done/canceled/fresh/live-leased/never-started tasks, or another owner.
 	capacitySQL(t, db, `INSERT INTO items(id,from_agent,to_agent,title,status,acked_at) VALUES
 		('acked','fixture-sender','fixture-recipient','owned','open',?),
 		('closed','fixture-sender','fixture-recipient','owned','closed',''),
 		('other','fixture-sender','other-recipient','owned','open','')`, old)
 	for _, task := range []struct {
 		id, agent, status, updated, lease string
+		attempts                          int
 	}{
-		{"done", "fixture-recipient", "done", old, ""},
-		{"canceled", "fixture-recipient", "canceled", old, ""},
-		{"fresh", "fixture-recipient", "pending", future, ""},
-		{"leased", "fixture-recipient", "in-progress", old, future},
-		{"other", "other-recipient", "pending", old, ""},
+		{"done", "fixture-recipient", "done", old, "", 1},
+		{"canceled", "fixture-recipient", "canceled", old, "", 1},
+		{"withdrawn", "fixture-recipient", "withdrawn", old, "", 1},
+		{"fresh", "fixture-recipient", "pending", future, "", 1},
+		{"never-started-pending", "fixture-recipient", "pending", old, "", 0},
+		{"never-started-blocked", "fixture-recipient", "blocked", old, "", 0},
+		{"leased", "fixture-recipient", "in-progress", old, future, 1},
+		{"other", "other-recipient", "pending", old, "", 1},
 	} {
-		capacitySQL(t, db, `INSERT INTO tasks(agent,task_id,subject,status,responsible_party,created,updated,lease_expires) VALUES(?,?,?,?,?,?,?,?)`,
-			task.agent, task.id, "owned", task.status, task.agent, old, task.updated, task.lease)
+		capacitySQL(t, db, `INSERT INTO tasks(agent,task_id,subject,status,responsible_party,created,updated,lease_expires,attempts) VALUES(?,?,?,?,?,?,?,?,?)`,
+			task.agent, task.id, "owned", task.status, task.agent, old, task.updated, task.lease, task.attempts)
 	}
 }
 
@@ -212,7 +217,7 @@ func TestRouterCapacityCanonicalDBCountsAndReadOnly(t *testing.T) {
 			if got.WarnAt != 50 || got.HaltAt != 99 || got.StallAfterSeconds != 86400 || got.ThresholdSource != "client" || got.Scope != "recipient admission backlog only; not workability, routability or fleet counts" {
 				t.Fatalf("threshold provenance/scope lost: %s", raw)
 			}
-			if tc.warn && !strings.Contains(got.Warning, fmt.Sprintf("%d unacknowledged items, %d stalled tasks", tc.unacked, tc.stalled)) {
+			if tc.warn && !strings.Contains(got.Warning, fmt.Sprintf("%d unacknowledged items, %d started tasks untouched for 24h", tc.unacked, tc.stalled)) {
 				t.Fatalf("warning not based on exact counts: %s", raw)
 			}
 			text, err := capacityExec(t, "fixture-recipient")

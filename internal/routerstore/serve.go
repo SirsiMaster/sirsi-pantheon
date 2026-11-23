@@ -65,6 +65,14 @@ var notServed = map[string]bool{
 	// — and it was Rule-of-Ra exempt as a "read-only view". It has no remote
 	// caller; a node that wants an audit dump renders locally from ListAll.
 	"ExportMarkdown": true,
+	// IngestDecision's host/session parameters are server-stamped identity,
+	// not caller input (SSA gate 20261009-184021, binding requirement #1) —
+	// same shape as AdoptTokenMachineID's host. Dispatch does not yet inject
+	// the authenticated session in place of them (that wiring is a separate
+	// slice), so leaving this reachable would let any caller claim an
+	// arbitrary producer_host/producer_session verbatim. Blocked until that
+	// wiring lands.
+	"IngestDecision": true,
 }
 
 // itemOwnership: method → index of the item id argument. The caller's session
@@ -1007,7 +1015,22 @@ func (s *server) writeCallErr(w http.ResponseWriter, method string, err error) {
 		writeJSON(w, http.StatusOK, wireResponse{Error: &wireError{Name: sn, Message: err.Error()}})
 		return
 	}
+	if dbConnectFailed(err) {
+		// The call never reached the database, so nothing was committed and a
+		// retry is safe even for a mutation. The detail stays in the log: pgx's
+		// message carries the connection target.
+		s.logf("db unreachable on %s: %v", method, err)
+		writeErr(w, http.StatusServiceUnavailable, "", "ledger unavailable: database unreachable (retry)")
+		return
+	}
 	writeErr(w, http.StatusInternalServerError, "", method+": "+err.Error())
+}
+
+// dbConnectFailed reports a failure to ESTABLISH a database connection (pgx
+// wraps every such failure as "failed to connect to ..."), as opposed to a
+// query that ran and failed or ran out of its own deadline.
+func dbConnectFailed(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "failed to connect to ")
 }
 
 // Sign is the request signature both sides compute:

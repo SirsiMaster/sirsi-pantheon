@@ -299,6 +299,71 @@ func (l *Ledger) delegationFor(resource string, now time.Time) (*Delegation, err
 	return nil, nil
 }
 
+// delegatedFloor decides whether a non-authority Reserve on a delegated
+// resource may take the bounded floor share. It returns nil error when the
+// floor may be granted (conflict is the authority's live build row, if any).
+//
+// Refused, all telling the caller to book through the pod authority:
+//  1. the delegation is revoked/expired but still inside the handback margin:
+//     the pod may hold a cached lease this ledger cannot see;
+//  2. a quiet request: this ledger cannot promise quiet on a resource it has
+//     delegated;
+//  3. --queue: this ledger does not run the authority's queue;
+//  4. a protected authority hold (quiet or loaded) overlaps the window.
+//
+// KNOWN LIMIT 1 (invisible offline holds): only authority holds already
+// replayed here (ReconcileAuthority) are visible. A quiet hold the pod granted
+// offline and has not replayed is invisible, so a floor grant can land beside
+// it. Nothing at admission detects that, and the pod has no probe of its own:
+// PodJournal projects only its own retained rows (never canonical floor rows)
+// and never calls CheckConflicts. The one detector is `sirsi maat
+// conflict-check`, which runs CheckConflicts against THIS ledger and samples
+// this host's process table. A process attributed (Actor.Owner) to a floor
+// holder goes to Shared and invalidates nothing, but the default probe never
+// sets Owner, so an unattributed build/bench/model process from the floor lane
+// is an Intruder and invalidates a quiet/loaded hold. InvalidatedBy is then
+// the conflict summary: it names the process (and its owner only if
+// attributed), and appends the live floor holders as co-presence (also listed
+// in ConflictReport.FloorHolders), never as the cause.
+//
+// KNOWN LIMIT 2 (floor rows are not counted): each row is bounded to the floor
+// (capacity/FairShareLanes, min 1: m1 10 cores -> 2, m5 18 -> 4), but the
+// number of rows is not. N holders take N x floor; m1 passes its 10 cores at 6
+// distinct holders, m5 passes 18 at 5, sooner beside an authority hold. The
+// ordinary (non-delegated) floor path in reserveAttempt has the same property,
+// so no cap is invented here for delegated resources only. One holder can also
+// stack several floor rows on the same window; the ordinary path likewise lets
+// a holder's own overlapping hold through as additive. A cap is a design call.
+//
+// No pod authority runs on any Mac today.
+func delegatedFloor(d *Delegation, req Reservation, queue bool, rows []Reservation, now time.Time) (*Reservation, error) {
+	const guide = "book through the pod authority, not the canonical ledger directly"
+	if d.expired(now) {
+		return nil, fmt.Errorf("maat: %s delegated to pod %q (epoch %d) — delegation revoked or expired, inside the handback margin; %s", req.Resource, d.Pod, d.Epoch, guide)
+	}
+	if req.Regime == RegimeQuiet {
+		return nil, fmt.Errorf("maat: %s delegated to pod %q (epoch %d) — a quiet window cannot be promised here; %s", req.Resource, d.Pod, d.Epoch, guide)
+	}
+	if queue {
+		return nil, fmt.Errorf("maat: %s delegated to pod %q (epoch %d) — cannot queue behind the pod authority; %s", req.Resource, d.Pod, d.Epoch, guide)
+	}
+	var conflict *Reservation
+	for _, r := range rows {
+		if !sameResource(r.Resource, req.Resource) || r.Authority != "pod:"+d.Pod || r.Epoch != d.Epoch ||
+			r.Status != StatusActive || r.leaseExpired(now) || !r.windowOverlaps(req) {
+			continue
+		}
+		if r.Regime == RegimeQuiet || r.Regime == RegimeLoaded {
+			return nil, fmt.Errorf("maat: %s delegated to pod %q (epoch %d) — pod authority hold by %s (%s) until %s protects the window; %s", req.Resource, d.Pod, d.Epoch, r.Holder, r.Regime, orOpen(r.EstEnd), guide)
+		}
+		if conflict == nil && r.Regime == RegimeBuild {
+			c := r
+			conflict = &c
+		}
+	}
+	return conflict, nil
+}
+
 // UpsertReservation inserts req, or replaces the existing reservation with
 // the same ID in place. The primitive step 2's catch-up (replaying a pod
 // authority's offline grants) calls repeatedly: a retried replay after a
@@ -330,50 +395,71 @@ func (l *Ledger) upsertAttempt(req Reservation) (*Reservation, error) {
 		}
 	}
 	reservations := doc.Reservations
-	replaced := false
+	at := -1
 	for i, r := range reservations {
 		if r.ID == req.ID {
-			// A replay is not a new owner and cannot resurrect terminal work.
-			if r.Resource != req.Resource || r.Holder != req.Holder || r.Authority != req.Authority || r.Epoch != req.Epoch {
-				return nil, fmt.Errorf("maat: reconcile reservation %q ownership/epoch mismatch", req.ID)
-			}
-			if req.Seq < r.Seq {
-				return nil, fmt.Errorf("maat: stale reservation replay sequence")
-			}
-			continuous := false
-			if req.Status == StatusActive && req.Seq > r.Seq {
-				oldHB, e1 := time.Parse(time.RFC3339, r.HeartbeatAt)
-				newHB, e2 := time.Parse(time.RFC3339, req.HeartbeatAt)
-				continuous = e1 == nil && e2 == nil && !newHB.Before(oldHB) && !newHB.After(oldHB.Add(time.Duration(r.LeaseTTLSec)*time.Second))
-				if !continuous {
-					return nil, fmt.Errorf("maat: heartbeat replay breaks prior finite lease")
-				}
-			}
-			switch r.Status {
-			case StatusExpired:
-				if req.Status == StatusActive && continuous && strings.HasPrefix(r.Authority, "pod:") {
-					break
-				}
-				if req.Status == StatusActive {
-					return nil, fmt.Errorf("maat: expired grant cannot be resurrected")
-				}
-			case StatusReleased, StatusInvalidated, StatusDone:
-				if req.Status != r.Status {
-					return nil, fmt.Errorf("maat: terminal reservation cannot be resurrected by replay")
-				}
-			}
-			reservations[i] = req
-			replaced = true
+			at = i
 			break
 		}
 	}
-	if !replaced {
+	// A replayed id that left the hot document is the same reservation, never a
+	// new one: it is checked against, and replaced in, the archive.
+	var r Reservation
+	var archRaw json.RawMessage
+	inArchive := false
+	if at >= 0 {
+		r = reservations[at]
+	} else if r, archRaw, inArchive, err = l.findArchived(req.ID); err != nil {
+		return nil, err
+	}
+	if at >= 0 || inArchive {
+		// A replay is not a new owner and cannot resurrect terminal work.
+		if r.Resource != req.Resource || r.Holder != req.Holder || r.Authority != req.Authority || r.Epoch != req.Epoch {
+			return nil, fmt.Errorf("maat: reconcile reservation %q ownership/epoch mismatch", req.ID)
+		}
+		if req.Seq < r.Seq {
+			return nil, fmt.Errorf("maat: stale reservation replay sequence")
+		}
+		continuous := false
+		if req.Status == StatusActive && req.Seq > r.Seq {
+			oldHB, e1 := time.Parse(time.RFC3339, r.HeartbeatAt)
+			newHB, e2 := time.Parse(time.RFC3339, req.HeartbeatAt)
+			continuous = e1 == nil && e2 == nil && !newHB.Before(oldHB) && !newHB.After(oldHB.Add(time.Duration(r.LeaseTTLSec)*time.Second))
+			if !continuous {
+				return nil, fmt.Errorf("maat: heartbeat replay breaks prior finite lease")
+			}
+		}
+		switch r.Status {
+		case StatusExpired:
+			if req.Status == StatusActive && continuous && strings.HasPrefix(r.Authority, "pod:") {
+				break
+			}
+			if req.Status == StatusActive {
+				return nil, fmt.Errorf("maat: expired grant cannot be resurrected")
+			}
+		case StatusReleased, StatusInvalidated, StatusDone:
+			if req.Status != r.Status {
+				return nil, fmt.Errorf("maat: terminal reservation cannot be resurrected by replay")
+			}
+		}
+	}
+	out := req
+	if inArchive && isTerminal(req.Status) {
+		return &out, l.putArchived(req.ID, archRaw, &out)
+	}
+	if at >= 0 {
+		reservations[at] = req
+	} else {
 		reservations = append(reservations, req)
 	}
 	if err := l.save(raw, exists, reservations); err != nil {
 		return nil, err
 	}
-	out := req
+	if inArchive { // a live replay of an archived expired row: it is hot again
+		if err := l.store.(ArchiveStore).ReplaceArchived(req.ID, nil); err != nil {
+			return nil, err
+		}
+	}
 	return &out, nil
 }
 
@@ -454,12 +540,22 @@ func (l *Ledger) ReconcileAuthority(machine, pod string, epoch int, batch []Rese
 			if e != nil {
 				return 0, e
 			}
+			same := func(old Reservation) bool {
+				return old.ID == req.ID && old.Authority == req.Authority && old.Epoch == req.Epoch && old.Seq >= req.Seq && old.Holder == req.Holder && old.Resource == req.Resource
+			}
 			found := false
 			for _, old := range known {
-				if old.ID == req.ID && old.Authority == req.Authority && old.Epoch == req.Epoch && old.Seq >= req.Seq && old.Holder == req.Holder && old.Resource == req.Resource {
+				if same(old) {
 					found = true
 					break
 				}
+			}
+			if !found {
+				arch, _, ok, e := l.findArchived(req.ID)
+				if e != nil {
+					return 0, e
+				}
+				found = ok && same(arch)
 			}
 			if !found {
 				return 0, fmt.Errorf("maat: replay sequence aliases unknown/different reservation")
@@ -513,6 +609,48 @@ func validateAuthorityReplay(r Reservation, d Delegation) error {
 	return nil
 }
 
+// isDelegatedFloorRow is the one shape a CAS-only (legacy) writer may put on a
+// delegated resource: the floor row delegatedFloor grants. Non-authority, floor
+// share with a bounded core count, delegation not expired, and any prior
+// version of the row was itself such a floor row. A non-authority FULL row, an
+// unbounded one, or any authority-stamped row is still rejected.
+//
+// A terminal row never goes back to another status (no resurrection). Once the
+// delegation is expired/revoked (handback margin) the ONLY admitted change is
+// isFloorRelease.
+func (l *Ledger) isDelegatedFloorRow(d *Delegation, before Reservation, existed bool, r Reservation) bool {
+	if r.Authority != "" || r.Seq != 0 || r.Epoch != 0 || r.Share != ShareFloor {
+		return false
+	}
+	if existed && (before.Share != ShareFloor || before.Resource != r.Resource ||
+		(isTerminal(before.Status) && r.Status != before.Status)) {
+		return false
+	}
+	if d.expired(l.now()) {
+		return existed && isFloorRelease(before, r)
+	}
+	floor, err := l.FloorShare(r.Resource)
+	return err == nil && r.Cores > 0 && r.Cores <= floor
+}
+
+// isFloorRelease: after the delegation ends, a floor-row holder may still hand
+// its capacity back. That is safe for the authority because a release only
+// frees capacity; it cannot grant, extend or move anything. The transition is
+// exactly active -> released/done/expired/invalidated (all end the hold and
+// free the capacity; expired is what every legacy write also persists for other
+// lapsed leases in the snapshot) with only the fields a terminal change sets
+// (status, exit code, invalidated_by, ended_at) differing. Heartbeat, extend, any
+// cores/share/window/holder change and anything else stay refused.
+func isFloorRelease(before, r Reservation) bool {
+	if before.Status != StatusActive || !isTerminal(r.Status) {
+		return false
+	}
+	r.Status, r.ExitCode, r.InvalidatedBy, r.EndedAt = before.Status, before.ExitCode, before.InvalidatedBy, before.EndedAt
+	a, _ := json.Marshal(before)
+	b, _ := json.Marshal(r)
+	return string(a) == string(b)
+}
+
 // CheckLegacyReservationWrite preserves the compatible CAS path for resources
 // not delegated, while checking changed rows under the same canonical lock.
 func (l *Ledger) CheckLegacyReservationWrite(oldRaw, newRaw string) error {
@@ -544,7 +682,7 @@ func (l *Ledger) CheckLegacyReservationWrite(oldRaw, newRaw string) error {
 		}
 		if d, err := l.delegationFor(r.Resource, l.now()); err != nil {
 			return err
-		} else if d != nil {
+		} else if d != nil && !l.isDelegatedFloorRow(d, before, exists, r) {
 			return fmt.Errorf("maat: legacy write changes delegated resource %q", r.Resource)
 		}
 	}

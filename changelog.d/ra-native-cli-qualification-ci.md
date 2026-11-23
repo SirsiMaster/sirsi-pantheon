@@ -1,0 +1,1 @@
+- CI now builds the native CLI and runs `TestNativeCLIPodAuthorityQualification` against it on every non-docs PR/push (a skipped or unmatched run fails the Test job), making the ADR-120 independent-process retry proof permanent.

@@ -28,7 +28,7 @@ var PostgresRolesSQL string
 // postgresSchemaVersion pairs with SQLite's PRAGMA user_version high-water
 // mark that pg/schema.sql was translated from. OpenPostgres refuses any other
 // value: a ledger this binary does not understand must never be written.
-const postgresSchemaVersion = 25
+const postgresSchemaVersion = 27
 
 // postgresMaxConns is the pool cap per process: 4 by default (the ADR-062 §2
 // per-node limit), or SIRSI_ROUTER_PG_MAX_CONNS (1-64) on the router service,
@@ -44,6 +44,33 @@ func postgresMaxConns() int {
 	return n
 }
 
+// postgresConnectTimeout bounds ONE connection attempt (dial + startup
+// handshake). Most store methods take no context, so nothing else bounds the
+// connect: on 2026-11-11 a Cloud SQL maintenance restart left callers parked
+// 28-35 s on the Cloud Run Cloud SQL proxy, whose own dial to the instance
+// gives up after 30 s. 5 s matches the boot-time query budget below; a warm
+// connect through the proxy takes milliseconds, so a healthy call is unaffected
+// and a query already running on an established connection is never cut short.
+var postgresConnectTimeout = 5 * time.Second
+
+// postgresDSN adds search_path=router (every statement names bare tables) and
+// connect_timeout (unless the operator set one) to the DSN.
+func postgresDSN(dsn string) string {
+	add := func(key, val string) {
+		if strings.Contains(dsn, key) {
+			return
+		}
+		sep := "?"
+		if strings.Contains(dsn, "?") {
+			sep = "&"
+		}
+		dsn += sep + key + "=" + val
+	}
+	add("search_path", "router")
+	add("connect_timeout", strconv.Itoa(int(postgresConnectTimeout/time.Second)))
+	return dsn
+}
+
 // OpenPostgres opens the Ra ledger over a Postgres DSN (ADR-062 §1). The
 // schema must already exist (applied by router_migrator); this never runs
 // DDL. Like OpenPath it is for Resolve() and tests only — the direct-open
@@ -52,15 +79,7 @@ func postgresMaxConns() int {
 // Pool is capped at the ADR-062 §2 per-node in-flight limit so a slow
 // service backpressures instead of piling up connections.
 func OpenPostgres(dsn string) (*SQLiteStore, error) {
-	if !strings.Contains(dsn, "search_path") {
-		// Every statement names bare tables; the schema is router.*.
-		sep := "?"
-		if strings.Contains(dsn, "?") {
-			sep = "&"
-		}
-		dsn += sep + "search_path=router"
-	}
-	db, err := sql.Open("pgx", dsn)
+	db, err := sql.Open("pgx", postgresDSN(dsn))
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: open postgres: %w", err)
 	}

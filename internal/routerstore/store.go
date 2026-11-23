@@ -793,6 +793,33 @@ CREATE TABLE IF NOT EXISTS host_token_scopes (
     PRIMARY KEY (token_id, agent)
 );
 `},
+	// v26 — Ma'at decision ledger on the router service (SSA gate
+	// 20261009-184021, ACCEPT_BOUNDED_DESIGN). id is the full sha256 hex of
+	// raw_bytes, computed server-side, NOT the 8-hex display id
+	// internal/maat/decision.Read uses locally — a short id is a display
+	// convenience, never a dedup key (binding requirement #3). producer_host
+	// and producer_session are stamped from the authenticated call context,
+	// never taken from the payload (binding requirement #1). Append-only: no
+	// UPDATE or DELETE path is provided on this table.
+	{26, `
+CREATE TABLE IF NOT EXISTS maat_decisions (
+    id               TEXT PRIMARY KEY,
+    producer_host    TEXT NOT NULL,
+    producer_session TEXT NOT NULL,
+    receipt_time     TEXT NOT NULL,
+    source_time      TEXT NOT NULL DEFAULT '',
+    payload_version  TEXT NOT NULL DEFAULT 'v1',
+    raw_bytes        BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_maat_decisions_host_time ON maat_decisions(producer_host, receipt_time);
+`},
+	// v27 — first-claim timestamp (Ra charter M0 T4, wake latency). Set ONCE by
+	// the two claim UPDATEs (ClaimNext/ClaimItem) and never overwritten, unlike
+	// lease_updated which RenewLease/StartWork rewrite. No backfill: rows claimed
+	// before this column existed keep '' and are excluded from the report.
+	{27, `
+ALTER TABLE items ADD COLUMN first_claimed_at TEXT NOT NULL DEFAULT '';
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite

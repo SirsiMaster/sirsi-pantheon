@@ -189,27 +189,30 @@ func (s *SQLiteStore) laneWakeFailures(agent string) (int, int, error) {
 	return total, unresolved, rows.Err()
 }
 
-// WakeLatencySample is one item's elapsed time from opened to first claim
-// (lease_updated), the M0 charter's T4 delivery+claim latency measurement.
+// WakeLatencySample is one item's elapsed time from opened to FIRST claim
+// (items.first_claimed_at, set once by ClaimNext/ClaimItem, migration v27),
+// the M0 charter's T4 delivery+claim latency measurement. The former JSON key
+// "lease_updated" is replaced by "first_claimed_at": the old key named the
+// mutable column this report no longer reads.
 type WakeLatencySample struct {
 	ID             string  `json:"id"`
 	Agent          string  `json:"agent"`
 	Opened         string  `json:"opened"`
-	LeaseUpdated   string  `json:"lease_updated"`
+	FirstClaimedAt string  `json:"first_claimed_at"`
 	LatencySeconds float64 `json:"latency_seconds"`
 }
 
-// WakeLatencySamples returns up to limit claimed-at-least-once items for
-// agent (every agent if empty), newest-opened first. lease_updated=opened
-// (the backfill default for pre-existing claims, store.go migration v15)
-// is excluded: it has no granular claim timestamp, so it is not a sample,
-// not a zero-latency claim.
+// WakeLatencySamples returns up to limit items that have a first-claim
+// timestamp for agent (every agent if empty), newest-opened first. Items
+// first claimed before v27 have first_claimed_at=” (no backfill, by design)
+// and are excluded, as are never-claimed items. It deliberately does not read
+// lease_updated: RenewLease and StartWork overwrite that column.
 func (s *SQLiteStore) WakeLatencySamples(agent string, limit int) ([]WakeLatencySample, error) {
 	if limit <= 0 || limit > 5000 {
 		limit = 200
 	}
-	query := `SELECT id, to_agent, opened, lease_updated FROM items
-		WHERE lease_updated <> '' AND lease_updated <> opened`
+	query := `SELECT id, to_agent, opened, first_claimed_at FROM items
+		WHERE first_claimed_at <> ''`
 	args := []any{}
 	if agent != "" {
 		query += ` AND to_agent = ?`
@@ -227,11 +230,11 @@ func (s *SQLiteStore) WakeLatencySamples(agent string, limit int) ([]WakeLatency
 	var out []WakeLatencySample
 	for rows.Next() {
 		var smp WakeLatencySample
-		if err := rows.Scan(&smp.ID, &smp.Agent, &smp.Opened, &smp.LeaseUpdated); err != nil {
+		if err := rows.Scan(&smp.ID, &smp.Agent, &smp.Opened, &smp.FirstClaimedAt); err != nil {
 			return nil, fmt.Errorf("routerstore: scan wake latency sample: %w", err)
 		}
 		o, oerr := time.Parse(time.RFC3339, smp.Opened)
-		u, uerr := time.Parse(time.RFC3339, smp.LeaseUpdated)
+		u, uerr := time.Parse(time.RFC3339, smp.FirstClaimedAt)
 		if oerr == nil && uerr == nil {
 			smp.LatencySeconds = u.Sub(o).Seconds()
 		}

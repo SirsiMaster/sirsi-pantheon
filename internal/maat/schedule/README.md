@@ -35,7 +35,14 @@ a control.
   or another admitted actor was observed, and the UTC completion time. Its
   `point_sample` coverage never establishes a quiet interval; no-holder and
   build-regime early returns remain `unverified` with `none` coverage. The
-  existing `Shared` strings and policy result remain compatible.
+  existing `Shared` strings and policy result remain compatible. A process is
+  `Shared` (not an intruder) only when the probe attributes it to a live floor
+  holder (`Actor.Owner`); the default probe attributes none, so a floor lane's
+  processes are intruders today. The additive `floor_holders` field lists every
+  lane holding a live floor share at sample time (`holder`, `work`,
+  `reservation_id`, `cores`), and an invalidating summary appends
+  `; floor shares live at sample time: ...` (max 5 named, then `+N more`). Both
+  are co-presence, never attribution.
 - **Dashboard read-model.** `Coverage` computes per-resource utilization %,
   the current holder, upcoming windows, and conflicts caught in 24h — the JSON a
   dashboard tile consumes (`sirsi maat coverage <resource> --json`).
@@ -78,6 +85,32 @@ runner calls `should-defer <machine>` before starting a job.
 - `SetState("maat:reservations", ...)` is refused at the canonical store so
   old clients cannot erase fenced changes. See the server-first deployment
   sequence in the user guide and ADR-062 amendment. No fallback ledger exists.
+- **Delegated resources (ADR-120): floor, not lockout.** A non-authority
+  `Reserve` on a resource delegated to a pod authority gets the bounded floor
+  share (`Share=floor`, no authority stamp) instead of a hard refusal. It is
+  still refused, with "book through the pod authority", when: the delegation is
+  revoked/expired but inside the handback margin; the request is `quiet`; it is
+  `--queue`; or the canonical ledger holds a live, overlapping authority hold
+  of the current epoch in `quiet` or `loaded` regime. **Known limit:** the
+  canonical ledger sees only authority holds already replayed to it
+  (`ReconcileAuthority`). A quiet hold the pod granted offline and has not
+  replayed is invisible, so a floor grant can land beside it. The pod has no
+  probe of its own (`PodJournal` holds only its own rows and never calls
+  `CheckConflicts`); the only detector is `sirsi maat conflict-check` against
+  the canonical ledger. A process attributed to a floor holder is recorded as
+  `Shared`, but the default probe attributes no owners, so an unattributed
+  floor-lane process invalidates a quiet/loaded hold, and `invalidated_by` is
+  the conflict summary (names the process, not the floor row's holder).
+  **Known limit:** floor rows are bounded in size (capacity/4, min 1: m1 = 2,
+  m5 = 4 cores) but not in number, so N holders take N x floor (m1 is passed
+  at 6 holders, m5 at 5); the ordinary floor path is equally uncapped and one
+  holder may stack rows. A cap is a design decision, not made here.
+  **Handback margin:** once the delegation is expired or revoked, a legacy
+  (CAS) writer may still *release* its unstamped floor row (active ->
+  released/done/expired/invalidated, no other field changed) so capacity
+  returns; heartbeat, extend and every other change stay refused. The server
+  transactional path (`MaatMutate`) applies no delegation check to
+  release/heartbeat/extend/invalidate. No pod authority runs on any Mac today.
 - The default `ActivityProbe` is a process classifier. **Per-rail traffic
   counters** (attributing load to a specific cable) are a deeper detector that
   plugs into the same interface — framework built, rail detector is a follow-up.

@@ -204,7 +204,7 @@ func (s *SQLiteStore) Send(from, to, title, msgType, instructions string) (strin
 			return "", err
 		}
 		if load.saturated() {
-			return "", fmt.Errorf("%w: %s has %d unacknowledged items and %d stalled tasks (limit %d)",
+			return "", fmt.Errorf("%w: %s has %d unacknowledged items and %d started tasks untouched for 24h (limit %d)",
 				ErrRecipientSaturated, to, load.Unacked, load.Stalled, RecipientHaltAt)
 		}
 	}

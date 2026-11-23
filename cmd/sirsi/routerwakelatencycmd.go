@@ -1,9 +1,9 @@
 package main
 
 // Ra charter M0, T4 slice: a dedicated read-only wake-latency report over
-// opened -> lease_updated (first claim), the delivery+claim latency gap
-// complementary to the M0-02 wake-loop-depth measurement in
-// docs/router-service/M0_BASELINE.md.
+// opened -> first_claimed_at (set once by the first claim, schema v27), the
+// delivery+claim latency gap complementary to the M0-02 wake-loop-depth
+// measurement in docs/router-service/M0_BASELINE.md.
 
 import (
 	"encoding/json"
@@ -20,9 +20,18 @@ var (
 	wakeLatencyJSON  bool
 )
 
+// wakeLatencyScope is the A35 statement of exactly what this report measures.
+const wakeLatencyScope = `Measured: first claim minus opened, per item, from the store's own timestamps
+(items.first_claimed_at, written once by the first claim and never by a renew,
+start-work or re-claim after requeue).
+Excluded: items first claimed before schema v27 added the column (no backfill),
+and never-claimed items - neither appears in the percentiles.
+Percentiles are nearest-rank (p95 of n samples is the ceil(0.95*n)-th smallest).`
+
 var routerWakeLatencyCmd = &cobra.Command{
 	Use:   "wake-latency",
 	Short: "Read-only report: opened -> first-claim elapsed time, per item or aggregated",
+	Long:  "Read-only report of how long items waited between being opened and first being claimed.\n\n" + wakeLatencyScope,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		st, err := routerstore.Resolve()
 		if err != nil {
@@ -34,12 +43,16 @@ var routerWakeLatencyCmd = &cobra.Command{
 			return err
 		}
 		if wakeLatencyJSON {
+			if samples == nil {
+				samples = []routerstore.WakeLatencySample{}
+			}
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(samples)
 		}
+		fmt.Fprintln(cmd.OutOrStdout(), wakeLatencyScope)
 		if len(samples) == 0 {
-			fmt.Fprintln(cmd.OutOrStdout(), "no claimed items with a distinct lease_updated timestamp")
+			fmt.Fprintln(cmd.OutOrStdout(), "no items with a first-claim timestamp")
 			return nil
 		}
 		lat := make([]float64, len(samples))

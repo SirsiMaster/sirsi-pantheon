@@ -1,0 +1,2 @@
+### Fixed
+- **Router completion-receipt refusals now say why.** The remote client dropped the service's message for sentinel errors, so every refusal read "completion receipt invalid". FinalWishes#1140 was refused because `claude-finalwishes-m5/FW-NOV02-EXECUTOR-EMPTY-STATE-COPY` already consumed that receipt (one receipt proves one task); the message now reads "receipt already used by task <agent/id>", and a GitHub 404 says the router token may not read the repo. Refs: codex-finalwishes 20261120-085408.

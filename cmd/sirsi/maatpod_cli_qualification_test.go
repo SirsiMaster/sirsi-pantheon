@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -37,6 +38,8 @@ import (
 // not build a payload or use the installed owner's router, identities or keys.
 // For this exact test alone, MAAT_SUBMIT_HELPER=1 selects the existing TestMain
 // m.Run fast path, avoiding its otherwise redundant integration CLI build.
+// CI (.github/workflows/ci.yml, Test job) builds the CLI and runs this on every
+// non-docs PR/push, failing if it skips.
 func TestNativeCLIPodAuthorityQualification(t *testing.T) {
 	cli, optedIn := os.LookupEnv("PANTHEON_NATIVE_CLI")
 	if !optedIn {
@@ -135,7 +138,7 @@ func TestNativeCLIPodAuthorityQualification(t *testing.T) {
 	// inherited SIRSI_*, MAAT_*, GIT_*, proxies, HOME or credential selectors survive.
 	env := []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=" + home, "TMPDIR=" + scratch, "GIT_CEILING_DIRECTORIES=" + root,
 		"PWD=" + repo, "XDG_CONFIG_HOME=" + filepath.Join(home, ".config"), "XDG_CACHE_HOME=" + filepath.Join(home, ".cache"),
-		"XDG_DATA_HOME=" + filepath.Join(home, ".local", "share"), "NO_COLOR=1", "SIRSI_NO_TUI=1",
+		"XDG_DATA_HOME=" + filepath.Join(home, ".local", "share"), "NO_COLOR=1", "SIRSI_NO_TUI=1", "GOTRACEBACK=all",
 		"SIRSI_ROUTER_URL=" + canonical.URL, "SIRSI_ROUTER_TOKEN=" + token,
 		"SIRSI_AGENT_ID=ra", "SIRSI_THREAD_ID=" + thread, "SIRSI_ROUTER_USE_MACHINE_ID=1",
 		"SIRSI_MAAT_POD=" + pod, "SIRSI_MAAT_CLIENT_CERT=" + clientCert, "SIRSI_MAAT_CLIENT_KEY=" + clientKey,
@@ -232,10 +235,10 @@ func TestNativeCLIPodAuthorityQualification(t *testing.T) {
 		}
 		select {
 		case <-ctx.Done():
-			authority.logFailureStderr(t)
+			authority.logFailureStderr(t, 4096)
 			t.Fatal("native relay did not reconcile and acknowledge exactly six events within the overall fixture deadline")
 		case <-authority.done:
-			authority.logFailureStderr(t)
+			authority.logFailureStderr(t, 4096)
 			t.Fatal("native authority exited before canonical catch-up")
 		case <-time.After(25 * time.Millisecond):
 		}
@@ -347,19 +350,19 @@ func nativeCLIQualificationRun(t *testing.T, ctx context.Context, cli, cwd strin
 	<-child.done
 	child.stop(t)
 	if child.waitErr != nil {
-		child.logFailureStderr(t)
+		child.logFailureStderr(t, 4096)
 		t.Fatalf("CLI %q failed: %v", args, child.waitErr)
 	}
 	if child.stdout.truncated {
 		t.Fatal("CLI JSON exceeded the 64 KiB fixture capture bound")
 	}
 	if err := json.Unmarshal(child.stdout.Bytes(), out); err != nil {
-		child.logFailureStderr(t)
+		child.logFailureStderr(t, 4096)
 		t.Fatalf("CLI %q returned invalid JSON: %v", args, err)
 	}
 }
 
-func (c *nativeCLIQualificationChild) logFailureStderr(t *testing.T) {
+func (c *nativeCLIQualificationChild) logFailureStderr(t *testing.T, limit int) {
 	// Cancellation and Wait precede every read, including readiness failures.
 	c.stop(t)
 	text := c.stderr.String()
@@ -390,15 +393,21 @@ func (c *nativeCLIQualificationChild) logFailureStderr(t *testing.T) {
 		safe.WriteString(line + "\n")
 	}
 	text = safe.String()
-	if len(text) > 4096 {
-		text = text[:4096] + "\n[diagnostic truncated]"
+	if len(text) > limit {
+		text = text[:limit] + "\n[diagnostic truncated]"
 	}
 	t.Logf("child stderr (bounded, redacted; capture_truncated=%t):\n%s", c.stderr.truncated, text)
 }
 
 func nativeCLIQualificationReady(t *testing.T, child *nativeCLIQualificationChild, address string, config *tls.Config) {
 	t.Helper()
-	deadline := time.NewTimer(2 * time.Second)
+	started := time.Now()
+	// authority-serve shells out to `git rev-parse --git-common-dir` before it
+	// listens (FindRepoRoot, internal/router/router.go:241,332). On the hosted
+	// runner that subprocess was still running after 2s (CI run 42958098771,
+	// goroutine 1 in os/exec.(*Cmd).Output), so the window is startup latency of
+	// that subprocess, bounded at 10s; the SIGQUIT dump below still fires on a real hang.
+	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
 	for {
 		connection, err := tls.DialWithDialer(&net.Dialer{Timeout: 100 * time.Millisecond}, "tcp", address, config)
@@ -408,11 +417,25 @@ func nativeCLIQualificationReady(t *testing.T, child *nativeCLIQualificationChil
 		}
 		select {
 		case <-child.done:
-			child.logFailureStderr(t)
+			child.logFailureStderr(t, 4096)
 			t.Fatal("native CLI authority exited before mutual TLS readiness")
 		case <-deadline.C:
-			child.logFailureStderr(t)
-			t.Fatal("native CLI authority did not become mutually authenticated within two seconds")
+			// Self-diagnosing timeout: SIGQUIT makes the Go child print every
+			// goroutine stack, which names the startup call that is blocked.
+			// Only env KEYS are logged, never values. Falls back to the kill in stop.
+			keys := make([]string, 0, len(child.cmd.Env))
+			for _, entry := range child.cmd.Env {
+				key, _, _ := strings.Cut(entry, "=")
+				keys = append(keys, key)
+			}
+			t.Logf("readiness timeout after %v; child env keys=%v; last dial error=%v", time.Since(started), keys, err)
+			_ = child.cmd.Process.Signal(syscall.SIGQUIT)
+			select {
+			case <-child.done:
+			case <-time.After(1500 * time.Millisecond):
+			}
+			child.logFailureStderr(t, 32<<10)
+			t.Fatal("native CLI authority did not become mutually authenticated within ten seconds")
 		case <-time.After(25 * time.Millisecond):
 		}
 	}

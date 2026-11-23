@@ -1,6 +1,7 @@
 """Plan-only Bash fixtures: no selector, supervisor, payload or network execution."""
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import tempfile
@@ -12,12 +13,18 @@ PROXY_KEYS = ('ALL_PROXY', 'all_proxy', 'HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY
 
 
 class TransportPlan(unittest.TestCase):
+    def selected_transport(self, output):
+        argv = shlex.split(output.splitlines()[-1])
+        proxy_command = next(arg.split('=', 1)[1] for arg in argv if arg.startswith('ProxyCommand='))
+        helper_argv = shlex.split(proxy_command)
+        return helper_argv[helper_argv.index('--transport') + 1]
+
     def setUp(self):
         private = tempfile.TemporaryDirectory(prefix='fabric-run-plan-')
         self.addCleanup(private.cleanup)
         self.fixture_home = private.name
 
-    def run_plan(self, *options, proxy=None, proxies=None, host='m1', payload=('/usr/bin/true',)):
+    def run_plan(self, *options, proxy=None, proxies=None, proxy_env=None, host='m1', payload=('/usr/bin/true',)):
         # No inherited proxy, Bash startup hook, credential or installed HOME.
         environment = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'LANG': 'C', 'LC_ALL': 'C',
                        'HOME': self.fixture_home, 'TMPDIR': self.fixture_home,
@@ -28,6 +35,8 @@ class TransportPlan(unittest.TestCase):
             environment['ALL_PROXY'] = proxy
         if proxies is not None:
             environment.update(proxies)
+        if proxy_env is not None:
+            environment.update(proxy_env)
         return subprocess.run(['/bin/bash', str(SCRIPT), '--plan', *options,
                                host, '--work', 'fixture-only', '--', *payload],
                               env=environment, text=True, capture_output=True,
@@ -45,6 +54,41 @@ class TransportPlan(unittest.TestCase):
                     self.assertEqual(result.stderr, explicit.stderr)
                     self.assertIn('PLAN_ONLY_NO_EXECUTION', result.stdout)
 
+    def test_default_uses_direct_when_no_proxy_exists(self):
+        result = self.run_plan()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('PLAN_ONLY_NO_EXECUTION', result.stdout)
+        self.assertEqual(self.selected_transport(result.stdout), 'direct')
+
+    def test_auto_respects_valid_proxy_and_matching_aliases(self):
+        url = 'socks5://127.0.0.1:19001'
+        for env in ({'all_proxy': url}, {'ALL_PROXY': url, 'all_proxy': url},
+                    {'ALL_PROXY': url, 'HTTPS_PROXY': url}):
+            with self.subTest(env=env):
+                result = self.run_plan('--transport', 'auto', proxy_env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.selected_transport(result.stdout), 'socks')
+                self.assertNotIn('19001', result.stdout)
+
+    def test_ambiguous_or_unsupported_proxy_settings_fail_closed(self):
+        for env in ({'HTTPS_PROXY': 'https://proxy.invalid:443'},
+                    {'ALL_PROXY': 'socks5://127.0.0.1:19001', 'all_proxy': 'socks5://127.0.0.1:19002'},
+                    {'ALL_PROXY': 'socks5://127.0.0.1:19001', 'HTTP_PROXY': 'http://proxy.invalid:80'},
+                    {'ALL_PROXY': 'socks5://127.0.0.1:0'},
+                    {'ALL_PROXY': 'socks5://127.0.0.1:65536'},
+                    {'ALL_PROXY': 'socks5://127.0.0.1:999999999999999999999999'}):
+            with self.subTest(env=env):
+                result = self.run_plan(proxy_env=env)
+                self.assertEqual(result.returncode, 78, result.stderr)
+                self.assertNotIn('PLAN_ONLY', result.stdout)
+                self.assertNotIn('19001', result.stderr)
+
+    def test_explicit_socks_requires_proxy_and_explicit_direct_rejects_http(self):
+        self.assertEqual(self.run_plan('--transport', 'socks').returncode, 78)
+        result = self.run_plan('--transport', 'direct', proxy_env={'http_proxy': 'http://proxy.invalid:80'})
+        self.assertEqual(result.returncode, 78)
+        self.assertIn('must not be bypassed', result.stderr)
+
     def test_explicit_direct_uses_shared_selector_and_logical_identity(self):
         for host in ('m1', 'm5', 'studio'):
             with self.subTest(host=host):
@@ -54,6 +98,8 @@ class TransportPlan(unittest.TestCase):
                                 'BatchMode=yes', 'PasswordAuthentication=no',
                                 'KbdInteractiveAuthentication=no',
                                 'fabric-endpoints.py', 'ProxyJump=none',
+                                'GlobalKnownHostsFile=/dev/null', 'KnownHostsCommand=none',
+                                'VerifyHostKeyDNS=no', 'UpdateHostKeys=no',
                                 'sirsi-maat-run', '--register-executor'):
                     self.assertIn(literal, result.stdout)
                 self.assertNotIn('/usr/bin/nc', result.stdout)
@@ -98,6 +144,22 @@ class TransportPlan(unittest.TestCase):
                 self.assertIn('supported runtime SOCKS proxy required', result.stderr)
                 self.assertEqual(result.stdout, '')
 
+    def test_effective_ssh_config_restricts_host_key_sources(self):
+        result = self.run_plan('--transport', 'direct')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        argv = shlex.split(result.stdout.splitlines()[-1])
+        ssh = argv.index('/usr/bin/ssh')
+        with tempfile.TemporaryDirectory() as root:
+            config = Path(root) / 'config'
+            config.write_text('Host *\n  KnownHostsCommand /usr/bin/false\n  GlobalKnownHostsFile /tmp/foreign-known-hosts\n')
+            effective = subprocess.run([argv[ssh], '-G', '-F', str(config), *argv[ssh+1:]], text=True, capture_output=True, timeout=5)
+        self.assertEqual(effective.returncode, 0, effective.stderr)
+        for item in ('stricthostkeychecking true', 'globalknownhostsfile /dev/null',
+                     'verifyhostkeydns false', 'updatehostkeys false'):
+            self.assertIn(item, effective.stdout.lower())
+        self.assertFalse(any(line.startswith('knownhostscommand ') and line != 'knownhostscommand none'
+                             for line in effective.stdout.lower().splitlines()))
+
     def test_proxy_is_preserved_by_selector_without_disclosing_proxy(self):
         result = self.run_plan(proxy='socks5h://127.0.0.1:19001', host='studio')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -128,7 +190,7 @@ class TransportPlan(unittest.TestCase):
         self.assertEqual(self.run_plan(proxy='socks5://192.0.2.1:9000').returncode, 78)
 
     def test_closed_transport_and_host_enums(self):
-        for options, host in ((('--transport', 'auto'), 'm1'),
+        for options, host in ((('--transport', 'bogus'), 'm1'),
                               (('--transport', 'direct'), 'unregistered')):
             with self.subTest(options=options, host=host):
                 self.assertEqual(self.run_plan(*options, host=host).returncode, 64)

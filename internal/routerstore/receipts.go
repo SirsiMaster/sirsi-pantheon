@@ -232,7 +232,7 @@ func (g *githubVerifier) get(ctx context.Context, path string, out any) error {
 	defer resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusUnprocessableEntity:
-		return fmt.Errorf("%w: %s", errReceiptNotFound, path)
+		return fmt.Errorf("%w: GitHub has no %s, or the router token cannot read that repo", errReceiptNotFound, path)
 	case resp.StatusCode != http.StatusOK:
 		return fmt.Errorf("%w: GitHub %s answered %d", ErrReceiptUnverifiable, path, resp.StatusCode)
 	}
@@ -493,7 +493,7 @@ func (s *SQLiteStore) putReceiptTx(tx *txHandle, agent, taskID string, r Receipt
 			}
 			var other Receipt
 			if json.Unmarshal([]byte(v), &other) == nil && other.Kind == r.Kind && other.Value == r.Value {
-				return fmt.Errorf("%w: %s already proves %s", ErrReceiptInvalid, r, strings.TrimPrefix(k, receiptStatePrefix))
+				return fmt.Errorf("%w: receipt already used by task %s: %s (one receipt proves one task)", ErrReceiptInvalid, strings.TrimPrefix(k, receiptStatePrefix), r)
 			}
 		}
 		if err := rows.Err(); err != nil {

@@ -186,6 +186,35 @@ jobs:
           # hosted or self-hosted, so this needs no host-specific path.
           TMPDIR: ${{ runner.temp }}
 
+      # ADR-120: the native CLI pod-authority qualification is opt-in (it skips
+      # without PANTHEON_NATIVE_CLI), so the suite above never runs it. Build the
+      # CLI and drive real child processes of it. A skip or an unmatched -run is
+      # RED: the PASS line must be present. MAAT_SUBMIT_HELPER=1 takes TestMain's
+      # m.Run fast path (integration_test.go) so it skips its redundant CLI build.
+      - name: Native CLI pod-authority qualification (ADR-120)
+        shell: bash
+        env:
+          MAAT_SUBMIT_HELPER: '1'
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          bash scripts/ci-private-sdk.sh go build -o "$RUNNER_TEMP/sirsi-native-cli" ./cmd/sirsi
+          # Evidence, not a fix: authority-serve runs `git rev-parse --git-common-dir`
+          # at startup (internal/router/router.go:332) with this exact PATH, and run
+          # 42958098771 showed it still blocked after 2s. Print its wall time with
+          # fresh HOME/TMPDIR (first) and reused ones (second) so the log shows
+          # whether the git shim is the slow, cold part on this runner.
+          GT="$(mktemp -d)"; mkdir -p "$GT/repo" "$GT/h" "$GT/t"
+          for pass in cold warm; do
+            echo "git --git-common-dir ($pass):"
+            ( cd "$GT/repo" && /usr/bin/time -p env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$GT/h" TMPDIR="$GT/t" GIT_CEILING_DIRECTORIES="$GT" /usr/bin/git rev-parse --path-format=absolute --git-common-dir ) >/dev/null 2>"$GT/err" || true
+            tail -n 3 "$GT/err"
+          done
+          PANTHEON_NATIVE_CLI="$RUNNER_TEMP/sirsi-native-cli" \
+            bash scripts/ci-private-sdk.sh go test -count=1 -v -run '^TestNativeCLIPodAuthorityQualification$' ./cmd/sirsi/ | tee "$RUNNER_TEMP/native-cli-qualification.log"
+          grep -q -e '--- PASS: TestNativeCLIPodAuthorityQualification' "$RUNNER_TEMP/native-cli-qualification.log" \
+            || { echo "::error::native CLI qualification did not PASS (skipped or matched no test)"; exit 1; }
+
       # check-pg-schema.sh's router_migrator/router_service negative control
       # depends on PostgreSQL 16's ALTER ROLE ADMIN OPTION enforcement
       # (pg/roles.sql, pg/README.md) — PostgreSQL 14 does not enforce it, so

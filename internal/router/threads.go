@@ -869,7 +869,10 @@ func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mi
 				// mismatch means the OS recycled this PID onto a DIFFERENT
 				// process — adopting the stale record would resurrect a dead
 				// thread, so mint a fresh one instead.
-				if existing.StartTime != "" && newStart != "" && existing.StartTime != newStart {
+				// An offset-shaped gap is the same process printed under another
+				// local zone: adopt. Any other gap is a recycled PID: mint fresh.
+				if existing.StartTime != "" && newStart != "" && existing.StartTime != newStart &&
+					!legacyStartMismatchAmbiguous(existing.StartTime, newStart) {
 					continue
 				}
 				existing.LastSeenAt = now
@@ -1411,8 +1414,8 @@ type ReapedThread struct {
 //
 // The sweep is scoped to THIS machine's process table by stable machine identity
 // (MachineID / SameMachine), not hostname — a record with a different machine id
-// is provably foreign and left untouched; an id-less legacy record is treated as
-// local (the registry is per-machine). Threads without a PID are also handled
+// is provably foreign and left untouched. Unknown identity is treated as local
+// only for the legacy per-machine registry. Threads without a PID are also handled
 // (stale phantoms retire; fresh pid-less surfaces stay alive).
 //
 // Returns the reaped records (empty if none). The registry is saved only when
@@ -1423,6 +1426,15 @@ func ReapDeadThreads(routerRoot string) ([]ReapedThread, error) {
 	})
 }
 
+// A shared registry can contain threads from every enrolled machine.
+// Missing identity does not establish which process table owns a PID.
+func threadReapMachineMatches(recordID, localID string, shared bool) bool {
+	if shared && (recordID == "" || localID == "") {
+		return false
+	}
+	return SameMachine(recordID, localID)
+}
+
 func reapDeadThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 	reg, err := LoadThreadRegistry(routerRoot)
 	if err != nil {
@@ -1431,6 +1443,7 @@ func reapDeadThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 	var reaped []ReapedThread
 	now := time.Now().UTC()
 	thisMachine := MachineID()
+	shared := routercfg.StoreWake()
 	for _, t := range reg.Threads {
 		if t == nil || t.Status.IsTerminal() {
 			continue
@@ -1447,8 +1460,8 @@ func reapDeadThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 		// guard treated a laptop's own older records (written under a prior name)
 		// as a foreign host and NEVER reaped their dead PIDs — the root cause of a
 		// 1d16h stranded inbox. A record with a DIFFERENT machine id is provably
-		// foreign; an id-less legacy record is local (the registry is per-machine).
-		if !SameMachine(t.MachineID, thisMachine) {
+		// foreign. The legacy id-less fallback applies only to a local registry.
+		if !threadReapMachineMatches(t.MachineID, thisMachine, shared) {
 			continue
 		}
 		// An attended session's thread lasts until it is closed. Reaping it on a
@@ -1553,15 +1566,18 @@ func reapStrayThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 	}
 	now := time.Now().UTC()
 	thisMachine := MachineID()
+	shared := routercfg.StoreWake()
 
 	type groupKey struct{ agent, surface string }
 	// Pass 1: find the canonical live watcher per group (newest by last_seen).
 	live := map[groupKey]*Thread{}
 	for _, t := range reg.Threads {
-		if t == nil || !SameMachine(t.MachineID, thisMachine) {
+		if t == nil || !threadReapMachineMatches(t.MachineID, thisMachine, shared) {
 			continue
 		}
-		if !isLiveWatcher(t) {
+		// Unknown liveness protects this record from retirement, but cannot
+		// prove it is a live successor that supersedes another session.
+		if !isLiveWatcher(t) || PIDStateOfThread(t) != PIDAlive {
 			continue
 		}
 		k := groupKey{t.AgentID, t.Surface}
@@ -1591,7 +1607,7 @@ func reapStrayThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 		salvage []pendingSalvage
 	)
 	for _, t := range reg.Threads {
-		if t == nil || t.Status.IsTerminal() || !SameMachine(t.MachineID, thisMachine) {
+		if t == nil || t.Status.IsTerminal() || !threadReapMachineMatches(t.MachineID, thisMachine, shared) {
 			continue
 		}
 		anchor, ok := live[groupKey{t.AgentID, t.Surface}]

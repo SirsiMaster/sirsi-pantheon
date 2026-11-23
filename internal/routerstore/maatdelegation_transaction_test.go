@@ -64,12 +64,51 @@ func TestMaatDelegationCanonicalTransactionOrdering(t *testing.T) {
 			if err := <-firstDone; err != nil {
 				t.Fatal(err)
 			}
-			if err := <-secondDone; err == nil {
-				t.Fatal("both canonical and pod authority admitted same resource")
+			err := <-secondDone
+			if first == "reserve" {
+				if err == nil {
+					t.Fatal("both canonical and pod authority admitted same resource")
+				}
+				return
+			}
+			// Delegation won the lock: the canonical request is no longer a
+			// full grant. It is admitted as a bounded, unstamped floor row.
+			if err != nil {
+				t.Fatalf("canonical build request after delegation should get the floor: %v", err)
+			}
+			rows, e := s.MaatRead("status", "studio")
+			if e != nil || len(rows) != 1 || rows[0].Share != schedule.ShareFloor || rows[0].Authority != "" {
+				t.Fatalf("want one unstamped floor row, got %+v %v", rows, e)
 			}
 		})
 	}
 }
+
+// The server-transactional path shares the in-process admission decision: a
+// delegated resource yields a floor row for a build request, a refusal for a
+// quiet one, and CAS-only clients may not write a full-share row there.
+func TestMaatDelegatedFloorTransactionalAndLegacy(t *testing.T) {
+	s := openBackendStore(t, filepath.Join(t.TempDir(), "floor.db"))
+	defer s.Close()
+	if _, err := s.MaatDelegation("delegate", delegationReq(s)); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.MaatReserve(maatRequest(s, "floor-1", "studio", "lane"), false)
+	if err != nil || !res.Granted || res.Reservation.Share != schedule.ShareFloor || res.Reservation.Authority != "" {
+		t.Fatalf("want floor grant on delegated resource: %+v %v", res, err)
+	}
+	quiet := maatRequest(s, "quiet-1", "studio", "lane2")
+	quiet.Regime = schedule.RegimeQuiet
+	if _, err := s.MaatReserve(quiet, false); err == nil {
+		t.Fatal("quiet request on delegated resource must be refused")
+	}
+	raw, exists, _ := s.GetState(maatReservationsKey)
+	full := `{"reservations":[{"id":"full-1","resource":"studio","holder":"lane","status":"active","share":"full"}]}`
+	if ok, err := s.CompareAndSwapState(maatReservationsKey, raw, exists, full); err == nil || ok {
+		t.Fatal("legacy full-share write on delegated resource bypassed fence")
+	}
+}
+
 func TestMaatDelegationReplayBatchRollbackAndIdempotence(t *testing.T) {
 	s := openBackendStore(t, filepath.Join(t.TempDir(), "test.db"))
 	defer s.Close()

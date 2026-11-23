@@ -176,6 +176,15 @@ func TestConsumerPromptCarriesThePermanentLoopContract(t *testing.T) {
 		"NOT COMPLETION", // the explicit correction of the old behavior
 		"EVIDENCE",       // never a bare ack
 	}
+	// ADR-079 D3: an attended lane's headless worker becomes a one-pass job, lane by
+	// lane as each lead confirms (Ra first). The live interactive session owns the
+	// ledger, so that worker finishes the items it was woken for and exits instead
+	// of looping beside the session. A one-pass prompt must be complete and on an
+	// attended lane; every other prompt keeps the loop contract.
+	onePass := []string{"ONE-PASS", "EXIT", "EVIDENCE"}
+	if ra, ok := reg.Agents["ra"]; !ok || !strings.Contains(ra.Consumer.Prompt, "ONE-PASS") {
+		t.Errorf("ra: worker prompt is not the ADR-079 D3 one-pass contract")
+	}
 	for id, cfg := range reg.Agents {
 		p := cfg.Consumer.Prompt
 		if p == "" {
@@ -183,6 +192,20 @@ func TestConsumerPromptCarriesThePermanentLoopContract(t *testing.T) {
 		}
 		if strings.Contains(p, "exit immediately and do nothing else") {
 			t.Errorf("%s: prompt still tells the agent to quit on an empty inbox", id)
+		}
+		if strings.Contains(p, "ONE-PASS") {
+			if !cfg.Attended {
+				t.Errorf("%s: one-pass worker prompt on a lane with no attended session would leave its ledger unworked", id)
+			}
+			for _, want := range onePass {
+				if !strings.Contains(p, want) {
+					t.Errorf("%s: attended lane's worker prompt omits %q — the ADR-079 D3 one-pass contract is incomplete", id, want)
+				}
+			}
+			if strings.Contains(p, "pull again") {
+				t.Errorf("%s: attended lane's worker prompt still loops (pull again) beside the interactive session", id)
+			}
+			continue
 		}
 		for _, want := range required {
 			if !strings.Contains(p, want) {

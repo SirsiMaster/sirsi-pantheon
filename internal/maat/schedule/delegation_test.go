@@ -87,13 +87,18 @@ func TestRevoke_UnknownPodErrors(t *testing.T) {
 	}
 }
 
+// A direct quiet booking on a delegated resource is still refused (ADR-120 §2);
+// a build booking gets the floor share instead (delegation_floor_test.go).
 func TestReserve_RefusesDirectBookingOnDelegatedResource(t *testing.T) {
 	l := fixedLedger("2026-10-22T10:00:00Z")
 	if _, err := l.Delegate(mkDelegation("studio-m5", "M5-Studio", "2026-10-22T10:00:00Z", "2026-10-22T18:00:00Z", "studio", "m5")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := l.Reserve(mkReq("studio", "mercury", "2026-10-22T10:00:00Z", "2026-10-22T10:30:00Z", RegimeQuiet), false); err == nil {
-		t.Fatal("a direct Reserve on a delegated resource must be refused (ADR-120 §2)")
+		t.Fatal("a direct quiet Reserve on a delegated resource must be refused (ADR-120 §2)")
+	}
+	if res, err := l.Reserve(mkReq("studio", "mercury", "2026-10-22T10:00:00Z", "2026-10-22T10:30:00Z", RegimeBuild), false); err != nil || res.Reservation.Share != ShareFloor {
+		t.Fatalf("a build Reserve on a delegated resource must get the floor share: %+v %v", res, err)
 	}
 	// An undelegated resource is unaffected.
 	if _, err := l.Reserve(mkReq("m1", "mercury", "2026-10-22T10:00:00Z", "2026-10-22T10:30:00Z", RegimeQuiet), false); err != nil {

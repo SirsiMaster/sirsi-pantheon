@@ -52,7 +52,9 @@ scope.plural=(n,one,many)=>n+' '+(n===1?one:many);
 vm.runInContext(source.slice(source.indexOf('function itemInspector('),source.indexOf('function vLane(')),scope);
 vm.runInContext(source.slice(source.indexOf('function vReleases('),source.indexOf('function vFailures(')),scope);
 
-test('hosted request withholding is explicit; local body and empty rendering stay exact',()=>{
+// Forward-hook fixtures only: the current hosted aggregate producer emits no
+// item or release rows, so these flags do not establish a live hosted workflow.
+test('synthetic request withholding hook is explicit; local body and empty rendering stay exact',()=>{
  const item={id:'item',from:'sender',to:'worker',title:'Request',type:'review',opened:'today'};
  for(const instructions of [undefined,'PRIVATE-CANARY <script>']){
   const hosted={...item,request_body_withheld:true,instructions};
@@ -69,7 +71,7 @@ test('hosted request withholding is explicit; local body and empty rendering sta
  }
 });
 
-test('hosted release withholding never becomes zero entries or no changes; local rendering stays exact',()=>{
+test('synthetic release withholding hook never becomes zero entries or no changes; local rendering stays exact',()=>{
  for(const items of [undefined,[],['PRIVATE-CANARY <script>']]){
   const release={version:'v1',date:'today',release_bullets_withheld:true,items};
   const before=JSON.stringify(release),html=scope.vReleases({releases:[release]});

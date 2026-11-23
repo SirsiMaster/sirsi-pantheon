@@ -182,6 +182,11 @@ func (rs *RemoteStore) Inbox(agent string) ([]Item, error) {
 	err := rs.call("Inbox", []any{agent}, &o0)
 	return o0, err
 }
+func (rs *RemoteStore) IngestDecision(host, session string, rec DecisionIngest) (DecisionIngestReceipt, error) {
+	var o0 DecisionIngestReceipt
+	err := rs.call("IngestDecision", []any{host, session, rec}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) ItemSession(id string) (string, error) {
 	var o0 string
 	err := rs.call("ItemSession", []any{id}, &o0)

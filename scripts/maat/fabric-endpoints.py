@@ -53,7 +53,7 @@ _INET = re.compile(r'inet ([0-9.]+)(?: --> ([0-9.]+))? netmask (0x[0-9a-fA-F]{1,
 _FLAGS = frozenset(('UP','BROADCAST','DEBUG','LOOPBACK','POINTOPOINT','NOTRAILERS','RUNNING','NOARP','PROMISC','ALLMULTI','OACTIVE','SIMPLEX','LINK0','LINK1','LINK2','MULTICAST','SMART'))
 
 
-def metadata_output(argv, limit):
+def metadata_output(argv, limit, encoding='ascii'):
     """Bounded fixed native metadata child; never DNS, a socket or a shell."""
     process = None
     try:
@@ -78,7 +78,7 @@ def metadata_output(argv, limit):
         remaining = deadline - time.monotonic()
         if remaining <= 0 or process.wait(timeout=remaining) != 0:
             return None
-        return data.decode('ascii')
+        return data.decode(encoding)
     except (OSError, UnicodeError, subprocess.TimeoutExpired):
         return None
     finally:
@@ -249,7 +249,10 @@ def origin_host():
 
 def runtime_proxy(mode, env):
     proxy = env.get("ALL_PROXY") or env.get("all_proxy") or ""
-    any_proxy = proxy or any(env.get(k) for k in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"))
+    configured = [env.get(k) for k in ("ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy") if env.get(k)]
+    if len(set(configured)) > 1:
+        raise PolicyError("conflicting runtime proxy settings")
+    any_proxy = bool(configured)
     if mode == "direct":
         if any_proxy:
             raise PolicyError("configured runtime proxy must not be bypassed")
@@ -262,7 +265,7 @@ def runtime_proxy(mode, env):
         raise PolicyError("supported runtime SOCKS proxy required")
     address = proxy.split("://", 1)[1]
     parts = address.split(":")
-    if len(parts) != 2 or parts[0] != "127.0.0.1" or not parts[1].isascii() or not parts[1].isdigit() or not 1 <= int(parts[1]) <= 65535:
+    if len(parts) != 2 or parts[0] != "127.0.0.1" or len(parts[1]) > 16 or not parts[1].isascii() or not parts[1].isdigit() or not 1 <= int(parts[1]) <= 65535:
         raise PolicyError("proxy must be loopback with a valid port")
     return address
 
@@ -280,21 +283,105 @@ def resolve_lan(name):
 def is_lan(address):
     try:
         value = ipaddress.ip_address(address)
-    except ValueError:
+    except (ValueError, TypeError):
         return False
     return value.version == 4 and value not in TB_RANGE and any(value in net for net in PRIVATE_LAN)
 
 
-def candidates(origin, target, resolve=resolve_lan):
+MONITOR_NAMES = {"m5": ("m5",), "m1": ("m1",), "studio": ("m5-studio", "studio")}
+
+
+def live_links(origin, target):
+    """Read bounded local link metadata; it supplies candidates, not identity."""
+    try:
+        data = metadata_output(["/usr/bin/curl", "--disable", "--silent", "--show-error", "--fail",
+                                "--max-time", "2", "--noproxy", "*",
+                                "http://127.0.0.1:8099/api?meta=1"], 262144, encoding='utf-8')
+        if data is None:
+            return None
+        document = json.loads(data)
+        machines = document["machines"]
+        local = document["local"]
+        if (not isinstance(local, str) or local.lower() not in MONITOR_NAMES.get(origin, ())
+                or not isinstance(machines, dict)):
+            return None
+        links = machines[local]["profile"]["links"]
+        if not isinstance(links, list) or len(links) > 128:
+            return None
+        result = []
+        for link in links:
+            if not isinstance(link, dict):
+                return None
+            if str(link.get("peer_host") or "").lower() not in MONITOR_NAMES.get(target, ()):
+                continue
+            try:
+                address = ipaddress.ip_address(link.get("peer_ip", ""))
+            except (ValueError, TypeError):
+                return None
+            if address.version == 4 and address in TB_RANGE and str(address) not in result:
+                result.append(str(address))
+                if len(result) > 4:
+                    return None
+        return result
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError):
+        return None
+
+
+def route_is_thunderbolt(address):
+    """A route lookup is candidate classification, not traffic or identity proof."""
+    ports = metadata_output(["/usr/sbin/networksetup", "-listallhardwareports"], 65536)
+    route = metadata_output(["/sbin/route", "-n", "get", address], 16384)
+    if ports is None or route is None:
+        return False
+    interfaces = re.findall(r'(?m)^Hardware Port: Thunderbolt (?:[0-9]+|Bridge)\nDevice: ((?:en|bridge)[0-9]+)\s*$', ports)
+    chosen = re.findall(r'(?m)^\s*interface:\s*((?:en|bridge)[0-9]+)\s*$', route)
+    return len(chosen) == 1 and chosen[0] in interfaces
+
+
+def candidates(origin, target, resolve=resolve_lan, guard=lambda: None):
     """Classify mDNS answers: .local may resolve to TB or link-local, not LAN."""
-    rows = [("thunderbolt", a, None) for a in THUNDERBOLT.get((origin, target), ())]
+    guard()
+    live = live_links(origin, target) if origin in MONITOR_NAMES else None
+    guard()
+    rows = []
+    if live is not None:
+        for address in live:
+            guard()
+            if route_is_thunderbolt(address):
+                rows.append(("thunderbolt", address, None))
+                yield rows[-1]
+            guard()
+    else:
+        rows = [("thunderbolt", a, None) for a in THUNDERBOLT.get((origin, target), ())]
+    if live is None:
+        yield from rows
+    guard()
+    answers = resolve(PEERS[target]["local"])
+    guard()
+    if not isinstance(answers, (list, tuple)) or len(answers) > 32:
+        answers = []
+    seen = {address for _, address, _ in rows}
+    tb_answers = []
+    for raw in answers:
+        try:
+            address = ipaddress.ip_address(raw)
+        except (ValueError, TypeError):
+            continue
+        if address.version == 4 and address in TB_RANGE and str(address) not in seen:
+            seen.add(str(address))
+            tb_answers.append(str(address))
+    if len(tb_answers) <= 4:
+        for address in tb_answers:
+            guard()
+            if route_is_thunderbolt(address):
+                yield "thunderbolt", address, None
+            guard()
     if origin in ("m1", "m5") and target in ("m1", "m5") and origin != target:
         # Existing authenticated SSH forwarding, not a new network bridge.
-        rows.extend(("thunderbolt-relay", far, via)
+        yield from (("thunderbolt-relay", far, via)
                     for via in THUNDERBOLT[(origin, "studio")]
                     for far in THUNDERBOLT[("studio", target)])
-    yield from rows
-    lan = sorted({a for a in resolve(PEERS[target]["local"]) if is_lan(a)},
+    lan = sorted({a for a in answers if is_lan(a)},
                  key=lambda a: int(ipaddress.ip_address(a)))
     yield from (("lan", a, None) for a in lan)
     yield "tailscale", PEERS[target]["tail"], None
@@ -327,6 +414,8 @@ def relay_ssh(via, proxy, address, probe=False):
             "-oPasswordAuthentication=no", "-oKbdInteractiveAuthentication=no",
             "-oPreferredAuthentications=publickey", "-oHostKeyAlias=sirsi-studio",
             "-oUserKnownHostsFile=" + str(Path.home() / ".ssh/sirsi_known_hosts"),
+            "-oGlobalKnownHostsFile=/dev/null", "-oKnownHostsCommand=none",
+            "-oVerifyHostKeyDNS=no", "-oUpdateHostKeys=no",
             "-oHostKeyAlgorithms=ssh-ed25519", "-oConnectTimeout=8",
             "-oControlMaster=no", "-oControlPath=none", "-oProxyJump=none",
             "-oProxyCommand=" + shlex.join(nc_args(via, proxy))]
@@ -373,6 +462,8 @@ def render_config(helper, python):
         lines.extend(["Host " + aliases[name], "  HostName sirsi-" + name,
                       "  User " + peer["user"], "  HostKeyAlias sirsi-" + name,
                       "  UserKnownHostsFile ~/.ssh/sirsi_known_hosts",
+                      "  GlobalKnownHostsFile /dev/null", "  KnownHostsCommand none",
+                      "  VerifyHostKeyDNS no",
                       "  HostKeyAlgorithms ssh-ed25519", "  BatchMode yes",
                       "  StrictHostKeyChecking yes", "  UpdateHostKeys no", "  CheckHostIP no",
                       "  PasswordAuthentication no", "  KbdInteractiveAuthentication no",
@@ -401,8 +492,9 @@ def main(argv=None):
             return dispatch(args.target)
         proxy = runtime_proxy(args.transport, os.environ)
         kind, address, via = select_endpoint(origin_host(), args.target, proxy)
-        print("fabric transport: " + args.target + " via " + kind + " " + address +
-              (" through Studio " + via if via else ""), file=sys.stderr)
+        print("fabric candidate: " + args.target + " " + kind + " " + address +
+              (" through Studio " + via if via else "") +
+              ("; proxy egress unverified" if proxy else "; path unverified"), file=sys.stderr)
         # One raw tunnel, one SSH handshake, one remote command. No auth retries.
         tunnel = relay_ssh(via, proxy, address) if via else nc_args(address, proxy)
         os.execv(tunnel[0], tunnel)

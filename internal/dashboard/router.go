@@ -139,6 +139,9 @@ type RouterProducer func() (RouterSnapshot, error)
 // never an empty panel that would read as "the router has nothing to report".
 func (s *Server) apiRouter(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if s.cfg.CloudBoard {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	if s.cfg.RouterFn == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "router producer not configured"})
@@ -156,5 +159,5 @@ func (s *Server) apiRouter(w http.ResponseWriter, r *http.Request) {
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(s.routerResponse(snap))
+	_ = enc.Encode(s.routerSnapshotResponse(snap))
 }

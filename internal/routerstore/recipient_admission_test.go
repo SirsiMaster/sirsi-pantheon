@@ -16,12 +16,19 @@ func tightenAdmission(t *testing.T) {
 	t.Cleanup(func() { RecipientWarnAt, RecipientHaltAt = w, h })
 }
 
+// seedTasks inserts n pending tasks that were STARTED (attempts=1): the
+// recipient "stalled" count only sees started work (owner decision 2026-11-11).
 func seedTasks(t *testing.T, s *SQLiteStore, agent string, n int, updated time.Time, leaseExpires string) {
+	t.Helper()
+	seedTasksAttempts(t, s, agent, n, updated, leaseExpires, 1)
+}
+
+func seedTasksAttempts(t *testing.T, s *SQLiteStore, agent string, n int, updated time.Time, leaseExpires string, attempts int) {
 	t.Helper()
 	ts := updated.Format(time.RFC3339)
 	for i := 0; i < n; i++ {
-		if _, err := s.exec(`INSERT INTO tasks (agent, task_id, subject, status, responsible_party, created, updated, lease_expires)
-			VALUES (?, ?, 'fixture', 'pending', ?, ?, ?, ?);`, agent, fmt.Sprintf("t-%s-%03d", leaseExpires, i), agent, ts, ts, leaseExpires); err != nil {
+		if _, err := s.exec(`INSERT INTO tasks (agent, task_id, subject, status, responsible_party, created, updated, lease_expires, attempts)
+			VALUES (?, ?, 'fixture', 'pending', ?, ?, ?, ?, ?);`, agent, fmt.Sprintf("t-%s-%03d", leaseExpires, i), agent, ts, ts, leaseExpires, attempts); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -48,7 +55,8 @@ func TestRecipientAdmission(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, false, false},
-		{"stalled tasks at the limit refuse", "ra", func(t *testing.T, s *SQLiteStore) { seedTasks(t, s, "lane", 5, stale, "") }, true, true},
+		{"started-then-abandoned tasks at the limit refuse", "ra", func(t *testing.T, s *SQLiteStore) { seedTasks(t, s, "lane", 5, stale, "") }, true, true},
+		{"never-started planned tasks do not count", "ra", func(t *testing.T, s *SQLiteStore) { seedTasksAttempts(t, s, "lane", 8, stale, "", 0) }, false, false},
 		{"fresh tasks do not count", "ra", func(t *testing.T, s *SQLiteStore) { seedTasks(t, s, "lane", 8, now, "") }, false, false},
 		{"live-leased old tasks do not count", "ra", func(t *testing.T, s *SQLiteStore) { seedTasks(t, s, "lane", 8, stale, future) }, false, false},
 		{"another lane's backlog does not count", "ra", func(t *testing.T, s *SQLiteStore) { seedOpen(t, s, "other", 8) }, false, false},
@@ -103,8 +111,7 @@ func TestRecipientAdmissionTerminalTaskAccounting(t *testing.T) {
 		{"aged_done", "done", "completed", "", stale, 0},
 		{"pending_superseded_description", "pending", "superseded by replacement; not canceled", "", stale, 8},
 		{"true_pending_saturation", "pending", "unfinished work", "", stale, 8},
-		{"true_blocked_saturation", "blocked", "blocked work", "", stale, 8},
-		{"active_lease", "in-progress", "live work", now.Add(time.Hour).Format(time.RFC3339), stale, 0},
+		{"true_blocked_saturation", "blocked", "blocked work", "", stale, 8}, {"active_lease", "in-progress", "live work", now.Add(time.Hour).Format(time.RFC3339), stale, 0},
 		{"expired_lease", "in-progress", "unfinished work", now.Add(-time.Hour).Format(time.RFC3339), stale, 8},
 		{"fresh_pending", "pending", "new work", "", now, 0},
 	} {

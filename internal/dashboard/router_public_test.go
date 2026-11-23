@@ -82,28 +82,21 @@ func TestHostedRouterMetadataBoundary(t *testing.T) {
 				if strings.Contains(rec.Body.String(), "PRIVATE-CANARY") {
 					t.Fatal("hosted response leaked private canary")
 				}
-				var got publicRouterSnapshot
+				var got hostedRouterSummary
 				if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 					t.Fatal(err)
 				}
-				if !reflect.DeepEqual(got.Fabric, snapshot.Fabric) || got.FabricGeneration != snapshot.FabricGeneration {
-					t.Fatal("canonical public Fabric projection changed")
-				}
-				if got.Items[0] != (publicRouterItem{ID: "inbox-one", From: "sender", To: "worker", Title: "Public request", Type: "review", Opened: snapshot.GeneratedAt, AckedAt: snapshot.GeneratedAt, RequestBodyWithheld: true, BlockerRecorded: true}) ||
-					got.Lanes.List[0].Verdict != "LIVE" || got.Lanes.List[0].Open != 1 || got.Lanes.List[0].LastReportAt != snapshot.GeneratedAt ||
-					!reflect.DeepEqual(got.Lanes.Counts, map[string]int{"LIVE": 1}) || got.Queue[0].Open != 1 ||
-					got.Consumers != (publicConsumers{Running: 1, Max: 3}) || !got.Registry.Pinned || got.Registry.Commit != "public-commit" ||
-					got.KnownFailures[0].Title != "Public failure" || got.Releases[0].Version != "v1" || !got.Releases[0].ReleaseBulletsWithheld ||
-					got.Attention[0].Title != "Public attention" || got.Swap.UsedMiB != 3 || got.BuiltMs != 9 || got.Version != "fixture" {
-					t.Fatal("approved operational metadata lost")
+				if !got.PrivateWithheld || got.Fabric == nil || !got.Fabric.PrivateWithheld ||
+					got.FabricGeneration != snapshot.FabricGeneration ||
+					!reflect.DeepEqual(got.Lanes.Counts, map[string]int{"LIVE": 1}) ||
+					len(got.Lanes.List) != 1 || got.Lanes.List[0].Verdict != "LIVE" ||
+					len(got.Queue) != 1 || got.Queue[0].Open != 1 || got.BuiltMs != 9 || got.Version != "fixture" {
+					t.Fatal("hosted aggregate or withholding marker changed")
 				}
 				var wire map[string]any
 				if err := json.Unmarshal(rec.Body.Bytes(), &wire); err != nil {
 					t.Fatal(err)
 				}
-				// Fabric owns its existing public schema (including provenance.source
-				// and result_recorded); do not apply local-snapshot rules to it.
-				delete(wire, "fabric")
 				assertNoPrivateRouterKeys(t, wire)
 			})
 		}
@@ -163,66 +156,38 @@ func TestHostedRouterProducerErrorIsFixedAndLocalErrorUnchanged(t *testing.T) {
 	}
 }
 
-func TestPublicRouterProjectionDoesNotAliasLocalMetadata(t *testing.T) {
+func TestHostedRouterSummaryDoesNotAliasLocalMetadata(t *testing.T) {
 	snapshot := privateRouterFixture()
 	before, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	public := projectPublicRouter(snapshot)
+	s := New(Config{CloudBoard: true})
+	public, ok := s.routerSnapshotResponse(snapshot).(hostedRouterSummary)
+	if !ok {
+		t.Fatal("hosted summary type changed")
+	}
 	public.Lanes.Counts["LIVE"] = 99
 	public.Lanes.List[0].Open = 99
 	public.Queue[0].Open = 99
-	public.Items[0].Title = "changed"
-	public.KnownFailures[0].Title = "changed"
-	public.Releases[0].Version = "changed"
-	public.Attention[0].Title = "changed"
-	public.Swap.UsedMiB = 99
+	public.Fabric.Lanes[0].Open = 99
 	after, err := json.Marshal(snapshot)
 	if err != nil || !bytes.Equal(before, after) {
-		t.Fatal("hosted metadata aliases nested local input")
+		t.Fatal("hosted aggregate aliases nested local input")
 	}
 }
 
-func TestPublicRouterKnownVerdictsAndPresenceMetadata(t *testing.T) {
-	t.Run("recognized-verdicts-including-provider-quota", func(t *testing.T) {
-		want := map[string]int{"LIVE": 1, "WAKEABLE": 2, "HELD": 3, "AUTH_REQUIRED": 4, "WATCH_ONLY": 5, "UNSTAFFED": 6, "UNREACHABLE": 0, "PROVIDER_QUOTA": 7}
-		snapshot := privateRouterFixture()
-		snapshot.Lanes.Counts = map[string]int{}
-		for key, n := range want {
-			snapshot.Lanes.Counts[key] = n
-		}
-		snapshot.Lanes.Counts["PRIVATE-CANARY-unknown-key"] = 99
-		got := projectPublicRouter(snapshot)
-		if !reflect.DeepEqual(got.Lanes.Counts, want) || snapshot.Lanes.Counts["PRIVATE-CANARY-unknown-key"] != 99 {
-			t.Fatal("recognized positive/zero counts lost, unknown key exposed, or input mutated")
-		}
-	})
-	for _, tc := range []struct {
-		name, blocker string
-		recorded      bool
-	}{
-		{"no-blocker", "", false},
-		{"reference-may-already-be-resolved", "task-one", true},
-		{"arbitrary-recorded-prose", "PRIVATE-CANARY: not a task reference", true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			snapshot := RouterSnapshot{Items: []RouterQueueItem{{ID: "item", BlockedBy: tc.blocker}}, Releases: []RouterRelease{{Version: "v-empty"}}}
-			got := projectPublicRouter(snapshot)
-			if got.Items[0].BlockerRecorded != tc.recorded || !got.Items[0].RequestBodyWithheld || !got.Releases[0].ReleaseBulletsWithheld {
-				t.Fatal("presence/withholding metadata misreported for empty content")
-			}
-			wire, err := json.Marshal(got.Items[0])
-			var fields map[string]any
-			if err != nil || json.Unmarshal(wire, &fields) != nil {
-				t.Fatal("invalid projected item")
-			}
-			if _, ok := fields["blocked"]; ok {
-				t.Fatal("blocker presence was promoted to unresolved-dependency status")
-			}
-			if _, ok := fields["blocked_by"]; ok {
-				t.Fatal("raw blocker exposed")
-			}
-		})
+func TestHostedRouterKnownVerdictsExcludeUnknownKeys(t *testing.T) {
+	want := map[string]int{"LIVE": 1, "WAKEABLE": 2, "HELD": 3, "AUTH_REQUIRED": 4, "WATCH_ONLY": 5, "UNSTAFFED": 6, "UNREACHABLE": 0, "PROVIDER_QUOTA": 7}
+	snapshot := privateRouterFixture()
+	snapshot.Lanes.Counts = map[string]int{}
+	for key, n := range want {
+		snapshot.Lanes.Counts[key] = n
+	}
+	snapshot.Lanes.Counts["PRIVATE-CANARY-unknown-key"] = 99
+	s := New(Config{CloudBoard: true})
+	got, ok := s.routerSnapshotResponse(snapshot).(hostedRouterSummary)
+	if !ok || !reflect.DeepEqual(got.Lanes.Counts, want) || snapshot.Lanes.Counts["PRIVATE-CANARY-unknown-key"] != 99 {
+		t.Fatal("recognized counts lost, unknown key exposed, or input mutated")
 	}
 }

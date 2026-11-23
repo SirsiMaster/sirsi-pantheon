@@ -130,6 +130,13 @@ func TestFabricTransportPlanRejectsMissingOrBroadAuthority(t *testing.T) {
 	}
 }
 
+func TestFabricTransportDefaultUsesDirectWithoutProxy(t *testing.T) {
+	out, err := fabricPlanCommand(t, []string{"ALL_PROXY="}, "m1", "--work", "x", "--", "/usr/bin/true").CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "direct") || !strings.Contains(string(out), "StrictHostKeyChecking=yes") {
+		t.Fatalf("expected strict direct plan: %s: %v", out, err)
+	}
+}
+
 func TestFabricTransportPlanDefaultWithoutProxyMatchesExplicitDirect(t *testing.T) {
 	proxyKeys := []string{"ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"}
 	for _, host := range []string{"m1", "m5", "studio"} {

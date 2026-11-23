@@ -1,0 +1,1 @@
+Router liveness: a legacy ps-style PID start-time mismatch is treated as ambiguous (same process, different local zone) only when both strings parse and the gap is a non-zero multiple of 15 minutes up to 26 h; every other mismatch is a recycled PID again and is reaped. Registration adopts the existing thread on an offset-shaped gap and mints a fresh one otherwise, never erroring.
