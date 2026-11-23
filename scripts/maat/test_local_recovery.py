@@ -23,7 +23,7 @@ class RecoveryPrefixTests(unittest.TestCase):
         return execution,root,folder,lock,path
 
     def test_sigterm_ignored_sigkill_quiescence_completes_without_debt(self):
-        child=mock.Mock(pid=24680);state={'killed':False,'reaped':False};clock=iter(range(200))
+        child=mock.Mock(pid=24680,_sirsi_terminal_receipt=None);state={'killed':False,'reaped':False};clock=iter(range(200))
         child.returncode=None
         child._sirsi_local_identity=runner._LocalChildIdentity(child,child.pid,os.getpid(),os.getuid(),os.getuid(),child.pid,'exact-start')
         def snapshot(group):
@@ -34,13 +34,17 @@ class RecoveryPrefixTests(unittest.TestCase):
             if sig==runner.signal.SIGKILL:state['killed']=True
         def reap(timeout):
             self.assertTrue(state['killed']);state['reaped']=True
+            child.returncode=-runner.signal.SIGKILL
+            return child.returncode
         child.wait.side_effect=reap
         with mock.patch.object(runner,'local_group_snapshot',side_effect=snapshot),mock.patch.object(runner,'process_identity',return_value=(os.getpid(),'exact-start')) as identity, \
+                mock.patch.object(runner,'local_child_terminal',side_effect=lambda c: -runner.signal.SIGKILL if state['killed'] else None) as terminal, \
                 mock.patch.object(runner.os,'killpg',side_effect=signal_group) as signal_call,mock.patch.object(runner.time,'sleep'),mock.patch.object(runner.time,'monotonic',side_effect=lambda:next(clock)/10):
             runner.local_stop_owned(child,'exact-start')
         self.assertEqual(signal_call.call_args_list,[mock.call(child.pid,runner.signal.SIGTERM),mock.call(child.pid,runner.signal.SIGKILL)])
         self.assertGreaterEqual(identity.call_count,4)
         child.wait.assert_called_once_with(timeout=1)
+        terminal.assert_called_once_with(child)
 
     def test_intent_is_durable_before_fence_and_crash_prefix_reconciles(self):
         with tempfile.TemporaryDirectory() as home,mock.patch.dict(os.environ,{'HOME':home},clear=True):

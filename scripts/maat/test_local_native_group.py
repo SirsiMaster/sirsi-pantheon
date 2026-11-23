@@ -122,7 +122,7 @@ class NativeGroupTests(unittest.TestCase):
         self.assertEqual([call.args[2] for call in library.proc_pidinfo.call_args_list], [0, 1])
 
     def test_native_denial_cannot_signal_or_reap_owned_handle(self):
-        child = mock.Mock(pid=24680, returncode=None)
+        child = mock.Mock(pid=24680, returncode=None, _sirsi_terminal_receipt=None)
         with mock.patch.object(runner, 'local_group_snapshot', side_effect=runner.Refused('group observation denied')), \
                 mock.patch.object(runner.os, 'killpg') as signals:
             with self.assertRaises(runner.Refused):

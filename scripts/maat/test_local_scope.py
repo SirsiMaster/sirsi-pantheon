@@ -22,8 +22,12 @@ def bind_child(child, birth):
 
 
 def owned_child(birth='old'):
-    child=mock.Mock(pid=24680)
+    child=mock.Mock(pid=24680,_sirsi_terminal_receipt=None)
     bind_child(child,birth)
+    def reap(timeout):
+        child.returncode = 0
+        return 0
+    child.wait.side_effect = reap
     return child
 
 
@@ -39,7 +43,7 @@ class LocalScopeTests(unittest.TestCase):
         self.release=release.start();self.addCleanup(release.stop)
 
     def main(self, home, flags=(), child=None):
-        child = child or mock.Mock(pid=12345)
+        child = child or mock.Mock(pid=12345,_sirsi_terminal_receipt=None)
         child.wait.return_value = 0
         with mock.patch.dict(os.environ, {'HOME': str(home), 'SIRSI_ROUTER_URL': 'https://unreachable.invalid',
                                          'SIRSI_MAAT_EXECUTION_RECEIPT': '/not-this-execution'}, clear=True), \
@@ -115,7 +119,7 @@ class LocalScopeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root, folder = self.local_fixture(Path(raw))
             record, persisted = {}, []
-            child = mock.Mock(pid=12345)
+            child = mock.Mock(pid=12345,_sirsi_terminal_receipt=None)
             child.wait.return_value = 0
 
             def spawn(*args, **kwargs):
@@ -187,7 +191,7 @@ class LocalScopeTests(unittest.TestCase):
     def test_timeout_and_cleanup_debt_cannot_report_local_success(self):
         with tempfile.TemporaryDirectory() as raw:
             _, folder = self.local_fixture(Path(raw))
-            child = mock.Mock(pid=12345)
+            child = mock.Mock(pid=12345,_sirsi_terminal_receipt=None)
             child.wait.side_effect = subprocess.TimeoutExpired('/owned/fake', 1)
             record = {}
             with mock.patch.object(runner.subprocess, 'Popen', return_value=child), \
@@ -200,7 +204,7 @@ class LocalScopeTests(unittest.TestCase):
     def test_child_failure_preserves_exact_code_and_cleans_only_owned_child(self):
         with tempfile.TemporaryDirectory() as raw:
             _, folder = self.local_fixture(Path(raw))
-            child = mock.Mock(pid=12345)
+            child = mock.Mock(pid=12345,_sirsi_terminal_receipt=None)
             child.wait.return_value = 7
             record = {}
             with mock.patch.object(runner.subprocess, 'Popen', return_value=child), mock.patch.object(runner, 'local_stop_owned') as stop:
@@ -235,7 +239,7 @@ class LocalContinuationTests(unittest.TestCase):
     def test_actual_auto_entry_publishes_exact_private_local_fact_before_core_launch(self):
         with tempfile.TemporaryDirectory() as raw:
             home=Path(raw);cli=home/'Pantheon.app/Contents/MacOS/sirsi';cli.parent.mkdir(parents=True);cli.write_bytes(b'fixture');cli.chmod(0o755)
-            command=[str(cli),'vitals','--json'];child=mock.Mock(pid=24680);child.wait.return_value=0
+            command=[str(cli),'vitals','--json'];child=mock.Mock(pid=24680,_sirsi_terminal_receipt=None);child.wait.return_value=0
             def spawn(argv,**kw):
                 self.assertEqual(argv[-len(command):],command)
                 self.assertIn('--owned-local-child',argv)
@@ -287,9 +291,11 @@ class LocalCustodyTests(unittest.TestCase):
         snapshots=[[leader,member],[leader,member],[leader],[leader],[]]
         with mock.patch.object(runner,'local_group_snapshot',side_effect=snapshots), \
                 mock.patch.object(runner,'process_identity',return_value=(os.getpid(),'old')), \
+                mock.patch.object(runner,'local_child_terminal',return_value=0) as terminal, \
                 mock.patch.object(runner.time,'sleep'),mock.patch.object(runner.os,'killpg') as kill:
             runner.local_stop_owned(child,'old')
             child.wait.assert_called_once_with(timeout=1);kill.assert_not_called()
+            terminal.assert_called_once_with(child)
 
     def test_timeout_cleanup_signals_only_revalidated_owned_anchor(self):
         child=owned_child();state={'zombie':False,'reaped':False};clock=iter(range(100))
@@ -297,18 +303,25 @@ class LocalCustodyTests(unittest.TestCase):
             return [] if state['reaped'] else [dict(pid=child.pid,uid=os.getuid(),status='Z' if state['zombie'] else 'S')]
         def kill(group,sig):
             self.assertEqual(group,child.pid);self.assertEqual(sig,runner.signal.SIGTERM);state['zombie']=True
-        child.wait.side_effect=lambda timeout:state.update(reaped=True)
+        def reap(timeout):
+            self.assertTrue(state['zombie'])
+            state['reaped']=True
+            child.returncode=-runner.signal.SIGTERM
+            return child.returncode
+        child.wait.side_effect=reap
         with mock.patch.object(runner,'local_group_snapshot',side_effect=snapshot),mock.patch.object(runner,'process_identity',return_value=(os.getpid(),'old')) as identity, \
+                mock.patch.object(runner,'local_child_terminal',side_effect=lambda c: -runner.signal.SIGTERM if state['zombie'] else None) as terminal, \
                 mock.patch.object(runner.os,'killpg',side_effect=kill) as signal_group,mock.patch.object(runner.time,'sleep'),mock.patch.object(runner.time,'monotonic',side_effect=lambda:next(clock)/10):
             runner.local_stop_owned(child,'old')
             signal_group.assert_called_once_with(child.pid,runner.signal.SIGTERM)
             self.assertGreaterEqual(identity.call_count,2)
+            terminal.assert_called_once_with(child)
 
     def test_cleanup_debt_blocks_next_job_until_exact_quiescent_reconciliation(self):
         with tempfile.TemporaryDirectory() as raw,mock.patch.dict(os.environ,{'HOME':raw},clear=True):
             root=Path(raw)/'.sirsi/evidence/maat-runs';root.mkdir(parents=True,mode=0o700)
             folder=root/('a'*32);folder.mkdir(mode=0o700)
-            child=mock.Mock(pid=24680);record={}
+            child=mock.Mock(pid=24680,_sirsi_terminal_receipt=None);record={}
             with mock.patch.object(runner.subprocess,'Popen',return_value=child),mock.patch.object(runner,'process_identity',return_value=(os.getpid(),'old')), \
                     mock.patch.object(runner,'local_wait_terminal',return_value=0),mock.patch.object(runner,'local_bind_owned_child',side_effect=bind_child),mock.patch.object(runner,'release_local_child'),mock.patch.object(runner,'local_stop_owned',side_effect=runner.Refused('unknown group')):
                 self.assertEqual(runner.supervise_local(['/owned/fake'],10,record,folder,lambda:None),78)

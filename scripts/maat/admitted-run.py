@@ -415,6 +415,66 @@ def local_owned_identity(child):
     return owned
 
 
+@dataclass(frozen=True)
+class _LatchedChildTerminal:
+    owner: object
+    code: int
+    raw_status: int
+    portable_exit: int
+    expected_reap_exit: int
+    observation: dict
+
+
+def _latch_child_terminal(child, owned, code, status, observation):
+    # This is an OBSERVED-status mapping, never recovery of unreported C input.
+    # The prospective Darwin27.2 measurement covered positive bits8-23 and
+    # stable repeated reads. No wide-first/narrow-later exception is qualified.
+    upper = 0x00ffffff if sys.platform == 'darwin' else 255
+    if type(code) is not int or type(status) is not int:
+        raise LocalWaitRefused('Owned child terminal types differ', observation)
+    if code == 1 and 0 <= status <= upper:
+        reap_exit = status & 255
+        portable = status if status <= 255 else (reap_exit or 1)
+    elif code in (2, 3) and 0 < status < signal.NSIG:
+        portable = reap_exit = -status
+    else:
+        raise LocalWaitRefused('Unknown owned child terminal status', observation)
+    prior = getattr(child, '_sirsi_terminal_receipt', None)
+    if prior is not None:
+        if (not isinstance(prior, _LatchedChildTerminal) or prior.owner is not owned
+                or prior.code != code or prior.raw_status != status):
+            raise LocalWaitRefused('Owned child terminal observation changed after latch', observation)
+        return prior.portable_exit
+    child._sirsi_terminal_receipt = _LatchedChildTerminal(
+        owned, code, status, portable, reap_exit, dict(observation))
+    return portable
+
+
+def _terminal_expected_reap(child, portable):
+    receipt = getattr(child, '_sirsi_terminal_receipt', None)
+    if receipt is None:
+        # Existing injected plain-integer observers retain their strict old
+        # comparison. They cannot supply a normalized wide exit this way.
+        return portable
+    if (not isinstance(receipt, _LatchedChildTerminal)
+            or receipt.owner.handle is not child or receipt.owner.pid != child.pid
+            or not (getattr(child, '_sirsi_fabric_identity', None) is receipt.owner
+                    or getattr(child, '_sirsi_local_identity', None) is receipt.owner)
+            or type(portable) is not int or portable != receipt.portable_exit):
+        raise Refused('Owned child terminal/reap binding differs')
+    return receipt.expected_reap_exit
+
+
+def _child_terminal_evidence(child):
+    receipt = getattr(child, '_sirsi_terminal_receipt', None)
+    if receipt is None:
+        return None
+    _terminal_expected_reap(child, receipt.portable_exit)
+    return dict(receipt.observation, raw_code=receipt.code,
+                raw_status=receipt.raw_status, portable_exit=receipt.portable_exit,
+                expected_reap_exit=receipt.expected_reap_exit)
+
+
 def _nonreaping_child_terminal(child, owned, wait=None):
     """Observe a bound direct child with WNOWAIT; never consume its PID anchor."""
     if (owned.handle is not child or owned.pid != child.pid or child.returncode is not None
@@ -432,6 +492,7 @@ def _nonreaping_child_terminal(child, owned, wait=None):
             wait.restype = ctypes.c_int
         info = _Siginfo()
         # P_PID=1; WNOHANG=1, WEXITED=4, WNOWAIT=0x20. Never consumes the child.
+        ctypes.set_errno(0)
         result = wait(1, child.pid, ctypes.byref(info), 1 | 4 | 0x20)
         observation = dict(api='libSystem.waitid', result=result,
                            errno=ctypes.get_errno() if result else 0,
@@ -445,6 +506,8 @@ def _nonreaping_child_terminal(child, owned, wait=None):
         if info.pid == 0:
             if any((info.signo, info.error, info.code, info.uid, info.status)):
                 raise LocalWaitRefused('Malformed empty owned child wait observation', observation)
+            if getattr(child, '_sirsi_terminal_receipt', None) is not None:
+                raise LocalWaitRefused('Owned terminal disappeared after latch', observation)
             return None
         # XNU's waitid path may leave si_uid zero; that is not a credential.
         # Accept it only because the exact bound unreaped Popen is also required.
@@ -464,6 +527,8 @@ def _nonreaping_child_terminal(child, owned, wait=None):
             raise LocalWaitRefused('Owned child wait observation failed; no exit or absence inferred',
                                    dict(api='os.waitid', pid=child.pid, error=str(error))) from error
         if info is None:
+            if getattr(child, '_sirsi_terminal_receipt', None) is not None:
+                raise LocalWaitRefused('Owned terminal disappeared after latch', dict(api='os.waitid', pid=child.pid))
             return None
         pid = getattr(info, 'si_pid', None)
         uid = getattr(info, 'si_uid', None)
@@ -474,11 +539,7 @@ def _nonreaping_child_terminal(child, owned, wait=None):
                            status=status, expected_pid=owned.pid, expected_uid=owned.uid)
         if pid != owned.pid or uid != owned.uid or signo != signal.SIGCHLD:
             raise LocalWaitRefused('Owned child wait PID/UID/signal differs', observation)
-    if code == 1 and 0 <= status <= 255:  # CLD_EXITED
-        return status
-    if code in (2, 3) and 0 < status < signal.NSIG:  # CLD_KILLED/DUMPED
-        return -status
-    raise LocalWaitRefused('Unknown owned child terminal status', observation)
+    return _latch_child_terminal(child, owned, code, status, observation)
 
 
 def local_child_terminal(child, wait=None):
@@ -548,7 +609,13 @@ def local_stop_owned(child, birth):
         if any(x['uid']!=os.getuid() for x in rows):
             raise Refused('Foreign UID in local group; no signal sent')
         if not any(not x['status'].startswith('Z') for x in rows):
-            child.wait(timeout=1)  # Reap only after every member is non-running.
+            terminal = local_child_terminal(child)
+            if terminal is None:
+                raise Refused('Local terminal receipt absent before reap')
+            expected_reap = _terminal_expected_reap(child, terminal)
+            reaped = child.wait(timeout=1)  # Only after all members are non-running.
+            if reaped != expected_reap or child.returncode != expected_reap:
+                raise Refused('Local child reap differs from terminal receipt')
             if local_group_snapshot(child.pid):
                 raise Refused('Local group absence unconfirmed after reap')
             return
@@ -572,7 +639,13 @@ def local_stop_owned(child, birth):
         if any(x['uid']!=os.getuid() for x in rows):
             raise Refused('Foreign UID after local signal wait')
         if not any(not x['status'].startswith('Z') for x in rows):
-            child.wait(timeout=1)
+            terminal = local_child_terminal(child)
+            if terminal is None:
+                raise Refused('Local terminal receipt absent before reap')
+            expected_reap = _terminal_expected_reap(child, terminal)
+            reaped = child.wait(timeout=1)
+            if reaped != expected_reap or child.returncode != expected_reap:
+                raise Refused('Local child reap differs from terminal receipt')
             if local_group_snapshot(child.pid):raise Refused('Local group absence unconfirmed after reap')
             return
     raise Refused('Owned local group quiescence unconfirmed; debt retained')
@@ -867,6 +940,9 @@ def supervise_local(command, timeout, record, folder, persist):
         os.close(gate_write);gate_write=None
         code = local_wait_terminal(child,timeout)
         record['child_exit_code'] = code
+        evidence = _child_terminal_evidence(child)
+        if evidence is not None:
+            record['child_terminal_observation'] = evidence
         record['status'] = 'success' if code == 0 else 'child_failed'
     except subprocess.TimeoutExpired:
         record.update(status='refused_or_stopped', reason='Local execution timeout; no remote lease or delivery was inferred')
@@ -1468,9 +1544,10 @@ def stop(child, observe=None, send_group=None, reap=None, monotonic=None, sleep=
         # Includes initial observation/snapshot failures and signal failures.
         if isinstance(custody, _FabricChildIdentity):
             custody.signals_closed = True
+    expected_reap = _terminal_expected_reap(child, terminal)
     custody.reap_started = True
     reaped = (reap or (lambda target: target.wait(timeout=1)))(child)
-    if reaped != terminal or child.returncode != terminal:
+    if reaped != expected_reap or child.returncode != expected_reap:
         raise Refused('Fabric child reap differs from terminal receipt')
     custody.reaped = True
 
@@ -1727,6 +1804,9 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                 check_deadlines(deadline, lease, started_at, timeout, record)
                 if type(code) is not int:
                     raise Refused('Child terminal exit receipt is not an observed integer')
+                evidence = _child_terminal_evidence(child)
+                if evidence is not None:
+                    record['child_terminal_observation'] = evidence
                 record['status'] = 'success' if code == 0 else 'child_failed'
                 settled_child_exit = code
                 break
@@ -1759,7 +1839,8 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                 else:
                     wait_unreleased_fabric_child(child)
                 if (isinstance(backend, Native) and settled_child_exit is not None and
-                        (type(child.returncode) is not int or child.returncode != settled_child_exit)):
+                        (type(child.returncode) is not int
+                         or child.returncode != _terminal_expected_reap(child, settled_child_exit))):
                     raise Refused('Child cleanup exit receipt differs from observed terminal outcome')
                 child_cleanup_confirmed = True
             except (Exception, KeyboardInterrupt) as error:

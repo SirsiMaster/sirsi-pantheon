@@ -305,6 +305,20 @@ separate SHA observation at45.289seconds, against the old eight-second deadline.
 
 These are cooperative operational controls, not an OS security sandbox against same-user tampering, deliberately hidden workloads, escaped descendant sessions or supervisor SIGKILL. A native tool hook and per-runtime adoption must be proven separately. The execution timeout begins at child spawn; metadata and cleanup calls have their separate bounds. Do not mistake a receipt file's existence for live admission.
 
+Darwin `CLD_EXITED` observations preserve a 24-bit raw exit separately from the
+portable result and the consuming wait's low-byte result. A nonzero wide raw
+status never becomes success: raw256 reports1 with expected reap0; raw258
+reports2 with expected reap2. The first valid observation is bound to the exact
+owned child/identity and immutable; a later different/empty observation refuses.
+Validate that binding before starting the sole reap, then require both the wait
+return and child returncode to match the expected reap result. Unknown codes,
+negative/malformed status, lost custody and substituted identities fail closed.
+`test_terminal_observation.py`, included in ordinary unittest discovery, covers
+these paths with inert syscall/backend fixtures, including full Native records
+and release arguments for256 and258. These fixtures do not prove live release,
+old cleanup recovery, installation, or escaped-descendant containment. Inherited
+signal-code3 decoding remains unqualified by an actual dumped-child experiment.
+
 The fabric supervisor uses a separate Popen/session-group binding. It observes
 the direct leader with non-reaping `waitid(WNOWAIT)` and takes a fresh
 process-group snapshot before any reap (native libproc on Darwin). A terminal

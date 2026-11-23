@@ -846,7 +846,7 @@ class FabricLaunchGateTests(unittest.TestCase):
         execute.assert_called_once_with('payload', ['payload', 'arg'], {})
 
     def run_bind_failure(self, wait_result, release_error=None, close_error=None):
-        child = mock.Mock(pid=424242, returncode=None)
+        child = mock.Mock(pid=424242, returncode=None, _sirsi_terminal_receipt=None)
         backend = Backend(None)
         events = []
         def wait(timeout):
@@ -928,7 +928,7 @@ class FabricLaunchGateTests(unittest.TestCase):
         self.assertIn('Fabric launch gate close unconfirmed', record['cleanup_debt'])
 
     def test_previously_reaped_helper_status_is_not_a_fresh_receipt(self):
-        child = mock.Mock(pid=424242, returncode=78)
+        child = mock.Mock(pid=424242, returncode=78, _sirsi_terminal_receipt=None)
         with self.assertRaisesRegex(runner.Refused, 'wait custody unavailable'):
             runner.wait_unreleased_fabric_child(child)
         child.wait.assert_not_called()
