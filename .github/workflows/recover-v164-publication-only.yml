@@ -1,0 +1,172 @@
+name: Publish retained v164 custody (one shot)
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_controller_sha:
+        description: Exact reviewed main commit
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: pantheon-release-refs/tags/v0.24.164
+  cancel-in-progress: false
+env:
+  BUILD_VERSION: 0.24.164
+  RELEASE_COMMIT: ca31d2a8984c02e54fa762de4c63333cd92bdf22
+jobs:
+  publication_successor:
+    name: publication-successor
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: [self-hosted, macOS, ARM64, m1]
+    timeout-minutes: 25
+    env:
+      PANTHEON_RELEASE_REF: refs/tags/v0.24.164
+      SIRSI_ROUTER_URL: spool:///var/sirsipantheon/relay
+      SIRSI_RELAY_TRUST_GROUP: _sirsipantheon
+    steps:
+      - name: Bind reviewed controller and runner
+        env:
+          REVIEWED_CONTROLLER: ${{ inputs.reviewed_controller_sha }}
+          RUNNER_IDENTITY: ${{ runner.name }}
+          RUNNER_OS: ${{ runner.os }}
+          RUNNER_ARCH: ${{ runner.arch }}
+        run: |
+          set -euo pipefail
+          [[ "$REVIEWED_CONTROLLER" =~ ^[0-9a-f]{40}$ && "$GITHUB_SHA" == "$REVIEWED_CONTROLLER" ]]
+          [[ "$RUNNER_IDENTITY" == m1-pantheon && "$RUNNER_OS" == macOS && "$RUNNER_ARCH" == ARM64 ]]
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 && "$(/usr/sbin/sysctl -n hw.model)" == MacBookPro18,1 ]]
+          printf 'PANTHEON_RUNNER_NAME=%s\nPANTHEON_RUNNER_OS=%s\nPANTHEON_RUNNER_ARCH=%s\n' "$RUNNER_IDENTITY" "$RUNNER_OS" "$RUNNER_ARCH" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          path: controller
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/v0.24.164
+          path: source
+      - name: Retrieve exact signed custody
+        uses: actions/download-artifact@v4
+        with:
+          name: v164-metadata-custody-45284797296
+          run-id: 45284797296
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/v164-signed-custody-${{ github.run_id }}
+      - name: Retrieve prior publication evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: v164-metadata-successor-45284797296-1
+          run-id: 45284797296
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/v164-prior-publication-${{ github.run_id }}
+      - name: Set a physical mount directory
+        working-directory: source
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$RELEASE_COMMIT" && "$(git rev-parse 'refs/tags/v0.24.164^{}')" == "$RELEASE_COMMIT" ]]
+          [[ -z "$(git status --porcelain --untracked-files=normal)" && "$(git -C ../controller rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          [[ -z "$(git -C ../controller status --porcelain --untracked-files=normal)" ]]
+          cmp -s scripts/verify-pretoolguard-entitlements.py ../controller/scripts/verify-pretoolguard-entitlements.py
+          /bin/bash ../controller/scripts/maat/recovery-supervisor-v164.sh verify
+          physical="$(mktemp -d "$RUNNER_TEMP/v164-physical-${GITHUB_RUN_ID}.XXXXXXXX")"
+          [[ "$(stat -f '%u:%Lp' "$physical")" == "$(id -u):700" ]]
+          [[ "$(/usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$physical")" == "$physical" ]]
+          printf 'TMPDIR=%s\n' "$physical" >> "$GITHUB_ENV"
+      - name: Restore signed custody before claiming
+        working-directory: source
+        run: |
+          set -euo pipefail
+          inputs="$(mktemp -d "$RUNNER_TEMP/v164-publication-inputs-${GITHUB_RUN_ID}.XXXXXXXX")"
+          printf 'PANTHEON_RELEASE_INPUTS=%s\n' "$inputs" >> "$GITHUB_ENV"
+          custody="$RUNNER_TEMP/v164-signed-custody-$GITHUB_RUN_ID"
+          /bin/bash ../controller/scripts/maat/recovery-supervisor-v164.sh run --agent codex-pantheon --register-executor --work "v164-publication-restore-$GITHUB_RUN_ID" --cpu-cores 1 --timeout 600 -- /bin/bash -euo pipefail -c 'cd "$1"; shift; exec python3 -B "$@"' fixture "$inputs" "$GITHUB_WORKSPACE/source/scripts/release-custody.py" restore "$custody" "$BUILD_VERSION" "$RELEASE_COMMIT" "$custody/payload-manifest.json"
+      - name: Reconcile old custody before any new mount
+        working-directory: source
+        run: |
+          set -euo pipefail
+          /bin/bash ../controller/scripts/maat/recovery-supervisor-v164.sh run --agent codex-pantheon --register-executor --work "v164-publication-reconcile-$GITHUB_RUN_ID" --cpu-cores 1 --timeout 300 -- /usr/bin/python3 -B -c '
+          import importlib.util, sys
+          from pathlib import Path
+          s = importlib.util.spec_from_file_location("claim", sys.argv[1])
+          m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
+          print("reconciled_cask", m.reconcile_evidence(Path(sys.argv[2]), Path(sys.argv[3])))
+          ' "$GITHUB_WORKSPACE/controller/scripts/claim-v164-publication-resume.py" "$RUNNER_TEMP/v164-signed-custody-$GITHUB_RUN_ID" "$RUNNER_TEMP/v164-prior-publication-$GITHUB_RUN_ID"
+      - name: Verify the physical guard mount before claiming
+        working-directory: source
+        run: |
+          set -euo pipefail
+          custody="$RUNNER_TEMP/v164-signed-custody-$GITHUB_RUN_ID"
+          /bin/bash ../controller/scripts/maat/recovery-supervisor-v164.sh run --agent codex-pantheon --register-executor --work "v164-publication-mount-proof-$GITHUB_RUN_ID" --cpu-cores 1 --timeout 300 -- /usr/bin/python3 -B -c '
+          import importlib.util, json, sys
+          from pathlib import Path
+          s = importlib.util.spec_from_file_location("publisher", "scripts/publish-release-assets.py")
+          m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
+          manifest = json.loads(Path(sys.argv[2]).read_text())
+          print("retained_attach", m.verify_guard_image(Path(sys.argv[1]), manifest))
+          ' "$PANTHEON_RELEASE_INPUTS/bin/SirsiPantheon-0.24.164-arm64-pretoolguard.dmg" "$custody/payload-manifest.json"
+      - name: Allocate private publication custody
+        run: |
+          set -euo pipefail
+          custody="$(mktemp -d "$RUNNER_TEMP/v164-publication-successor-${GITHUB_RUN_ID}.XXXXXXXX")"
+          [[ "$(stat -f '%u:%Lp' "$custody")" == "$(id -u):700" ]]
+          printf 'RECOVERY_CUSTODY=%s\n' "$custody" >> "$GITHUB_ENV"
+      - name: Claim one publication-only continuation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUNNER_NAME: ${{ runner.name }}
+        working-directory: controller
+        run: python3 -B scripts/claim-v164-publication-resume.py "$GITHUB_SHA" "$RUNNER_TEMP/v164-signed-custody-$GITHUB_RUN_ID" "$RUNNER_TEMP/v164-prior-publication-$GITHUB_RUN_ID" "$RECOVERY_CUSTODY"
+      - name: Publish only the existing draft
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          custody="$RUNNER_TEMP/v164-signed-custody-$GITHUB_RUN_ID"
+          /bin/bash ../controller/scripts/maat/recovery-supervisor-v164.sh run --agent codex-pantheon --register-executor --work "v164-publication-only-$GITHUB_RUN_ID" --cpu-cores 1 --timeout 600 -- python3 -B scripts/publish-release-assets.py --version "$BUILD_VERSION" --expected-commit "$RELEASE_COMMIT" --directory "$PANTHEON_RELEASE_INPUTS/bin" --app "$PANTHEON_RELEASE_INPUTS/Pantheon.app" --include-guard --guard-manifest "$custody/payload-manifest.json" --reservation "$RECOVERY_CUSTODY/reservation.json" --receipt "$RECOVERY_CUSTODY/publication.json"
+      - name: Retain claim, publication and mount evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v164-publication-successor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.RECOVERY_CUSTODY }}
+            ${{ runner.temp }}/pantheon-guard-attach-${{ github.run_id }}-${{ github.run_attempt }}-*.plist
+            ${{ runner.temp }}/pantheon-guard-attach-${{ github.run_id }}-${{ github.run_attempt }}-*.plist.stderr
+          if-no-files-found: warn
+  cask:
+    needs: publication_successor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: v164-publication-successor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: recovery-evidence
+      - name: Verify published DMG and retained cask
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t RECEIPTS < <(find recovery-evidence -name publication.json -type f)
+          mapfile -t CASKS < <(find recovery-evidence -name sirsi-pantheon.rb -type f)
+          [[ ${#RECEIPTS[@]} -eq 1 && ${#CASKS[@]} -eq 1 ]]
+          jq -e '.release_id == 456022306 and .tag == "v0.24.164" and .commit == "ca31d2a8984c02e54fa762de4c63333cd92bdf22" and .published == true and .status == "published_verified_set"' "${RECEIPTS[0]}" >/dev/null
+          EXPECTED="$(jq -er '.assets["SirsiPantheon-0.24.164-arm64.dmg"].sha256' "${RECEIPTS[0]}")"
+          [[ "$EXPECTED" == d6f7024226749aa35029aa5a5dd78dc68586a5a37fe69bab84dbb3354a43b4ca ]]
+          ASSET="$(gh api repos/SirsiMaster/sirsi-pantheon/releases/456022306 --jq '[.assets[] | select(.name == "SirsiPantheon-0.24.164-arm64.dmg") | .id] | if length == 1 then .[0] else error("asset identity ambiguous") end')"
+          gh api -H 'Accept: application/octet-stream' "repos/SirsiMaster/sirsi-pantheon/releases/assets/$ASSET" > SirsiPantheon-0.24.164-arm64.dmg
+          [[ "$(sha256sum SirsiPantheon-0.24.164-arm64.dmg | awk '{print $1}')" == "$EXPECTED" ]]
+          cp "${CASKS[0]}" sirsi-pantheon.rb
+          [[ "$(sha256sum sirsi-pantheon.rb | awk '{print $1}')" == 0e8c7665e0bd09443ddbf924d70cc84cb92ce4f23bdade30b387a5e8e1a063e2 ]]
+          grep -Fqx '  version "0.24.164"' sirsi-pantheon.rb
+          grep -Fqx "  sha256 \"$EXPECTED\"" sirsi-pantheon.rb
+      - name: Publish and verify canonical cask
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          BLOB="$(gh api repos/SirsiMaster/homebrew-tools/contents/Casks/sirsi-pantheon.rb --jq .sha)"
+          CONTENT="$(base64 -w0 sirsi-pantheon.rb)"
+          gh api repos/SirsiMaster/homebrew-tools/contents/Casks/sirsi-pantheon.rb -X PUT -f message='chore: bump cask to v0.24.164' -f content="$CONTENT" -f sha="$BLOB"
+          gh api repos/SirsiMaster/homebrew-tools/contents/Casks/sirsi-pantheon.rb --jq .content | base64 --decode > published-cask.rb
+          cmp -s sirsi-pantheon.rb published-cask.rb
