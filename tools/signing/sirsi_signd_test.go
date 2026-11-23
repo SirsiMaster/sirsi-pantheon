@@ -19,6 +19,10 @@ type signdRun struct {
 }
 
 func runSignd(t *testing.T, codesignFails int, failText string, setup func(home string), env ...string) signdRun {
+	return runSigndOptions(t, codesignFails, failText, setup, false, env...)
+}
+
+func runSigndOptions(t *testing.T, codesignFails int, failText string, setup func(home string), globDots bool, env ...string) signdRun {
 	t.Helper()
 	zsh, err := exec.LookPath("zsh")
 	if err != nil {
@@ -60,7 +64,11 @@ echo "signed (fixture)"
 	if setup != nil {
 		setup(home)
 	}
-	cmd := exec.Command(zsh, "-f", daemon)
+	args := []string{"-f"}
+	if globDots {
+		args = append(args, "-o", "globdots")
+	}
+	cmd := exec.Command(zsh, append(args, daemon)...)
 	cmd.Env = append([]string{"HOME=" + home, "PATH=" + bin + ":/usr/bin:/bin", "TMPDIR=" + root}, env...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -161,6 +169,49 @@ func TestSigndIgnoresHiddenStaging(t *testing.T) {
 	}
 	if strings.Contains(r.audit, id) {
 		t.Fatalf("hidden staging reached the audit log: %s", r.audit)
+	}
+}
+
+func TestSigndPreservesHiddenStagingWithGlobDots(t *testing.T) {
+	id := "aaaaaaaa-0000-4000-8000-00000000000a"
+	r := runSigndOptions(t, 0, "", func(home string) {
+		st := filepath.Join(home, "sirsi-sign", "inbox", "."+id)
+		if err := os.MkdirAll(st, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(st, "artifact.bin"), []byte("late"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}, true)
+	if _, err := os.Stat(filepath.Join(r.root, "sirsi-sign", "inbox", "."+id, "artifact.bin")); err != nil {
+		t.Fatalf("hidden staging was not preserved: %v", err)
+	}
+}
+
+func TestSigndPreservesExistingAttempt(t *testing.T) {
+	const job = "11111111-2222-4333-8444-555555555555"
+	for _, dir := range []string{"work", "outbox"} {
+		t.Run(dir, func(t *testing.T) {
+			r := runSignd(t, 0, "", func(home string) {
+				p := filepath.Join(home, "sirsi-sign", dir, job)
+				if err := os.MkdirAll(p, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(p, "prior"), []byte("custody"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			})
+			b, err := os.ReadFile(filepath.Join(r.root, "sirsi-sign", dir, job, "prior"))
+			if err != nil || string(b) != "custody" {
+				t.Fatalf("prior attempt changed: %q, %v", b, err)
+			}
+			if r.calls != 0 {
+				t.Fatalf("replayed uncertain job: %d signing calls", r.calls)
+			}
+			if _, err := os.Stat(filepath.Join(r.root, "sirsi-sign", "inbox", job, "tool")); err != nil {
+				t.Fatalf("incoming job lost: %v", err)
+			}
+		})
 	}
 }
 
