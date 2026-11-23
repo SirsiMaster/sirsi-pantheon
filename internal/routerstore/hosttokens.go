@@ -146,7 +146,7 @@ func (e *MintError) Error() string {
 // Unwrap exposes every outcome sentinel to errors.Is.
 func (e *MintError) Unwrap() []error { return e.Outcomes }
 
-// mintFaults lets tests inject failures at the real side-effect points; the zero value is real behaviour.
+// mintFaults lets tests inject failures at the real side-effect points; the zero value is real behavior.
 type mintFaults struct {
 	afterInsert func() error
 	commit      func(*txHandle) error
