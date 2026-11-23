@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Failed scoped mints report a structured, nonsecret outcome (synthetic values only).
@@ -23,6 +24,15 @@ func TestMintScopedTxOutcomes(t *testing.T) {
 			[]error{ErrMintRollbackFailed}, []error{ErrMintRolledBack}, 0},
 		{"commit uncertain", mintFaults{commit: func(tx *txHandle) error { _ = tx.Rollback(); return errors.New("net " + tok) }}, []error{ErrMintCommitUncertain}, []error{ErrMintRolledBack, ErrMintPanic}, 0},
 		{"panic", mintFaults{afterInsert: func() error { panic("secret " + tok) }}, []error{ErrMintPanic, ErrMintRolledBack}, []error{ErrMintCommitUncertain}, 0},
+		// commit really commits, then panics: the token IS live, so never "rolled back".
+		{"panic after real commit", mintFaults{commit: func(tx *txHandle) error { _ = tx.Commit(); panic("secret " + tok) }},
+			[]error{ErrMintPanic, ErrMintCommitUncertain}, []error{ErrMintRolledBack}, 1},
+		// commit panics before committing: still uncertain from the caller's view, and the tx must be released.
+		{"panic before commit", mintFaults{commit: func(*txHandle) error { panic("secret " + tok) }},
+			[]error{ErrMintPanic, ErrMintCommitUncertain}, []error{ErrMintRolledBack}, 0},
+		// ErrTxDone from Rollback is not "rolled back".
+		{"rollback reports tx done", mintFaults{afterInsert: func() error { return errors.New("boom") }, rollback: func(tx *txHandle) error { _ = tx.Rollback(); return tx.Rollback() }},
+			[]error{ErrMintRollbackFailed}, []error{ErrMintRolledBack}, 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -48,6 +58,17 @@ func TestMintScopedTxOutcomes(t *testing.T) {
 			var n int
 			if e := s.db.QueryRow(`SELECT count(*) FROM host_tokens`).Scan(&n); e != nil || n != c.rowCount {
 				t.Errorf("host_tokens rows = %d (%v), want %d", n, e, c.rowCount)
+			}
+			// the connection/transaction must have been released: another mint succeeds (bounded wait, not a hang)
+			done := make(chan error, 1)
+			go func() { _, _, e := s.MintScopedHostToken("h2", "l2", []string{"b"}); done <- e }()
+			select {
+			case e := <-done:
+				if e != nil {
+					t.Errorf("store unusable after failed mint: %v", e)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("store wedged after failed mint: transaction/connection not released")
 			}
 		})
 	}

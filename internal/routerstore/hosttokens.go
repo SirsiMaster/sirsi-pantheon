@@ -161,27 +161,33 @@ func (s *SQLiteStore) mintScopedTx(id, tok, host, label, now string, list []stri
 	redact := func(m string) string {
 		return strings.NewReplacer(tok, "[redacted]", hashToken(tok), "[redacted]").Replace(m)
 	}
-	rollback := func() error {
-		e := tx.Rollback()
-		if f.rollback != nil {
-			e = f.rollback(tx)
-		}
-		if e != nil && !errors.Is(e, sql.ErrTxDone) {
-			return e
-		}
-		return nil
-	}
-	// outcome rolls back and reports; base is nil for a plain failure (reported as rolled back / rollback failed).
+	// Once commitStarted is set the transaction's fate is unknowable from here (the commit may have applied, then
+	// failed or panicked), so no outcome after that point may ever say "rolled back". database/sql ends a Tx on
+	// Commit even when it errors (connection released), and a failed statement does NOT roll back by itself, so
+	// the explicit Rollback below is what releases the connection on the pre-commit paths.
+	commitStarted := false
 	outcome := func(base error, cause string) *MintError {
 		me := &MintError{AttemptID: id, Cause: redact(cause)}
 		if base != nil {
 			me.Outcomes = append(me.Outcomes, base)
 		}
-		if rbErr := rollback(); rbErr != nil {
+		rbErr := tx.Rollback()
+		if f.rollback != nil {
+			rbErr = f.rollback(tx)
+		}
+		switch {
+		case commitStarted:
+			me.Outcomes = append(me.Outcomes, ErrMintCommitUncertain)
+			// ErrTxDone is the expected answer after a Commit; anything else is a real rollback failure.
+			if rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
+				me.Outcomes = append(me.Outcomes, ErrMintRollbackFailed)
+				me.Cause += "; rollback: " + redact(rbErr.Error())
+			}
+		case rbErr == nil: // "rolled back" only when Rollback itself returned nil; ErrTxDone is not that
+			me.Outcomes = append(me.Outcomes, ErrMintRolledBack)
+		default:
 			me.Outcomes = append(me.Outcomes, ErrMintRollbackFailed)
 			me.Cause += "; rollback: " + redact(rbErr.Error())
-		} else {
-			me.Outcomes = append(me.Outcomes, ErrMintRolledBack)
 		}
 		return me
 	}
@@ -210,9 +216,9 @@ func (s *SQLiteStore) mintScopedTx(id, tok, host, label, now string, list []stri
 	if f.commit != nil {
 		commit = func() error { return f.commit(tx) }
 	}
+	commitStarted = true
 	if e := commit(); e != nil {
-		// no rollback: after a failed Commit the outcome is unknown, not "not applied"
-		return &MintError{AttemptID: id, Outcomes: []error{ErrMintCommitUncertain}, Cause: redact(e.Error())}
+		return outcome(nil, e.Error()) // commit uncertain; also releases the tx if a seam left it open
 	}
 	return nil
 }
