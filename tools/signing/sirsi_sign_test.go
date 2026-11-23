@@ -58,6 +58,7 @@ for required in ConnectTimeout=10 BatchMode=yes StrictHostKeyChecking=yes Passwo
 done
 [ "$SIGN_FIXTURE_MODE" != deny ] || exit 255
 case "$op:$*" in ssh:*"mv ~/sirsi-sign/inbox/"*) [ "$SIGN_FIXTURE_MODE" != ambiguous-enqueue ] || exit 255;; esac
+case "$op:$*" in ssh:*"launchctl kickstart"*) [ "$SIGN_FIXTURE_MODE" != wake-fail ] || exit 255;; esac
 # rename-*: the first host's mv reports failure while the hidden staging still looks present
 case "$SIGN_FIXTURE_MODE:$op:$*" in rename-*:ssh:*"first@signer.invalid mv ~/sirsi-sign/inbox/"*) exit 255;; esac
 # the first host's upload fails or hangs; the second host is healthy
@@ -163,6 +164,23 @@ func TestSignerAmbiguousEnqueueRetainsExactIntent(t *testing.T) {
 	}
 	if strings.Contains(log, "rm -rf ~/sirsi-sign/outbox/") {
 		t.Fatalf("uncertain outcome was deleted: %s", log)
+	}
+}
+
+func TestSignerObservesOriginalJobWhenWakeIsUncertain(t *testing.T) {
+	source, err := os.ReadFile("sirsi-sign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, log, _, runErr := signingFixture(t, source, false, "wake-fail")
+	if runErr != nil {
+		t.Fatalf("original job was not observed: %v %s", runErr, out)
+	}
+	if !strings.Contains(out, "wake uncertain") || strings.Count(log, "launchctl kickstart") != 1 {
+		t.Fatalf("wake outcome not retained exactly once: %s\n%s", out, log)
+	}
+	if strings.Count(log, "mv ~/sirsi-sign/inbox/.") != 1 {
+		t.Fatalf("job was enqueued more than once: %s", log)
 	}
 }
 

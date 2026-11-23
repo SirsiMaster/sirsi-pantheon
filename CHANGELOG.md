@@ -12,6 +12,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 - Signing service preserves hidden transfer staging and unknown inbox directories, and preserves an existing work or output directory instead of replaying a job with an uncertain prior outcome.
 
+- Signing client wakes the enrolled service after enqueue and observes the same job if the wake result is uncertain.
+
 - **Router lane status: a session with a stale heartbeat is no longer reported as unregistered.**
   - **What was wrong.** `PingLane` reported "a session that is not registered" whenever the deferred-to session's heartbeat was older than 5 minutes, and the quarantine and no-worker texts made the same categorical absence claim. Peers repeated it as "that agent has no live session", even though the registry view may be scoped or incomplete.
   - **What changed.** Details now state only what the view shows: a registered attended session with a stale heartbeat is named with its thread, host and last heartbeat, and "may still be open and may read the inbox when it next runs"; with no such session visible the text says "no registered session visible in this view". Verdicts, `Workable`, scope controls and dispatch behaviour are unchanged. Suspended and closed sessions are still not counted.
