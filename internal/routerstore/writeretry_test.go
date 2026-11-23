@@ -82,6 +82,7 @@ func TestRetryWrite_PassesThroughNonContention(t *testing.T) {
 // still fails — bounded, wrapping the driver error, and naming contention so the
 // next operator does not lose an hour to chmod and rebuilds.
 func TestRetryWrite_GivesUpWithADiagnosticError(t *testing.T) {
+	t.Parallel() // zero-value store, no database, no package state: only waits out the budget
 	s := &SQLiteStore{}
 	underlying := readonlyErr()
 

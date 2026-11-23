@@ -46,20 +46,38 @@ func contend(t *testing.T, a, b *SQLiteStore, id string, rng *rand.Rand) int {
 // files, the split-brain G3 names) and must see both "win", proving the
 // counter can fail.
 func TestClaimExactlyOnceAcrossManyRounds(t *testing.T) {
-	const rounds = 1000
+	// Own stores, own rng, no package state: safe to overlap the other parallel
+	// tests (it runs after every serial test has finished). Not on Postgres,
+	// where all tests share one schema.
+	if pgTestDSN() == "" {
+		t.Parallel()
+	}
+	// 1,000 rounds in total, as ever: four shards of 250, each on its own shared
+	// ledger (both claimers of a round still race on ONE store). A claim scans the
+	// agent's whole task set, so the cost of a round grows with the ledger; four
+	// smaller ledgers run in parallel instead of one 1,000-row ledger in series.
+	const shards, perShard = 4, 250
+	for shard := 0; shard < shards; shard++ {
+		t.Run(fmt.Sprintf("shard%d", shard), func(t *testing.T) {
+			if pgTestDSN() == "" {
+				t.Parallel()
+			}
+			rng := rand.New(rand.NewSource(int64(62 + shard)))
+			shared := newTestStore(t)
+			for i := 0; i < perShard; i++ {
+				id := fmt.Sprintf("r%d-%04d", shard, i)
+				if err := shared.AddTask(Task{Agent: "codex-home", TaskID: id, Subject: id}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for i := 0; i < perShard; i++ {
+				if w := contend(t, shared, shared, fmt.Sprintf("r%d-%04d", shard, i), rng); w != 1 {
+					t.Fatalf("round %d/%d: %d winners on one shared ledger, want exactly 1", shard, i, w)
+				}
+			}
+		})
+	}
 	rng := rand.New(rand.NewSource(62))
-	shared := newTestStore(t)
-	for i := 0; i < rounds; i++ {
-		id := fmt.Sprintf("r%04d", i)
-		if err := shared.AddTask(Task{Agent: "codex-home", TaskID: id, Subject: id}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for i := 0; i < rounds; i++ {
-		if w := contend(t, shared, shared, fmt.Sprintf("r%04d", i), rng); w != 1 {
-			t.Fatalf("round %d: %d winners on one shared ledger, want exactly 1", i, w)
-		}
-	}
 
 	// Two explicit SQLite files, whatever driver the suite runs under: on the
 	// Postgres leg every newTestStore shares one schema, which would make this
@@ -84,7 +102,7 @@ func TestClaimExactlyOnceAcrossManyRounds(t *testing.T) {
 
 func openSplitStore(t *testing.T, name string) *SQLiteStore {
 	t.Helper()
-	s, err := OpenPath(filepath.Join(t.TempDir(), name))
+	s, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), name)))
 	if err != nil {
 		t.Fatalf("open %s: %v", name, err)
 	}
