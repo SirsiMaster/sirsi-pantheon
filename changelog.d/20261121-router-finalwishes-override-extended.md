@@ -1,1 +1,0 @@
-- **Router: FinalWishes recipient-limit override extended to 2026-11-28T05:50Z** (owner decision 2026-11-21): same four lanes, both ends in the set, `SendGuarded` only; delete the block in `internal/routerstore/facade.go` after 2026-11-28.

@@ -1,1 +1,0 @@
-- Stabilize the trusted-spool directory test by canceling and joining its request before removing the temporary fixture; the directory permission assertion remains unchanged.
