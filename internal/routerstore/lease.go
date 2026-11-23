@@ -82,6 +82,9 @@ var (
 	// ErrLeaseInvalid means the token is missing, expired, or mismatched —
 	// including an expired worker trying to complete newer-leased work.
 	ErrLeaseInvalid = errors.New("routerstore: lease token invalid, expired, or superseded")
+	// ErrLeaseHeld means another worker holds an unexpired lease on the task, so a
+	// lane-side retirement (WithdrawTask) is refused. Wait for expiry or release.
+	ErrLeaseHeld = errors.New("routerstore: task is held under a live lease")
 	// ErrTerminal means the item is in a terminal state; terminal is terminal.
 	ErrTerminal = errors.New("routerstore: item is in a terminal state")
 	// ErrBudgetExceeded means a §2b budget (concurrent claims, total active)

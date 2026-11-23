@@ -420,12 +420,21 @@ func (s *SQLiteStore) WithdrawTask(agent, taskID, supersededBy, actor, reason st
 		return err
 	}
 	// Guarded on the status we read, so a concurrent completion or cancel wins.
+	// The live-lease refusal lives in the predicate, not in a prior read: a worker
+	// can claim between our read and this write. The API does not say who the
+	// caller is relative to the lease holder, so ANY unexpired lease refuses;
+	// an expired or absent lease still withdraws.
+	nowS := now.Format(time.RFC3339)
 	res, err := s.exec(`UPDATE tasks SET status='withdrawn',result_ref=?,failure_reason=?,timeline=?,lease_token='',lease_expires='',claimed_by='',thread_id='',updated=?
-		WHERE agent=? AND task_id=? AND status=?;`, "superseded:"+supersededBy, reason, string(timeline), now.Format(time.RFC3339), agent, taskID, t.Status)
+		WHERE agent=? AND task_id=? AND status=? AND (lease_token='' OR lease_expires<=?);`, "superseded:"+supersededBy, reason, string(timeline), nowS, agent, taskID, t.Status, nowS)
 	if err != nil {
 		return fmt.Errorf("routerstore: withdraw %s/%s: %w", agent, taskID, err)
 	}
 	if n, _ := res.RowsAffected(); n != 1 {
+		var holder, expires string
+		if s.db.QueryRow(`SELECT claimed_by,lease_expires FROM tasks WHERE agent=? AND task_id=? AND lease_token<>'' AND lease_expires>?;`, agent, taskID, nowS).Scan(&holder, &expires) == nil {
+			return fmt.Errorf("%w: %s/%s is leased to %q until %s; withdraw refused while a worker holds it", ErrLeaseHeld, agent, taskID, holder, expires)
+		}
 		return fmt.Errorf("%w: %s/%s changed while withdrawing; retry", ErrNotFound, agent, taskID)
 	}
 	return nil

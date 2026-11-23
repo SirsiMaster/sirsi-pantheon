@@ -54,6 +54,7 @@ var sentinelErrors = map[string]error{
 	"ErrNoClaimableTask":      ErrNoClaimableTask,
 	"ErrLeaseInvalid":         ErrLeaseInvalid,
 	"ErrTerminal":             ErrTerminal,
+	"ErrLeaseHeld":            ErrLeaseHeld,
 	"ErrBudgetExceeded":       ErrBudgetExceeded,
 	"ErrReasonRequired":       ErrReasonRequired,
 	"ErrIncompleteEvidence":   ErrIncompleteEvidence,

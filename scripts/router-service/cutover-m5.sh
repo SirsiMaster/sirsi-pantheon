@@ -24,7 +24,7 @@
 set -euo pipefail
 PROJECT=${PROJECT:-sirsi-nexus-live}; REGION=${REGION:-us-central1}; INSTANCE=${INSTANCE:-sirsi-router}; CONN="$PROJECT:$REGION:$INSTANCE"
 URL=${URL:-https://sirsi-router-6kdf4or4qq-uc.a.run.app}
-M5=${M5:-thekryptodragon@192.168.1.155}; M5_HOST=${M5_HOST:-Mac}; M1_HOST=${M1_HOST:-$(hostname -s)}
+M5=${M5:?set M5=<user>@<host> explicitly (current Tailscale/LAN address; the old hardcoded LAN default went stale — see scripts/maat/fabric-endpoints.py PEERS)}; M5_HOST=${M5_HOST:-Mac}; M1_HOST=${M1_HOST:-$(hostname -s)}
 G="gcloud --project=$PROJECT --quiet"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 WORK=${WORK:-$HOME/.sirsi/cutover}; mkdir -p "$WORK"
