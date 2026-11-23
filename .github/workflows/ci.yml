@@ -177,6 +177,10 @@ jobs:
           python3 -B -m unittest discover -s scripts -p 'test_artifact_modes.py' -v
           python3 -B -m unittest discover -s scripts -p 'test_package_info_contract.py' -v
 
+      - name: v164 publication custody fixtures
+        if: ${{ (github.event_name == 'pull_request' && github.head_ref == 'codex/v164-guard-resume-20261123') || (github.event_name == 'push' && contains(github.event.head_commit.message, 'codex/v164-guard-resume-20261123')) }}
+        run: python3 -B -m unittest scripts.test_claim_v164_publication_resume scripts.test_claim_v164_metadata_resume scripts.test_claim_v164_resume scripts.test_compare_pretoolguard_macho scripts.test_release_publication_guard
+
       - name: Run tests
         shell: bash
         run: bash scripts/ci-private-sdk.sh go test -v -race -short -timeout 20m -coverprofile=coverage.out ./...
