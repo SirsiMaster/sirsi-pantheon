@@ -478,6 +478,7 @@ func TestSpoolPartialResponseBodyCloseRetainsResponseFile(t *testing.T) {
 	spool := t.TempDir()
 	tr := newSpoolTransport(spool, "lane-partial")
 	tr.wait = time.Second
+	relay := Relay{Spool: spool}
 	result := make(chan error, 1)
 	go func() {
 		requestDir := filepath.Join(spool, "lane-partial", "req")
@@ -495,12 +496,10 @@ func TestSpoolPartialResponseBodyCloseRetainsResponseFile(t *testing.T) {
 					result <- err
 					return
 				}
-				response, err := json.Marshal(spoolResponse{Status: http.StatusOK, Body: []byte("partial-readable")})
-				if err != nil {
-					result <- err
-					return
-				}
-				if err := os.WriteFile(filepath.Join(spool, "lane-partial", "res", id+".json"), response, 0600); err != nil {
+				// This is a valid envelope with a partially consumed BODY, not a
+				// torn envelope. Publish atomically like the real relay; malformed
+				// envelope refusal is exercised by the preceding separate control.
+				if err := relay.publish("lane-partial", id, spoolResponse{Status: http.StatusOK, Body: []byte("partial-readable")}); err != nil {
 					result <- err
 					return
 				}
