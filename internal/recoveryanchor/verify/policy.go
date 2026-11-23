@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"slices"
@@ -131,8 +132,8 @@ func ParseGrants(src []byte) ([]Grant, error) {
 	return out, nil
 }
 
-// ParseRestrictions reads authorized_keys bytes (concatenated by the caller
-// if several accounts matter) and returns the fingerprints whose entry
+// ParseRestrictions reads ONE authorized_keys source (never concatenate
+// several: pass each to BuildPolicy separately) and returns the fingerprints whose entry
 // carries any option (from=, command=, ...). authorized_keys is
 // account-writable: it can only NARROW (ADR-078 §1). A key that appears
 // twice counts as restricted if either entry has options. An unparseable
@@ -177,20 +178,38 @@ type Policy struct {
 // synchronous pre-dispatch check must both call it (ADR-078 §1a). A key in
 // grantsSrc whose authorized_keys entry carries options is excluded unless
 // its grant line says override=true.
-func BuildPolicy(generation uint64, grantsSrc, restrictionsSrc []byte) (*Policy, error) {
+//
+// Each restrictions source (one authorized_keys file per account) is parsed
+// independently and the restricted sets are unioned. Sources are never
+// concatenated: an unterminated last line in one source must not be able to
+// swallow the first line of the next.
+func BuildPolicy(generation uint64, grantsSrc []byte, restrictionsSrcs ...[]byte) (*Policy, error) {
 	grants, err := ParseGrants(grantsSrc)
 	if err != nil {
 		return nil, err
 	}
-	restricted, err := ParseRestrictions(restrictionsSrc)
-	if err != nil {
-		return nil, err
+	restricted := map[string]bool{}
+	rh := sha256.New()
+	for _, src := range restrictionsSrcs {
+		r, err := ParseRestrictions(src)
+		if err != nil {
+			return nil, err
+		}
+		for fp := range r {
+			restricted[fp] = true
+		}
+		// length-prefixed so source boundaries are part of the hash
+		var n [8]byte
+		binary.BigEndian.PutUint64(n[:], uint64(len(src)))
+		rh.Write(n[:])
+		rh.Write(src)
 	}
 	p := &Policy{
 		Generation: generation,
-		Hashes:     HashPair{Grants: sha256.Sum256(grantsSrc), Restrictions: sha256.Sum256(restrictionsSrc)},
+		Hashes:     HashPair{Grants: sha256.Sum256(grantsSrc)},
 		byFP:       make(map[string]Grant, len(grants)),
 	}
+	copy(p.Hashes.Restrictions[:], rh.Sum(nil))
 	for _, g := range grants {
 		if restricted[g.Fingerprint] && !g.Override {
 			continue

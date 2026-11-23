@@ -131,6 +131,45 @@ func TestPolicyNarrowingFromAuthorizedKeys(t *testing.T) {
 	}
 }
 
+// An unterminated first authorized_keys source must not absorb the second
+// account's restricted line into its comment (reviewer finding on #1404).
+func TestPolicyMultiSourceUnterminatedFirst(t *testing.T) {
+	restricted := newEd25519(t)
+	free := newEd25519(t)
+	line := func(k testKey, opts string) string {
+		return opts + string(ssh.MarshalAuthorizedKey(k.signer.PublicKey()))
+	}
+	first := strings.TrimSuffix(line(free, ""), "\n") + " acct-a" // comment, no terminal newline
+	second := line(restricted, `from="10.0.0.5",command="/bin/true" `)
+	grants := []byte(grantLine(restricted, 501, "restart-broker", false) + grantLine(free, 501, "restart-broker", false))
+
+	// Negative control: the old approach (caller concatenates) loses the restriction.
+	old, err := BuildPolicy(1, grants, append([]byte(first), second...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := old.Lookup(restricted.fp); !ok {
+		t.Fatal("negative control: concatenation should have absorbed the restricted line (bug no longer reproduces)")
+	}
+
+	// Fixed API: independent sources, restrictions unioned.
+	p, err := BuildPolicy(1, grants, []byte(first), []byte(second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := p.Lookup(restricted.fp); ok {
+		t.Fatal("restricted key in second source must be excluded")
+	}
+	if _, ok := p.Lookup(free.fp); !ok {
+		t.Fatal("unrestricted key must remain")
+	}
+	// Source boundaries are part of the hash.
+	p2, _ := BuildPolicy(1, grants, append([]byte(first), second...))
+	if p.Hashes == p2.Hashes {
+		t.Fatal("split vs concatenated sources must hash differently")
+	}
+}
+
 func TestPolicyHashIsContentNotMetadata(t *testing.T) {
 	a := fakeFP('A')
 	p1, _ := BuildPolicy(1, []byte(a+" uid=501 verbs=restart-broker\n"), nil)
