@@ -1,0 +1,1 @@
+Router scoped host-token mint: a failed `MintScopedHostToken` now returns a `*MintError` carrying the nonsecret attempt id (the token id) and errors.Is-able outcomes (`ErrMintRolledBack`, `ErrMintRollbackFailed`, `ErrMintCommitUncertain`, `ErrMintPanic`) instead of ignoring rollback errors and returning a bare commit failure. The error text never contains the token or its hash.

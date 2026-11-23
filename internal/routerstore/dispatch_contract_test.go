@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -26,12 +27,39 @@ func openTestStore(t *testing.T) *SQLiteStore {
 func seedOpen(t *testing.T, s *SQLiteStore, agent string, n int) []string {
 	t.Helper()
 	ids := make([]string, 0, n)
-	for i := 0; i < n; i++ {
-		id := fmt.Sprintf("item-%03d", i)
-		if err := s.Put(Item{ID: id, From: "seed", To: agent, Title: fmt.Sprintf("t%d", i), Status: "open"}); err != nil {
-			t.Fatal(err)
+	// Same row Put would write (every column Put binds, same status default),
+	// inserted in one transaction with multi-row statements: n Put calls cost n
+	// prepares (trigger compilation included) and n commits, and Put itself is
+	// covered by its own tests. Fixture ids are unique, so no upsert clause.
+	const chunk = 50
+	err := s.withTx(func(tx *txHandle) error {
+		ids = ids[:0] // withTx may re-run the body
+		for lo := 0; lo < n; lo += chunk {
+			hi := min(lo+chunk, n)
+			var sb strings.Builder
+			var args []any
+			sb.WriteString(`INSERT INTO items (` + itemCols + `) VALUES `)
+			for i := lo; i < hi; i++ {
+				if i > lo {
+					sb.WriteString(",")
+				}
+				sb.WriteString(`(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+				id := fmt.Sprintf("item-%03d", i)
+				it := Item{ID: id, From: "seed", To: agent, Title: fmt.Sprintf("t%d", i), Status: "open"}
+				args = append(args, it.ID, it.From, it.To, it.Title, it.Type, it.Status, it.Opened, it.Closed,
+					it.Instructions, it.Result,
+					it.WakeStatus, it.WakeAttemptedAt, it.WakeAdapter, it.WakeError, it.BlockedBy,
+					it.AckedAt)
+				ids = append(ids, id)
+			}
+			if _, err := tx.Exec(sb.String(), args...); err != nil {
+				return err
+			}
 		}
-		ids = append(ids, id)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	return ids
 }

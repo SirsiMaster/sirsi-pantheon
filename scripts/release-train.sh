@@ -77,9 +77,10 @@ export PATH=/opt/homebrew/bin:$PATH
 brew update -q >/dev/null 2>&1; brew upgrade --cask sirsimaster/tools/sirsi-pantheon >/dev/null 2>&1
 sirsi version | grep -q "v$VERSION" || die "M1 not on v$VERSION"
 # M5 is best-effort, never a gate (owner rule): it may be asleep or off the network. Try the
-# hostname, then its LAN address; report what happened instead of claiming it, and exit 0.
+# hostname, then an explicit M5_FALLBACK if set; report what happened instead of claiming it, and exit 0.
 M5_STATUS="unreachable"
-for h in "$M5_HOST" "${M5_FALLBACK:-thekryptodragon@192.168.1.155}"; do
+for h in "$M5_HOST" "${M5_FALLBACK:-}"; do  # no hardcoded LAN address (it went stale); set M5_FALLBACK=user@host (e.g. the Tailscale address) to add one
+  [ -n "$h" ] || continue
   out="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$h" "export PATH=/opt/homebrew/bin:\$HOME/.local/bin:\$PATH; brew update -q >/dev/null 2>&1; brew upgrade --cask sirsimaster/tools/sirsi-pantheon >/dev/null 2>&1; sirsi version | head -1" 2>/dev/null)" && {
     if printf '%s' "$out" | grep -q "v$VERSION"; then M5_STATUS="installed v$VERSION via $h; loaded-image adoption remains unverified"; else M5_STATUS="reached via $h but NOT on v$VERSION (brew has not caught up)"; fi
     break; }

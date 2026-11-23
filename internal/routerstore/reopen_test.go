@@ -8,7 +8,7 @@ import (
 )
 
 func TestReopenItem(t *testing.T) {
-	s, err := OpenPath(filepath.Join(t.TempDir(), "router.db"))
+	s, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "router.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
