@@ -58,7 +58,6 @@ func TestRetryWriteDoesNotRetryNonContention(t *testing.T) {
 // "readonly" reasonably read it as a permissions fault and went looking at file
 // modes; the store is writable and the fault is lock contention under WAL.
 func TestRetryWriteExhaustionNamesContentionNotPermissions(t *testing.T) {
-	t.Parallel() // zero-value store, no database, no package state: only waits out the budget
 	err := (&SQLiteStore{}).retryWrite(func() error {
 		return errors.New("attempt to write a readonly database (8)")
 	})
