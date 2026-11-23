@@ -11,6 +11,7 @@ expect_status() {
   if compgen -G "$root/pantheon-sdk-auth.*" >/dev/null; then echo 'credential residue' >&2; exit 1; fi
 }
 export RUNNER_TEMP="$root" APOLLO_CI_INFERENCE_READ_KEY=fixture-not-a-key APOLLO_CI_MERCURY_READ_KEY=fixture-not-a-key
+expect_status 0 env PANTHEON_CI_PRIVATE_CACHE_ONLY=1 GITHUB_ACTIONS=false bash "$wrapper" bash -c 'test "$GOPROXY" = https://proxy.golang.org && test "$GIT_ALLOW_PROTOCOL" = file && test "$GONOPROXY" = "$GOPRIVATE" && test -z "${APOLLO_CI_INFERENCE_READ_KEY:-}${APOLLO_CI_MERCURY_READ_KEY:-}"'
 expect_status 77 env GITHUB_ACTIONS=true GITHUB_EVENT_NAME=pull_request GITHUB_REPOSITORY=SirsiMaster/sirsi-pantheon CI_HEAD_REPO=stranger/fork CI_AUTHOR_ASSOCIATION=OWNER bash "$wrapper" true
 expect_status 77 env GITHUB_ACTIONS=true GITHUB_EVENT_NAME=pull_request GITHUB_REPOSITORY=SirsiMaster/sirsi-pantheon CI_HEAD_REPO=SirsiMaster/sirsi-pantheon CI_AUTHOR_ASSOCIATION=NONE bash "$wrapper" true
 expect_status 77 env GITHUB_ACTIONS=true GITHUB_EVENT_NAME=pull_request_target bash "$wrapper" true

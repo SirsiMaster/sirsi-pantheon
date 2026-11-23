@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare two signature-stripped thin arm64 executables, failing closed.
 
-Only the observed 16-KiB rounding of __LINKEDIT.vmsize may differ. All other
+Only 16-KiB rounding up or down of __LINKEDIT.vmsize may differ. All other
 bytes, including every code and data byte, must be identical. This is not a
 general Mach-O semantic equivalence checker.
 """
@@ -88,7 +88,9 @@ def compare(left, right):
     if left_offset != right_offset or len(left) != len(right):
         raise ValueError('layout differs')
     if left_size != right_size:
-        if left_size > (1 << 64) - PAGE or right_size != ((left_size + PAGE - 1) // PAGE) * PAGE:
+        lower = (left_size // PAGE) * PAGE
+        upper = ((left_size + PAGE - 1) // PAGE) * PAGE
+        if left_size > (1 << 64) - PAGE or right_size not in (lower, upper):
             raise ValueError('linkedit size is not the allowed page rounding')
     if left[:left_offset] != right[:right_offset] or left[left_offset + 8:] != right[right_offset + 8:]:
         raise ValueError('non-linkedit-size bytes differ')
