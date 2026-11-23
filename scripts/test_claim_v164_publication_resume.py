@@ -23,11 +23,22 @@ class PublicationClaimTests(unittest.TestCase):
         self.posts = 0
 
     def api(self, endpoint, *args):
+        if claim.WORKFLOW + '/runs?' in endpoint:
+            return {'total_count': 2, 'workflow_runs': [
+                {'id': 45291181859, 'head_sha': 'f630401e1b3a1cb1ed679422f7dcf5b332edb4be',
+                 'run_attempt': 1, 'status': 'completed', 'conclusion': 'failure'},
+                {'id': 123, 'head_sha': self.controller, 'run_attempt': 1, 'status': 'in_progress', 'conclusion': None}]}
+        if endpoint.endswith('/actions/runs/45291181859/jobs?per_page=100'):
+            return {'jobs': [{'id': 138100055662, 'conclusion': 'failure', 'steps': [
+                {'name': 'Claim one publication-only continuation', 'conclusion': 'failure'},
+                {'name': 'Publish only the existing draft', 'conclusion': 'skipped'}]}]}
+        if '/git/matching-refs/heads/pantheon-recovery/v0.24.164-456022306' in endpoint:
+            return [{'ref': 'refs/heads/pantheon-recovery/v0.24.164-456022306-after-45270278775'},
+                    {'ref': 'refs/heads/pantheon-recovery/v0.24.164-456022306-after-45278099354'}]
         histories = {
             'release.yml/runs?': (45270278775, claim.base.COMMIT),
             'recover-v164-after-guard.yml/runs?': (45278099354, '371057ee20cbb5f2f80a8bef43766a4986f741c0'),
             'recover-v164-after-metadata.yml/runs?': (45284797296, '3fe7dde3526a1e905f7b5aefd00af541a37a1941'),
-            claim.WORKFLOW + '/runs?': (123, self.controller),
         }
         for key, (run, sha) in histories.items():
             if key in endpoint:
@@ -41,7 +52,7 @@ class PublicationClaimTests(unittest.TestCase):
                 {'name': 'Publish only the existing draft', 'conclusion': 'failure'}]}]}
         if endpoint.endswith('/actions/artifacts/14872220529'):
             return {'id': 14872220529, 'name': 'v164-metadata-custody-45284797296', 'expired': False,
-                    'digest': 'sha256:790a270ed85bac61524ec3ff8fedd2b92c183f2db5e2b7bf8c5c8b31be2e0bd3', 'workflow_run': {'id': 45284797296}}
+                    'digest': 'sha256:790a270ed85bac61524ec3ff8fedd2b92c183f2db6e2b7bf8c5c8b31be2e0bd3', 'workflow_run': {'id': 45284797296}}
         if endpoint.endswith('/actions/artifacts/14872310501'):
             return {'id': 14872310501, 'name': 'v164-metadata-successor-45284797296-1', 'expired': False,
                     'digest': 'sha256:23ea294fac9c404903ee47c15ed7eacebbef334fc01de5c7f97915ef4a499f14', 'workflow_run': {'id': 45284797296}}
@@ -81,6 +92,17 @@ class PublicationClaimTests(unittest.TestCase):
             data = self.api(endpoint, *args)
             if endpoint.endswith('/releases/456022306'):
                 data['assets'] = [{'name': 'already-uploaded'}]
+            return data
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(RuntimeError):
+                self.run_claim(directory, changed)
+            self.assertEqual(self.posts, 0)
+
+    def test_changed_custody_digest_refuses_before_claim(self):
+        def changed(endpoint, *args):
+            data = self.api(endpoint, *args)
+            if endpoint.endswith('/actions/artifacts/14872220529'):
+                data['digest'] = 'sha256:' + '0' * 64
             return data
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(RuntimeError):
