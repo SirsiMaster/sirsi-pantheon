@@ -168,7 +168,7 @@ func TestRecipientStalledFollowsRealClaimLifecycle(t *testing.T) {
 	if _, err = s.exec(`UPDATE tasks SET updated=? WHERE agent='lane' AND task_id='started-000';`, t0.Format(time.RFC3339)); err != nil {
 		t.Fatal(err)
 	}
-	if got := count(t0.Add(RecipientStallAfter + time.Hour)); got != 1 {
-		t.Fatalf("a reset task reads as never started (known blind spot): want 1, got %d", got)
+	if got := count(t0.Add(RecipientStallAfter + time.Hour)); got != 2 {
+		t.Fatalf("a reset task keeps its first_claimed_at witness (v28), so both started tasks still count: want 2, got %d", got)
 	}
 }

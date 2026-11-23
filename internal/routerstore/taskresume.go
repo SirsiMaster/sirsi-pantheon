@@ -240,7 +240,7 @@ func (s *SQLiteStore) ResumeTaskClaim(ctx context.Context, req TaskResumeRequest
 			return err
 		}
 		expires := now.Add(time.Duration(req.TTLSeconds) * time.Second)
-		res, err := tx.ExecContext(ctx, `UPDATE tasks SET status='in-progress',claimed_by=?,thread_id=?,lease_token=?,lease_expires=?,attempts=attempts+1,updated=? WHERE agent=? AND task_id=? AND attempts=? AND status=? AND lease_token=? AND lease_expires=?`, a.Agent, a.ThreadID, token, expires.Format(time.RFC3339), now.Format(time.RFC3339), a.Agent, req.TaskID, attempts, before[3].String, before[20].String, before[21].String)
+		res, err := tx.ExecContext(ctx, `UPDATE tasks SET status='in-progress',claimed_by=?,thread_id=?,lease_token=?,lease_expires=?,attempts=attempts+1,updated=?,first_claimed_at=CASE WHEN first_claimed_at='' THEN ? ELSE first_claimed_at END WHERE agent=? AND task_id=? AND attempts=? AND status=? AND lease_token=? AND lease_expires=?`, a.Agent, a.ThreadID, token, expires.Format(time.RFC3339), now.Format(time.RFC3339), now.Format(time.RFC3339), a.Agent, req.TaskID, attempts, before[3].String, before[20].String, before[21].String)
 		if err != nil {
 			return err
 		}
