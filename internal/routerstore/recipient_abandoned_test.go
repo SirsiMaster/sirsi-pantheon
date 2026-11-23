@@ -17,11 +17,31 @@ import (
 func seedRecipientTasks(t *testing.T, s *SQLiteStore, agent, prefix, status string, n, attempts int, updated time.Time, leaseExpires string) {
 	t.Helper()
 	ts := updated.Format(time.RFC3339)
-	for i := 0; i < n; i++ {
-		if _, err := s.exec(`INSERT INTO tasks (agent, task_id, subject, status, responsible_party, created, updated, lease_expires, attempts)
-			VALUES (?, ?, 'fixture', ?, ?, ?, ?, ?, ?);`, agent, fmt.Sprintf("%s-%03d", prefix, i), status, agent, ts, ts, leaseExpires, attempts); err != nil {
-			t.Fatal(err)
+	// One transaction, multi-row INSERT statements: the insertion is not what
+	// these tests exercise, and per-row statements pay a prepare (trigger
+	// compilation included) and a commit each. Same rows, same columns.
+	const chunk = 50
+	err := s.withTx(func(tx *txHandle) error {
+		for lo := 0; lo < n; lo += chunk {
+			hi := min(lo+chunk, n)
+			var sb strings.Builder
+			var args []any
+			sb.WriteString(`INSERT INTO tasks (agent, task_id, subject, status, responsible_party, created, updated, lease_expires, attempts) VALUES `)
+			for i := lo; i < hi; i++ {
+				if i > lo {
+					sb.WriteString(",")
+				}
+				sb.WriteString(`(?, ?, 'fixture', ?, ?, ?, ?, ?, ?)`)
+				args = append(args, agent, fmt.Sprintf("%s-%03d", prefix, i), status, agent, ts, ts, leaseExpires, attempts)
+			}
+			if _, err := tx.Exec(sb.String(), args...); err != nil {
+				return err
+			}
 		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

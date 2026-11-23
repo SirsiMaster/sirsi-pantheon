@@ -281,7 +281,7 @@ func TestRemoteRejectsBadTokenAndUnknownMethod(t *testing.T) {
 // loses errors.Is on it silently. Pins the closed set in remote.go.
 func TestSentinelsRoundTrip(t *testing.T) {
 	all := []error{ErrTaskResumeInput, ErrNotComplete, ErrBreakerOpen, ErrOverQuota, ErrRecipientSaturated, ErrIdentifierTaken, ErrNoWork, ErrLanePaused,
-		ErrNoClaimableTask, ErrLeaseInvalid, ErrTerminal, ErrBudgetExceeded, ErrReasonRequired,
+		ErrNoClaimableTask, ErrLeaseInvalid, ErrLeaseHeld, ErrTerminal, ErrBudgetExceeded, ErrReasonRequired,
 		ErrIncompleteEvidence, ErrNotFound, ErrAlreadyClosed, ErrConcurrentTaskUpdate, ErrTaskExists,
 		ErrSessionUnknown, ErrSessionRevoked, ErrNotOwner, ErrTokenUnknown, ErrTokenRevoked, ErrHostMismatch, ErrServiceUnavailable, ErrUnregistered, ErrThreadUnknown, ErrThreadAuthority, ErrWorkerAnswers, ErrReceiptInvalid, ErrReceiptUnverifiable}
 	if len(all) != len(sentinelErrors) {
