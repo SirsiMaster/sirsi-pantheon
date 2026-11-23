@@ -6,14 +6,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
-- Preserve Darwin owned-child raw terminal observations separately from portable
-  outcomes and consuming-wait expectations; reject changed observations and reap
-  mismatches without reporting wide nonzero exits as success. Add ordinary
-  repository regression fixtures for raw256 and258 records/release arguments,
-  binding refusal and local/fabric cleanup. Historical uncertain runs are not
-  repaired or re-certified by this source change. Refs: scripts/maat/README.md,
-  docs/ADR-057-OPERATIONAL-ENFORCEMENT-SUPERVISION.md, Rule A35.
-
 ## [0.24.162] — 2026-11-02
 
 - fix(core): `board.sh verify` reads the IAP-enabled annotation via JSON (the escaped gcloud projection failed) and reports an unreadable IAP policy as a permission gap instead of a wrong binding.
