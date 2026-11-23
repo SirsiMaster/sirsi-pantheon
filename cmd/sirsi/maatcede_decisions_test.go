@@ -333,14 +333,16 @@ func TestCedeDecisionLedger_ProjectionFailureIsReported(t *testing.T) {
 
 	cedeRequester, cedeHolder, cedeAsk, cedeMinutes, cedeEarliest, cedeReason =
 		"claude-io", "sne", "machine", 10, "", "projection failure regression"
-	err := maatCedeRequestCmd.RunE(maatCedeRequestCmd, []string{"m1"})
-	if err == nil {
-		t.Fatal("want an error when the decision ledger append fails, got nil (false success)")
+	var err error
+	_, stderr := captureStdStreams(t, func() {
+		err = maatCedeRequestCmd.RunE(maatCedeRequestCmd, []string{"m1"})
+	})
+	if err != nil {
+		t.Fatalf("committed cede request must exit 0 when only the journal failed: %v", err)
 	}
 
-	// The scheduler transition must still have committed — the cede request
-	// really exists — and the error must name it so a caller never retries
-	// (retrying would double-apply the already-committed request).
+	// The scheduler transition committed — the cede request really exists —
+	// and the stderr warning must name it so a caller never retries.
 	st, openErr := routerstore.OpenPath(db)
 	if openErr != nil {
 		t.Fatal(openErr)
@@ -354,8 +356,8 @@ func TestCedeDecisionLedger_ProjectionFailureIsReported(t *testing.T) {
 	if len(pending) != 1 {
 		t.Fatalf("want the cede request to have committed despite the projection failure, got %d pending", len(pending))
 	}
-	if got := pending[0].ID; got == "" || !strings.Contains(err.Error(), got) {
-		t.Fatalf("error %q must name the committed cede id %q so a caller never retries it", err, got)
+	if got := pending[0].ID; got == "" || !strings.Contains(stderr, got) || !strings.Contains(stderr, "do not retry") {
+		t.Fatalf("stderr %q must name the committed cede id %q so a caller never retries it", stderr, got)
 	}
 }
 
@@ -451,12 +453,15 @@ func TestCedeDecisionLedger_GrantProjectionFailureIsReported(t *testing.T) {
 
 	appendCedeDecision = func(cedeDecisionRecord) error { return os.ErrPermission }
 	cedeHolder, cedeReason, cedeStart = "sne", "sure, after my run", "after my current run"
-	grantErr := maatCedeGrantCmd.RunE(maatCedeGrantCmd, []string{id})
-	if grantErr == nil {
-		t.Fatal("want an error when the decision ledger append fails on grant, got nil (false success)")
+	var grantErr error
+	_, stderr := captureStdStreams(t, func() {
+		grantErr = maatCedeGrantCmd.RunE(maatCedeGrantCmd, []string{id})
+	})
+	if grantErr != nil {
+		t.Fatalf("committed grant must exit 0 when only the journal failed: %v", grantErr)
 	}
-	if !strings.Contains(grantErr.Error(), id) {
-		t.Fatalf("grant error %q must name the committed cede id %q", grantErr, id)
+	if !strings.Contains(stderr, id) {
+		t.Fatalf("grant warning %q must name the committed cede id %q", stderr, id)
 	}
 
 	st2, err := routerstore.OpenPath(db)
@@ -525,9 +530,11 @@ func TestCedeDecisionLedger_CounterAndDeclineProjectionFailuresDoNotRetry(t *tes
 			}
 			id := pending[0].ID
 			cedeHolder = "fixture-holder"
-			err = operation.cmd.RunE(operation.cmd, []string{id})
-			if err == nil || !strings.Contains(err.Error(), id) || !strings.Contains(err.Error(), "do not retry") {
-				t.Fatalf("post-commit projection failure did not retain no-retry identity: %v", err)
+			_, stderr := captureStdStreams(t, func() {
+				err = operation.cmd.RunE(operation.cmd, []string{id})
+			})
+			if err != nil || !strings.Contains(stderr, id) || !strings.Contains(stderr, "do not retry") {
+				t.Fatalf("post-commit projection failure must exit 0 and warn with the no-retry id: err=%v stderr=%q", err, stderr)
 			}
 			store, err = routerstore.OpenPath(db)
 			if err != nil {
@@ -587,12 +594,15 @@ func TestCedeDecisionLedger_WithdrawProjectionFailureIsReported(t *testing.T) {
 	_ = st.Close()
 
 	appendCedeDecision = func(cedeDecisionRecord) error { return os.ErrPermission }
-	withdrawErr := maatCedeWithdrawCmd.RunE(maatCedeWithdrawCmd, []string{id})
-	if withdrawErr == nil {
-		t.Fatal("want an error when the decision ledger append fails on withdraw, got nil (false success)")
+	var withdrawErr error
+	_, stderr := captureStdStreams(t, func() {
+		withdrawErr = maatCedeWithdrawCmd.RunE(maatCedeWithdrawCmd, []string{id})
+	})
+	if withdrawErr != nil {
+		t.Fatalf("committed withdraw must exit 0 when only the journal failed: %v", withdrawErr)
 	}
-	if !strings.Contains(withdrawErr.Error(), id) {
-		t.Fatalf("withdraw error %q must name the committed cede id %q", withdrawErr, id)
+	if !strings.Contains(stderr, id) {
+		t.Fatalf("withdraw warning %q must name the committed cede id %q", stderr, id)
 	}
 
 	st2, err := routerstore.OpenPath(db)

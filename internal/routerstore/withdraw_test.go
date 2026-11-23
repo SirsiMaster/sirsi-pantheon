@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWithdrawTaskNeedsALiveSuccessorAndNeverCountsAsDone(t *testing.T) {
@@ -50,6 +51,56 @@ func TestWithdrawTaskNeedsALiveSuccessorAndNeverCountsAsDone(t *testing.T) {
 	}
 	if err := s.WithdrawTask("lane", "gone", "lane/old", "lane@m1", "chain"); err == nil {
 		t.Fatal("superseded by a withdrawn task")
+	}
+}
+
+// A live lease is a worker mid-flight: withdraw refuses it (the predicate is in
+// the UPDATE, so a claim landing after the read cannot be wiped), while an
+// expired lease still withdraws.
+func TestWithdrawTaskRefusesLiveLease(t *testing.T) {
+	s := openTestStore(t)
+	for _, id := range []string{"busy", "new"} {
+		if err := s.AddTask(Task{Agent: "lane", TaskID: id, Subject: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.ClaimTask("lane", "busy", "worker-1", "thr-1", 20*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	err := s.WithdrawTask("lane", "busy", "lane/new", "lane@m1", "dup")
+	if !errors.Is(err, ErrLeaseHeld) || !strings.Contains(err.Error(), "worker-1") {
+		t.Fatalf("withdraw under live lease: %v", err)
+	}
+	if got, _ := s.GetTask("lane", "busy"); got.Status != "in-progress" {
+		t.Fatalf("task = %s, want in-progress untouched", got.Status)
+	}
+	var token, holder string
+	if err := s.db.QueryRow(`SELECT lease_token,claimed_by FROM tasks WHERE agent='lane' AND task_id='busy'`).Scan(&token, &holder); err != nil || token == "" || holder != "worker-1" {
+		t.Fatalf("lease wiped: token=%q holder=%q err=%v", token, holder, err)
+	}
+	past := s.clock().UTC().Add(-time.Minute).Format(time.RFC3339)
+	if _, err := s.exec(`UPDATE tasks SET lease_expires=? WHERE agent='lane' AND task_id='busy'`, past); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WithdrawTask("lane", "busy", "lane/new", "lane@m1", "dup"); err != nil {
+		t.Fatalf("withdraw with expired lease: %v", err)
+	}
+}
+
+// The refusal reason survives the wire (ErrLeaseHeld + its message).
+func TestWithdrawTaskLiveLeaseOverTheWire(t *testing.T) {
+	f := newScopedFixture(t, []string{"cloud-a"})
+	for _, id := range []string{"busy", "keep"} {
+		if err := f.backend.AddTask(Task{Agent: "cloud-a", TaskID: id, Subject: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := f.backend.ClaimTask("cloud-a", "busy", "worker-9", "thr-9", 20*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	err := f.client("cloud-a").WithdrawTask("cloud-a", "busy", "cloud-a/keep", "cloud-a", "dup")
+	if !errors.Is(err, ErrLeaseHeld) || !strings.Contains(err.Error(), "worker-9") {
+		t.Fatalf("remote withdraw under live lease: %v", err)
 	}
 }
 

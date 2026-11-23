@@ -284,7 +284,18 @@ func FindRepoRoot() (string, error) {
 // The root comes from Git's worktree-aware --show-toplevel, never from the
 // proof path supplied by a caller.
 func FindCallerRepoRoot() (string, error) {
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	return callerRepoRootWithin(gitCommonDirTimeout)
+}
+
+// callerRepoRootWithin is FindCallerRepoRoot with an explicit bound on the git
+// probe (same 5 s bound and WaitDelay as FindRepoRoot's, #1401). A timeout is an
+// error: the proof gate fails closed, it never falls through.
+func callerRepoRootWithin(timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("cannot resolve caller Git worktree: %w", err)
 	}

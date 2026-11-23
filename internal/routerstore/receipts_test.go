@@ -451,3 +451,46 @@ func TestGitHubVerifier(t *testing.T) {
 		t.Errorf("auth failure = %v, want unverifiable", err)
 	}
 }
+
+// The refusal names its reason; "completion receipt invalid" alone sent a lane
+// to file an incident for a receipt another task had already consumed.
+func TestReceiptRefusalsNameTheirReason(t *testing.T) {
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/SirsiMaster/x/pulls/1":
+			_, _ = w.Write([]byte(`{"merged":false}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer gh.Close()
+	v := &githubVerifier{token: "t", base: gh.URL, http: gh.Client()}
+	for value, want := range map[string]string{
+		"SirsiMaster/x#1": "is not merged",
+		"SirsiMaster/x#2": "token cannot read that repo",
+	} {
+		err := v.Verify(context.Background(), "pr", value)
+		if !errors.Is(err, ErrReceiptInvalid) || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want invalid mentioning %q", value, err, want)
+		}
+		if strings.Contains(err.Error(), "already used") { // negative control
+			t.Errorf("%s: must not read as already used", value)
+		}
+	}
+
+	// Reuse names the holder, locally and across the wire.
+	useVerifier(t, fakeVerifier{prOK: nil})
+	f := newScopedFixture(t, []string{"ra"})
+	if err := f.backend.CompleteTaskLease("ra", "a", claimed(t, f.backend, "ra", "a"), prOK); err != nil {
+		t.Fatal(err)
+	}
+	tokB := claimed(t, f.backend, "ra", "b")
+	err := f.backend.CompleteTaskLease("ra", "b", tokB, prOK)
+	if want := "already used by task ra/a"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("local reuse: %v, want %q", err, want)
+	}
+	err = f.client("ra").CompleteTaskLease("ra", "b", tokB, prOK)
+	if !errors.Is(err, ErrReceiptInvalid) || !strings.Contains(err.Error(), "already used by task ra/a") {
+		t.Fatalf("remote reuse lost its reason: %v", err)
+	}
+}

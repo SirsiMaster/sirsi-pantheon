@@ -869,7 +869,10 @@ func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mi
 				// mismatch means the OS recycled this PID onto a DIFFERENT
 				// process — adopting the stale record would resurrect a dead
 				// thread, so mint a fresh one instead.
-				if existing.StartTime != "" && newStart != "" && existing.StartTime != newStart {
+				// An offset-shaped gap is the same process printed under another
+				// local zone: adopt. Any other gap is a recycled PID: mint fresh.
+				if existing.StartTime != "" && newStart != "" && existing.StartTime != newStart &&
+					!legacyStartMismatchAmbiguous(existing.StartTime, newStart) {
 					continue
 				}
 				existing.LastSeenAt = now
@@ -1572,7 +1575,9 @@ func reapStrayThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 		if t == nil || !threadReapMachineMatches(t.MachineID, thisMachine, shared) {
 			continue
 		}
-		if !isLiveWatcher(t) {
+		// Unknown liveness protects this record from retirement, but cannot
+		// prove it is a live successor that supersedes another session.
+		if !isLiveWatcher(t) || PIDStateOfThread(t) != PIDAlive {
 			continue
 		}
 		k := groupKey{t.AgentID, t.Surface}
