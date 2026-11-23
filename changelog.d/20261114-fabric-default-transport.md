@@ -1,2 +1,0 @@
-- **Fabric transport default:** choose direct transport when no runtime proxy is configured, preserve valid loopback SOCKS settings, and refuse conflicting or unsupported proxy settings before planning remote work.
-- **Fabric host trust:** restrict remote and relay host-key checks to the enrolled known-hosts file.

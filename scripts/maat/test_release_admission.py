@@ -11,6 +11,25 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ReleaseAdmissionContract(unittest.TestCase):
+    def test_v164_delegates_without_importing_signing_material(self):
+        source = (ROOT / '.github/workflows/release.yml').read_text()
+        setup = source.split('      - name: Import Developer ID signing identities', 1)[1].split('      - name:', 1)[0]
+        delegated = source.split('      - name: Select v164 delegated signing client', 1)[1].split('      - name:', 1)[0]
+        self.assertIn("github.ref != 'refs/tags/v0.24.164'", setup)
+        self.assertIn("github.ref == 'refs/tags/v0.24.164'", delegated)
+        self.assertIn('PANTHEON_SIGNING_EXECUTION=remote-service', delegated)
+        self.assertNotIn('secrets.', delegated)
+        self.assertNotIn('security ', delegated)
+        self.assertLess(source.index('      - name: Verify v164 release supervisor before reserving a draft'),
+                        source.index('      - name: Reserve exact source-bound release draft'))
+
+    def test_v164_excludes_npm_before_job_starts(self):
+        source = (ROOT / '.github/workflows/release.yml').read_text()
+        block = source.split('\n  publish-npm:\n', 1)[1]
+        # Require the exact job-level full-ref fence, not a step-level skip.
+        conditions = [line for line in block.splitlines() if line.startswith('    if:')]
+        self.assertEqual(conditions, ["    if: ${{ github.ref != 'refs/tags/v0.24.164' }}"])
+
     def test_both_native_payloads_are_inside_one_maintained_supervisor(self):
         source = (ROOT / '.github/workflows/release.yml').read_text()
         block = source.split('      - name: Build + sign + notarize', 1)[1].split('      - name:', 1)[0]

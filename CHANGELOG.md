@@ -6,6 +6,317 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.164] — 2026-11-23
+
+- **Router lane status: a session with a stale heartbeat is no longer reported as unregistered.**
+  - **What was wrong.** `PingLane` reported "a session that is not registered" whenever the deferred-to session's heartbeat was older than 5 minutes, and the quarantine and no-worker texts made the same categorical absence claim. Peers repeated it as "that agent has no live session", even though the registry view may be scoped or incomplete.
+  - **What changed.** Details now state only what the view shows: a registered attended session with a stale heartbeat is named with its thread, host and last heartbeat, and "may still be open and may read the inbox when it next runs"; with no such session visible the text says "no registered session visible in this view". Verdicts, `Workable`, scope controls and dispatch behaviour are unchanged. Suspended and closed sessions are still not counted.
+
+- **Router service: a database outage now fails calls in about 5 seconds with a retryable 503, not 30 seconds.**
+  - **What was wrong.** During the 2026-11-11 Cloud SQL maintenance restart, most store calls take no context, so nothing bounded the database connect; callers sat 28-35 s on the Cloud Run Cloud SQL proxy (whose own dial gives up after 30 s) while holding one of the 8 request slots per instance.
+  - **What changed.** The Postgres DSN now carries `connect_timeout=5` unless the operator set one, and a failed connect is answered `503 ledger unavailable: database unreachable (retry)` instead of a 500. The call never reached the database, so nothing was committed. Queries on established connections are not cut short. Client retry behaviour is unchanged.
+
+- Claude and Codex session registrations no longer expire: a quiet session keeps its thread id, and its next heartbeat or re-register renews it. Only an explicit close or a newer live session of the same agent on that Mac ends it. Workers and other surfaces keep their existing expiry rules.
+
+- Router deploy keeps the live service size: `deploy.sh` holds the size in one `SIZE` line and refuses to deploy when it differs from the live service (set `RESIZE=1` to resize on purpose). It also connects the receipts GitHub token from the existing `ADMIN_GITHUB_PAT` secret.
+
+- CI now builds the native CLI and runs `TestNativeCLIPodAuthorityQualification` against it on every non-docs PR/push (a skipped or unmatched run fails the Test job), making the ADR-120 independent-process retry proof permanent.
+
+- Ma'at front door stays fast: finished reservations older than 48 hours move out of the shared `maat:reservations` row into per-day `maat:reservations-archive:<date>` rows (every field kept, nothing deleted), at most every 10 minutes under the existing lock.
+
+- Horus can close its own "lane needs you" alerts once a lane recovers. The router used to refuse this, which left cleared alerts open and had each supervisor retry them every pass, about 17,000 refused calls a day across three Macs. Every other item stays closed to headless workers.
+
+- `sirsi router doctor` warns when a loaded relay runs without `SIRSI_ROUTER_SPKI_PIN`. It reads only whether the key is present and never prints launchctl's output, which also carries the host token.
+
+- Add owner sign-off and cancel to the hosted router board. A signed-in sirsi.ai account can mark a task done with a required reason; the reason is recorded as an owner receipt under `board:<email>`. It can also cancel a task, and a canceled task never counts as done. The router serves `CompleteTaskByOwner` and `CancelTask` only to the board's `@ledger-editor` token and only for a `board:<email>` actor. Lane tokens, observer tokens and the unscoped bootstrap token are refused.
+
+- Ma'at delegated resources: a legacy writer can now release its unstamped floor row inside the handback margin (expired/revoked delegation), so capacity returns and `who-is-on` stops reporting a finished run; nothing else is admitted there. The delegated-floor known limits are corrected and extended in the code comment, README and ADR-120: no pod-side conflict probe exists (the canonical `conflict-check` is the only detector, and it counts unattributed floor-lane processes as intruders), and the number of floor rows per resource is uncapped, as on the ordinary path.
+
+- `WithdrawTask` no longer wipes a live lease: withdrawal is refused with `ErrLeaseHeld` (holder and expiry named) while any unexpired lease exists, enforced in the UPDATE predicate so a claim landing mid-withdraw cannot race it. The wire API cannot identify the caller as the holder, so any live lease refuses; expired or absent leases still withdraw. `ErrLeaseHeld` crosses the wire as a named sentinel.
+
+- Refs: `internal/routerstore/receipts.go`, `internal/routerstore/lease.go`, `internal/routerstore/remote.go`
+
+- `scripts/router-service/cutover-m5.sh` now requires an explicit `M5=<user>@<host>` instead of defaulting to a stale LAN address. `scripts/release-train.sh` drops its hardcoded LAN fallback; `M5_FALLBACK` is honored only when set explicitly.
+
+- Refs: `scripts/router-service/cutover-m5.sh`, `scripts/release-train.sh`, `scripts/maat/fabric-endpoints.py`
+
+- `internal/routerstore` test suite: fresh SQLite stores are seeded from one already-migrated template (built once per test process by the real `OpenPath`) instead of replaying every schema migration per test, large fixtures insert in one transaction, and the 1,000-round claim contention test runs as four parallel shards of 250 rounds each. A new test compares the template with a freshly migrated store (schema, `user_version`, seed rows) so it cannot hide a migration bug; migration and open-from-empty tests still run the real path. `go test -race -short ./internal/routerstore` drops from about 510 s to under 150 s. Test-only; production behavior is unchanged.
+
+- Refs: `internal/routerstore/fasttemplate_test.go`
+
+- Router scoped host-token mint: a failed `MintScopedHostToken` now returns a `*MintError` carrying the nonsecret attempt id (the token id) and errors.Is-able outcomes (`ErrMintRolledBack`, `ErrMintRollbackFailed`, `ErrMintCommitUncertain`, `ErrMintPanic`) instead of ignoring rollback errors and returning a bare commit failure. The error text never contains the token or its hash.
+
+- `FindCallerRepoRoot` now bounds its `git rev-parse --show-toplevel` probe at 5s (same bound as `FindRepoRoot`, #1401) and still fails closed on timeout, so a hung git can no longer hang a completion-proof caller.
+
+- Refs: `internal/router/router.go`, `internal/router/router_findreporoot_test.go`
+
+- **Router completion-receipt refusals now say why.** The remote client dropped the service's message for sentinel errors, so every refusal read "completion receipt invalid". FinalWishes#1140 was refused because `claude-finalwishes-m5/FW-NOV02-EXECUTOR-EMPTY-STATE-COPY` already consumed that receipt (one receipt proves one task); the message now reads "receipt already used by task <agent/id>", and a GitHub 404 says the router token may not read the repo. Refs: codex-finalwishes 20261120-085408.
+
+- Router liveness: a legacy ps-style PID start-time mismatch is treated as ambiguous (same process, different local zone) only when both strings parse and the gap is a non-zero multiple of 15 minutes up to 26 h; every other mismatch is a recycled PID again and is reaped. Registration adopts the existing thread on an offset-shaped gap and mints a fresh one otherwise, never erroring.
+
+- **Router: FinalWishes recipient-limit override extended to 2026-11-28T05:50Z** (owner decision 2026-11-21): same four lanes, both ends in the set, `SendGuarded` only; delete the block in `internal/routerstore/facade.go` after 2026-11-28.
+
+- **fix(maat):** a granted reservation no longer exits as refused because the
+  host-local decision journal failed. `maat reserve|extend|cede request|grant|
+  counter|decline|withdraw` now exit 0 when the router transition committed,
+  print a one-line stderr warning, and add an additive `journal_error` field to
+  `--json` output. The journal mutation lock now waits up to 3 s (jittered
+  flock retry) instead of failing instantly on a concurrent writer.
+
+- Protect shared thread registries from cross-machine PID reaping when either
+  machine identity is unknown; find the macOS machine identifier even when
+  `/usr/sbin` is absent from PATH, and retry failed identity probes. Local
+  legacy registries retain their fallback.
+  Refs: ADR-022, ADR-024, ADR-036.
+
+- **Hosted router snapshots:** the shared board returns routing verdicts, per-lane counts and freshness, not item records, task rows, blocker text or diagnostic prose. Both nested and stand-alone Fabric reads use the same hosted summary; detail requests say they are withheld. Local snapshots and local lane ledgers are unchanged. This interim change does not add an owner authorization path. See ADR-062 and the hosted board's access policy.
+
+- **Hosted board edits:** successful edits return a fixed acknowledgment; refusal responses no longer contain backend diagnostics or task records. Existing edit authorization and mutation behavior are unchanged.
+
+- **Fabric link discovery:** decode bounded local link-monitor JSON as strict UTF-8, so valid non-ASCII descriptions do not hide current Thunderbolt peer candidates.
+
+- Disable curl's default configuration for the loopback metadata request so user-configured URLs or output settings are not inherited.
+
+- **Fabric transport default:** choose direct transport when no runtime proxy is configured, preserve valid loopback SOCKS settings, and refuse conflicting or unsupported proxy settings before planning remote work.
+
+- **Fabric host trust:** restrict remote and relay host-key checks to the enrolled known-hosts file.
+
+- Stabilize the trusted-spool directory test by canceling and joining its request before removing the temporary fixture; the directory permission assertion remains unchanged.
+
+- **Router recipient admission: the halt counts abandoned work, not planned backlog.**
+  Owner decision 2026-11-11. The recipient's `stalled` count (JSON name unchanged)
+  now means a task someone STARTED and then left: nonterminal, claimed at least once
+  (`attempts > 0` or status `in-progress`), untouched for 24h, no live lease. A lane
+  with a large never-started backlog (502 planned tasks) is no longer refused all
+  messages. The unacknowledged-items half (warn at 50, halt at 99) is unchanged, and
+  a lane that drops started work mid-flight is still halted. Sender warning and
+  escalation text now say "started tasks untouched for 24h". Known blind spot:
+  `reset-attempts` zeroes the only start evidence, so a reset task reads as planned.
+  Refs: ADR-035 section 2b; owner directive 2026-11-02 amended 2026-11-11.
+
+- **fix(router):** `FindRepoRoot` no longer hangs a daemon or hook at startup.
+  Its `git rev-parse --git-common-dir` probe is bounded to 5 s (child killed,
+  `WaitDelay` set); a timeout falls through to the existing cwd walk-up and
+  marker fallbacks exactly like a git failure. Evidence: `sirsi maat
+  authority-serve` stack dump in CI run 42958098771.
+
+- **Router recipient admission: seven-day FinalWishes override, keyed on lane name.**
+  Owner decision 2026-11-11: until 2026-11-18T05:50:00Z, `claude-finalwishes-m1`,
+  `claude-finalwishes-m5`, `codex-finalwishes` and `sirsi-software-admin` may send to one another
+  past the recipient limit (both ends must be in the set; the web lanes are not). The sender name is
+  client-supplied and bound to the caller only for lane-scoped tokens, which the Macs do not use; SSA
+  (item 20261111-064341) asked for verified identity, and the owner, shown that a verified-only rule
+  would admit nothing, accepted name-keyed matching for the window. Exposure: a lane on the same hosts
+  can assert one of the four names and send past the limit to those four lanes, nothing else. Applies
+  to `SendGuarded` only (raw `Send` keeps the limit). Each over-limit admit bumps
+  `finalwishes_override_admits` and a per-item `finalwishes_override_admit:<item id>` counter in the
+  item's own transaction. Delete the block in `internal/routerstore/facade.go` after 2026-11-18.
+  Refs: PANTHEON_RULES A23, A34.
+
+- **`routerstore.DeliveryStateOf(Item)`: one derived, A2A-style delivery state per router item (SUBMITTED, ACKNOWLEDGED, WORKING, BLOCKED, COMPLETED, FAILED, CLOSED, UNKNOWN).** A pure function of the existing status and `acked_at`; no schema change, no new writes, no behaviour change. Each state's doc comment says what it does not prove (an ack means the lane read it, not that it will act). Contract tests fail if a status constant is added without a mapping. Refs: ADR-065 Decision 2, task router-owned-delivery-a2a.
+
+- Cache the router client's runtime hash on disk (`~/.sirsi/runtime-hash/`, 0600, atomic) keyed by the binary's resolved path, size, mtime, ctime, inode and device, so each `sirsi` process no longer SHA-256s its whole ~40 MB binary; any key mismatch or unreadable cache falls back to hashing.
+
+- **docs:** record the six owner decisions of 2026-11-04 (`docs/decisions/OWNER_DECISIONS_20261104.md`) so the tasks that asked for them can be withdrawn.
+
+- Ma'at reservations: the hot `maat:reservations` document now keeps only
+  non-terminal rows and rows that ended within the last 2 hours (it was every
+  row that STARTED within 48 hours, ~4 MB / ~8,000 rows, rewritten whole by every
+  reserve, heartbeat and release). Older finished rows move to the existing
+  per-day archive rows; nothing is deleted. Lookups by id (`maat:<id>` completion
+  receipts, `sirsi maat status --id`, replay/upsert idempotency, mutate-by-id,
+  caller-supplied duplicate ids) fall back to the archive and behave exactly as
+  on a hot row. Invalidated rows stay hot 25 h past their end so `maat plan`'s
+  24 h conflicts-caught count is unchanged. `sirsi maat status` (no id) lists
+  the last ~2 hours of finished rows instead of 48.
+
+- New additive reservation field `ended_at`, stamped on release, invalidation
+  and lease expiry. Older rows lack it and fall back to their own timestamps and
+  the previous 48 h-from-start rule. No schema change.
+
+- Refs: PANTHEON_RULES.md A35, maat-hot-row-shrink, maat-reserve-latency-dashboard-start
+
+- **fix(maat):** the conflict report now names the lanes that held a live floor
+  share when it was sampled. Its doc comment promised that a floor lane's
+  activity is "never a contaminant", but a process counts as shared only when
+  the probe attributes an owner and the default probe attributes none, so a
+  floor lane's processes were intruders and invalidated a quiet or loaded hold.
+  That outcome stays (any foreign load contaminates a quiet measurement) and the
+  comments, README, user guide and ADR-120 now say so. New `floor_holders` field
+  (holder, work, reservation, cores) on `sirsi maat conflict-check --json`, a
+  matching line in the human output, and an invalidating summary ends with
+  "; floor shares live at sample time: ..." (five named, then "+N more"). It is
+  co-presence only; nothing is attributed. Refs: maat-conflict-probe-owner-attribution, ADR-120.
+
+- ADR status records (docs only): ADR-065 (router-owned informer) accepted with conditions, with the open node-side credential-enforcement question and the actual implementation state recorded; ADR-079 (wake lanes are the interactive sessions) accepted, its stale "design only" header replaced by what is verified shipped; ADR-078 (signed LAN anchor) stays Proposed with only the verifier library and fixtures authorized; ADR-INDEX rows updated, ADR-079 added, and ADR-076 corrected (its claiming PR #1017 is closed unmerged).
+
+- `sirsi router wake-latency` now measures first claim minus opened. It
+  previously read `items.lease_updated`, which `RenewLease` and `StartWork`
+  overwrite, so any started or renewed item reported wake latency plus working
+  time. New column `items.first_claimed_at` (SQLite schema v27, Postgres schema
+  version 27) is written once by `ClaimNext`/`ClaimItem` and never by renew,
+  start-work or requeue. No backfill: items first claimed before v27 are
+  excluded, as are never-claimed items. The JSON sample key is now
+  `first_claimed_at` (was `lease_updated`). Apply the Postgres schema before
+  deploying the router service.
+
+- The shared `pct` percentile helper is now nearest-rank (`ceil(p*n/100)-1`).
+  It previously used `int((n-1)*p/100)`, which understated the tail (p95 of
+  four samples was the third smallest, not the largest). This also changes the
+  p50/p95/p99 printed by `sirsi router bench report`, which shares the helper.
+
+- Refs: PANTHEON_RULES.md A35, ADR-063, task ra-m0-fabric-baseline
+
+- **feat(router):** a lane can withdraw its own task with
+  `sirsi router task withdraw <agent> <task-id> --superseded-by <agent>/<task-id> --reason "..."`.
+  `withdrawn` is a terminal status that never counts as done. It must name a
+  live task that carries the work. The task's timeline records who withdrew it
+  (the authenticated session) and why. The ledger board no longer counts
+  canceled or withdrawn tasks as active work.
+
+- **fix(router):** the store-migration manifest now copies `host_token_scopes`.
+  Without it, a copied scoped token read as unscoped. A test now fails on any
+  table left out without a stated reason. `MintScopedHostToken` now writes a
+  token and its scopes in one transaction, so no reader or backup can catch the
+  token without its scopes. Adds `docs/router/ROUTER_RECOVERY_PLAN.md`: state
+  inventory, a live backup and point-in-time-recovery readback, the conditions
+  for a complete recovery point, an inactive-clone restore procedure, and the
+  token-scope plan.
+
+- **feat(router):** `sirsi router export --dir <path>` writes every item as
+  `<id>.md` on the caller's own Mac. It reads in bounded pages (at most 2,000
+  items per call) through the existing `ListPage` RPC, and reports
+  `snapshot: false`, because a page-by-page walk is not a point-in-time copy.
+  The contract (caller, limits, server floor, completeness) is in
+  `docs/router/BULK_EXPORT_CONTRACT.md`.
+
+- **fix(maat):** the guarded-run supervisor (`sirsi-maat-run`) now records the
+  run's exit status when it releases its reservation (`maat release
+  --exit-code`), so `maat:` receipts verify instead of being refused as
+  unverifiable. Against an older `sirsi` that lacks the flag it releases as
+  before.
+
+- **fix(maat):** a conflict check that finds foreign activity in a live quiet
+  or loaded reservation now marks the measurement contaminated
+  (`invalidated_by`) and keeps the holder on the machine. Before, it ended the
+  reservation, which freed the machine for the next lane in the middle of the
+  holder's window. On 2026-11-03 this ended Mercury's M5/Studio release gate,
+  with no release on record. A reservation whose window has not started yet is
+  still ended, as before.
+
+- **feat(maat):** a booking on a resource delegated to a pod authority now gets
+  the bounded floor share instead of a hard refusal, so a lane is never locked
+  out of a machine. Quiet requests, `--queue`, requests inside the handback
+  margin, and windows protected by a replayed authority quiet/loaded hold are
+  still refused with "book through the pod authority". The canonical ledger
+  cannot see authority holds that have not been replayed to it.
+
+- **feat(router):** Ma'at decision ledger P1. Schema v26 adds the append-only
+  `maat_decisions` table (id = full sha256 of the raw bytes), and
+  `IngestDecision` dedups identical bytes. `IngestDecision` is not served over
+  RPC until dispatch stamps producer host and session from the authenticated
+  session. The Postgres schema mirror, spool tailer and CLI read path are
+  separate follow-ups.
+
+- **Lane-ledger availability:** when a successful ledger read has no lane entry,
+  distinguish an unavailable lane inventory (503) from a successfully unknown
+  agent (404) and a known lane with an empty ledger (200 with empty arrays).
+  Preserve generic errors, read-only routing and the existing projection.
+
+- **Router**: the service keeps an attended claude/codex session registered when a Mac running a pre-#1364 client tries to expire it on a quiet 2-hour lease. Worker threads and dead-PID reaps are unchanged.
+
+- **Router recipient admission (source candidate):** exclude both `done` and
+  `canceled` terminal tasks from stalled-backlog counting on guarded and raw
+  sends. Preserve recipient identity, age, lease-expiry and capacity guards;
+  a pending task described as superseded still counts. Added isolated regression
+  fixtures; tests and builds remain unrun pending separate explicit SHA scope and
+  fresh admission. No capacity bypass or deployment. Refs: ADR-035;
+  `internal/routerstore/tasks.go` terminal-task contract.
+
+- **Ma’at unsent status-read recovery (source candidate):** return a specific
+  no-queue error for newly submitted reads proven never sent, and permit the
+  running supervisor to retry only its own exact reservation read within the
+  previously proven deadline. Denials, prelaunch failures and uncertain send
+  outcomes remain fail-closed. Bounded mock/private-spool and narrow race
+  controls passed; native transition, mixed-version qualification and the
+  separate legacy-read/mutation-custody holds remain open. No installed repair
+  is asserted. Refs: `docs/stacklab/MAAT_READ_RELAY_COMPATIBILITY_DRAFT_20261107.md`.
+
+- **Router dashboard redesign (owner mandate, Nov 6):**
+  - **Layout:** the overview, the lane ledgers (`#lane/<agent>`), the inbox and the fleet now share the compact CompassPoint-ledger layout: colored count cards, one stacked bar, grouped rows, and a state word in every pill.
+  - **Black page:** the board now uses a neutral black page and grey panels in place of the brand's green-tinted dark ground. Green is reserved for the "done" state.
+  - **New endpoint:** read-only `GET /api/router/v1/ledger?agent=` returns phase and blocked_by. An unknown agent returns 404; an unavailable producer returns 503.
+  - **Cloud jobs:** `/api/router/v1/jobs` returns an honest 404, "no source connected", until a producer exists.
+  - **Box rows (owner, Nov 8):** every lane ledger phase now opens with 13 boxes, then done/total, then its name, with settled and blocked counts. The top of the lane ledger adds a "Complete x/y" card and a 20-box "% done" row, matching the per-lane ledger page lanes run in their in-app browsers.
+  - **Privacy (Nov 8):** the lane ledger endpoint now projects tasks through the same public allowlist as `/api/fabric`. Phase and free-text blocker prose no longer leave the store; a same-lane blocker id is kept. Item `blocked_by` text is dropped and only the blocked flag remains. A lane over 10,000 tasks fails closed instead of returning partial rows. The board shows the stored status only: a "DONE" in a task's text no longer counts it as finished. Privacy candidate by sirsi-hardware-admin; the item field and merge by claude-m5-compasspoint.
+  - **Phase labels (owner decision, Nov 8):** the lane ledger endpoint shows each task's phase as a display label, cleaned like a subject (control characters become spaces, capped at 128 characters), so hosted lane ledgers draw x/y per phase. `/api/fabric` is unchanged and still never carries the phase.
+  - **Fix:** `board-actions.js` is now embedded. Before this, `/assets/board-actions.js` returned 500 and hosted ledger edits had no controls.
+  - Refs: ADR-038 (brand tokens; the board overrides the ground and greys with keywords only, no hex), router-surface.v1.
+
+- A quiet attended session whose process is still running no longer loses its thread when the 2h lease lapses. The reaper checks the process first, so waiting on the owner no longer burns a thread id and forces a re-register.
+
+- Ra's sends to sirsi-software-admin now pass the recipient limit, so a release request reaches that lane even when it is over the 99 limit. Every other sender and recipient stays limited.
+
+- Gate fabric payload launch on direct-child binding and retain cleanup debt when child or reservation custody is uncertain. Reobserve the process group immediately after escalation; isolated helper and lease-expiry limits remain. Refs: `docs/runbooks/maat-job-stop-ownership.md`, `scripts/maat/README.md`.
+
+- Make the dispatch cancellation regression fixture wait for its canceled caller before ending the HTTP response, avoiding an empty-response race in CI.
+
+- Allow complete Ma’at hook envelopes up to a bounded 8 MiB in the chain wrapper, heavy-launch classifier, and stop-policy adapter. Require strict UTF-8 and JSON, retain the separate shell-command limit and all existing checks, and refuse malformed, non-finite, or over-limit input. Source and inert-fixture coverage do not prove the installed legacy guard, any hook rollout, or an upload.
+
+- Keep the fabric leader waitable through a pre-reap native group snapshot; reap only the exact singleton leader zombie, retaining debt when additional zombies persist. For EPERM/ESRCH signal failures, require an independent WNOWAIT and group snapshot proving that singleton before acceptance. Document the observer's bounded, non-atomic completeness. Refs: `ADR-054-ONE-HORUS-UNIFIED-AGENT-FABRIC.md`, `scripts/maat/README.md`, `scripts/maat/admitted-run.py`, `scripts/maat/test_admitted_run.py`
+
+- Retain the fabric leader's unreaped custody when group observation drifts after TERM, retry within bounded grace and KILL windows, and leave unresolved state as cleanup debt. Reobserve WNOWAIT when a leader exits between its wait receipt and the group snapshot, and correct the fake exec-failure group fixture. Refs: `docs/ADR-054-ONE-HORUS-UNIFIED-AGENT-FABRIC.md`, `scripts/maat/README.md`, `scripts/maat/admitted-run.py`, `scripts/maat/test_admitted_run.py`.
+
+- Treat a timed-out non-Darwin process-group observation as uncertainty during the same bounded cleanup sequence.
+
+- fix(dashboard): when Apollo.app provides the local model, Ask no longer sends the placeholder model "local" (which Apollo's router rejects); a missing, unreadable or blank `~/.sirsi/gemma-model.conf` is a clear error instead. Model selection now follows the same order as liveness and the worker/CLI on every host: `GEMMA_MODEL`, then `~/.sirsi/gemma-model.conf`. Only a legacy-broker host with neither set keeps "local". An invalid Apollo router marker fails closed before either is read.
+
+- fix(liveness): an `Apollo.app` that exists without its router helper (for example mid-upgrade) or cannot be inspected now fails closed, like an invalid helper. Only a wholly absent `Apollo.app` keeps the legacy setup and healer behavior.
+
+- docs(liveness): the stand-down covers only legacy broker install and restore. The read-only liveness watch still sends its single chat probe, which can wake an idle Apollo model.
+
+- Remote pre-cutover sends now fetch the committed item through authenticated `Get` and write the canonical markdown audit projection on the client, without sending a client filesystem path to the router service. Projection failures preserve the committed result and do not retry dispatch; local SQLite export and StoreWake behavior are unchanged.
+
+- Refs: `docs/ADR-036-ROUTER-V2-DURABLE-DISPATCH.md`, `docs/ADR-062-ROUTER-SERVICE-RA-CONCURRENCY.md`, `internal/dispatch/facade.go`, `internal/routerstore/export.go`
+
+- Drain and close the stalled remote `Get` fixture's POST body before waiting for request cancellation, and bound handler cleanup so cancellation regressions fail without hanging the test suite. Production behavior is unchanged.
+
+- Refs: `docs/ADR-036-ROUTER-V2-DURABLE-DISPATCH.md`, `internal/routerstore/remote_test.go`
+
+- Bounded the remote post-commit audit read by the existing router per-call timeout while preserving any earlier caller cancellation or deadline.
+
+- Refs: `docs/ADR-036-ROUTER-V2-DURABLE-DISPATCH.md`, `docs/ADR-062-ROUTER-SERVICE-RA-CONCURRENCY.md`, `internal/routerstore/remote_export.go`, `internal/routerstore/remote_test.go`
+
+- Keep the fabric supervisor's direct child unreaped while TERM/KILL cleanup signals target its bound process group, then reap it once after signaling ends. Fail closed with cleanup debt when wait custody is uncertain; local-child cleanup and admission ownership remain unchanged. Refs: `ADR-054-ONE-HORUS-UNIFIED-AGENT-FABRIC.md`, `scripts/maat/README.md`, `scripts/maat/admitted-run.py`, `scripts/maat/test_admitted_run.py`
+
+- Align the PGID-reuse fixture's fake payload exit code with its asserted final reap result; keep the custody assertion unchanged. Refs: `scripts/maat/test_admitted_run.py`, `scripts/maat/admitted-run.py`, `scripts/maat/README.md`
+
+- Keep the fabric supervisor cadence fixture's exact terminal timestamp while exercising 20 ms non-reaping polls by advancing its fake monotonic clock on a nanosecond grid. Preserve the existing remote-read schedule assertion. Refs: `scripts/maat/admitted-run.py`, `scripts/maat/test_admitted_run.py`, `scripts/maat/README.md`
+
+- Make fake fabric children mark their bound identity reaped when successful poll/wait consumes terminal status, while timeout and nonterminal observations preserve custody. Retain the exact cadence assertion and PGID-reuse negative control. Refs: `scripts/maat/test_admitted_run.py`, `scripts/maat/admitted-run.py`, `scripts/maat/README.md`
+
+- Apollo-owned Gemma setup/healer stand down without rewriting the host-selected profile or port. Require a regular executable installed router; invalid markers fail closed without legacy restoration. Installation shape is not runtime/signature/readiness proof.
+
+- **Router service (`internal/routerstore`) now maps caller/validation errors to HTTP 400, not a generic 500.** ~70 `fmt.Errorf`/`errors.New` sites across `internal/routerstore/*.go` now wrap the `ErrInvalidInput` sentinel (or the existing `ErrNotFound` sentinel for "no such X" cases) so `writeCallErr` returns a client error for bad item type, unknown task, missing lease, malformed `since` timestamps, undeclared recipients, and similar caller-caused failures, leaving genuine server/transport failures as 500. Refs: PANTHEON_RULES.md A35.
+
+- **feat(maat):** added `CloudResource` (`cloud:<provider>:<account>`), the first generic Ma'at Resource type —
+  every prior preflight (`ReleaseCredentialPreflight`, `ReleaseContractPreflight`) was single-purpose and did not
+  compose with a resource identifier. `PreflightCloudAdmission` is fail-closed: with no `FundingEvidenceSource`
+  wired (true today for every provider — GCP `billing.viewer` access is still unresolved) or on a source error, it
+  returns `FundingUnknown`, never `FundingFunded`. This is step 2 of the Cloud Worker Law buildout; dispatchgate
+  wiring (`internal/router/wake.go` / `lanestate.go`) is deliberately deferred to its own reviewed change.
+
+- `sirsi router wake-latency` — read-only M0 charter T4 instrument: opened ->
+  first-claim (`lease_updated`) elapsed time per item, aggregated (p50/p95/max)
+  or raw (`--json`). New `Store.WakeLatencySamples` method, implemented on
+  `SQLiteStore`, wired through `RemoteStore` and `ruleOfRaExempt`.
+  `lease_updated`/`opened` stay out of `Item`/`itemCols`
+  (`TestFieldFidelityWithWorkItem`) — this is a separate measurement-only read
+  path, not a struct field.
+
+- Refs: PANTHEON_RULES.md, task ra-m0-04-wake-latency-report (Ra charter M0, T4
+  slice of ra-m0-fabric-baseline)
+
 ## [0.24.162] — 2026-11-02
 
 - fix(core): `board.sh verify` reads the IAP-enabled annotation via JSON (the escaped gcloud projection failed) and reports an unreadable IAP policy as a permission gap instead of a wrong binding.

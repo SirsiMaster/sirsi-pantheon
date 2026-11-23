@@ -98,6 +98,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 -B scripts/check-release-run-custody.py "$(git rev-parse "${GITHUB_SHA}^{commit}")"
 
+      - name: Verify v164 release supervisor before reserving a draft
+        if: github.ref == 'refs/tags/v0.24.164' && github.run_attempt == 1
+        run: |
+          set -euo pipefail
+          test -x "$HOME/.local/bin/sirsi-maat-run"
+          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || {
+            echo 'installed Ma’at supervisor does not match release source' >&2; exit 1;
+          }
+
       - name: Reserve exact source-bound release draft
         if: github.run_attempt == 1
         env:
@@ -126,7 +135,7 @@ jobs:
 
       - name: Import Developer ID signing identities
         id: keychain_setup
-        if: github.run_attempt == 1
+        if: github.run_attempt == 1 && github.ref != 'refs/tags/v0.24.164'
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -171,8 +180,17 @@ jobs:
             echo "Using the enrolled login keychain; no certificate material was imported."
           fi
 
+      - name: Select v164 delegated signing client
+        if: github.run_attempt == 1 && github.ref == 'refs/tags/v0.24.164'
+        run: |
+          set -euo pipefail
+          SIGN_CLIENT="${GITHUB_WORKSPACE}/tools/signing/sirsi-sign"
+          test -x "$SIGN_CLIENT" || { echo 'delegated signing client is unavailable' >&2; exit 1; }
+          echo "PANTHEON_SIGNING_EXECUTION=remote-service" >> "$GITHUB_ENV"
+          echo "PANTHEON_SIGN_CLIENT=$SIGN_CLIENT" >> "$GITHUB_ENV"
+
       - name: Resolve enrolled or imported Developer ID identity
-        if: github.run_attempt == 1
+        if: github.run_attempt == 1 && github.ref != 'refs/tags/v0.24.164'
         run: |
           set -euo pipefail
           KEYCHAIN="${PANTHEON_SIGNING_KEYCHAIN:?Signing keychain was not selected}"
@@ -188,7 +206,7 @@ jobs:
           echo "Resolved Developer ID Application identity using ${PANTHEON_SIGNING_MODE}."
 
       - name: Preflight imported Developer ID Installer identity
-        if: github.run_attempt == 1
+        if: github.run_attempt == 1 && github.ref != 'refs/tags/v0.24.164'
         env:
           DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
         run: |
@@ -224,13 +242,15 @@ jobs:
           PANTHEON_BUILD_JOBS: "1"
           PANTHEON_APOLLO_CAPABILITY: disabled
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
-          DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          DEVELOPER_ID_INSTALLER: ${{ (github.ref != 'refs/tags/v0.24.164' && secrets.DEVELOPER_ID_INSTALLER) || '' }}
+          APPLE_ID: ${{ (github.ref != 'refs/tags/v0.24.164' && secrets.APPLE_ID) || '' }}
+          APPLE_TEAM_ID: ${{ (github.ref != 'refs/tags/v0.24.164' && secrets.APPLE_TEAM_ID) || '' }}
+          APPLE_APP_PASSWORD: ${{ (github.ref != 'refs/tags/v0.24.164' && secrets.APPLE_APP_PASSWORD) || '' }}
         run: |
           set -euo pipefail
-          : "${DEVELOPER_ID_INSTALLER:?DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG}"
+          if [[ "${PANTHEON_SIGNING_EXECUTION:-}" != remote-service ]]; then
+            : "${DEVELOPER_ID_INSTALLER:?DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG}"
+          fi
           # The legacy runner-start rail-lock hook is not a resource grant.
           # Register this job's actual native executor, acquire/maintain its own
           # canonical CPU grant, and retain cleanup evidence before publishing.
@@ -468,6 +488,9 @@ jobs:
 
   publish-npm:
     name: Publish thoth-init to npm (OIDC)
+    # The owner approved the three native artifacts and cask only for v164.
+    # Skip the entire job, including checkout and npm OIDC authorization.
+    if: ${{ github.ref != 'refs/tags/v0.24.164' }}
     runs-on: ubuntu-latest
     needs: release
     # Non-fatal: thoth-init publishing 404'd (package not yet claimed / OIDC

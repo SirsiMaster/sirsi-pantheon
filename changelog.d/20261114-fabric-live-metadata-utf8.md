@@ -1,2 +1,0 @@
-- **Fabric link discovery:** decode bounded local link-monitor JSON as strict UTF-8, so valid non-ASCII descriptions do not hide current Thunderbolt peer candidates.
-- Disable curl's default configuration for the loopback metadata request so user-configured URLs or output settings are not inherited.
