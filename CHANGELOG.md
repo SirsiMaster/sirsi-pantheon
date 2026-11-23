@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.164] — 2026-11-23
 
+- Release admission uses a separately installed, root-protected supervisor and CLI on M1, leaving the existing shared supervisor unchanged.
+
 - Signing service ignores hidden transfer staging even when zsh enables GLOB_DOTS, and preserves an existing work or output directory instead of replaying a job with an uncertain prior outcome.
 
 - **Router lane status: a session with a stale heartbeat is no longer reported as unregistered.**

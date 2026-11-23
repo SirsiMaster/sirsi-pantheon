@@ -73,6 +73,15 @@ jobs:
           [[ "$ACTUAL_HW_MODEL" == "MacBookPro18,1" ]] || { echo "requires qualified M1 model MacBookPro18,1" >&2; exit 1; }
           echo "accepted=true" >> "$GITHUB_OUTPUT"
 
+      - name: Retain qualified runner context
+        env:
+          BOUND_RUNNER_NAME: ${{ runner.name }}
+          BOUND_RUNNER_OS: ${{ runner.os }}
+          BOUND_RUNNER_ARCH: ${{ runner.arch }}
+        run: |
+          printf 'PANTHEON_RUNNER_NAME=%s\nPANTHEON_RUNNER_OS=%s\nPANTHEON_RUNNER_ARCH=%s\n' \
+            "$BOUND_RUNNER_NAME" "$BOUND_RUNNER_OS" "$BOUND_RUNNER_ARCH" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -100,12 +109,9 @@ jobs:
 
       - name: Verify v164 release supervisor before reserving a draft
         if: github.ref == 'refs/tags/v0.24.164' && github.run_attempt == 1
-        run: |
-          set -euo pipefail
-          test -x "$HOME/.local/bin/sirsi-maat-run"
-          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || {
-            echo 'installed Ma’at supervisor does not match release source' >&2; exit 1;
-          }
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: /bin/bash scripts/maat/release-supervisor.sh verify
 
       - name: Reserve exact source-bound release draft
         if: github.run_attempt == 1
@@ -258,13 +264,7 @@ jobs:
           # workspace supervisor can require CLI flags the installed release
           # does not implement yet (125's --cores versus installed124).
           # Admission remains mandatory; a missing installed pair fails closed.
-          test -x "$HOME/.local/bin/sirsi-maat-run"
-          # Do not silently substitute an older installed supervisor for the
-          # reviewed source. Installation/rollout remains a separate operation.
-          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || {
-            echo 'installed Ma’at supervisor does not match release source' >&2; exit 1;
-          }
-          "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon \
+          /bin/bash scripts/maat/release-supervisor.sh run --agent codex-pantheon \
             --register-executor --work "pantheon-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --cpu-cores 1 --timeout 1500 -- /bin/bash -euo pipefail -c '
               PANTHEON_APOLLO_DIGEST_RECEIPT="$(bash scripts/new-apollo-digest-receipt.sh "$RUNNER_TEMP")"
@@ -288,9 +288,7 @@ jobs:
         run: |
           set -euo pipefail
           CUSTODY="$(mktemp -d "$RUNNER_TEMP/pantheon-release-custody-${GITHUB_RUN_ID}.XXXXXXXX")"
-          test -x "$HOME/.local/bin/sirsi-maat-run"
-          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || { echo 'installed Ma’at supervisor does not match release source' >&2; exit 1; }
-          "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon --register-executor \
+          /bin/bash scripts/maat/release-supervisor.sh run --agent codex-pantheon --register-executor \
             --work "pantheon-custody-create-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --cpu-cores 1 --timeout 600 -- \
             python3 -B scripts/release-custody.py create "$CUSTODY" "$BUILD_VERSION" "$(git rev-parse "${GITHUB_SHA}^{commit}")" "${PANTHEON_GUARD_ATTEMPT:?}/payload-manifest.json"
           echo "PANTHEON_RELEASE_CUSTODY=$CUSTODY" >> "$GITHUB_ENV"
@@ -341,9 +339,7 @@ jobs:
           CUSTODY="${PANTHEON_RELEASE_CUSTODY:?}"
           RESTORED="$(mktemp -d "$RUNNER_TEMP/pantheon-release-inputs-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.XXXXXXXX")"
           COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
-          test -x "$HOME/.local/bin/sirsi-maat-run"
-          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || { echo 'installed Ma’at supervisor does not match release source' >&2; exit 1; }
-          "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon --register-executor \
+          /bin/bash scripts/maat/release-supervisor.sh run --agent codex-pantheon --register-executor \
             --work "pantheon-custody-restore-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --cpu-cores 1 --timeout 600 -- \
             /bin/bash -euo pipefail -c 'cd "$1"; shift; exec python3 -B "$@"' fixture \
             "$RESTORED" "$GITHUB_WORKSPACE/scripts/release-custody.py" restore "$CUSTODY" "$BUILD_VERSION" "$COMMIT" "$CUSTODY/payload-manifest.json"
@@ -358,13 +354,9 @@ jobs:
           EXPECTED_COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
           test -f "${PANTHEON_RELEASE_INPUTS:?}/bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"
           test -f "${PANTHEON_RELEASE_INPUTS:?}/bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
-          test -x "$HOME/.local/bin/sirsi-maat-run"
-          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || {
-            echo 'installed Ma’at supervisor does not match release source' >&2; exit 1;
-          }
           # This is a separate actual workload (including read-only image
           # attachment), not covered by the earlier build's released grant.
-          "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon \
+          /bin/bash scripts/maat/release-supervisor.sh run --agent codex-pantheon \
             --register-executor --work "pantheon-publish-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --cpu-cores 1 --timeout 600 -- python3 -B scripts/publish-release-assets.py \
             --version "$BUILD_VERSION" --expected-commit "$EXPECTED_COMMIT" \

@@ -1,4 +1,5 @@
 """Source-contract tests only: never compile, sign, notarize or contact a router."""
+import hashlib
 from pathlib import Path
 import os
 import subprocess
@@ -8,6 +9,14 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
+SELECTOR = ROOT / 'scripts/maat/release-supervisor.sh'
+RUN = '/bin/bash scripts/maat/release-supervisor.sh run --agent'
+
+
+def copy_selector(repo):
+    selector = repo / 'scripts/maat/release-supervisor.sh'
+    selector.parent.mkdir(parents=True, exist_ok=True)
+    selector.write_bytes(SELECTOR.read_bytes())
 
 
 class ReleaseAdmissionContract(unittest.TestCase):
@@ -30,12 +39,45 @@ class ReleaseAdmissionContract(unittest.TestCase):
         conditions = [line for line in block.splitlines() if line.startswith('    if:')]
         self.assertEqual(conditions, ["    if: ${{ github.ref != 'refs/tags/v0.24.164' }}"])
 
+    def test_v164_protects_runtime_and_holds_before_draft(self):
+        source = (ROOT / '.github/workflows/release.yml').read_text()
+        verify = source.index('/bin/bash scripts/maat/release-supervisor.sh verify')
+        reserve = source.index('      - name: Reserve exact source-bound release draft')
+        self.assertLess(verify, reserve)
+        selector = SELECTOR.read_text()
+        self.assertIn('runtime=/usr/local/libexec/sirsi-pantheon/release-runtimes/v0.24.164', selector)
+        self.assertIn('== 0:444:1', selector)
+        self.assertIn('--scope fabric --protected-cli', selector)
+        pinned = hashlib.sha256((ROOT / 'scripts/maat/admitted-run.py').read_bytes()).hexdigest()
+        self.assertIn('supervisor_sha=' + pinned, selector)
+        self.assertEqual(source.count(RUN + ' codex-pantheon'), 4)
+
+    def test_v164_cannot_fall_through_to_legacy_on_unqualified_context(self):
+        # The existing alias is a tripwire. Actual platform/tool checks and
+        # the real supervisor are never reached in these two controls.
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home)
+            legacy = root / '.local/bin/sirsi-maat-run'
+            legacy.parent.mkdir(parents=True)
+            legacy.write_text('#!/bin/bash\nexit 63\n')
+            legacy.chmod(0o700)
+            copy_selector(root)
+            (root / 'scripts/maat/admitted-run.py').write_bytes(legacy.read_bytes())
+            env = {'HOME': home, 'GITHUB_REF': 'refs/tags/v0.24.164', 'BUILD_VERSION': '0.24.164'}
+            cmd = ['/bin/bash', str(SELECTOR), 'run', '--unused']
+            for version, message in [('0.24.162', 'tag/version disagree'),
+                                     ('0.24.164', 'qualified runner context required')]:
+                with self.subTest(version=version):
+                    result = subprocess.run(cmd, cwd=root, env=dict(env, BUILD_VERSION=version),
+                                            capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn(message, result.stderr)
+
     def test_both_native_payloads_are_inside_one_maintained_supervisor(self):
         source = (ROOT / '.github/workflows/release.yml').read_text()
         block = source.split('      - name: Build + sign + notarize', 1)[1].split('      - name:', 1)[0]
-        self.assertIn('test -x "$HOME/.local/bin/sirsi-maat-run"', block)
         self.assertNotIn('python3 scripts/maat/admitted-run.py', block)
-        start = block.index('"$HOME/.local/bin/sirsi-maat-run" --agent')
+        start = block.index(RUN)
         self.assertIn('--agent codex-pantheon', block[start:])
         self.assertIn('--register-executor', block[start:])
         self.assertIn('--cpu-cores 1 --timeout 1500 -- /bin/bash -euo pipefail -c', block[start:])
@@ -81,11 +123,9 @@ class ReleaseAdmissionContract(unittest.TestCase):
         mutations = [source.replace('--register-executor', '--no-executor'),
                      source.replace('--cpu-cores 1', '--cpu-cores 8'),
                      source.replace('PANTHEON_BUILD_JOBS: "1"', 'PANTHEON_BUILD_JOBS: "8"'),
-                     source.replace('"$HOME/.local/bin/sirsi-maat-run" --agent',
+                     source.replace(RUN,
                                     'python3 scripts/maat/admitted-run.py --agent'),
-                     source.replace('"$HOME/.local/bin/sirsi-maat-run" --agent',
-                                    'sirsi-maat-run --agent'),
-                     source.replace('test -x "$HOME/.local/bin/sirsi-maat-run"', ':')]
+                     source.replace(RUN, 'sirsi-maat-run --agent')]
         for candidate in mutations:
             with self.subTest(candidate=candidate), patch.object(Path, 'read_text', return_value=candidate):
                 with self.assertRaises((AssertionError, ValueError)):
@@ -105,7 +145,9 @@ class ReleaseAdmissionContract(unittest.TestCase):
             reviewed = repo / 'scripts/maat/admitted-run.py'
             reviewed.parent.mkdir(parents=True)
             reviewed.write_bytes(helper.read_bytes())
-            env = dict(os.environ, HOME=home, GITHUB_RUN_ID='fixture',
+            copy_selector(repo)
+            env = dict(os.environ, HOME=home, GITHUB_REF='refs/tags/v0.24.162',
+                       BUILD_VERSION='0.24.162', GITHUB_RUN_ID='fixture',
                        GITHUB_RUN_ATTEMPT='1', DEVELOPER_ID_INSTALLER='fixture-only')
             result = subprocess.run(['/bin/bash', '-euo', 'pipefail', '-c', shell],
                                     cwd=repo, env=env, capture_output=True, text=True, timeout=5)
@@ -128,7 +170,9 @@ class ReleaseAdmissionContract(unittest.TestCase):
         block = source.split('      - name: Build + sign + notarize', 1)[1].split('      - name:', 1)[0]
         shell = textwrap.dedent(block.split('        run: |\n', 1)[1])
         with tempfile.TemporaryDirectory(prefix='release absent pair ') as home:
+            copy_selector(Path(home))
             env = dict(os.environ, HOME=home, GITHUB_RUN_ID='fixture',
+                       GITHUB_REF='refs/tags/v0.24.162', BUILD_VERSION='0.24.162',
                        GITHUB_RUN_ATTEMPT='1', DEVELOPER_ID_INSTALLER='fixture-only')
             result = subprocess.run(['/bin/bash', '-euo', 'pipefail', '-c', shell],
                                     env=env, capture_output=True, text=True, timeout=5)
@@ -152,6 +196,7 @@ class ReleaseAdmissionContract(unittest.TestCase):
             helper.write_text(capture)
             helper.chmod(0o700)
             reviewed.write_text(capture)
+            copy_selector(repo)
             bindir = root / 'bin'
             bindir.mkdir()
             git = bindir / 'git'
@@ -161,7 +206,8 @@ class ReleaseAdmissionContract(unittest.TestCase):
             tmp.mkdir()
             env = dict(os.environ, HOME=home, PATH=str(bindir) + os.pathsep + os.environ.get('PATH', ''),
                        RUNNER_TEMP=str(tmp), GITHUB_RUN_ID='fixture', GITHUB_RUN_ATTEMPT='1',
-                       GITHUB_SHA='fixture', GITHUB_WORKSPACE=str(repo), BUILD_VERSION='1.2.3',
+                       GITHUB_SHA='fixture', GITHUB_WORKSPACE=str(repo),
+                       GITHUB_REF='refs/tags/v1.2.3', BUILD_VERSION='1.2.3',
                        PANTHEON_GUARD_ATTEMPT=str(root / 'guard'), PANTHEON_RELEASE_CUSTODY=str(root / 'custody'))
             for name, work, verb in phases:
                 with self.subTest(phase=name):
