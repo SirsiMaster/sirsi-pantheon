@@ -81,6 +81,10 @@ jobs:
         run: |
           printf 'PANTHEON_RUNNER_NAME=%s\nPANTHEON_RUNNER_OS=%s\nPANTHEON_RUNNER_ARCH=%s\n' \
             "$BOUND_RUNNER_NAME" "$BOUND_RUNNER_OS" "$BOUND_RUNNER_ARCH" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_REF" == refs/tags/v0.24.164 ]]; then
+            printf '%s\n' 'SIRSI_ROUTER_URL=spool:///var/sirsipantheon/relay' \
+              'SIRSI_RELAY_TRUST_GROUP=_sirsipantheon' >> "$GITHUB_ENV"
+          fi
 
       - name: Checkout
         uses: actions/checkout@v4
