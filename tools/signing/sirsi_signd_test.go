@@ -174,6 +174,7 @@ func TestSigndIgnoresHiddenStaging(t *testing.T) {
 
 func TestSigndPreservesHiddenStagingWithGlobDots(t *testing.T) {
 	id := "aaaaaaaa-0000-4000-8000-00000000000a"
+	var before os.FileInfo
 	r := runSigndOptions(t, 0, "", func(home string) {
 		st := filepath.Join(home, "sirsi-sign", "inbox", "."+id)
 		if err := os.MkdirAll(st, 0o700); err != nil {
@@ -182,8 +183,14 @@ func TestSigndPreservesHiddenStagingWithGlobDots(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(st, "artifact.bin"), []byte("late"), 0o600); err != nil {
 			t.Fatal(err)
 		}
+		var err error
+		before, err = os.Stat(filepath.Join(st, "artifact.bin"))
+		if err != nil {
+			t.Fatal(err)
+		}
 	}, true)
-	if _, err := os.Stat(filepath.Join(r.root, "sirsi-sign", "inbox", "."+id, "artifact.bin")); err != nil {
+	after, err := os.Stat(filepath.Join(r.root, "sirsi-sign", "inbox", "."+id, "artifact.bin"))
+	if err != nil || !os.SameFile(before, after) {
 		t.Fatalf("hidden staging was not preserved: %v", err)
 	}
 }
@@ -201,6 +208,26 @@ func TestSigndPreservesUnknownInboxDirectory(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(r.root, "sirsi-sign", "inbox", "unknown-custody", "artifact"))
 	if err != nil || string(b) != "preserve" {
 		t.Fatalf("unknown custody changed: %q, %v", b, err)
+	}
+}
+
+func TestSigndPreservesMalformedUUIDDirectory(t *testing.T) {
+	name := strings.Repeat("a", 36)
+	r := runSignd(t, 0, "", func(home string) {
+		p := filepath.Join(home, "sirsi-sign", "inbox", name)
+		if err := os.MkdirAll(p, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(p, "kind"), []byte("codesign"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(p, "artifact"), []byte("preserve"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	})
+	b, err := os.ReadFile(filepath.Join(r.root, "sirsi-sign", "inbox", name, "artifact"))
+	if err != nil || string(b) != "preserve" {
+		t.Fatalf("malformed UUID custody changed: %q, %v", b, err)
 	}
 }
 
