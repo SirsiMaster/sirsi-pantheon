@@ -107,12 +107,12 @@ func (tr casHandlerTransport) RoundTrip(req *http.Request) (*http.Response, erro
 
 func TestStateCASIndependentConnections(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cas.db")
-	first, err := OpenPath(path)
+	first, err := OpenPath(seedFromTemplate(t, path))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer first.Close()
-	second, err := OpenPath(path)
+	second, err := OpenPath(seedFromTemplate(t, path))
 	if err != nil {
 		t.Fatal(err)
 	}

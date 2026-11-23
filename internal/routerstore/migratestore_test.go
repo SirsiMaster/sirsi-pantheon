@@ -56,7 +56,7 @@ func newDst(t *testing.T) *SQLiteStore {
 }
 
 func TestMigrateStoreDryRunWritesNothing(t *testing.T) {
-	src, err := OpenPath(filepath.Join(t.TempDir(), "src.db"))
+	src, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "src.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestMigrateStoreDryRunWritesNothing(t *testing.T) {
 }
 
 func TestMigrateStoreIsLosslessAndIdempotent(t *testing.T) {
-	src, err := OpenPath(filepath.Join(t.TempDir(), "src.db"))
+	src, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "src.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestMigrateStoreIsLosslessAndIdempotent(t *testing.T) {
 
 // Negative control: the hash must actually see a changed row.
 func TestCanonicalDumpDetectsAOneRowChange(t *testing.T) {
-	s, err := OpenPath(filepath.Join(t.TempDir(), "a.db"))
+	s, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "a.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestCanonicalDumpDetectsAOneRowChange(t *testing.T) {
 
 // Negative control for quiesce: a source that moves mid-migration is refused.
 func TestMigrateStoreRefusesWhenSourceMoves(t *testing.T) {
-	src, err := OpenPath(filepath.Join(t.TempDir(), "src.db"))
+	src, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "src.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestMigrateStoreRefusesWhenSourceMoves(t *testing.T) {
 // A NUL byte in a text cell is refused by default and listed; with ScrubNUL
 // both sides are scrubbed identically and the hashes agree.
 func TestMigrateStoreNULIsRefusedUnlessScrubbed(t *testing.T) {
-	src, err := OpenPath(filepath.Join(t.TempDir(), "src.db"))
+	src, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "src.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestMigrateStoreNULIsRefusedUnlessScrubbed(t *testing.T) {
 // An open item whose source has no wake event (pre-v10 data) must not gain
 // one on the destination: the trigger-minted extra is removed.
 func TestMigrateStoreRemovesTriggerMintedExtras(t *testing.T) {
-	src, err := OpenPath(filepath.Join(t.TempDir(), "src.db"))
+	src, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "src.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestMigrateStoreRemovesTriggerMintedExtras(t *testing.T) {
 // The destination schema pre-seeds state; the source's value must win and a
 // re-import must still write nothing.
 func TestMigrateStoreSourceWinsOnPreseededState(t *testing.T) {
-	src, err := OpenPath(filepath.Join(t.TempDir(), "src.db"))
+	src, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "src.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestMigrateStoreSourceWinsOnPreseededState(t *testing.T) {
 // ON CONFLICT DO NOTHING, the gate fails, and the whole import rolls back: the
 // destination is byte-for-byte what it was, and the report names the key.
 func TestMigrateStoreRollsBackAndNamesConflicts(t *testing.T) {
-	src, err := OpenPath(filepath.Join(t.TempDir(), "src.db"))
+	src, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "src.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
