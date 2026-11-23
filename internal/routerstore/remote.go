@@ -23,9 +23,7 @@ package routerstore
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -91,6 +89,15 @@ func sentinelName(err error) string {
 	}
 	return ""
 }
+
+// wireSentinel is a sentinel the service returned, carrying its full message.
+type wireSentinel struct {
+	sentinel error
+	msg      string
+}
+
+func (e *wireSentinel) Error() string { return e.msg }
+func (e *wireSentinel) Unwrap() error { return e.sentinel }
 
 type wireError struct {
 	Name    string `json:"name,omitempty"`
@@ -293,21 +300,7 @@ var (
 // identity claim bound into a session at mint (ADR-062 §3). Computed once.
 func RuntimeHash() string {
 	runtimeOnce.Do(func() {
-		runtimeHash = "unknown"
-		exe, err := os.Executable()
-		if err != nil {
-			return
-		}
-		f, err := os.Open(exe)
-		if err != nil {
-			return
-		}
-		defer func() { _ = f.Close() }()
-		h := sha256.New()
-		if _, err := io.Copy(h, f); err != nil {
-			return
-		}
-		runtimeHash = hex.EncodeToString(h.Sum(nil))
+		runtimeHash = computeRuntimeHash() // runtimehash.go: disk-cached by binary identity
 	})
 	return runtimeHash
 }
@@ -576,6 +569,11 @@ func (rs *RemoteStore) do(ctx context.Context, method string, args []any, sess *
 				if json.Unmarshal(wr.Error.Detail, &wf) == nil {
 					return &wf
 				}
+			}
+			// Keep the service's reason: a bare sentinel ("completion receipt
+			// invalid") hid whether the receipt was unmerged, unreadable or already used.
+			if msg := wr.Error.Message; msg != s.Error() && strings.Contains(msg, s.Error()) {
+				return &wireSentinel{s, msg}
 			}
 			return s
 		}
