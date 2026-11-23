@@ -188,6 +188,22 @@ func TestSigndPreservesHiddenStagingWithGlobDots(t *testing.T) {
 	}
 }
 
+func TestSigndPreservesUnknownInboxDirectory(t *testing.T) {
+	r := runSignd(t, 0, "", func(home string) {
+		p := filepath.Join(home, "sirsi-sign", "inbox", "unknown-custody")
+		if err := os.MkdirAll(p, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(p, "artifact"), []byte("preserve"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	})
+	b, err := os.ReadFile(filepath.Join(r.root, "sirsi-sign", "inbox", "unknown-custody", "artifact"))
+	if err != nil || string(b) != "preserve" {
+		t.Fatalf("unknown custody changed: %q, %v", b, err)
+	}
+}
+
 func TestSigndPreservesExistingAttempt(t *testing.T) {
 	const job = "11111111-2222-4333-8444-555555555555"
 	for _, dir := range []string{"work", "outbox"} {

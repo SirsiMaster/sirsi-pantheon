@@ -47,7 +47,7 @@ withts() {
 
 for J in "$B"/inbox/*(/); do
   id=${J:t}
-  [[ $id =~ '^[0-9a-f-]{36}$' ]] || { rm -rf -- "$J"; continue; }      # only uuid job ids
+  [[ $id =~ '^[0-9a-f-]{36}$' ]] || continue  # leave unknown custody untouched
   [ -f "$J/kind" ] || continue
   kind=$(head -c 8 -- "$J/kind" | tr -dc 'a-z')
   caller=$(head -c 64 -- "$J/caller" 2>/dev/null | tr -dc 'A-Za-z0-9@._-')
