@@ -32,6 +32,13 @@ commercial contract passed on5ab2. The subsequent synthetic-only fixed PATH
 avoids inheriting real runner context/secrets. Compose on reviewed signoff1c8;
 fresh combined-source fixtures, independent review and normal gates remain due.
 
+Normal deep publication of60693b6 failed at the deliberate release-workflow
+digest pin in Ma'at fixture construction; no remote push occurred. The exact
+reviewed workflow now pins b2ce4acf instead of the prior f897c869. Runtime
+observer needles and all missing-control/symlink/duplicate-publisher negatives
+remain unchanged. This is a deliberate provenance update, not a waived gate;
+fresh targeted and full normal publication checks remain required.
+
 ## Nov24 — versioned production completion policy candidate
 
 Replace caller-selected external algorithm authority with newly authored

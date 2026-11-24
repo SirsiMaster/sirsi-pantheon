@@ -12,6 +12,9 @@
 # Lint; 20 focused fixtures plus the commercial contract passed on5ab2. Fixed
 # synthetic PATH does not inherit runner secrets/context. This composition on
 # reviewed signoff1c8 needs its own execution/review and normal publication.
+# Normal deep60693 publication failed on stale deliberate workflow test pin;
+# update only reviewed workflow SHA b2ce4acf and provenance, not observer policy
+# or negative controls. Preserve original failure; fresh full gate still owed.
 # Nov24 production completion-policy candidate: embeds newly authored protocol,
 # exact item/required commands/classification, fixed launcher and independent
 # physical Git boundary. Initial helper-selector RED/GREEN and upward-Git RED
