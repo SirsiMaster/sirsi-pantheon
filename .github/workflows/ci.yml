@@ -68,6 +68,9 @@ jobs:
       - name: router service image context (stage.sh)
         run: bash scripts/ci-private-sdk.sh bash scripts/router-service/stage.test.sh
 
+      - name: router and board context modes under private umask (inert compiler)
+        run: python3 scripts/router-service/context_modes_test.py -v
+
       - name: router staged rollback traffic selection
         run: bash scripts/router-service/traffic-target.test.sh
 

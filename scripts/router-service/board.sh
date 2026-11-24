@@ -52,9 +52,13 @@ context() {
   jq '{machines:[.machines[]|{id,model,registered_at,admitted_by}]}' \
     "$ROOT/.agents/idea-router/machines.json" >"$1/machines.json"
   cp "$ROOT/CHANGELOG.md" "$1/CHANGELOG.md"
-  (cd "$ROOT" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
+  (cd "$ROOT" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -buildvcs=true -trimpath \
     -ldflags="-s -w -X github.com/SirsiMaster/sirsi-pantheon/internal/version.Version=$(git -C "$ROOT" describe --tags --always)" \
     -o "$1/sirsi" ./cmd/sirsi)
+  # COPY keeps root ownership. Only these public inputs may be opened to the
+  # distroless nonroot user; the context directory and private files stay private.
+  chmod 0755 "$1/sirsi"
+  chmod 0644 "$1/recipient-registry.json" "$1/machines.json" "$1/CHANGELOG.md"
   printf 'FROM gcr.io/distroless/static-debian12:nonroot\nCOPY sirsi /sirsi\nCOPY recipient-registry.json /.agents/idea-router/agents.json\nCOPY machines.json /.agents/idea-router/machines.json\nCOPY CHANGELOG.md /CHANGELOG.md\nWORKDIR /\nENTRYPOINT ["/sirsi"]\nCMD ["router","board-serve"]\n' >"$1/Dockerfile"
 }
 

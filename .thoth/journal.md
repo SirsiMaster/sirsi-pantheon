@@ -1,4 +1,22 @@
 # 𓃣 Anubis Engineering Journal
+## Nov24 — composed source checkpoint
+
+Normal deep publication of328ba6d passed107 Go packages and unchanged gates,
+native7a6cf91/ownae829 RELEASED0,929.619seconds, exact remote head verified.
+Packaging8f05e61 has four new fixtures plus both existing staging fixtures
+passing and actual static builds with0755/0644 assets/private0700 context,
+exact clean VCS metadata. Go1.26.11 does not recognize linked-worktree gitfiles;
+the qualified normal .git-directory layout is required, not synthesized stamps.
+Compose these independently reviewed changes without modifying any Go file or
+the already reviewed v165 workflow. This new composition needs its own checks
+and publication. Earlier dated candidate notes below remain historical.
+
+Composed e212a9e qualification completed:21 release/commercial fixtures,4 context
+mode fixtures, both staging fixtures and targeted Go preflight passed; a fresh
+independent Sonnet source review accepted the composition. No Go or release
+workflow blob changed from the full-test-passed328 source. Normal publication
+and exact-head hosted checks remain required; no deployment pass is inferred.
+
 ## Nov24 — v165 protected native continuation, unqualified source
 
 The v165 release preparation had merged, but the executing release workflow
@@ -38,6 +56,39 @@ reviewed workflow now pins b2ce4acf instead of the prior f897c869. Runtime
 observer needles and all missing-control/symlink/duplicate-publisher negatives
 remain unchanged. This is a deliberate provenance update, not a waived gate;
 fresh targeted and full normal publication checks remain required.
+
+## Nov24 — accepted context repair, existing fixture compatibility
+
+Parent SOURCE_ACCEPT bound64505/63b70 and authorized the two existing inert Go
+mock adaptations. Each now creates the exact -o executable with private0700
+mode; all traffic/tag/refusal assertions remain unchanged and the real builder
+still performs the chmod. Fresh own Native b249ed76 passed all4 new tests and
+both existing fixtures. No real compilation is claimed by these inert controls.
+
+This commit is the clean source boundary for the separately admitted Go1.26.11
+offline stage+board builds. Preserve actual embedded VCS metadata, exact modes
+and static ELF evidence; refusal must be diagnosed, never remove buildvcs=true.
+No Cloud Build, deployment, push or publication runs in this workstream.
+
+## Nov24 — private-umask service context repair
+
+The owner's original zero-traffic stage failed before application startup:
+root-owned COPY inputs created under umask077 were not accessible to the
+distroless nonroot user. Original native8a0db/own e46 and board artifact build
+metadata remain untouched. This isolated d8d56013/e917 repair uses exact-file
+0755/0644 publication modes and mandatory buildvcs=true in both builders.
+
+Fresh own native runs on M5 used a cooperative CPU1 mask, never a parent lease.
+Initial RED d19db369 failed4 expected checks. Strengthened RED cc45eac1 failed
+all8 binary/public-asset/VCS checks across4 tests on unchanged d8 source.
+GREEN cfbd113a passed4 tests with no skips; canonical exact-ID readbacks were
+released with exit1 and exit0 respectively. The compiler is explicitly inert:
+these runs prove mode handling and argv, not real VCS metadata or ELF startup.
+
+Parent source review and a clean-commit real compile remain next. Existing
+staged-tag/traffic-target fixtures have outputless Go mocks; minimal output-file
+adaptations were requested, not silently made outside the named file scope.
+No push, deployment, IAM/secret, installed CLI or service change was performed.
 
 ## Nov24 — versioned production completion policy candidate
 
