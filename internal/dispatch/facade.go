@@ -898,6 +898,16 @@ func (f *Facade) Wait(ctx context.Context, agent string, timeout time.Duration) 
 	}
 }
 
+// WaitInbox parks on the store until an item is open for agent or timeout
+// lapses. Unlike Wait it neither reads nor writes the per-agent edge cursor, so
+// an OBSERVER (the wake loop) can use it without stealing the delivery a lane's
+// own `router wait` consumer is owed. It is LEVEL-triggered: while any item is
+// open it returns true at once, so callers must not call it in a loop while
+// work is already open.
+func (f *Facade) WaitInbox(ctx context.Context, agent string, timeout time.Duration) (bool, error) {
+	return f.store.Wait(ctx, agent, timeout)
+}
+
 func (f *Facade) waitCursorPath(agent string) string {
 	return filepath.Join(f.root, ".wait-cursor-"+sanitizeAgentFile(agent))
 }
