@@ -35,9 +35,9 @@ func TestTaskWhyCLIPlainScopesRowAndLegacyAnswers(t *testing.T) {
 	}{
 		{"row claimable", `{"agent":"lane","task_id":"task","scope":"task-row","caller_evaluation":"not-evaluated","status":"pending","claimable":true,"dispatchable":true,"reasons":["row predicates only"]}`, "NOT EVALUATED", "task-row claimable"},
 		{"row refused", `{"agent":"lane","task_id":"task","scope":"task-row","caller_evaluation":"not-evaluated","status":"blocked","claimable":false,"dispatchable":false,"reasons":["status is blocked"]}`, "NOT EVALUATED", "task-row NOT claimable"},
-		{"old service", `{"agent":"lane","task_id":"task","status":"pending","claimable":true,"dispatchable":true,"reasons":["no blocking cause: a claim by this lane would succeed"]}`, "scope is unknown or unsupported", "service claimable"},
-		{"partial metadata", `{"agent":"lane","task_id":"task","scope":"task-row","status":"pending","claimable":true}`, "scope is unknown or unsupported", "service claimable"},
-		{"unrecognized scope", `{"agent":"lane","task_id":"task","scope":"caller-aware","caller_evaluation":"evaluated","claimable":true}`, "scope is unknown or unsupported", "service claimable"},
+		{"old service", `{"agent":"lane","task_id":"task","status":"pending","claimable":true,"dispatchable":true,"reasons":["no blocking cause: a claim by this lane would succeed"]}`, "scope is unknown or unsupported", "unknown-scope claimable"},
+		{"partial metadata", `{"agent":"lane","task_id":"task","scope":"task-row","status":"pending","claimable":true}`, "scope is unknown or unsupported", "unknown-scope claimable"},
+		{"unrecognized scope", `{"agent":"lane","task_id":"task","scope":"caller-aware","caller_evaluation":"evaluated","claimable":true}`, "scope is unknown or unsupported", "unknown-scope claimable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var answer routerstore.TaskEligibility
@@ -62,7 +62,7 @@ func TestTaskWhyCLIPlainScopesRowAndLegacyAnswers(t *testing.T) {
 				t.Fatalf("missing scoped diagnostic warning: %q", out)
 			}
 			if answer.Scope != routerstore.TaskEligibilityScopeRow || answer.CallerEvaluation != routerstore.TaskEligibilityCallerNotEvaluated {
-				if !strings.Contains(out, "NOT CONFIRMED") || strings.Contains(out, "task-row claimable") {
+				if !strings.Contains(out, "NOT CONFIRMED") || strings.Contains(out, "task-row claimable") || strings.Contains(out, "service claimable") {
 					t.Fatalf("unknown service scope inferred caller/row checks: %q", out)
 				}
 			}

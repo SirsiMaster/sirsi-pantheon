@@ -149,6 +149,13 @@ func TestTaskEligibilityReportsOnlyRowScopeWithoutMutatingRows(t *testing.T) {
 			if after := read(); after != before {
 				t.Fatalf("read-only diagnosis changed row: before=%+v after=%+v", before, after)
 			}
+			// Only after checking diagnostic immutability, exercise the actual
+			// claim against this private store. No service caller is authorized
+			// by this row-only test, but the row predicates must agree.
+			_, claimErr := s.ClaimTask("lane", "scope", "w", "thr-1", time.Minute)
+			if (claimErr == nil) != e.Claimable {
+				t.Fatalf("row diagnosis and actual claim disagree: claimable=%v err=%v", e.Claimable, claimErr)
+			}
 		})
 	}
 }

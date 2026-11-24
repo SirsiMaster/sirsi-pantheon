@@ -386,7 +386,7 @@ scope metadata are reported as unknown-scope, not caller-aware.
 }
 
 func renderTaskEligibility(out io.Writer, e routerstore.TaskEligibility) error {
-	scope := "service"
+	scope := "unknown-scope"
 	if e.Scope == routerstore.TaskEligibilityScopeRow && e.CallerEvaluation == routerstore.TaskEligibilityCallerNotEvaluated {
 		scope = "task-row"
 		if _, err := fmt.Fprintln(out, "Scope: task-row only; caller/session eligibility is NOT EVALUATED. Row flags are not claim authorization."); err != nil {
