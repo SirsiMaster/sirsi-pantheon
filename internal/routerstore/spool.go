@@ -701,6 +701,8 @@ type Relay struct {
 	scans            atomic.Int32 // discovery passes (tests assert no spin under backlog)
 	// Per-instance deterministic scheduler probe; nil uses real discovery.
 	discoverFn func(context.Context) int
+	// Per-instance directory failure fixture; nil uses the OS reader.
+	readDirFn func(string) ([]os.DirEntry, error)
 	// Instance-local fixture seam; nil always uses the retained native marker.
 	maintenanceStartup func(context.Context) (io.Closer, error)
 	// Instance-local filesystem seam; nil uses os.Remove.
@@ -951,10 +953,28 @@ func (rl *Relay) discoverTracked(ctx context.Context, duties *sync.WaitGroup) in
 		return 0
 	}
 	rl.scans.Add(1)
-	files, _ := filepath.Glob(filepath.Join(rl.Spool, "*", "req", "*.json"))
+	// One directory enumeration supplies both request discovery and the
+	// existing permission diagnostic. The prior glob plus diagnostic opened
+	// every lane's req directory twice on every 150ms pass.
 	seen := map[string]bool{}
-	for _, f := range files {
-		seen[filepath.Base(filepath.Dir(filepath.Dir(f)))] = true
+	unreadable := map[string]error{}
+	readDir := os.ReadDir
+	if rl.readDirFn != nil {
+		readDir = rl.readDirFn
+	}
+	if lanes, _ := readDir(rl.Spool); lanes != nil {
+		for _, lane := range lanes {
+			entries, err := readDir(filepath.Join(rl.Spool, lane.Name(), "req"))
+			if lane.IsDir() && errors.Is(err, fs.ErrPermission) {
+				unreadable[lane.Name()] = err
+			}
+			for _, entry := range entries {
+				if strings.HasSuffix(entry.Name(), ".json") {
+					seen[lane.Name()] = true
+					break
+				}
+			}
+		}
 	}
 	rl.laneMu.Lock()
 	if rl.lanes == nil {
@@ -964,17 +984,13 @@ func (rl *Relay) discoverTracked(ctx context.Context, duties *sync.WaitGroup) in
 	// Glob silently skips a lane directory this uid cannot enter (a client
 	// without the trust group created it 0700). Say so ONCE per lane in the
 	// relay's own log, so a hung client has a daemon-side trace to find.
-	if lanes, _ := os.ReadDir(rl.Spool); lanes != nil {
-		for _, l := range lanes {
-			if !l.IsDir() || rl.unreadable[l.Name()] {
-				continue
-			}
-			if _, err := os.ReadDir(filepath.Join(rl.Spool, l.Name(), "req")); err != nil && errors.Is(err, fs.ErrPermission) {
-				rl.unreadable[l.Name()] = true
-				rl.Log.Warn("relay: lane directory not readable by this uid; its requests will never be seen — "+
-					"chmod g+rwx it (owner) or start the client with SIRSI_RELAY_TRUST_GROUP", "lane", l.Name(), "err", err)
-			}
+	for lane, err := range unreadable {
+		if rl.unreadable[lane] {
+			continue
 		}
+		rl.unreadable[lane] = true
+		rl.Log.Warn("relay: lane directory not readable by this uid; its requests will never be seen — "+
+			"chmod g+rwx it (owner) or start the client with SIRSI_RELAY_TRUST_GROUP", "lane", lane, "err", err)
 	}
 	delivered := 0
 	for agent := range seen {
