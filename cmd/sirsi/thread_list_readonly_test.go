@@ -2,11 +2,19 @@ package main_test
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,6 +48,93 @@ func threadSweepFixture(t *testing.T) (string, []byte, func(...string) (string, 
 		return string(out), err
 	}
 	return registry, before, invoke
+}
+
+func TestThreadListPopulatedCanonicalAndRelayAreObservational(t *testing.T) {
+	for _, transport := range []string{"sqlite", "relay"} {
+		t.Run(transport, func(t *testing.T) {
+			root, home := setupTempRouter(t), t.TempDir()
+			db := filepath.Join(root, "fixture.db")
+			store, err := routerstore.OpenPath(db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			old := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+			payload, err := json.Marshal(map[string]any{"thread_id": "thr-old", "agent_id": "fixture-a", "surface": "worker", "status": "active", "pid": 0, "last_seen_at": old})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.UpsertThreads([]routerstore.ThreadRecord{{ThreadID: "thr-old", Agent: "fixture-a", Status: "active", LastSeenAt: old, Payload: payload}}); err != nil {
+				t.Fatal(err)
+			}
+			before, err := store.ListThreads()
+			if err != nil {
+				t.Fatal(err)
+			}
+			extra := []string{"HOME=" + home, "SIRSI_ROUTER_STORE_WAKE=1"}
+			var mu sync.Mutex
+			var methods []string
+			if transport == "relay" {
+				h, err := routerstore.Handler(store, routerstore.ServerOptions{Token: "fixture-relay-token", MaxWait: time.Second})
+				if err != nil {
+					t.Fatal(err)
+				}
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					mu.Lock()
+					methods = append(methods, strings.TrimPrefix(r.URL.Path, "/v1/call/"))
+					mu.Unlock()
+					h.ServeHTTP(w, r)
+				}))
+				defer srv.Close()
+				spool := t.TempDir()
+				relay := &routerstore.Relay{Spool: spool, Base: srv.URL, Token: "fixture-relay-token", Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+				ctx, cancel := context.WithCancel(context.Background())
+				done := make(chan error, 1)
+				go func() { done <- relay.Serve(ctx) }()
+				defer func() {
+					cancel()
+					if err := <-done; err != nil {
+						t.Errorf("relay shutdown: %v", err)
+					}
+				}()
+				extra = append(extra, "SIRSI_ROUTER_URL=spool://"+spool, "SIRSI_ROUTER_TOKEN=", "SIRSI_AGENT_ID=fixture-a")
+			}
+			commandCtx, stopCommand := context.WithTimeout(context.Background(), 45*time.Second)
+			defer stopCommand()
+			cmd := exec.CommandContext(commandCtx, testBinary, "thread", "list", "--agent", "fixture-a", "--json")
+			cmd.Dir, cmd.Stdin = root, nil
+			cmd.Env = sirsiTestEnv(root, db, extra...)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("list: %v: %s", err, out)
+			}
+			var rows []json.RawMessage
+			if err := json.Unmarshal(out, &rows); err != nil || len(rows) != 1 {
+				t.Fatalf("list result: %s (%v)", out, err)
+			}
+			after, err := store.ListThreads()
+			if err != nil || !reflect.DeepEqual(before, after) {
+				t.Fatalf("thread records changed: before=%+v after=%+v err=%v", before, after, err)
+			}
+			if transport == "relay" {
+				mu.Lock()
+				defer mu.Unlock()
+				found := false
+				for _, method := range methods {
+					if method == "ListThreads" {
+						found = true
+					}
+					if method == "UpsertThreadCAS" || method == "DeleteThreadCAS" || method == "ImportThreadsIfEmpty" || method == "UpsertThreads" {
+						t.Errorf("list sent mutating thread RPC %q", method)
+					}
+				}
+				if !found {
+					t.Fatalf("no ListThreads observed through relay: %v", methods)
+				}
+			}
+		})
+	}
 }
 
 func TestThreadListReadOnly(t *testing.T) {
