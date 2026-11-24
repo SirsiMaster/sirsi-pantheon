@@ -1,0 +1,1 @@
+- Expose evidence-backed owner sign-off on the shared board without private task enumeration. Bind the opening account, preserve uncertain responses without automatic retry, and atomically refuse any retained worker custody before owner completion; cancellation remains distinct.

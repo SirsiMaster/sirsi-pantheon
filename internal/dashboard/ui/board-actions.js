@@ -36,6 +36,45 @@
     var subject=ask('Subject:');if(!subject)return;
     act('add-task',{agent:agent,task_id:id,subject:subject,responsible:ask('Responsible party (optional):')||''})
   }
+  function completeVerifiedTask(){
+    if(document.getElementById('board-signoff'))return;
+    var openedOwner=who,d=document.createElement('dialog');d.id='board-signoff';d.className='inspector board-retire';
+    d.setAttribute('aria-labelledby','board-signoff-title');
+    d.innerHTML='<h2 id="board-signoff-title">Complete verified task</h2><p>Use only after the exact work passed and was accepted. This records an owner sign-off, not a test-run receipt. Live or retained worker custody is refused. It does not cancel unfinished work.</p><form><label>Lane<input name="agent" required maxlength="200" autocomplete="off"></label><label>Exact task ID<input name="task" required maxlength="200" autocomplete="off"></label><label>Completion evidence<textarea name="evidence" rows="5" required maxlength="4000"></textarea></label><label><input name="confirmed" type="checkbox" required> I verified this exact scope is complete; unfinished work is not being hidden.</label><button class="btn primary" type="submit">Record verified completion</button> <button class="btn" type="button" data-stop>Close</button></form><p role="status" aria-live="polite" data-progress></p>';
+    document.body.appendChild(d);
+    var form=d.querySelector('form'),progress=d.querySelector('[data-progress]'),close=d.querySelector('[data-stop]'),busy=false,submitted=false;
+    function finishClose(){if(busy){progress.textContent='The current request may still finish. Wait for its result; do not submit again.'}else{d.close();d.remove()}}
+    close.onclick=finishClose;d.addEventListener('cancel',function(e){e.preventDefault();finishClose()});
+    form.onsubmit=async function(e){
+      e.preventDefault();if(busy||submitted||!form.elements.confirmed.checked)return;
+      var attempt;
+      try{attempt=PantheonBoardSignoff.attempt(form.elements.agent.value,form.elements.task.value,form.elements.evidence.value,openedOwner)}catch(err){progress.textContent=err.message;return}
+      busy=true;submitted=true;
+      close.focus();
+      Array.from(form.elements).forEach(function(el){if(el!==close)el.disabled=true});
+      var controller=new AbortController(),timer=setTimeout(function(){controller.abort()},30000);
+      async function currentOwner(){
+        var r=await fetch(api+'whoami',{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+        if(!r.ok)throw new Error('account unavailable');
+        var j=await r.json();if(!j||typeof j.email!=='string')throw new Error('account unavailable');return j.email;
+      }
+      async function post(verb,body){
+        var r=await fetch(api+verb,{method:'POST',credentials:'same-origin',signal:controller.signal,headers:{'Content-Type':'application/json','X-Sirsi-Board':'1'},body:JSON.stringify(body)});
+        if(r.status===401||r.status===403||r.status===422)return false;
+        if(!r.ok)throw new Error('completion unavailable');
+        var j=await r.json();if(!j||j.ok!==true)throw new Error('completion not confirmed');return true;
+      }
+      progress.textContent='Recording this verified completion…';
+      try{
+        var result=await attempt.run(currentOwner,post);
+        if(result==='completed'){progress.textContent=attempt.plan.task_id+' — completed by owner sign-off. Original execution records are unchanged.';say('Verified task completion recorded');var refresh=document.getElementById('refresh');if(refresh)refresh.click()}
+        else if(result==='refused'){progress.textContent='Completion refused. The account may have changed or the task may have retained custody or a terminal result. Check the ledger before another attempt.'}
+        else if(result==='unavailable'){progress.textContent='Account verification unavailable; completion was not submitted. Check your sign-in before another attempt.'}
+        else{progress.textContent='Completion unconfirmed; it may have been recorded. Reconcile this exact task in the ledger before another attempt. This dialog will not retry.'}
+      }finally{clearTimeout(timer);busy=false}
+    };
+    d.showModal();form.elements.agent.focus();
+  }
   function retireTasks(){
     if(document.getElementById('board-retire'))return;
     var d=document.createElement('dialog');d.id='board-retire';d.className='inspector board-retire';
@@ -69,7 +108,7 @@
   }
   fetch(api+'whoami',{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null}).then(function(j){
     if(!j||!j.email)return;who=j.email;
-    var tools=document.querySelector('.tools');if(tools){tools.insertBefore(button('Add task',addTask),tools.firstChild);tools.insertBefore(button('Retire reviewed tasks',retireTasks),tools.firstChild)}
+    var tools=document.querySelector('.tools');if(tools){tools.insertBefore(button('Add task',addTask),tools.firstChild);tools.insertBefore(button('Retire reviewed tasks',retireTasks),tools.firstChild);tools.insertBefore(button('Complete verified task',completeVerifiedTask),tools.firstChild)}
     document.addEventListener('click',function(e){
       var b=e.target.closest('[data-item],[data-fabric-task-id]');if(!b)return;
       setTimeout(function(){if(b.dataset.item)itemBar(b.dataset.item);else taskBar(b.dataset.fabricTaskAgent,b.dataset.fabricTaskId)},0)
