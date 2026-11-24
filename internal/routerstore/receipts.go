@@ -12,7 +12,9 @@ package routerstore
 //	                            is what the releaser reported. Scoped cloud tokens cannot
 //	                            reserve or release.
 //
-// Repos are bound to ReceiptRepoOwners and a receipt proves one task only.
+// Repos are bound to ReceiptRepoOwners and a receipt proves one task only. The
+// one exception: a pr receipt already used by another task may be used again by
+// a task the merged PR's description names (receiptnaming.go).
 // Owner sign-off is not a receipt string; it is CompleteTaskByOwner, served
 // remotely only to the IAP board's @ledger-editor token (serve.go ownerTerminals).
 // Every path that can write status='done' routes through verifyReceipt or that
@@ -530,7 +532,7 @@ func (s *SQLiteStore) ownerTerminal(agent, taskID, actor, reason, status string)
 		return fmt.Errorf("%w: %s/%s is missing or already terminal", ErrNotFound, agent, taskID)
 	}
 	if status == "done" {
-		if err = s.putReceiptTx(tx, agent, taskID, Receipt{Kind: "owner", Value: actor, Tier: "owner", VerifiedAt: now.Format(time.RFC3339), Actor: actor, Reason: reason}); err != nil {
+		if err = s.putReceiptTx(tx, agent, taskID, Receipt{Kind: "owner", Value: actor, Tier: "owner", VerifiedAt: now.Format(time.RFC3339), Actor: actor, Reason: reason}, false); err != nil {
 			return err
 		}
 	}
@@ -543,7 +545,11 @@ const receiptLockKey = "task-receipt-lock"
 
 // putReceiptTx records the receipt beside its task. A pr/ci/tag/maat receipt
 // proves one task: the same receipt recorded for any other task is refused.
-func (s *SQLiteStore) putReceiptTx(tx *txHandle, agent, taskID string, r Receipt) error {
+//
+// reuseOK lifts that refusal for a pr receipt only; the caller sets it after
+// the service itself proved the merged PR body names this task
+// (receiptnaming.go). The scan still runs under the lock either way.
+func (s *SQLiteStore) putReceiptTx(tx *txHandle, agent, taskID string, r Receipt, reuseOK bool) error {
 	key := receiptKey(agent, taskID)
 	if r.Kind != "owner" {
 		// Serialize scan+insert across service replicas. Under PostgreSQL READ
@@ -571,7 +577,10 @@ func (s *SQLiteStore) putReceiptTx(tx *txHandle, agent, taskID string, r Receipt
 			}
 			var other Receipt
 			if json.Unmarshal([]byte(v), &other) == nil && other.Kind == r.Kind && other.Value == r.Value {
-				return fmt.Errorf("%w: receipt already used by task %s: %s (one receipt proves one task)", ErrReceiptInvalid, strings.TrimPrefix(k, receiptStatePrefix), r)
+				if reuseOK && r.Kind == "pr" {
+					continue
+				}
+				return &receiptUsedError{fmt.Sprintf("%s: receipt already used by task %s: %s (one receipt proves one task)", ErrReceiptInvalid, strings.TrimPrefix(k, receiptStatePrefix), r)}
 			}
 		}
 		if err := rows.Err(); err != nil {
