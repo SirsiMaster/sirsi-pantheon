@@ -20,6 +20,7 @@ package routerstore
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -391,6 +393,19 @@ func (s *SQLiteStore) CancelTask(agent, taskID, actor, reason string) error {
 // The audit trail is the result_ref (superseded:<agent/task>), the reason, and
 // a timeline entry naming the actor (over the wire, the authenticated session).
 func (s *SQLiteStore) WithdrawTask(agent, taskID, supersededBy, actor, reason string) error {
+	return s.withdrawTask(agent, taskID, "", supersededBy, actor, reason, false)
+}
+
+// WithdrawTaskLease withdraws under the caller's live task fence. Unlike an
+// owner completion, it never creates a completion receipt.
+func (s *SQLiteStore) WithdrawTaskLease(agent, taskID, token, supersededBy, actor, reason string) error {
+	if token == "" {
+		return ErrLeaseInvalid
+	}
+	return s.withdrawTask(agent, taskID, token, supersededBy, actor, reason, true)
+}
+
+func (s *SQLiteStore) withdrawTask(agent, taskID, token, supersededBy, actor, reason string, fenced bool) error {
 	actor, reason, supersededBy = strings.TrimSpace(actor), strings.TrimSpace(reason), strings.TrimSpace(supersededBy)
 	if actor == "" || reason == "" {
 		return fmt.Errorf("%w: withdraw needs an actor and a reason", ErrReasonRequired)
@@ -399,17 +414,49 @@ func (s *SQLiteStore) WithdrawTask(agent, taskID, supersededBy, actor, reason st
 	if !ok || toAgent == "" || toTask == "" || (toAgent == agent && toTask == taskID) {
 		return fmt.Errorf("%w: withdraw needs --superseded-by <agent>/<task-id> naming another task", ErrInvalidInput)
 	}
-	successor, err := s.GetTask(toAgent, toTask)
+	tx, err := s.beginImmediate()
 	if err != nil {
-		return fmt.Errorf("%w: superseding task %s: %v", ErrInvalidInput, supersededBy, err)
+		return fmt.Errorf("routerstore: withdraw begin: %w", err)
 	}
+	defer func() { _ = tx.Rollback() }()
+	// A zero-row write obtains SQLite's writer reservation before either read;
+	// Postgres instead locks both rows explicitly in a stable order below.
+	if s.dialect().name == "sqlite" {
+		if _, err = tx.Exec(`UPDATE tasks SET result_ref=result_ref WHERE 0;`); err != nil {
+			return fmt.Errorf("routerstore: withdraw write lock: %w", err)
+		}
+	}
+	type taskKey struct{ agent, id string }
+	keys := []taskKey{{agent, taskID}, {toAgent, toTask}}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].agent != keys[j].agent {
+			return keys[i].agent < keys[j].agent
+		}
+		return keys[i].id < keys[j].id
+	})
+	rows := make(map[taskKey]Task, len(keys))
+	lock := ""
+	if s.dialect().name == "postgres" {
+		lock = " FOR UPDATE"
+	}
+	for _, key := range keys {
+		row, _, readErr := scanTaskWithRawLinks(tx.QueryRow(taskSelect+` WHERE agent=? AND task_id=?`+lock+`;`, key.agent, key.id))
+		if readErr != nil {
+			if errors.Is(readErr, sql.ErrNoRows) && key == (taskKey{toAgent, toTask}) {
+				return fmt.Errorf("%w: superseding task %s not found", ErrInvalidInput, supersededBy)
+			}
+			if errors.Is(readErr, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("routerstore: withdraw read: %w", readErr)
+		}
+		rows[key] = row
+	}
+	successor := rows[taskKey{toAgent, toTask}]
 	if successor.Status == "withdrawn" || successor.Status == "canceled" {
 		return fmt.Errorf("%w: superseding task %s is itself %s", ErrInvalidInput, supersededBy, successor.Status)
 	}
-	t, err := s.GetTask(agent, taskID)
-	if err != nil {
-		return err
-	}
+	t := rows[taskKey{agent, taskID}]
 	if terminalTaskStatus(t.Status) {
 		return fmt.Errorf("%w: %s/%s is already %s", ErrNotFound, agent, taskID, t.Status)
 	}
@@ -419,25 +466,38 @@ func (s *SQLiteStore) WithdrawTask(agent, taskID, supersededBy, actor, reason st
 	if err != nil {
 		return err
 	}
-	// Guarded on the status we read, so a concurrent completion or cancel wins.
-	// The live-lease refusal lives in the predicate, not in a prior read: a worker
-	// can claim between our read and this write. The API does not say who the
-	// caller is relative to the lease holder, so ANY unexpired lease refuses;
-	// an expired or absent lease still withdraws.
+	// Read the clock after lock acquisition so waiting cannot extend a fence.
 	nowS := now.Format(time.RFC3339)
-	res, err := s.exec(`UPDATE tasks SET status='withdrawn',result_ref=?,failure_reason=?,timeline=?,lease_token='',lease_expires='',claimed_by='',thread_id='',updated=?
-		WHERE agent=? AND task_id=? AND status=? AND (lease_token='' OR lease_expires<=?);`, "superseded:"+supersededBy, reason, string(timeline), nowS, agent, taskID, t.Status, nowS)
+	query := `UPDATE tasks SET status='withdrawn',result_ref=?,failure_reason=?,timeline=?,lease_token='',lease_expires='',claimed_by='',thread_id='',updated=? WHERE agent=? AND task_id=? AND status=?`
+	args := []any{"superseded:" + supersededBy, reason, string(timeline), nowS, agent, taskID, t.Status}
+	// A process can be paused after reading the host clock. The database must
+	// independently check its wall clock at the mutation, after row locks.
+	dbNow := `strftime('%Y-%m-%dT%H:%M:%SZ','now')`
+	if s.dialect().name == "postgres" {
+		dbNow = `to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')`
+	}
+	if fenced {
+		query += taskLeaseFence + ` AND lease_expires>` + dbNow
+		args = append(args, token, nowS)
+	} else {
+		query += ` AND (lease_token='' OR (lease_expires<=? AND lease_expires<=` + dbNow + `))`
+		args = append(args, nowS)
+	}
+	res, err := tx.Exec(query+`;`, args...)
 	if err != nil {
 		return fmt.Errorf("routerstore: withdraw %s/%s: %w", agent, taskID, err)
 	}
 	if n, _ := res.RowsAffected(); n != 1 {
+		if fenced {
+			return ErrLeaseInvalid
+		}
 		var holder, expires string
-		if s.db.QueryRow(`SELECT claimed_by,lease_expires FROM tasks WHERE agent=? AND task_id=? AND lease_token<>'' AND lease_expires>?;`, agent, taskID, nowS).Scan(&holder, &expires) == nil {
+		if tx.QueryRow(`SELECT claimed_by,lease_expires FROM tasks WHERE agent=? AND task_id=? AND lease_token<>'' AND (lease_expires>? OR lease_expires>`+dbNow+`);`, agent, taskID, nowS).Scan(&holder, &expires) == nil {
 			return fmt.Errorf("%w: %s/%s is leased to %q until %s; withdraw refused while a worker holds it", ErrLeaseHeld, agent, taskID, holder, expires)
 		}
 		return fmt.Errorf("%w: %s/%s changed while withdrawing; retry", ErrNotFound, agent, taskID)
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) ownerTerminal(agent, taskID, actor, reason, status string) error {

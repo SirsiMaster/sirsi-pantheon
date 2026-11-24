@@ -67,6 +67,17 @@ cmd/sirsi verbs ──► dispatch.Facade ──► routerstore.Store (interface
 
 ## Tests
 
+### Fenced task withdrawal
+
+`WithdrawTaskLease` binds a withdrawal to the live task token and authenticated
+claim session. It preserves the existing unleased `WithdrawTask` API, which
+continues to refuse live leases. The operation locks the source and successor
+in stable order before checking either, samples the host clock after the locks,
+and also checks the database wall clock at the write. SQLite first reserves its
+writer; PostgreSQL locks the task rows. Withdrawal records the authenticated
+actor and successor but never creates a completion receipt. These locks protect
+the decision point; subsequent successor changes are separate transitions.
+
 ### Authenticated task claims
 
 Authenticated ClaimTask/ClaimNextTask require the requested agent/thread to
