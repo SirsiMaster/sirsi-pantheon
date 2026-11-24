@@ -18,6 +18,33 @@ import (
 
 var routerSecretResourcePattern = regexp.MustCompile(`^projects/([a-z][a-z0-9-]{4,61}[a-z0-9]|[0-9]{6,})/secrets/[A-Za-z0-9_-]{1,255}$`)
 
+type publicationTokenStore interface {
+	MintPublicationToken(string, string, []string, bool) (string, routerstore.HostToken, error)
+	ActivatePublicationToken(string) error
+	CancelPublicationToken(string) error
+}
+
+func publishStagedToken(ctx context.Context, out io.Writer, store publicationTokenStore, host, label string, agents []string, hostWide bool, resource string, publish func(context.Context, string, string) (string, error)) error {
+	plain, rec, err := store.MintPublicationToken(host, label, agents, hostWide)
+	if err != nil {
+		return err
+	}
+	if hostWide {
+		err = publishMintedHostWideToken(ctx, out, plain, rec, resource, publish, store.CancelPublicationToken)
+	} else {
+		err = publishMintedRouterToken(ctx, out, plain, rec, resource, publish, store.CancelPublicationToken)
+	}
+	if err != nil {
+		return err
+	}
+	if err := store.ActivatePublicationToken(rec.ID); err != nil {
+		// Commit can succeed despite an error; never revoke a possibly active
+		// token or unrelated host sessions on an uncertain activation.
+		return fmt.Errorf("publication receipt written; CLEANUP_DEBT: token %s activation outcome requires reconciliation", rec.ID)
+	}
+	return nil
+}
+
 // Cloud mint jobs must not put bearer credentials in Cloud Logging. Publishing
 // fails closed: revoke the fresh token if its secure delivery is not confirmed.
 func publishMintedRouterToken(ctx context.Context, out io.Writer, plain string, rec routerstore.HostToken, resource string,
@@ -58,7 +85,11 @@ func publishMintedToken(ctx context.Context, out io.Writer, plain string, rec ro
 	if len(rec.Agents) == 0 {
 		scope = "host-wide (unscoped)"
 	}
-	_, err = fmt.Fprintf(out, "token id: %s  host: %s\nscope: %s\nsecret version: %s\n", rec.ID, rec.Host, scope, version)
+	receipt := fmt.Sprintf("token id: %s  host: %s\nscope: %s\nsecret version: %s\n", rec.ID, rec.Host, scope, version)
+	n, err := io.WriteString(out, receipt)
+	if err == nil && n != len(receipt) {
+		err = io.ErrShortWrite
+	}
 	if err != nil {
 		if revokeErr := revoke(rec.ID); revokeErr != nil {
 			return fmt.Errorf("receipt write failed; CLEANUP_DEBT: token %s revocation failed", rec.ID)

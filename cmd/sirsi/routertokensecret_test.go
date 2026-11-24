@@ -8,11 +8,64 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
+
+func TestPublicationFailureNeverRevokesExistingHostSessions(t *testing.T) {
+	for _, mode := range []string{"publication", "receipt", "success"} {
+		t.Run(mode, func(t *testing.T) {
+			store, err := routerstore.OpenPath(filepath.Join(t.TempDir(), "router.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			if _, _, err := store.MintHostToken("fixture-host", "existing"); err != nil {
+				t.Fatal(err)
+			}
+			session, err := store.MintSession("fixture-host", "existing-lane", "fixture-runtime")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var observed string
+			var out bytes.Buffer
+			var writer io.Writer = &out
+			if mode == "receipt" {
+				writer = secretFailedWriter{}
+			}
+			err = publishStagedToken(context.Background(), writer, store, "fixture-host", "new", []string{"new-lane"}, false, "projects/123456/secrets/test",
+				func(_ context.Context, resource, plain string) (string, error) {
+					observed = plain
+					if _, err := store.LookupHostToken(plain); !errors.Is(err, routerstore.ErrTokenRevoked) {
+						t.Fatalf("pending token is usable: %v", err)
+					}
+					if mode == "publication" {
+						return "", errors.New("uncertain fixture publication")
+					}
+					return resource + "/versions/1", nil
+				})
+			if (err == nil) != (mode == "success") {
+				t.Fatalf("mode=%s err=%v", mode, err)
+			}
+			if _, err := store.GetSession(session.ID); err != nil {
+				t.Fatalf("existing host session was interrupted: %v", err)
+			}
+			_, lookupErr := store.LookupHostToken(observed)
+			if mode == "success" && lookupErr != nil {
+				t.Fatalf("published token inactive: %v", lookupErr)
+			}
+			if mode != "success" && !errors.Is(lookupErr, routerstore.ErrTokenRevoked) {
+				t.Fatalf("failed publication token remained usable: %v", lookupErr)
+			}
+			if strings.Contains(out.String(), observed) {
+				t.Fatal("receipt exposed credential")
+			}
+		})
+	}
+}
 
 type secretRoundTrip func(*http.Request) (*http.Response, error)
 
@@ -21,6 +74,10 @@ func (fn secretRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) { r
 type secretFailedWriter struct{}
 
 func (secretFailedWriter) Write([]byte) (int, error) { return 0, errors.New("writer failed") }
+
+type secretShortWriter struct{}
+
+func (secretShortWriter) Write(p []byte) (int, error) { return len(p) / 2, nil }
 
 func TestSSAScopedTokenSecretReceiptNeverPrintsCredential(t *testing.T) {
 	var out bytes.Buffer
@@ -40,7 +97,7 @@ func TestSSAScopedTokenSecretReceiptNeverPrintsCredential(t *testing.T) {
 }
 
 func TestSSAScopedTokenSecretFailuresRevokeAndReportDebt(t *testing.T) {
-	for _, mode := range []string{"publish", "writer", "scope", "revoke-debt"} {
+	for _, mode := range []string{"publish", "writer", "short-writer", "scope", "revoke-debt"} {
 		t.Run(mode, func(t *testing.T) {
 			rec := routerstore.HostToken{ID: "token-id", Host: "ssa-cloud", Agents: []string{"sirsi-software-admin"}}
 			if mode == "scope" {
@@ -50,6 +107,9 @@ func TestSSAScopedTokenSecretFailuresRevokeAndReportDebt(t *testing.T) {
 			var writer io.Writer = &out
 			if mode == "writer" {
 				writer = secretFailedWriter{}
+			}
+			if mode == "short-writer" {
+				writer = secretShortWriter{}
 			}
 			revoked := false
 			err := publishMintedRouterToken(context.Background(), writer, "sentinel-secret", rec, "projects/210890802638/secrets/ssa-router-cloud",

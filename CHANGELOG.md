@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Router token secret publication stages the new token inactive until its publication receipt succeeds. Failed publication or receipt cleanup retires only that pending token and leaves other sessions for the host intact; uncertain activation is reported for reconciliation.
+
 ## [0.24.164] — 2026-11-23
 
 - Release admission uses a separately installed, root-protected supervisor and CLI on M1, leaving the existing shared supervisor unchanged.
