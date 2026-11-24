@@ -76,8 +76,18 @@ def remote_session(host, user, timeout):
 
 
 def observed_state(receipt):
-    """What a history row records a change of: admission state and GUI lock state."""
-    return (receipt.get("admission", {}).get("state"), receipt.get("gui_session", {}).get("gui_state"))
+    """Retain meaningful changes without recording timestamp-only updates."""
+    admission = receipt.get("admission", {})
+    gui = receipt.get("gui_session", {})
+    attempts = receipt.get("transport", {}).get("attempts", [])
+    transport = tuple(
+        (name, tuple(sorted({(str(row.get(name, {}).get("state") or ""),
+                              str(row.get(name, {}).get("reason") or ""))
+                             for row in attempts})))
+        for name in ("ssh", "screen-sharing")
+    )
+    return (admission.get("state"), admission.get("reason"),
+            gui.get("status"), gui.get("gui_state"), gui.get("reason"), transport)
 
 
 def changed_since_current(receipt, current):
@@ -85,7 +95,7 @@ def changed_since_current(receipt, current):
     try:
         with open(current, encoding="utf-8") as handle:
             return observed_state(json.load(handle)) != observed_state(receipt)
-    except (OSError, ValueError, AttributeError):
+    except (OSError, ValueError, AttributeError, TypeError):
         return True
 
 
