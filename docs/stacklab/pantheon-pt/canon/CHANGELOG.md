@@ -19,13 +19,13 @@
 - Recovery anchor verifier: `BuildPolicy` parses each authorized_keys source independently
 - Give thread-watch CLI integration fixtures a private inert service controller,
   with captured-argument, refusal and ambient-controller-spy controls. Temporary
-  HOME no longer stands in for launchd-domain isolation. Source-only; tests unrun.
+  HOME no longer stands in for launchd-domain isolation.
 - Scope task eligibility diagnostics to their existing task-row predicates with
   explicit JSON scope/caller-not-evaluated metadata. Remove the unconditional
   claim-success promise; plain-text `router task why` warns when an older service
   lacks scope metadata. Row claimability/dispatchability and all authorization
   guards are unchanged. Current-main composition preserves evidence-bound retry
-  recovery guidance; its tests are unrun. Not an installed fix or a substitute
+  recovery guidance. Not an installed fix or a substitute
   for the separately documented M5 caller-binding operational recovery.
 - ADR-078 verifier library only (`internal/recoveryanchor/verify`): canonical 8-field envelope parser, OpenSSH SSHSIG verification under namespace `sirsi-recovery-anchor` (ed25519 / ecdsa-sha2-nistp256), grant-source and authorized_keys-narrowing parsers fed from caller-supplied bytes, epoch + wall-clock ratchet + high-water mark + atomic replay admission over an injected Store (in-memory test store only), and a pure pre-dispatch revalidation function. Every decision carries a stable reason code; every error path denies. No daemon, no root code, no socket, no key handling beyond public-key parsing, no verb execution, no `anchor-grants.allow`/`authorized_keys` writes. `golang.org/x/crypto` moves from indirect to direct in `go.mod` (already required, no new module). Owner authorization 2026-11-11. Refs: ADR-078 (status entry 2026-11-11), ledger `rs-42-recovery-anchor-implementation`.
 - Ma'at submit tests use private declared-agent fixtures rather than the shared working checkout, preserving real discovery, declaration/policy refusals and ledger-failure checks without restoring or changing another session's registry.
