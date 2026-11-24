@@ -1,0 +1,1 @@
+- Preserve the enrolled protected signing/supervisor route and native-artifact-only publication scope for v0.24.165; refuse mismatched tag/version without legacy fallback. No signing, publication or host-adoption success is implied.

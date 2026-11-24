@@ -1,4 +1,17 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
+# Nov24 v165 protected native continuation source: explicitly select the existing
+# pinned v164 runtime/signer and secret-free/no-npm artifact scope for v165;
+# mismatched ref/version cannot fall through to legacy. Original synthetic RED10
+# retained. Corrected tests/review/publication and real M1 source-bound readback
+# pending; no tag, signing, enrollment, keys or host adoption changed.
+# Qualification update: runtime71ef unchanged; final47084 synthetic19+contract
+# PASS, fresh exact-source Sonnet ACCEPT. OriginalRED10 and laterc89 test-harness
+# failure retained. SHA11:53 pinned M1 metadata accepted, not job/signing proof.
+# Normal publication/CI and actual artifact/cask acceptance remain required.
+# CI increment: both release-route suites now run unconditionally in existing
+# Lint; 20 focused fixtures plus the commercial contract passed on5ab2. Fixed
+# synthetic PATH does not inherit runner secrets/context. This composition on
+# reviewed signoff1c8 needs its own execution/review and normal publication.
 # Nov24 production completion-policy candidate: embeds newly authored protocol,
 # exact item/required commands/classification, fixed launcher and independent
 # physical Git boundary. Initial helper-selector RED/GREEN and upward-Git RED

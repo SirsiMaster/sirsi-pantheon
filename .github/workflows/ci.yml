@@ -58,6 +58,11 @@ jobs:
           PANTHEON_CI_PRIVATE_CACHE_ONLY: '0'
         run: bash scripts/ci-private-sdk.test.sh
 
+      - name: Protected native release admission fixtures
+        run: |
+          python3 -B -m unittest discover -s scripts/maat -p test_release_admission.py
+          python3 -B -m unittest discover -s scripts/maat -p test_v165_release_route.py
+
       # The router service image is built locally and only COPYed by Cloud Build (it cannot fetch the private
       # module). Proves no deploy path compiles in Cloud Build and the staged context is a static linux binary.
       - name: router service image context (stage.sh)

@@ -1,4 +1,37 @@
 # 𓃣 Anubis Engineering Journal
+## Nov24 — v165 protected native continuation, unqualified source
+
+The v165 release preparation had merged, but the executing release workflow
+selected protected supervisor/signer preflight, secret-free delegated signing
+and npm exclusion only for v164. Before consuming any v165 tag or signing
+attempt, explicitly carry that narrow native-only route to v165. Reuse the exact
+enrolled root-owned v164 runtime, CLI/interpreter/supervisor pins and signer;
+do not invent another enrollment, copy keys, weaken modes or install anything.
+Mismatched refs/versions refuse rather than using the legacy supervisor.
+
+Actual unchanged-source causal controls failed10 assertions/subcases, including
+the real shell invoking a synthetic legacy tripwire for v165. That RED is not a
+product pass. Corrected source and controls still need independent review,
+admitted execution and normal protected publication. Actual M1 enrolled-pair
+readback, exact release-source CI and signing/artifact/cask receipts remain owed;
+SHA owns subsequent per-host adoption, not this source change.
+
+Qualification update: final47084 test/source snapshot passed19 focused fixtures
+and the commercial source contract. Twelve finite Sonnet facets inspected71ef
+runtime; one unsupported retry claim was rejected against the actual existing
+first-attempt build guard, with an additional causal mutant fixture. The first
+extra fixture c89 failed on its own subTest/assertRaises boundary; that failure
+is retained, and the corrected direct-assert helper passed fresh execution.
+A fresh exact47084 Sonnet review accepted the source. SHA's11:53 M1 metadata
+readback matches the unchanged pins/signer and was accepted only at that scope.
+No source publication, tag, signing, artifact or installed-adoption pass yet.
+
+CI integration now invokes both protected-route suites in the existing Lint job,
+without another runner, privilege or skip. Actual20 focused fixtures plus the
+commercial contract passed on5ab2. The subsequent synthetic-only fixed PATH
+avoids inheriting real runner context/secrets. Compose on reviewed signoff1c8;
+fresh combined-source fixtures, independent review and normal gates remain due.
+
 ## Nov24 — versioned production completion policy candidate
 
 Replace caller-selected external algorithm authority with newly authored
