@@ -108,6 +108,9 @@ func (rs *RemoteStore) CancelTask(agent, taskID, actor, reason string) error {
 func (rs *RemoteStore) WithdrawTask(agent, taskID, supersededBy, actor, reason string) error {
 	return rs.call("WithdrawTask", []any{agent, taskID, supersededBy, actor, reason})
 }
+func (rs *RemoteStore) WithdrawTaskLease(agent, taskID, token, supersededBy, actor, reason string) error {
+	return rs.call("WithdrawTaskLease", []any{agent, taskID, token, supersededBy, actor, reason})
+}
 func (rs *RemoteStore) Counters() (DispatchCounters, error) {
 	var o0 DispatchCounters
 	err := rs.call("Counters", nil, &o0)

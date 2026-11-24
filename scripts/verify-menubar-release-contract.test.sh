@@ -14,6 +14,7 @@ cp "$ROOT/scripts/build-dmg.sh" "$ROOT/scripts/verify-menubar-release-contract.s
    "$ROOT/scripts/build-release-pretoolguard.sh" "$ROOT/scripts/check-release-run-custody.py" \
    "$ROOT/scripts/reserve-release-draft.py" "$FIXTURE/scripts/"
 cp "$ROOT/scripts/maat/test_release_admission.py" "$FIXTURE/scripts/maat/"
+cp "$ROOT/scripts/maat/release-supervisor.sh" "$ROOT/scripts/maat/admitted-run.py" "$FIXTURE/scripts/maat/"
 
 WORKFLOW="$FIXTURE/.github/workflows/release.yml"
 GATE="$FIXTURE/scripts/verify-menubar-release-contract.sh"

@@ -1,0 +1,270 @@
+name: Recover v164 after metadata mismatch (one shot)
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_controller_sha:
+        description: Exact reviewed main commit
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: pantheon-release-refs/tags/v0.24.164
+  cancel-in-progress: false
+env:
+  BUILD_VERSION: 0.24.164
+  RELEASE_COMMIT: ca31d2a8984c02e54fa762de4c63333cd92bdf22
+jobs:
+  recovery_successor:
+    name: recovery-successor
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: [self-hosted, macOS, ARM64, m1]
+    timeout-minutes: 45
+    env:
+      PANTHEON_RELEASE_REF: refs/tags/v0.24.164
+      SIRSI_ROUTER_URL: spool:///var/sirsipantheon/relay
+      SIRSI_RELAY_TRUST_GROUP: _sirsipantheon
+      GOPROXY: file:///Users/sirsimasterdev/go/pkg/mod/cache/download
+      GONOPROXY: none
+      GONOSUMDB: '*'
+      GOSUMDB: 'off'
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - name: Bind reviewed controller and runner
+        env:
+          REVIEWED_CONTROLLER: ${{ inputs.reviewed_controller_sha }}
+          RUNNER_IDENTITY: ${{ runner.name }}
+          RUNNER_OS: ${{ runner.os }}
+          RUNNER_ARCH: ${{ runner.arch }}
+        run: |
+          set -euo pipefail
+          [[ "$REVIEWED_CONTROLLER" =~ ^[0-9a-f]{40}$ && "$GITHUB_SHA" == "$REVIEWED_CONTROLLER" ]]
+          [[ "$RUNNER_IDENTITY" == m1-pantheon && "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]
+          [[ "$RUNNER_OS" == macOS && "$RUNNER_ARCH" == ARM64 ]]
+          [[ "$(/usr/sbin/sysctl -n hw.model)" == MacBookPro18,1 ]]
+          printf 'PANTHEON_RUNNER_NAME=%s\nPANTHEON_RUNNER_OS=%s\nPANTHEON_RUNNER_ARCH=%s\n' "$RUNNER_IDENTITY" "$RUNNER_OS" "$RUNNER_ARCH" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          path: controller
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/v0.24.164
+          path: source
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: source/go.mod
+          cache: false
+      - name: Retrieve original guard evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: pantheon-guard-custody-45270278775-1
+          run-id: 45270278775
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/v164-original-${{ github.run_id }}
+      - name: Retrieve consumed recovery evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: v164-recovery-guard-45278099354-1
+          run-id: 45278099354
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/v164-prior-recovery-${{ github.run_id }}
+      - name: Preflight original inputs before claiming
+        working-directory: source
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$RELEASE_COMMIT" && -z "$(git status --porcelain --untracked-files=normal)" ]]
+          [[ "$(git rev-parse 'refs/tags/v0.24.164^{}')" == "$RELEASE_COMMIT" ]]
+          [[ "$(git -C ../controller rev-parse HEAD)" == "$GITHUB_SHA" && -z "$(git -C ../controller status --porcelain --untracked-files=normal)" ]]
+          cmp -s tools/signing/sirsi-sign ../controller/tools/signing/sirsi-sign
+          cmp -s scripts/verify-pretoolguard-entitlements.py ../controller/scripts/verify-pretoolguard-entitlements.py
+          evidence="$RUNNER_TEMP/v164-original-$GITHUB_RUN_ID"
+          input="$evidence/guard/signing.m7L0tGqb/normalized.kxo2ka9R/input"
+          output="$evidence/guard/signing.m7L0tGqb/normalized.kxo2ka9R/output"
+          [[ "$(shasum -a 256 "$input" | awk '{print $1}')" == 909cd4bc7b44606427789cb8928279ce9c7e6b4f89fc5a9db28a10b7ca6cfde5 ]]
+          [[ "$(shasum -a 256 "$output" | awk '{print $1}')" == 54e9e266223a0c8eca43dc7c0fed266b094a672962e674830d6c8c2d0aff3bbf ]]
+          [[ "$(shasum -a 256 "$HOME/sirsi-sign/outbox/b814fa10-48ce-428e-89d0-5e6c7d7005ca/sirsi-display-power-guard" | awk '{print $1}')" == f324c7aa206567a6c0e5405af8e002381f0bd37db1e61b34e19ec8b761eba0ab ]]
+          python3 -B ../controller/scripts/compare-pretoolguard-macho.py "$input" "$output" "$RUNNER_TEMP/v164-compare-$GITHUB_RUN_ID.json"
+          [[ -x "$HOME/sirsi-sign/bin/sirsi-signd.sh" ]]
+          cmp -s "$HOME/sirsi-sign/bin/sirsi-signd.sh" tools/signing/sirsi-signd.sh
+          launchctl print "gui/$(id -u)/ai.sirsi.signd" >/dev/null
+          bash ../controller/scripts/maat/recovery-supervisor-v164.sh verify
+          GOMAXPROCS=1 GOFLAGS=-p=1 bash ../controller/scripts/maat/recovery-supervisor-v164.sh run --agent codex-pantheon --register-executor --work "v164-offline-preflight-$GITHUB_RUN_ID" --cpu-cores 1 --timeout 300 -- /bin/bash -c 'go list -deps ./cmd/sirsi ./cmd/sirsi-menubar >/dev/null'
+          prior="$RUNNER_TEMP/v164-prior-recovery-$GITHUB_RUN_ID/build/pretoolguard.oPhjmQ8x"
+          [[ "$(awk '{print $1}' "$prior/unsigned.sha256")" == bc0032792ca7c48538d588422c093039044bdb86ca69321816fcda5556e8ab17 ]]
+          [[ "$(awk '{print $1}' "$prior/installer-unsigned.sha256")" == d29a9e09e36cd20b642cc44ee218728a7e35c5c0a9745e7b1a0bf81329f962f6 ]]
+          [[ -f "$prior/ACCEPTED" && "$(find "$RUNNER_TEMP/v164-prior-recovery-$GITHUB_RUN_ID" -type f | wc -l | tr -d ' ')" == 3 ]]
+          for file in signed-Pantheon.app.receipt.txt signed-.receipt.txt bin/signed-SirsiPantheon-0.24.164-arm64.dmg.receipt.txt bin/signed-SirsiPantheon-0.24.164-arm64.pkg.receipt.txt bin/signed-.receipt.txt; do
+            [[ ! -e "$file" && ! -L "$file" ]] || exit 1
+          done
+      - name: Reproduce exact inputs before claiming
+        working-directory: source
+        run: |
+          set -euo pipefail
+          proof="$(mktemp -d "$RUNNER_TEMP/v164-metadata-preclaim-${GITHUB_RUN_ID}.XXXXXXXX")"
+          printf 'PRECLAIM_EVIDENCE=%s\n' "$proof" >> "$GITHUB_ENV"
+          GOMAXPROCS=1 GOFLAGS=-p=1 /bin/bash ../controller/scripts/maat/recovery-supervisor-v164.sh run --agent codex-pantheon --register-executor --work "v164-metadata-preclaim-$GITHUB_RUN_ID" --cpu-cores 1 --timeout 600 -- /bin/bash scripts/build-pretoolguard-artifact.sh "$RELEASE_COMMIT" "$proof"
+          builds=("$proof"/pretoolguard.*)
+          [[ ${#builds[@]} == 1 && -f "${builds[0]}/ACCEPTED" ]]
+          [[ "$(awk '{print $1}' "${builds[0]}/unsigned.sha256")" == 43b36b6f9ccab1a7eec3836037132a24c80b3fc3f105b013fb81bb0188948cff ]]
+          [[ "$(awk '{print $1}' "${builds[0]}/installer-unsigned.sha256")" == 12d8e142c41d989a0c03e33b60a842ec730bbdb5f27516ff45b73f393eebf082 ]]
+      - name: Allocate private recovery custody
+        run: |
+          set -euo pipefail
+          custody="$(mktemp -d "$RUNNER_TEMP/v164-metadata-successor-${GITHUB_RUN_ID}.XXXXXXXX")"
+          [[ "$(stat -f '%u:%Lp' "$custody")" == "$(id -u):700" ]]
+          printf 'RECOVERY_CUSTODY=%s\n' "$custody" >> "$GITHUB_ENV"
+      - name: Claim exactly one recovery
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUNNER_NAME: ${{ runner.name }}
+        working-directory: controller
+        run: python3 -B scripts/claim-v164-metadata-resume.py "$GITHUB_SHA" "$RECOVERY_CUSTODY"
+      - name: Build and sign remaining artifacts
+        working-directory: source
+        env:
+          SIRSI_SIGN_HOSTS: sirsi-m1
+          GOMAXPROCS: '1'
+          GOFLAGS: -p=1
+          PANTHEON_BUILD_JOBS: '1'
+          PANTHEON_APOLLO_CAPABILITY: disabled
+          PANTHEON_SIGNING_EXECUTION: remote-service
+          PANTHEON_SIGNING_MODE: enrolled-login-keychain
+          PANTHEON_SIGNING_KEYCHAIN: ${{ runner.temp }}/unused
+        run: |
+          set -euo pipefail
+          export PANTHEON_SIGNING_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+          ID=$(/usr/bin/security find-identity -v -p codesigning "$PANTHEON_SIGNING_KEYCHAIN" | awk -F '"' '/Developer ID Application:.*\(9D382WV988\)/{print $2; exit}')
+          [[ -n "$ID" ]]
+          export DEVELOPER_ID_APPLICATION="$ID"
+          /bin/bash ../controller/scripts/maat/recovery-supervisor-v164.sh run --agent codex-pantheon --register-executor --work "v164-resume-$GITHUB_RUN_ID" --cpu-cores 1 --timeout 1800 -- /bin/bash -euo pipefail -c '
+            export PANTHEON_APOLLO_DIGEST_RECEIPT="$(bash scripts/new-apollo-digest-receipt.sh "$RUNNER_TEMP")"
+            printf "PANTHEON_APOLLO_DIGEST_RECEIPT=%s\n" "$PANTHEON_APOLLO_DIGEST_RECEIPT" >> "$GITHUB_ENV"
+            guard_attempt="$(mktemp -d "$RUNNER_TEMP/v164-guard-resume-${GITHUB_RUN_ID}.XXXXXXXX")"
+            printf "PANTHEON_GUARD_ATTEMPT=%s\n" "$guard_attempt" >> "$GITHUB_ENV"
+            export SIRSI_SIGN_CUSTODY_DIR="$guard_attempt/signer-jobs"
+            mkdir -m 700 "$SIRSI_SIGN_CUSTODY_DIR"
+            export PANTHEON_SIGN_CLIENT="$GITHUB_WORKSPACE/controller/tools/signing/sirsi-sign"
+            bash "$GITHUB_WORKSPACE/controller/scripts/recover-v164-pretoolguard.sh" "$GITHUB_WORKSPACE/source" "$RUNNER_TEMP/v164-original-$GITHUB_RUN_ID" "$guard_attempt"
+            export PANTHEON_SIGN_CLIENT="$GITHUB_WORKSPACE/source/tools/signing/sirsi-sign"
+            bash scripts/build-dmg.sh --release --version "$BUILD_VERSION" --arch arm64
+            bash scripts/build-pkg.sh --release --version "$BUILD_VERSION" --arch arm64 --app "$GITHUB_WORKSPACE/source/Pantheon.app"
+            dmg_sha="$(shasum -a 256 "bin/SirsiPantheon-$BUILD_VERSION-arm64.dmg" | awk "{print \$1}")"
+            go run ./cmd/sirsi cask-release render --version "$BUILD_VERSION" --dmg-sha256 "$dmg_sha" > "$RECOVERY_CUSTODY/sirsi-pantheon.rb"
+            go run ./cmd/sirsi cask-release verify --version "$BUILD_VERSION" --dmg-sha256 "$dmg_sha" --file "$RECOVERY_CUSTODY/sirsi-pantheon.rb"
+          '
+      - name: Preserve exact signed inputs
+        working-directory: source
+        run: |
+          set -euo pipefail
+          custody="$(mktemp -d "$RUNNER_TEMP/v164-release-custody.XXXXXXXX")"
+          printf 'PANTHEON_RELEASE_CUSTODY=%s\n' "$custody" >> "$GITHUB_ENV"
+          /bin/bash ../controller/scripts/maat/recovery-supervisor-v164.sh run --agent codex-pantheon --register-executor --work "v164-custody-$GITHUB_RUN_ID" --cpu-cores 1 --timeout 600 -- python3 -B scripts/release-custody.py create "$custody" "$BUILD_VERSION" "$RELEASE_COMMIT" "$PANTHEON_GUARD_ATTEMPT/payload-manifest.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v164-metadata-custody-${{ github.run_id }}
+          path: ${{ env.PANTHEON_RELEASE_CUSTODY }}
+          if-no-files-found: error
+      - name: Restore and verify exact signed inputs
+        working-directory: source
+        run: |
+          set -euo pipefail
+          restored="$(mktemp -d "$RUNNER_TEMP/v164-release-inputs.XXXXXXXX")"
+          printf 'PANTHEON_RELEASE_INPUTS=%s\n' "$restored" >> "$GITHUB_ENV"
+          /bin/bash ../controller/scripts/maat/recovery-supervisor-v164.sh run --agent codex-pantheon --register-executor --work "v164-restore-$GITHUB_RUN_ID" --cpu-cores 1 --timeout 600 -- /bin/bash -euo pipefail -c 'cd "$1"; shift; exec python3 -B "$@"' fixture "$restored" "$GITHUB_WORKSPACE/source/scripts/release-custody.py" restore "$PANTHEON_RELEASE_CUSTODY" "$BUILD_VERSION" "$RELEASE_COMMIT" "$PANTHEON_RELEASE_CUSTODY/payload-manifest.json"
+      - name: Publish only the existing draft
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          /bin/bash ../controller/scripts/maat/recovery-supervisor-v164.sh run --agent codex-pantheon --register-executor --work "v164-publish-$GITHUB_RUN_ID" --cpu-cores 1 --timeout 600 -- python3 -B scripts/publish-release-assets.py --version "$BUILD_VERSION" --expected-commit "$RELEASE_COMMIT" --directory "$PANTHEON_RELEASE_INPUTS/bin" --app "$PANTHEON_RELEASE_INPUTS/Pantheon.app" --include-guard --guard-manifest "$PANTHEON_RELEASE_CUSTODY/payload-manifest.json" --reservation "$RECOVERY_CUSTODY/reservation.json" --receipt "$RECOVERY_CUSTODY/publication.json"
+      - name: Retain claim and publication evidence
+        if: always() && env.RECOVERY_CUSTODY != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: v164-metadata-successor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.RECOVERY_CUSTODY }}
+            ${{ runner.temp }}/pantheon-guard-attach-${{ github.run_id }}-${{ github.run_attempt }}-*.plist
+            ${{ runner.temp }}/pantheon-guard-attach-${{ github.run_id }}-${{ github.run_attempt }}-*.plist.stderr
+          if-no-files-found: warn
+      - name: Retain signing evidence
+        if: always() && env.PANTHEON_GUARD_ATTEMPT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: v164-metadata-guard-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.json
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.sha256
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*.receipt.txt
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/attach.plist
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/device.txt
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/*signature-details.txt
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/normalized.*/input
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/normalized.*/output
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/ACCEPTED
+            ${{ env.PANTHEON_GUARD_ATTEMPT }}/**/INCOMPLETE
+          if-no-files-found: warn
+      - name: Retain preclaim build evidence
+        if: always() && env.PRECLAIM_EVIDENCE != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: v164-metadata-preclaim-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.PRECLAIM_EVIDENCE }}/**/*.sha256
+            ${{ env.PRECLAIM_EVIDENCE }}/**/ACCEPTED
+            ${{ env.PRECLAIM_EVIDENCE }}/**/INCOMPLETE
+          if-no-files-found: warn
+      - name: Retain application and package signing receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v164-metadata-signing-sidecars-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ github.workspace }}/source/signed-Pantheon.app.receipt.txt
+            ${{ github.workspace }}/source/signed-.receipt.txt
+            ${{ github.workspace }}/source/bin/signed-SirsiPantheon-0.24.164-arm64.dmg.receipt.txt
+            ${{ github.workspace }}/source/bin/signed-SirsiPantheon-0.24.164-arm64.pkg.receipt.txt
+            ${{ github.workspace }}/source/bin/signed-.receipt.txt
+            ${{ env.PANTHEON_APOLLO_DIGEST_RECEIPT }}
+          if-no-files-found: warn
+
+  cask:
+    needs: recovery_successor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: v164-metadata-successor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: recovery-evidence
+      - name: Verify published DMG against retained receipt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t RECEIPTS < <(find recovery-evidence -name publication.json -type f)
+          [[ ${#RECEIPTS[@]} -eq 1 ]]
+          RECEIPT="${RECEIPTS[0]}"
+          jq -e '.release_id == 456022306 and .tag == "v0.24.164" and .commit == "ca31d2a8984c02e54fa762de4c63333cd92bdf22" and .published == true and .status == "published_verified_set"' "$RECEIPT" >/dev/null
+          EXPECTED="$(jq -er '.assets["SirsiPantheon-0.24.164-arm64.dmg"].sha256 | select(type == "string" and test("^[0-9a-f]{64}$"))' "$RECEIPT")"
+          ASSET="$(gh api repos/SirsiMaster/sirsi-pantheon/releases/456022306 --jq '[.assets[] | select(.name == "SirsiPantheon-0.24.164-arm64.dmg") | .id] | if length == 1 then .[0] else error("asset identity ambiguous") end')"
+          gh api -H 'Accept: application/octet-stream' "repos/SirsiMaster/sirsi-pantheon/releases/assets/$ASSET" > SirsiPantheon-0.24.164-arm64.dmg
+          ACTUAL="$(sha256sum SirsiPantheon-0.24.164-arm64.dmg | awk '{print $1}')"
+          [[ "$ACTUAL" == "$EXPECTED" ]]
+          printf 'DMG_SHA=%s\n' "$ACTUAL" >> "$GITHUB_ENV"
+          mapfile -t CASKS < <(find recovery-evidence -name sirsi-pantheon.rb -type f)
+          [[ ${#CASKS[@]} -eq 1 ]]
+          cp "${CASKS[0]}" sirsi-pantheon.rb
+          grep -Fqx '  version "0.24.164"' sirsi-pantheon.rb
+          grep -Fqx "  sha256 \"$ACTUAL\"" sirsi-pantheon.rb
+      - name: Publish and verify canonical cask
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          BLOB="$(gh api repos/SirsiMaster/homebrew-tools/contents/Casks/sirsi-pantheon.rb --jq .sha)"
+          CONTENT="$(base64 -w0 sirsi-pantheon.rb)"
+          gh api repos/SirsiMaster/homebrew-tools/contents/Casks/sirsi-pantheon.rb -X PUT -f message='chore: bump cask to v0.24.164' -f content="$CONTENT" -f sha="$BLOB"
+          gh api repos/SirsiMaster/homebrew-tools/contents/Casks/sirsi-pantheon.rb --jq .content | base64 --decode > published-cask.rb
+          cmp -s sirsi-pantheon.rb published-cask.rb

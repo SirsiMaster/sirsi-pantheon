@@ -188,6 +188,9 @@ var routerTaskWithdrawCmd = &cobra.Command{
 		}
 		defer f.Close()
 		// The router service replaces this actor with the authenticated session.
+		if cmd.Flags().Changed("lease") {
+			return f.Store().WithdrawTaskLease(args[0], args[1], taskLeaseToken, taskWithdrawSupersededBy, args[0]+"@local", taskLeaseReason)
+		}
 		return f.Store().WithdrawTask(args[0], args[1], taskWithdrawSupersededBy, args[0]+"@local", taskLeaseReason)
 	},
 }
@@ -586,6 +589,7 @@ func init() {
 	routerTaskReclaimExpiredCmd.Flags().BoolVar(&ledgerJSON, "json", false, "Emit JSON")
 	routerTaskWithdrawCmd.Flags().StringVar(&taskWithdrawSupersededBy, "superseded-by", "", "<agent>/<task-id> of the task that carries this work (required)")
 	routerTaskWithdrawCmd.Flags().StringVar(&taskLeaseReason, "reason", "", "Why this task is withdrawn (required)")
+	routerTaskWithdrawCmd.Flags().StringVar(&taskLeaseToken, "lease", "", "Live fenced task lease token")
 	routerTaskCmd.AddCommand(routerTaskWithdrawCmd)
 	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd, routerTaskReclaimExpiredCmd, routerTaskRecheckReceiptsCmd, routerTaskResetAttemptsCmd, routerTaskWhyCmd)
 	routerCmd.AddCommand(routerLedgerCmd, routerTaskCmd, routerDependCmd)

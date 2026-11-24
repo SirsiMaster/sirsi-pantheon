@@ -966,8 +966,9 @@ def registration_transport_cause(error):
 
 
 class Native:
-    def __init__(self):
-        self.cli = str(Path.home() / '.local/bin/sirsi')
+    def __init__(self, *, protected_cli=False):
+        self.cli = ('/usr/local/libexec/sirsi-pantheon/sirsi' if protected_cli
+                    else str(Path.home() / '.local/bin/sirsi'))
         self.executor_thread = None
         self.executor_identity = None
         self.cpu_cores = None
@@ -1785,6 +1786,8 @@ def main():
     parser.add_argument('--thread', default=os.environ.get('SIRSI_THREAD_ID'))
     parser.add_argument('--register-executor', action='store_true',
                         help='Bind this job process on its execution host; never reuse a foreign host PID')
+    parser.add_argument('--protected-cli', action='store_true',
+                        help='Use the fixed system CLI for explicitly registered fabric execution')
     parser.add_argument('--timeout', type=int, default=300)
     parser.add_argument('--iterations', type=int, default=1,
                         help='Bounded foreground iterations; each obtains a fresh admission')
@@ -1798,6 +1801,8 @@ def main():
                         help='Default build shares the machine; loaded/model and quiet measurement must be explicit; quiet requires a fresh full-share native executor')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    if args.protected_cli and (args.scope != 'fabric' or not args.register_executor or args.reconcile_local):
+        parser.error('Protected CLI selection requires explicit fabric scope and --register-executor')
     if args.reconcile_local:
         if args.command or args.register_executor or args.scope=='fabric':parser.error('Local debt reconciliation does not accept a payload or fabric operation')
         reconcile_local_debt(args.reconcile_local)
@@ -1856,7 +1861,7 @@ def main():
             return supervise_local(command, args.timeout, record, folder, persist)
         finally:
             print('Ma\'at local execution evidence: '+str(folder), file=sys.stderr)
-    backend = Native()
+    backend = Native(protected_cli=True) if args.protected_cli else Native()
     backend.execution_receipt_root = folder
     backend.cpu_cores = args.cpu_cores
     backend.requested_regime = regime

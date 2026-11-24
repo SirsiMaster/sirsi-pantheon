@@ -8,7 +8,7 @@ import (
 
 func TestThreadMigrationIsCeilingAndUpgradesV15(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.db")
-	s, err := OpenPath(path)
+	s, err := OpenPath(seedFromTemplate(t, path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestThreadMigrationIsCeilingAndUpgradesV15(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err = OpenPath(path)
+	s, err = OpenPath(seedFromTemplate(t, path))
 	if err != nil {
 		t.Fatalf("v15 to v16: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestThreadMigrationIsCeilingAndUpgradesV15(t *testing.T) {
 }
 
 func TestUpsertAndListThreads(t *testing.T) {
-	s, err := OpenPath(filepath.Join(t.TempDir(), "router.db"))
+	s, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "router.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestUpsertAndListThreads(t *testing.T) {
 // a full ListThreads response for a single-row lookup is large enough to hit
 // relay body-size/timeout ceilings under load).
 func TestGetThreadRecord(t *testing.T) {
-	s, err := OpenPath(filepath.Join(t.TempDir(), "router.db"))
+	s, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "router.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,12 +107,12 @@ func TestGetThreadRecord(t *testing.T) {
 
 func TestConcurrentThreadUpsertsPreserveDistinctRowsAndTerminalState(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.db")
-	a, err := OpenPath(path)
+	a, err := OpenPath(seedFromTemplate(t, path))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	b, err := OpenPath(path)
+	b, err := OpenPath(seedFromTemplate(t, path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestConcurrentThreadUpsertsPreserveDistinctRowsAndTerminalState(t *testing.
 }
 
 func TestHeartbeatCannotImplicitlyResumeConcurrentSuspend(t *testing.T) {
-	s, err := OpenPath(filepath.Join(t.TempDir(), "router.db"))
+	s, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "router.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestHeartbeatCannotImplicitlyResumeConcurrentSuspend(t *testing.T) {
 }
 
 func TestStaleCrossRowSnapshotCannotOverwriteNewerHeartbeat(t *testing.T) {
-	s, err := OpenPath(filepath.Join(t.TempDir(), "router.db"))
+	s, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "router.db")))
 	if err != nil {
 		t.Fatal(err)
 	}

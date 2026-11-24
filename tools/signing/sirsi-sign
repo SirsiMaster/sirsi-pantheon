@@ -117,6 +117,10 @@ for h in $HOSTS; do
 done
 [ -n "$H" ] || { echo "sirsi-sign: no signer accepted job $id (never enqueued anywhere)" >&2; exit 4; }
 echo "sirsi-sign: job $id queued on the signing Mac ${H#*@}"
+# A WatchPaths event can be missed across a service reload. Wake the already
+# enqueued job once; an uncertain wake is never a reason to enqueue it again.
+bounded ssh "${SSH_OPTIONS[@]}" "$H" 'launchctl kickstart "gui/$(id -u)/ai.sirsi.signd"' >/dev/null 2>&1 || \
+  echo "sirsi-sign: signer wake uncertain; observing the original job $id" >&2
 end=$(( $(date +%s) + T ))
 until ssh "${SSH_OPTIONS[@]}" "$H" "test -e ~/sirsi-sign/outbox/$id/done -o -e ~/sirsi-sign/outbox/$id/failed"; do
   [ $(date +%s) -gt $end ] && { echo "sirsi-sign: timed out; job $id remains on the signing Mac" >&2; exit 3; }; sleep 15

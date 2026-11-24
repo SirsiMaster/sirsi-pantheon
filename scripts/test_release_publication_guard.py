@@ -963,7 +963,7 @@ class GuardReleaseSourceContractTests(unittest.TestCase):
     def test_guard_build_is_inside_admission_and_before_both_app_builders(self):
         step = self.workflow.split("      - name: Build + sign + notarize DMG and PKG", 1)[1]
         step = step.split("      - name: Stage draft", 1)[0]
-        admitted = step.index('"$HOME/.local/bin/sirsi-maat-run"')
+        admitted = step.index('/bin/bash scripts/maat/release-supervisor.sh run')
         shell = step.index("-- /bin/bash -euo pipefail -c '", admitted)
         guard = step.index("bash scripts/ci-private-sdk.sh bash scripts/build-release-pretoolguard.sh", shell)
         dmg = step.index("bash scripts/ci-private-sdk.sh scripts/build-dmg.sh", guard)
@@ -988,10 +988,9 @@ class GuardReleaseSourceContractTests(unittest.TestCase):
     def test_publish_and_retry_use_fresh_bound_supervisor(self):
         stage = self.workflow.split("      - name: Stage draft", 1)[1].split("      - name:", 1)[0]
         build = self.workflow.split("      - name: Build + sign + notarize DMG and PKG", 1)[1].split("      - name:", 1)[0]
-        binding = 'cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py'
+        binding = '/bin/bash scripts/maat/release-supervisor.sh run --agent codex-pantheon'
         for section in (build, stage):
             self.assertIn(binding, section)
-            self.assertIn("installed Ma’at supervisor does not match release source", section)
             self.assertLess(section.index(binding), section.index('--register-executor'))
         self.assertNotIn("if: github.run_attempt", stage)
         self.assertIn('--work "pantheon-publish-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"', stage)
@@ -1040,7 +1039,7 @@ class GuardReleaseSourceContractTests(unittest.TestCase):
         self.assertIn('PANTHEON_RELEASE_INPUTS=$RESTORED', restore)
         for section, work in ((step("Preserve exact first-attempt publication inputs"), 'pantheon-custody-create-'),
                               (restore, 'pantheon-custody-restore-')):
-            self.assertIn('cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py', section)
+            self.assertIn('/bin/bash scripts/maat/release-supervisor.sh run --agent codex-pantheon', section)
             self.assertIn('--register-executor', section)
             self.assertIn(work, section)
             self.assertIn('--cpu-cores 1 --timeout 600 --', section)

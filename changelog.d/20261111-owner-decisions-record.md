@@ -1,1 +1,0 @@
-- **docs:** record the six owner decisions of 2026-11-04 (`docs/decisions/OWNER_DECISIONS_20261104.md`) so the tasks that asked for them can be withdrawn.

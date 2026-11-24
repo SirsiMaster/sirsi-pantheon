@@ -53,6 +53,28 @@ Statuses are `pending`, `in-progress`, `blocked`, and `done`.
 `--blocked-by <task-id>` when a task has a prerequisite; pass an empty
 `--blocked-by` on update to clear it.
 
+## Withdraw work carried by another task
+
+When another task actually carries the same work, a lane can retire its own
+duplicate as `withdrawn`. Name that task and give a reason; withdrawal is not
+completion and does not create a completion receipt. A canceled or withdrawn
+task cannot be the successor. The successor is checked at the transition; a
+later change to that task is a separate action.
+
+For a task you hold, use the live token from your task claim:
+
+```sh
+sirsi router task withdraw codex-pantheon old-task \
+  --lease "$SIRSI_TASK_LEASE" \
+  --superseded-by codex-pantheon/carrying-task \
+  --reason "Work continues in the carrying task"
+```
+
+The hosted router must support fenced withdrawal as well as the client. An
+expired, wrong or foreign session's token is refused. The existing command
+without `--lease` remains available for unleased tasks and refuses every live
+lease; it cannot spend a worker's lease.
+
 ## Turn a router item into ledger work
 
 ```sh
