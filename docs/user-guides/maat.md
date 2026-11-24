@@ -85,6 +85,34 @@ wait length is `--wait`, not the lease, so there is no reason to raise
 `--lease-ttl` to wait longer. A router service too old to support `--wait`
 fails with a clear message and leaves no queued row.
 
+### Reserving several resources at once
+
+```bash
+sirsi maat reserve m5 rail-a --holder me --work cells --lease-ttl 120 \
+  --regime loaded --exempt-pid m5=4242 --exempt-pid rail-a=4243 --json
+```
+
+All resources are reserved together or not at all: one transaction, one write.
+Each resource gets its own share (a floor beside a live holder on one, full on
+another). A refusal on any resource refuses the whole request and reserves
+nothing: for example a lane waiting on one of them goes first, and the error
+names that resource, the waiter and the reason (`waiter-first` or
+`waiter-bound`). It exits non-zero. `--json` prints
+
+```json
+{"granted": true,
+ "reservations": [{"resource": "m5", "id": "...", "share": "full", "regime": "loaded"},
+                  {"resource": "rail-a", "id": "...", "share": "floor", "regime": "loaded",
+                   "conflict": {"holder": "other", "...": "..."}, "reason": "...", "cores": 4}]}
+```
+
+or, on refusal, `{"granted": false, "reservations": [], "reason_code": "...", "error": "..."}`.
+`--exempt-pid` takes `PID` (all resources) or `resource=PID` (one). Several
+resources do not combine with `--queue`/`--wait`. A router service too old to
+support it answers with a "not supported" error (`reason_code: "not-supported"`);
+reserve each resource separately then, and release the ones you got if a later
+one fails. One resource behaves exactly as before.
+
 ### GitHub submission attribution (Phase 1)
 ```bash
 sirsi maat submit --kind release --repo OWNER/REPO --ref v1.2.3

@@ -2,6 +2,8 @@ package routerstore
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 )
@@ -15,6 +17,17 @@ func (rs *RemoteStore) CompareAndSwapState(key, expected string, exists bool, va
 func (rs *RemoteStore) MaatReserve(req schedule.Reservation, queue bool) (schedule.ReserveResult, error) {
 	var out schedule.ReserveResult
 	err := rs.call("MaatReserve", []any{req, queue}, &out)
+	return out, err
+}
+
+// MaatReserveMulti: an older service answers "no such store method"; say so
+// with ErrMultiUnsupported so the caller can fall back to one reserve each.
+func (rs *RemoteStore) MaatReserveMulti(reqs []schedule.Reservation) (schedule.MultiResult, error) {
+	var out schedule.MultiResult
+	err := rs.call("MaatReserveMulti", []any{reqs}, &out)
+	if err != nil && strings.Contains(err.Error(), "no such store method") {
+		err = fmt.Errorf("%w: %v", schedule.ErrMultiUnsupported, err)
+	}
 	return out, err
 }
 

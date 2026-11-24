@@ -160,28 +160,40 @@ func emitJSON(v any) error {
 
 var (
 	resHolder, resWork, resRegime, resStart, resEstEnd, resRepro string
-	resPriority, resLeaseTTL, resExemptPID                       int
+	resPriority, resLeaseTTL                                     int
 	resCores                                                     int
 	resQueue, maatJSON                                           bool
 	resWait                                                      int
+	resExempt                                                    []string
 	maatOperationNonce                                           string
 	covHorizon                                                   int
 	conflictMachine                                              string
 )
 
 var maatReserveCmd = &cobra.Command{
-	Use:   "reserve <resource>",
+	Use:   "reserve <resource> [<resource>...]",
 	Short: "Reserve a machine or rail for a measurement window (enforced admission, never a lockout)",
 	Long: `Reserve a resource (a machine id like m1/m5, or a rail like rail-a,
 ci-runners@m5) for a time window. Ma'at never locks a lane out (owner
 directive 2026-09-26): a live foreign reservation, or an unanswered cede
 request addressed to you, grants a bounded FLOOR share instead of refusing —
 only --queue waits for the full window. A harness calls this before touching
-a cable; it is the rails.lock replacement.`,
-	Args: cobra.ExactArgs(1),
+a cable; it is the rails.lock replacement.
+
+Several resources reserve all-or-nothing in one write: every resource is
+granted (each with its own full or floor share) or none is, and a refusal on
+any one (for example a waiting lane that goes first) refuses the whole
+request, naming the resource and the reason. --exempt-pid takes PID (all
+resources) or resource=PID (one). Multi-resource does not combine with
+--queue/--wait.`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if resCores < 0 || resCores > 64 {
 			return fmt.Errorf("maat: --cores must be between 0 (unspecified) and 64")
+		}
+		pids, err := parseExemptPIDs(resExempt, args)
+		if err != nil {
+			return err
 		}
 		l, err := maatLedger()
 		if err != nil {
@@ -202,7 +214,10 @@ a cable; it is the rails.lock replacement.`,
 			Resource: args[0], Holder: holder, Work: resWork,
 			Regime: schedule.Regime(resRegime), Priority: resPriority,
 			Repro: resRepro, Start: start, EstEnd: resEstEnd, LeaseTTLSec: resLeaseTTL,
-			ExemptPID: resExemptPID, Cores: resCores,
+			ExemptPID: pids[args[0]], Cores: resCores,
+		}
+		if len(args) > 1 {
+			return reserveMulti(l, args, req, pids)
 		}
 		var res schedule.ReserveResult
 		if resWait > 0 {
@@ -658,7 +673,7 @@ func init() {
 	maatReserveCmd.Flags().IntVar(&resLeaseTTL, "lease-ttl", 120, "lease TTL seconds (expires without heartbeat)")
 	maatReserveCmd.Flags().BoolVar(&resQueue, "queue", false, "queue behind the holder instead of refusing")
 	maatReserveCmd.Flags().IntVar(&resWait, "wait", 0, "with --queue: stay attached up to N seconds, keep the queued row alive, and return the grant when the resource frees (exit 1, reason_code wait-timeout, on timeout; SIGINT/SIGTERM cancel the queued row)")
-	maatReserveCmd.Flags().IntVar(&resExemptPID, "exempt-pid", 0, "PID of this reservation's own guarded-run process tree (e.g. the run-guard script); conflict-check never treats its ancestors or descendants as intruders")
+	maatReserveCmd.Flags().StringArrayVar(&resExempt, "exempt-pid", nil, "PID of this reservation's own guarded-run process tree (e.g. the run-guard script); conflict-check never treats its ancestors or descendants as intruders. With several resources: PID (all) or resource=PID (repeatable)")
 	maatReserveCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 
 	maatExtendCmd.Flags().StringVar(&resEstEnd, "est-end", "", "new estimated end RFC3339")

@@ -427,6 +427,26 @@ func (l *Ledger) reserveAttempt(req Reservation, queue, claim bool) (ReserveResu
 	if err := validate(req); err != nil {
 		return ReserveResult{}, err
 	}
+	raw, exists, reservations, _, err := l.snapshot()
+	if err != nil {
+		return ReserveResult{}, err
+	}
+	rows, changed, res, err := l.admit(req, queue, claim, reservations)
+	if err != nil || !changed {
+		return res, err
+	}
+	if err := l.save(raw, exists, rows); err != nil {
+		return ReserveResult{}, err
+	}
+	return res, nil
+}
+
+// admit decides one validated request against the given snapshot rows and
+// returns the rows to write and whether they changed. It never writes: the
+// single-resource path saves once per call, a multi-resource request admits each
+// resource in turn against the accumulating rows and saves once for all of them
+// (multireserve.go), so the one decision procedure serves both.
+func (l *Ledger) admit(req Reservation, queue, claim bool, reservations []Reservation) ([]Reservation, bool, ReserveResult, error) {
 	// ADR-120 §2: a delegated resource is admitted by the pod authority
 	// (ReserveAsAuthority), not here. This is the single admission chokepoint
 	// every Reserve (local or server-transactional) goes through. A caller
@@ -435,25 +455,21 @@ func (l *Ledger) reserveAttempt(req Reservation, queue, claim bool) (ReserveResu
 	// delegatedFloor refuses it below.
 	d, err := l.delegationFor(req.Resource, l.now())
 	if err != nil {
-		return ReserveResult{}, err
+		return nil, false, ReserveResult{}, err
 	}
 	pendingCedes, err := l.pendingCedeIDs(req.Holder)
 	if err != nil {
-		return ReserveResult{}, err
+		return nil, false, ReserveResult{}, err
 	}
 	floor, err := l.FloorShare(req.Resource)
 	if err != nil {
-		return ReserveResult{}, err
-	}
-	raw, exists, reservations, _, err := l.snapshot()
-	if err != nil {
-		return ReserveResult{}, err
+		return nil, false, ReserveResult{}, err
 	}
 	claimAt := -1
 	for i, existing := range reservations {
 		if existing.ID == req.ID {
 			if !claim {
-				return ReserveResult{}, fmt.Errorf("maat: duplicate reservation id %s", req.ID)
+				return nil, false, ReserveResult{}, fmt.Errorf("maat: duplicate reservation id %s", req.ID)
 			}
 			claimAt = i
 		}
@@ -462,12 +478,12 @@ func (l *Ledger) reserveAttempt(req Reservation, queue, claim bool) (ReserveResu
 		// Re-checked inside this snapshot: the row may have changed since Claim read it.
 		switch {
 		case claimAt < 0:
-			return ReserveResult{}, fmt.Errorf("%w: %s not found", ErrNotQueued, req.ID)
+			return nil, false, ReserveResult{}, fmt.Errorf("%w: %s not found", ErrNotQueued, req.ID)
 		case reservations[claimAt].Status == StatusActive:
 			row := reservations[claimAt] // already granted: idempotent
-			return ReserveResult{Granted: true, Reservation: &row}, nil
+			return reservations, false, ReserveResult{Granted: true, Reservation: &row}, nil
 		case reservations[claimAt].Status != StatusQueued:
-			return ReserveResult{}, fmt.Errorf("%w: %s is %s", ErrNotQueued, req.ID, reservations[claimAt].Status)
+			return nil, false, ReserveResult{}, fmt.Errorf("%w: %s is %s", ErrNotQueued, req.ID, reservations[claimAt].Status)
 		}
 	}
 	now := l.now()
@@ -486,13 +502,10 @@ func (l *Ledger) reserveAttempt(req Reservation, queue, claim bool) (ReserveResu
 		return append(reservations, r)
 	}
 	// stillQueued is a claim that did not pass: refresh the row's lease, keep its place.
-	stillQueued := func(conflict *Reservation, code string, w *WaiterInfo) (ReserveResult, error) {
+	stillQueued := func(conflict *Reservation, code string, w *WaiterInfo) ([]Reservation, bool, ReserveResult, error) {
 		reservations[claimAt].HeartbeatAt = req.HeartbeatAt
-		if err := l.save(raw, exists, reservations); err != nil {
-			return ReserveResult{}, err
-		}
 		row := reservations[claimAt]
-		return ReserveResult{Queued: true, Reservation: &row, Conflict: conflict, ReasonCode: code, Waiter: w}, nil
+		return reservations, true, ReserveResult{Queued: true, Reservation: &row, Conflict: conflict, ReasonCode: code, Waiter: w}, nil
 	}
 	if req.LeaseTTLSec == 0 {
 		req.LeaseTTLSec = 120
@@ -504,7 +517,7 @@ func (l *Ledger) reserveAttempt(req Reservation, queue, claim bool) (ReserveResu
 	if d != nil {
 		conflict, ferr := delegatedFloor(d, req, queue, reservations, now)
 		if ferr != nil {
-			return ReserveResult{}, ferr
+			return nil, false, ReserveResult{}, ferr
 		}
 		req.Cores = floor
 		req.Share = ShareFloor
@@ -512,10 +525,7 @@ func (l *Ledger) reserveAttempt(req Reservation, queue, claim bool) (ReserveResu
 		req.PendingCedes = pendingCedes
 		req.Status = StatusActive
 		reservations = put(req)
-		if err := l.save(raw, exists, reservations); err != nil {
-			return ReserveResult{}, err
-		}
-		return ReserveResult{Granted: true, Reservation: &req, Conflict: conflict, PendingCedes: pendingCedes}, nil
+		return reservations, true, ReserveResult{Granted: true, Reservation: &req, Conflict: conflict, PendingCedes: pendingCedes}, nil
 	}
 
 	if len(pendingCedes) > 0 {
@@ -525,10 +535,7 @@ func (l *Ledger) reserveAttempt(req Reservation, queue, claim bool) (ReserveResu
 		req.PendingCedes = pendingCedes
 		req.Status = StatusActive
 		reservations = put(req)
-		if err := l.save(raw, exists, reservations); err != nil {
-			return ReserveResult{}, err
-		}
-		return ReserveResult{Granted: true, Reservation: &req, PendingCedes: pendingCedes}, nil
+		return reservations, true, ReserveResult{Granted: true, Reservation: &req, PendingCedes: pendingCedes}, nil
 	}
 
 	for _, r := range reservations {
@@ -567,22 +574,16 @@ func (l *Ledger) reserveAttempt(req Reservation, queue, claim bool) (ReserveResu
 			req.QueuedBehind = r.Holder
 			capQueuedLease(&req)
 			reservations = append(reservations, req)
-			if err := l.save(raw, exists, reservations); err != nil {
-				return ReserveResult{}, err
-			}
 			conflict := r
-			return ReserveResult{Granted: false, Queued: true, Reservation: &req, Conflict: &conflict}, nil
+			return reservations, true, ReserveResult{Granted: false, Queued: true, Reservation: &req, Conflict: &conflict}, nil
 		}
 		req.Cores = floor
 		req.Share = ShareFloor
 		req.Reason = fmt.Sprintf("%s holds %s until %s — granted the floor share", r.Holder, req.Resource, orOpen(r.EstEnd))
 		req.Status = StatusActive
 		reservations = put(req)
-		if err := l.save(raw, exists, reservations); err != nil {
-			return ReserveResult{}, err
-		}
 		conflict := r
-		return ReserveResult{Granted: true, Reservation: &req, Conflict: &conflict}, nil
+		return reservations, true, ReserveResult{Granted: true, Reservation: &req, Conflict: &conflict}, nil
 	}
 
 	// Waiters go first (ADR-120 amendment 2026-11-10 part 2, task
@@ -594,7 +595,7 @@ func (l *Ledger) reserveAttempt(req Reservation, queue, claim bool) (ReserveResu
 	if w := waiterFor(reservations, req, now); w != nil {
 		code, info := waiterReason(*w, now)
 		if !queue {
-			return ReserveResult{ReasonCode: code, Waiter: &info}, newWaiterFirstError(req.Resource, code, info)
+			return nil, false, ReserveResult{ReasonCode: code, Waiter: &info}, newWaiterFirstError(req.Resource, code, info)
 		}
 		if claim {
 			return stillQueued(nil, code, &info)
@@ -603,19 +604,13 @@ func (l *Ledger) reserveAttempt(req Reservation, queue, claim bool) (ReserveResu
 		req.QueuedBehind = w.Holder
 		capQueuedLease(&req)
 		reservations = append(reservations, req)
-		if err := l.save(raw, exists, reservations); err != nil {
-			return ReserveResult{}, err
-		}
-		return ReserveResult{Queued: true, Reservation: &req, ReasonCode: code, Waiter: &info}, nil
+		return reservations, true, ReserveResult{Queued: true, Reservation: &req, ReasonCode: code, Waiter: &info}, nil
 	}
 
 	req.Share = ShareFull
 	req.Status = StatusActive
 	reservations = put(req)
-	if err := l.save(raw, exists, reservations); err != nil {
-		return ReserveResult{}, err
-	}
-	return ReserveResult{Granted: true, Reservation: &req}, nil
+	return reservations, true, ReserveResult{Granted: true, Reservation: &req}, nil
 }
 
 // orOpen renders an est-end for a Reason string ("open" if unset).

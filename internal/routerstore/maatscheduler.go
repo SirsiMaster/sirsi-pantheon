@@ -83,6 +83,23 @@ func (s *SQLiteStore) MaatReserve(req schedule.Reservation, queue bool) (schedul
 	return out, err
 }
 
+// MaatReserveMulti admits every resource or none: one transaction, one lock on
+// the reservation row, one write, each resource behind the same custody fence a
+// single reserve passes.
+func (s *SQLiteStore) MaatReserveMulti(reqs []schedule.Reservation) (schedule.MultiResult, error) {
+	var out schedule.MultiResult
+	err := s.withMaatTransaction(func(tx *txHandle, l *schedule.Ledger) (err error) {
+		for _, r := range reqs {
+			if err = sleepReserveFence(tx, l, r.Resource); err != nil {
+				return err
+			}
+		}
+		out, err = l.ReserveMulti(reqs)
+		return err
+	})
+	return out, err
+}
+
 func (s *SQLiteStore) MaatMutate(action, id, value string) (*schedule.Reservation, error) {
 	var out *schedule.Reservation
 	if action == "claim" {
