@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -57,6 +58,10 @@ type AnswerAssignment struct {
 	Read    bool                 `json:"read"`
 	Drained bool                 `json:"drained"`
 	History []AnswerHandoffEvent `json:"history"`
+	// Self is the caller's own server-derived identity, set only on a response
+	// to the "generation" op and never stored. A future target reads it and hands
+	// it to the current owner out of band; nobody can compute another's.
+	Self *AnswerOwner `json:"self,omitempty"`
 }
 
 func answerOwnerValid(a AnswerOwner) bool {
@@ -171,7 +176,16 @@ func transitionAnswer(in AnswerAssignment, actor AnswerOwner, c AnswerHandoffCal
 	return out, nil
 }
 
-const answerStatePrefix = "answer-handoff:v1:"
+const (
+	answerStatePrefix = "answer-handoff:v1:"
+	answerGenPrefix   = "answer-handoff-gen:v1:"
+)
+
+// isAnswerStateKey fences both the assignment rows and the generation secrets
+// from the generic state accessors.
+func isAnswerStateKey(key string) bool {
+	return strings.HasPrefix(key, answerStatePrefix) || strings.HasPrefix(key, answerGenPrefix)
+}
 
 // withAnswerState serializes this lane across service replicas. Existing state
 // table only; SQLite BEGIN IMMEDIATE and PostgreSQL row lock provide the same
@@ -280,6 +294,7 @@ type answerActorKey struct{}
 type answerActor struct {
 	Session   Session
 	MachineID string
+	TokenID   string // the exact host token presented; rechecked inside the transaction
 }
 
 // answerActorOwner resolves the actual stored execution generation under the
@@ -303,19 +318,67 @@ func answerActorOwner(tx *txHandle, actor answerActor, now time.Time) (AnswerOwn
 	if json.Unmarshal(payload, &p) != nil || p.PID <= 0 || p.Start == "" || p.MachineID != actor.MachineID {
 		return AnswerOwner{}, ErrAnswerHandoff
 	}
+	// Gate 3: revocation and liveness are rechecked HERE, in the state
+	// transaction, not only at the earlier HTTP lookups. The session must be
+	// unrevoked and the exact presented host token must still be live and still
+	// carry this machine id.
 	var revoked string
 	if err = tx.QueryRow(`SELECT revoked FROM sessions WHERE session_id=? AND agent=? AND host=? AND thread_id=?`, actor.Session.ID, agent, host, actor.Session.ThreadID).Scan(&revoked); err != nil || revoked != "" {
 		return AnswerOwner{}, ErrAnswerHandoff
 	}
-	return AnswerOwner{ThreadID: actor.Session.ThreadID, Host: host, MachineID: actor.MachineID, Generation: answerGeneration(actor.MachineID, actor.Session.ID, p.PID, p.Start)}, nil
+	var live int
+	if err = tx.QueryRow(`SELECT COUNT(*) FROM host_tokens WHERE token_id=? AND host=? AND machine_id=? AND revoked=''`, actor.TokenID, host, actor.MachineID).Scan(&live); err != nil || live != 1 {
+		return AnswerOwner{}, ErrAnswerHandoff
+	}
+	secret, err := answerGenSecret(tx, actor.Session.ID)
+	if err != nil {
+		return AnswerOwner{}, err
+	}
+	return AnswerOwner{ThreadID: actor.Session.ThreadID, Host: host, MachineID: actor.MachineID, Generation: answerGeneration(secret, actor.MachineID, actor.Session.ID, p.PID, p.Start)}, nil
 }
 
-// answerGeneration binds ownership to the server-minted session as well as the
-// self-reported process fields, so a client that copies a thread's PID and start
-// time still cannot produce the owner's generation. A new session is a new
-// generation: the old owner's authority does not follow it.
-func answerGeneration(machineID, sessionID string, pid int, start string) string {
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%s/%s/%d/%s", machineID, sessionID, pid, start))))
+// answerGenSecret returns the per-session secret, minted by the server inside
+// the transaction on first use. It never leaves the server, so no client can
+// compute any session's generation (gate 6). ponytail: one state row per
+// session that ever answers; sweep with the session GC if volume matters.
+func answerGenSecret(tx *txHandle, sessionID string) (string, error) {
+	fresh, err := randomHex(32)
+	if err != nil {
+		return "", err
+	}
+	key := answerGenPrefix + sessionID
+	if _, err = tx.Exec(`INSERT INTO state(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING`, key, fresh); err != nil {
+		return "", err
+	}
+	v, ok, err := (maatTransactionState{tx}).GetState(key)
+	if err != nil || !ok || v == "" {
+		return "", fmt.Errorf("%w: generation secret unavailable", ErrAnswerHandoff)
+	}
+	return v, nil
+}
+
+// answerGeneration is keyed by the server-held per-session secret, so a client
+// that copies a thread's PID, start time, machine id or even its session id
+// cannot produce another session's generation. The process fields stay in the
+// hash so a changed process under one session is a new generation.
+func answerGeneration(secret, machineID, sessionID string, pid int, start string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%s/%s/%s/%d/%s", secret, machineID, sessionID, pid, start))))
+}
+
+// AnswerOwnerForSession is concrete backend management (NOT Store/RPC): it
+// derives the exact owner identity for a live session from stored truth, for
+// seeding CreateAnswerAssignment. Nothing is caller-asserted.
+func (s *SQLiteStore) AnswerOwnerForSession(sessionID, tokenID, machineID string) (AnswerOwner, error) {
+	sess, err := s.GetSession(sessionID)
+	if err != nil {
+		return AnswerOwner{}, err
+	}
+	var out AnswerOwner
+	err = s.withTx(func(tx *txHandle) error {
+		out, err = answerActorOwner(tx, answerActor{Session: sess, MachineID: machineID, TokenID: tokenID}, s.clock())
+		return err
+	})
+	return out, err
 }
 
 // AnswerHandoff is a self-lane control operation. A read reveals pending work,
@@ -333,6 +396,11 @@ func (s *SQLiteStore) AnswerHandoff(ctx context.Context, lane string, c AnswerHa
 		who, err := answerActorOwner(tx, actor, s.clock())
 		if err != nil {
 			return err
+		}
+		if c.Op == "generation" {
+			// Reveals only the caller's own identity, never the assignment.
+			out = AnswerAssignment{Lane: lane, Self: &who}
+			return nil
 		}
 		// An unrelated same-lane session cannot inspect candidate identities.
 		if who != a.Owner && (a.Pending == nil || who != a.Pending.Target) {

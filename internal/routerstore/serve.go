@@ -520,7 +520,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusForbidden, "", actorErr.Error())
 			return
 		}
-		ctx = context.WithValue(ctx, answerActorKey{}, answerActor{Session: sess, MachineID: token.MachineID})
+		ctx = context.WithValue(ctx, answerActorKey{}, answerActor{Session: sess, MachineID: token.MachineID, TokenID: token.ID})
 	}
 	if name == "DesktopSleep" {
 		var actorErr error

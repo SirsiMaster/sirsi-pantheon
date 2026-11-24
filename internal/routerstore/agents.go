@@ -122,7 +122,7 @@ func (s *SQLiteStore) SetState(key, value string) error {
 	if key == maatReservationsKey {
 		return fmt.Errorf("%w: Ma'at reservation writes require the atomic scheduler API; upgrade this client", ErrInvalidInput)
 	}
-	if strings.HasPrefix(key, answerStatePrefix) {
+	if isAnswerStateKey(key) {
 		return fmt.Errorf("%w: generic state writes cannot create or replace single-answerer authority", ErrAnswerHandoff)
 	}
 	if strings.TrimSpace(key) == "" {
@@ -139,7 +139,7 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value;`
 // GetState returns the value for key. The second return is false if the key is
 // absent (distinguishing an unset key from an empty-string value).
 func (s *SQLiteStore) GetState(key string) (string, bool, error) {
-	if strings.HasPrefix(key, answerStatePrefix) {
+	if isAnswerStateKey(key) {
 		return "", false, fmt.Errorf("%w: generic state reads cannot inspect single-answerer candidate identities", ErrAnswerHandoff)
 	}
 	var value string
@@ -205,7 +205,7 @@ func (s *SQLiteStore) CompareAndSwapState(key, expected string, exists bool, val
 	if key == desktopSleepKey {
 		return false, fmt.Errorf("%w: sleep custody: generic CAS cannot create or replace authority", ErrInvalidInput)
 	}
-	if strings.HasPrefix(key, answerStatePrefix) {
+	if isAnswerStateKey(key) {
 		return false, fmt.Errorf("%w: generic CAS cannot create or replace single-answerer authority", ErrAnswerHandoff)
 	}
 	if strings.TrimSpace(key) == "" {

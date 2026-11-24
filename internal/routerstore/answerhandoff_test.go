@@ -139,6 +139,13 @@ func TestAnswerHandoffGenericStateAccessRefused(t *testing.T) {
 	if _, _, e := s.GetState(key); e == nil {
 		t.Fatal("generic GetState inspected single-answerer candidate identity")
 	}
+	secret := answerGenPrefix + "some-session"
+	if e := s.SetState(secret, "forged"); e == nil {
+		t.Fatal("generic SetState planted a generation secret")
+	}
+	if _, _, e := s.GetState(secret); e == nil {
+		t.Fatal("generic GetState read a generation secret")
+	}
 }
 func TestAnswerHandoffTransactionCASAndRollback(t *testing.T) {
 	s := openBackendStore(t, filepath.Join(t.TempDir(), "handoff.db"))
@@ -204,14 +211,17 @@ func TestAnswerHandoffTransactionCASAndRollback(t *testing.T) {
 }
 
 func TestAnswerGenerationBindsServerSession(t *testing.T) {
-	base := answerGeneration("machine1", "session-a", 41, "start1")
-	if base != answerGeneration("machine1", "session-a", 41, "start1") {
+	base := answerGeneration("secret-a", "machine1", "session-a", 41, "start1")
+	if base != answerGeneration("secret-a", "machine1", "session-a", 41, "start1") {
 		t.Fatal("same session and process must keep one generation")
 	}
-	if base == answerGeneration("machine1", "session-b", 41, "start1") {
+	if base == answerGeneration("secret-a", "machine1", "session-b", 41, "start1") {
 		t.Fatal("a copied PID and start time under another session matched the owner")
 	}
-	if base == answerGeneration("machine1", "session-a", 42, "start1") || base == answerGeneration("machine1", "session-a", 41, "start2") {
+	if base == answerGeneration("secret-b", "machine1", "session-a", 41, "start1") {
+		t.Fatal("every client-known field without the server secret matched the owner")
+	}
+	if base == answerGeneration("secret-a", "machine1", "session-a", 42, "start1") || base == answerGeneration("secret-a", "machine1", "session-a", 41, "start2") {
 		t.Fatal("a changed process must be a new generation")
 	}
 }
