@@ -1,1 +1,0 @@
-- Add a one-shot continuation for the v0.24.164 release that verifies the original signed guard and reproduced inputs before completing the existing draft.

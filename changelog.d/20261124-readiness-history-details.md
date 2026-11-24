@@ -1,1 +1,0 @@
-- Host-readiness change-only history retains changes in admission and GUI reasons and distinct SSH and screen-sharing probe state/reason signatures, while ignoring timestamps and attempt ordering. Existing history is not removed; variable diagnostic text may increase retained private history and storage. This is a source change; live deployment remains separate.

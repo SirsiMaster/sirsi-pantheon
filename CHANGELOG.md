@@ -6,6 +6,60 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.165] — 2026-11-24
+
+- Host-readiness change-only history retains changes in admission and GUI reasons and distinct SSH and screen-sharing probe state/reason signatures, while ignoring timestamps and attempt ordering. Existing history is not removed; variable diagnostic text may increase retained private history and storage. This is a source change; live deployment remains separate.
+
+- Upgrade the OpenTelemetry Go root, metric, and trace modules to v1.47.0 to address GHSA-q7gw-24fr-5p69 (CVE-2026-128085). Module resolution also selects otel/log v1.47.0 and logr v1.4.4; the application's Go language version is unchanged.
+
+- Ma'at: a lane waiting with `--queue` now goes before the same lane's next full hold on that resource (waiters first, ADR-120). The repeat request is queued behind the waiter or refused with reason code `waiter-first` (`waiter-bound` after 120 s, reachable only with a queued lease of 121-600 s); `sirsi maat reserve --json` names the waiter and still exits non-zero. The older queued row always keeps precedence (no cycle can starve the owed waiter), only an overlapping FULL grant counts as serving a waiter, and a queued row's lease is capped at 600 s. Only a lane that queues is protected.
+
+- Added a write-only, signed-in owner control to retire reviewed ledger IDs without disclosing private task rows or counting cancellations as completed work. Cancellation atomically preserves custodial and terminal records; unconfirmed responses stop the pass for reconciliation.
+
+- Registered and embedded the reviewed-retirement script, with a regression check for every script referenced by the actual hosted index. The staged check failed before any cancellation; the guarded router is unaffected.
+
+- Allow a task's authenticated lease holder to withdraw duplicate work with a live fence, while serializing successor validation and refusing expired leases.
+
+- Run this repair's protected checks without materializing private SDK deploy keys.
+
+- Verify fenced withdrawal under the router's restricted PostgreSQL service role.
+
+- Exercise fenced withdrawal with registered-session enforcement enabled.
+
+- `scripts/router-service/deploy.sh` now sets the Cloud Run `source` label to the deployed commit (`git rev-parse --short=8 HEAD`, the same HEAD `stage.sh` requires clean and builds). No script ever wrote that label, so every revision kept the value set once out of band (`d7e1a505`) and carried forward.
+
+- `task resume-claim` refusals (terminal/dependency state, live or malformed retained custody, below-ceiling original, stale row version, changed request with no replay, recorded lease no longer live, lost row CAS) now return HTTP 409 with the new wire sentinel `ErrTaskResumeRefused` and the reason text, instead of an HTTP 500 that read as a service fault. Which requests are refused is unchanged; input errors stay 400, lane-scope errors 403, and genuine store failures stay 500.
+
+- Owner decisions of 2026-11-24 recorded: disposition of six stale Ra tasks, receipts, Horus, M1 relay credential.
+
+- Add a one-shot continuation for the v0.24.164 release that verifies the original signed guard and reproduced inputs before completing the existing draft.
+
+- Correct the retained v0.24.164 custody archive digest and reconcile the failed pre-publication claim before continuing publication.
+
+- Reconcile the retained v0.24.164 signed custody and complete publication with a verified physical mount path, without repeating signing.
+
+- Reconcile the failed v0.24.164 recovery and reproduce the tagged inputs before claiming a continuation, using the local module cache without network or SDK keys.
+
+- Guard signing verification accepts either adjacent 16 KiB `__LINKEDIT` virtual-size rounding when both Mach-O layouts are valid and every other byte is identical. The v0.24.164 failed run's retained input and output exposed the downward case; arbitrary size changes and other byte differences remain refused.
+
+- **Recovery anchor verifier: `BuildPolicy` parses each authorized_keys source independently** (PR #1404 review, 2026-11-23): the library previously told callers to concatenate per-account authorized_keys files, so an unterminated first file absorbed the next account's restricted key line into its comment and that key kept its grant. `BuildPolicy(generation, grantsSrc, restrictionsSrc, moreRestrictions...)` now parses every source alone and unions the restricted sets; the restrictions hash is length-prefixed per source; the first source is a required parameter so a zero-source call cannot compile. Regression `TestPolicyMultiSourceUnterminatedFirst` carries a concatenation negative control. Library only, no daemon or key changes. Refs: ADR-078, PANTHEON_RULES.md A35; Changelog: Unreleased
+
+- Give thread-watch CLI integration fixtures a private inert service controller,
+  with captured-argument, refusal and ambient-controller-spy controls. Temporary
+  HOME no longer stands in for launchd-domain isolation.
+
+- Scope task eligibility diagnostics to their existing task-row predicates with
+  explicit JSON scope/caller-not-evaluated metadata. Remove the unconditional
+  claim-success promise; plain-text `router task why` warns when an older service
+  lacks scope metadata. Row claimability/dispatchability and all authorization
+  guards are unchanged. Current-main composition preserves evidence-bound retry
+  recovery guidance. Not an installed fix or a substitute
+  for the separately documented M5 caller-binding operational recovery.
+
+- ADR-078 verifier library only (`internal/recoveryanchor/verify`): canonical 8-field envelope parser, OpenSSH SSHSIG verification under namespace `sirsi-recovery-anchor` (ed25519 / ecdsa-sha2-nistp256), grant-source and authorized_keys-narrowing parsers fed from caller-supplied bytes, epoch + wall-clock ratchet + high-water mark + atomic replay admission over an injected Store (in-memory test store only), and a pure pre-dispatch revalidation function. Every decision carries a stable reason code; every error path denies. No daemon, no root code, no socket, no key handling beyond public-key parsing, no verb execution, no `anchor-grants.allow`/`authorized_keys` writes. `golang.org/x/crypto` moves from indirect to direct in `go.mod` (already required, no new module). Owner authorization 2026-11-11. Refs: ADR-078 (status entry 2026-11-11), ledger `rs-42-recovery-anchor-implementation`.
+
+- Ma'at submit tests use private declared-agent fixtures rather than the shared working checkout, preserving real discovery, declaration/policy refusals and ledger-failure checks without restoring or changing another session's registry.
+
 - Router spool discovery reads each request directory once per existing 150 ms pass, using the same enumeration for request discovery and permission diagnostics. Queue, claim and outcome behavior is unchanged.
 
 ## [0.24.164] — 2026-11-23
