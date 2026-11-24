@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+- Router spool discovery reads each request directory once per existing 150 ms pass, using the same enumeration for request discovery and permission diagnostics. Queue, claim and outcome behavior is unchanged.
+
 ## [0.24.164] — 2026-11-23
 
 - Release admission uses a separately installed, root-protected supervisor and CLI on M1, leaving the existing shared supervisor unchanged.
