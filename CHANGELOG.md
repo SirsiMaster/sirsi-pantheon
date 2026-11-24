@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.165] — 2026-11-24
 
+- Ma'at: a lane waiting with `--queue` now goes before the same lane's next full hold on that resource (waiters first, ADR-120). The repeat request is queued behind the waiter or refused with reason code `waiter-first` (`waiter-bound` after 120 s, reachable only with a queued lease of 121-600 s); `sirsi maat reserve --json` names the waiter and still exits non-zero. The older queued row always keeps precedence (no cycle can starve the owed waiter), only an overlapping FULL grant counts as serving a waiter, and a queued row's lease is capped at 600 s. Only a lane that queues is protected.
+
 - Added a write-only, signed-in owner control to retire reviewed ledger IDs without disclosing private task rows or counting cancellations as completed work. Cancellation atomically preserves custodial and terminal records; unconfirmed responses stop the pass for reconciliation.
 
 - Registered and embedded the reviewed-retirement script, with a regression check for every script referenced by the actual hosted index. The staged check failed before any cancellation; the guarded router is unaffected.
