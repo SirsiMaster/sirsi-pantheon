@@ -28,6 +28,6 @@ preserves empty legacy metadata as unknown.
 Do not probe this distinction with claim/reset attempts or by adopting another
 session. Normal registration of your own actual runtime remains supported; this
 diagnostic adds no registration action and changes no authentication or claim
-guard. The current-main composition has not been tested, built, installed or
-deployed. Separate old-base focused tests and the M5 caller-binding operational
-recovery do not constitute qualification of this diagnostic composition.
+guard. Verification must identify the exact composed source; separate old-base
+focused tests and the M5 caller-binding operational recovery do not qualify a
+successor composition or prove an installed or deployed diagnostic change.

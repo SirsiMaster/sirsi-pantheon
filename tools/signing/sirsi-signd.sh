@@ -11,6 +11,9 @@
 # races a client download of the same outbox entry, and (3) the signer custodian's approval.
 set -u
 setopt nullglob
+# The service must never treat hidden transfer staging as a ready job, even
+# when the account's zsh startup files enable GLOB_DOTS.
+unsetopt globdots
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin
 APP="Developer ID Application: Sirsi Technologies Inc. (9D382WV988)"
 INST="Developer ID Installer: Sirsi Technologies Inc. (9D382WV988)"
@@ -44,13 +47,17 @@ withts() {
 
 for J in "$B"/inbox/*(/); do
   id=${J:t}
-  [[ $id =~ '^[0-9a-f-]{36}$' ]] || { rm -rf -- "$J"; continue; }      # only uuid job ids
+  [[ $id =~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' ]] || continue  # leave unknown custody untouched
   [ -f "$J/kind" ] || continue
   kind=$(head -c 8 -- "$J/kind" | tr -dc 'a-z')
   caller=$(head -c 64 -- "$J/caller" 2>/dev/null | tr -dc 'A-Za-z0-9@._-')
   entries=("$J"/*(N)); entries=(${entries:#$J/kind}); entries=(${entries:#$J/caller})
   O=$B/outbox/$id; W=$B/work/$id; R=$O/receipt.txt
-  rm -rf -- "$W"; mkdir -p "$O" "$W"
+  # Existing work or output belongs to the prior attempt.  Its outcome may
+  # be unknown after interruption, so never replay or overwrite it.
+  [[ -e "$W" || -L "$W" || -e "$O" || -L "$O" ]] && continue
+  mkdir -- "$O" || continue
+  mkdir -- "$W" || continue
   fail() { print -r -- "REJECTED: $1" > "$R"; touch "$O/failed"; rm -rf -- "$J" "$W"
            print -r -- "$(date -u +%FT%TZ) id=$id caller=${caller:-?} kind=${kind:-?} result=rejected reason=$1" >> "$B/audit.log"; }
   case $kind in codesign|bin|app|pkg|dmg) ;; *) fail "bad kind"; continue;; esac

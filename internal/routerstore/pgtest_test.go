@@ -43,7 +43,7 @@ func openBackendStore(t *testing.T, sqlitePath string) *SQLiteStore {
 		}
 		return s
 	}
-	s, err := OpenPath(sqlitePath)
+	s, err := OpenPath(seedFromTemplate(t, sqlitePath))
 	if err != nil {
 		t.Fatalf("OpenPath: %v", err)
 	}

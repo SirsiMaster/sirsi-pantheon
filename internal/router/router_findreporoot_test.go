@@ -5,7 +5,26 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+// A hung git must not hang the caller, and must fail closed (no fallback root).
+func TestFindCallerRepoRootBoundedAndFailsClosed(t *testing.T) {
+	isolateGitEnv(t)
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	start := time.Now()
+	root, err := callerRepoRootWithin(200 * time.Millisecond)
+	if err == nil {
+		t.Fatalf("callerRepoRootWithin = %q, want error on hung git", root)
+	}
+	if el := time.Since(start); el > 5*time.Second {
+		t.Fatalf("hung git held the caller for %v, want bounded", el)
+	}
+}
 
 // sameDir reports whether two paths resolve to the same directory, tolerating
 // macOS's /var → /private/var symlink (t.TempDir vs os.Getwd disagree on it).

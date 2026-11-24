@@ -22,6 +22,10 @@
 html{-webkit-text-size-adjust:100%}
 body{font:14px/1.45 var(--font);color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;min-height:100vh}
 button,input{font:inherit;color:inherit}
+textarea{font:inherit;color:inherit}
+.board-retire label{display:block;margin-block:14px}
+.board-retire input:not([type=checkbox]),.board-retire textarea{display:block;width:100%;max-width:100%;font-size:16px;margin-block-start:6px;background:var(--bg);border:1px solid var(--line);padding:8px;box-sizing:border-box}
+.board-retire pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:35vh;overflow:auto;font-size:13px}
 a{color:var(--info);text-decoration:none}
 a:hover{text-decoration:underline}
 :focus-visible{outline:2px solid var(--info);outline-offset:2px;border-radius:4px}

@@ -73,6 +73,19 @@ jobs:
           [[ "$ACTUAL_HW_MODEL" == "MacBookPro18,1" ]] || { echo "requires qualified M1 model MacBookPro18,1" >&2; exit 1; }
           echo "accepted=true" >> "$GITHUB_OUTPUT"
 
+      - name: Retain qualified runner context
+        env:
+          BOUND_RUNNER_NAME: ${{ runner.name }}
+          BOUND_RUNNER_OS: ${{ runner.os }}
+          BOUND_RUNNER_ARCH: ${{ runner.arch }}
+        run: |
+          printf 'PANTHEON_RUNNER_NAME=%s\nPANTHEON_RUNNER_OS=%s\nPANTHEON_RUNNER_ARCH=%s\n' \
+            "$BOUND_RUNNER_NAME" "$BOUND_RUNNER_OS" "$BOUND_RUNNER_ARCH" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_REF" == refs/tags/v0.24.164 ]]; then
+            printf '%s\n' 'SIRSI_ROUTER_URL=spool:///var/sirsipantheon/relay' \
+              'SIRSI_RELAY_TRUST_GROUP=_sirsipantheon' >> "$GITHUB_ENV"
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -97,6 +110,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 -B scripts/check-release-run-custody.py "$(git rev-parse "${GITHUB_SHA}^{commit}")"
+
+      - name: Verify v164 release supervisor before reserving a draft
+        if: github.ref == 'refs/tags/v0.24.164' && github.run_attempt == 1
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: /bin/bash scripts/maat/release-supervisor.sh verify
+
+      - name: Verify v164 signer before reserving a draft
+        if: github.ref == 'refs/tags/v0.24.164' && github.run_attempt == 1
+        run: |
+          set -euo pipefail
+          cmp -s "$HOME/sirsi-sign/bin/sirsi-signd.sh" tools/signing/sirsi-signd.sh || {
+            echo 'installed signer does not match release source' >&2; exit 1;
+          }
+          launchctl print "gui/$(id -u)/ai.sirsi.signd" >/dev/null
 
       - name: Reserve exact source-bound release draft
         if: github.run_attempt == 1
@@ -126,7 +154,7 @@ jobs:
 
       - name: Import Developer ID signing identities
         id: keychain_setup
-        if: github.run_attempt == 1
+        if: github.run_attempt == 1 && github.ref != 'refs/tags/v0.24.164'
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -171,8 +199,17 @@ jobs:
             echo "Using the enrolled login keychain; no certificate material was imported."
           fi
 
+      - name: Select v164 delegated signing client
+        if: github.run_attempt == 1 && github.ref == 'refs/tags/v0.24.164'
+        run: |
+          set -euo pipefail
+          SIGN_CLIENT="${GITHUB_WORKSPACE}/tools/signing/sirsi-sign"
+          test -x "$SIGN_CLIENT" || { echo 'delegated signing client is unavailable' >&2; exit 1; }
+          echo "PANTHEON_SIGNING_EXECUTION=remote-service" >> "$GITHUB_ENV"
+          echo "PANTHEON_SIGN_CLIENT=$SIGN_CLIENT" >> "$GITHUB_ENV"
+
       - name: Resolve enrolled or imported Developer ID identity
-        if: github.run_attempt == 1
+        if: github.run_attempt == 1 && github.ref != 'refs/tags/v0.24.164'
         run: |
           set -euo pipefail
           KEYCHAIN="${PANTHEON_SIGNING_KEYCHAIN:?Signing keychain was not selected}"
@@ -188,7 +225,7 @@ jobs:
           echo "Resolved Developer ID Application identity using ${PANTHEON_SIGNING_MODE}."
 
       - name: Preflight imported Developer ID Installer identity
-        if: github.run_attempt == 1
+        if: github.run_attempt == 1 && github.ref != 'refs/tags/v0.24.164'
         env:
           DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
         run: |
@@ -224,13 +261,15 @@ jobs:
           PANTHEON_BUILD_JOBS: "1"
           PANTHEON_APOLLO_CAPABILITY: disabled
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
-          DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          DEVELOPER_ID_INSTALLER: ${{ (github.ref != 'refs/tags/v0.24.164' && secrets.DEVELOPER_ID_INSTALLER) || '' }}
+          APPLE_ID: ${{ (github.ref != 'refs/tags/v0.24.164' && secrets.APPLE_ID) || '' }}
+          APPLE_TEAM_ID: ${{ (github.ref != 'refs/tags/v0.24.164' && secrets.APPLE_TEAM_ID) || '' }}
+          APPLE_APP_PASSWORD: ${{ (github.ref != 'refs/tags/v0.24.164' && secrets.APPLE_APP_PASSWORD) || '' }}
         run: |
           set -euo pipefail
-          : "${DEVELOPER_ID_INSTALLER:?DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG}"
+          if [[ "${PANTHEON_SIGNING_EXECUTION:-}" != remote-service ]]; then
+            : "${DEVELOPER_ID_INSTALLER:?DEVELOPER_ID_INSTALLER is required for the commercial Pantheon PKG}"
+          fi
           # The legacy runner-start rail-lock hook is not a resource grant.
           # Register this job's actual native executor, acquire/maintain its own
           # canonical CPU grant, and retain cleanup evidence before publishing.
@@ -238,13 +277,7 @@ jobs:
           # workspace supervisor can require CLI flags the installed release
           # does not implement yet (125's --cores versus installed124).
           # Admission remains mandatory; a missing installed pair fails closed.
-          test -x "$HOME/.local/bin/sirsi-maat-run"
-          # Do not silently substitute an older installed supervisor for the
-          # reviewed source. Installation/rollout remains a separate operation.
-          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || {
-            echo 'installed Ma’at supervisor does not match release source' >&2; exit 1;
-          }
-          "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon \
+          /bin/bash scripts/maat/release-supervisor.sh run --agent codex-pantheon \
             --register-executor --work "pantheon-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --cpu-cores 1 --timeout 1500 -- /bin/bash -euo pipefail -c '
               PANTHEON_APOLLO_DIGEST_RECEIPT="$(bash scripts/new-apollo-digest-receipt.sh "$RUNNER_TEMP")"
@@ -268,9 +301,7 @@ jobs:
         run: |
           set -euo pipefail
           CUSTODY="$(mktemp -d "$RUNNER_TEMP/pantheon-release-custody-${GITHUB_RUN_ID}.XXXXXXXX")"
-          test -x "$HOME/.local/bin/sirsi-maat-run"
-          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || { echo 'installed Ma’at supervisor does not match release source' >&2; exit 1; }
-          "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon --register-executor \
+          /bin/bash scripts/maat/release-supervisor.sh run --agent codex-pantheon --register-executor \
             --work "pantheon-custody-create-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --cpu-cores 1 --timeout 600 -- \
             python3 -B scripts/release-custody.py create "$CUSTODY" "$BUILD_VERSION" "$(git rev-parse "${GITHUB_SHA}^{commit}")" "${PANTHEON_GUARD_ATTEMPT:?}/payload-manifest.json"
           echo "PANTHEON_RELEASE_CUSTODY=$CUSTODY" >> "$GITHUB_ENV"
@@ -321,9 +352,7 @@ jobs:
           CUSTODY="${PANTHEON_RELEASE_CUSTODY:?}"
           RESTORED="$(mktemp -d "$RUNNER_TEMP/pantheon-release-inputs-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.XXXXXXXX")"
           COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
-          test -x "$HOME/.local/bin/sirsi-maat-run"
-          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || { echo 'installed Ma’at supervisor does not match release source' >&2; exit 1; }
-          "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon --register-executor \
+          /bin/bash scripts/maat/release-supervisor.sh run --agent codex-pantheon --register-executor \
             --work "pantheon-custody-restore-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --cpu-cores 1 --timeout 600 -- \
             /bin/bash -euo pipefail -c 'cd "$1"; shift; exec python3 -B "$@"' fixture \
             "$RESTORED" "$GITHUB_WORKSPACE/scripts/release-custody.py" restore "$CUSTODY" "$BUILD_VERSION" "$COMMIT" "$CUSTODY/payload-manifest.json"
@@ -338,13 +367,9 @@ jobs:
           EXPECTED_COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
           test -f "${PANTHEON_RELEASE_INPUTS:?}/bin/SirsiPantheon-${BUILD_VERSION}-arm64.dmg"
           test -f "${PANTHEON_RELEASE_INPUTS:?}/bin/SirsiPantheon-${BUILD_VERSION}-arm64.pkg"
-          test -x "$HOME/.local/bin/sirsi-maat-run"
-          cmp -s "$HOME/.local/bin/sirsi-maat-run" scripts/maat/admitted-run.py || {
-            echo 'installed Ma’at supervisor does not match release source' >&2; exit 1;
-          }
           # This is a separate actual workload (including read-only image
           # attachment), not covered by the earlier build's released grant.
-          "$HOME/.local/bin/sirsi-maat-run" --agent codex-pantheon \
+          /bin/bash scripts/maat/release-supervisor.sh run --agent codex-pantheon \
             --register-executor --work "pantheon-publish-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --cpu-cores 1 --timeout 600 -- python3 -B scripts/publish-release-assets.py \
             --version "$BUILD_VERSION" --expected-commit "$EXPECTED_COMMIT" \
@@ -468,6 +493,9 @@ jobs:
 
   publish-npm:
     name: Publish thoth-init to npm (OIDC)
+    # The owner approved the three native artifacts and cask only for v164.
+    # Skip the entire job, including checkout and npm OIDC authorization.
+    if: ${{ github.ref != 'refs/tags/v0.24.164' }}
     runs-on: ubuntu-latest
     needs: release
     # Non-fatal: thoth-init publishing 404'd (package not yet claimed / OIDC

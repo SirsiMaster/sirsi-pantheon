@@ -86,8 +86,19 @@ authorization preview, claim attempt, session mutation, grant, reset or guard
 relaxation is involved. Service auth and actual claim/session fences remain
 separate and unchanged. This diagnostic change is not the M5 caller-binding
 repair: that operational recovery is documented separately. Current-main source
-tests are authored but unrun; old-base focused passes do not qualify this tree.
-No installed fix is claimed.
+verification must name the exact composed tree; old-base focused passes do not
+qualify a successor composition. No installed fix is claimed.
+
+### Fenced task withdrawal
+
+`WithdrawTaskLease` binds a withdrawal to the live task token and authenticated
+claim session. It preserves the existing unleased `WithdrawTask` API, which
+continues to refuse live leases. The operation locks the source and successor
+in stable order before checking either, samples the host clock after the locks,
+and also checks the database wall clock at the write. SQLite first reserves its
+writer; PostgreSQL locks the task rows. Withdrawal records the authenticated
+actor and successor but never creates a completion receipt. These locks protect
+the decision point; subsequent successor changes are separate transitions.
 
 ### Authenticated task claims
 

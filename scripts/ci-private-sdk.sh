@@ -12,6 +12,16 @@ if [[ ${GITHUB_ACTIONS:-} == true ]]; then
   esac
 fi
 [[ $# -gt 0 ]] || { echo 'usage: ci-private-sdk.sh command [args...]' >&2; exit 64; }
+if [[ ${PANTHEON_CI_PRIVATE_CACHE_ONLY:-0} == 1 ]]; then
+  # Release recovery uses the verified private-module cache and must never
+  # materialize SDK credentials. Public modules may use the Go proxy; Git
+  # network transports are disabled so a private cache miss fails closed.
+  unset APOLLO_CI_INFERENCE_READ_KEY APOLLO_CI_MERCURY_READ_KEY
+  export GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org GIT_TERMINAL_PROMPT=0 GIT_ALLOW_PROTOCOL=file
+  export GOPRIVATE=github.com/SirsiMaster/sirsi-inference,github.com/SirsiMaster/sirsi-mercury
+  export GONOPROXY="$GOPRIVATE" GONOSUMDB="$GOPRIVATE"
+  exec "$@"
+fi
 [[ -n ${APOLLO_CI_INFERENCE_READ_KEY:-} && -n ${APOLLO_CI_MERCURY_READ_KEY:-} ]] || { echo 'missing read-only private SDK credentials' >&2; exit 78; }
 caller_umask=$(umask)
 umask 077 # only for the key/config files written below

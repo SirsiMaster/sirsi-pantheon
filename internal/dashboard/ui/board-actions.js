@@ -36,9 +36,40 @@
     var subject=ask('Subject:');if(!subject)return;
     act('add-task',{agent:agent,task_id:id,subject:subject,responsible:ask('Responsible party (optional):')||''})
   }
+  function retireTasks(){
+    if(document.getElementById('board-retire'))return;
+    var d=document.createElement('dialog');d.id='board-retire';d.className='inspector board-retire';
+    d.setAttribute('aria-labelledby','board-retire-title');
+    d.innerHTML='<h2 id="board-retire-title">Retire reviewed tasks</h2><p>Owner cancellation preserves history and never counts as completed work. Enter only reviewed IDs. Records with custody or an existing terminal outcome cannot be retired. Any unconfirmed response stops this pass for reconciliation.</p><form><label>Lane<input name="agent" required maxlength="200" autocomplete="off"></label><label>Task IDs — one per line<textarea name="ids" rows="8" required maxlength="100500" spellcheck="false"></textarea></label><label>Retirement reason<textarea name="reason" rows="3" required maxlength="2000"></textarea></label><label><input name="confirmed" type="checkbox" required> I reviewed these exact records and authorize cancellation, not completion.</label><button class="btn primary" type="submit">Retire entered tasks</button> <button class="btn" type="button" data-stop>Close</button></form><p role="status" data-progress></p><pre data-results tabindex="0" aria-label="Retirement results"></pre>';
+    document.body.appendChild(d);
+    var form=d.querySelector('form'),progress=d.querySelector('[data-progress]'),results=d.querySelector('[data-results]'),close=d.querySelector('[data-stop]'),busy=false,stopped=false;
+    function finishClose(){if(busy){stopped=true;progress.textContent='Stopping after the current request; retain these results for reconciliation.'}else{d.close();d.remove()}}
+    close.onclick=finishClose;d.addEventListener('cancel',function(e){e.preventDefault();finishClose()});
+    form.onsubmit=async function(e){
+      e.preventDefault();if(busy)return;
+      var plan;
+      try{plan=PantheonBoardRetire.parse(form.elements.agent.value,form.elements.ids.value,form.elements.reason.value)}catch(err){progress.textContent=err.message;return}
+      if(!form.elements.confirmed.checked)return;
+      busy=true;stopped=false;results.textContent='';
+      Array.from(form.elements).forEach(function(el){if(el!==close)el.disabled=true});close.textContent='Stop after current record';
+      var seen=0;
+      async function post(verb,body){
+        var controller=new AbortController(),timer=setTimeout(function(){controller.abort()},30000);
+        try{
+          var r=await fetch(api+verb,{method:'POST',credentials:'same-origin',signal:controller.signal,headers:{'Content-Type':'application/json','X-Sirsi-Board':'1'},body:JSON.stringify(body)});
+          if(!r.ok)throw new Error('request unavailable');
+          var reply=await r.json();if(reply.ok!==true)throw new Error('success not confirmed');return true;
+        }finally{clearTimeout(timer)}
+      }
+      progress.textContent='Retiring '+plan.ids.length+' reviewed records…';
+      try{await PantheonBoardRetire.run(plan,post,function(id,outcome){seen++;results.textContent+=id+' — '+outcome+'\n';progress.textContent=seen+' of '+plan.ids.length+' records checked.'},function(){return stopped})}
+      finally{busy=false;close.textContent='Close';progress.textContent+=' Finished this pass. Canceled is not done; reconcile held, unknown and unprocessed records before another pass.'}
+    };
+    d.showModal();form.elements.agent.focus();
+  }
   fetch(api+'whoami',{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null}).then(function(j){
     if(!j||!j.email)return;who=j.email;
-    var tools=document.querySelector('.tools');if(tools)tools.insertBefore(button('Add task',addTask),tools.firstChild);
+    var tools=document.querySelector('.tools');if(tools){tools.insertBefore(button('Add task',addTask),tools.firstChild);tools.insertBefore(button('Retire reviewed tasks',retireTasks),tools.firstChild)}
     document.addEventListener('click',function(e){
       var b=e.target.closest('[data-item],[data-fabric-task-id]');if(!b)return;
       setTimeout(function(){if(b.dataset.item)itemBar(b.dataset.item);else taskBar(b.dataset.fabricTaskAgent,b.dataset.fabricTaskId)},0)

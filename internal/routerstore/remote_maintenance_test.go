@@ -62,7 +62,7 @@ func TestMaintenanceDirectCallerDoesNotUseHeldSpoolOrSessionCache(t *testing.T) 
 func TestMaintenanceDirectOwnThreadRequiresRealServiceSession(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("SIRSI_ROUTER_URL", "spool:///owned/not-entered")
-	store, err := OpenPath(filepath.Join(t.TempDir(), "owned-authority.sqlite"))
+	store, err := OpenPath(seedFromTemplate(t, filepath.Join(t.TempDir(), "owned-authority.sqlite")))
 	if err != nil {
 		t.Fatal(err)
 	}

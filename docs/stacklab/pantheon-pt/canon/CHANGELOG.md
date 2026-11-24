@@ -1,5 +1,124 @@
 # Changelog — Pantheon PT canon
 
+## 2026-11-23 — v0.24.164 release candidate
+
+- Router lane status: a session with a stale heartbeat is no longer reported as unregistered.
+- Router service: a database outage now fails calls in about 5 seconds with a retryable 503, not 30 seconds.
+- Claude and Codex session registrations no longer expire: a quiet session keeps its thread id, and its next heartbeat or re-register renews it. Only an explicit close or a newer live session of the same agent on that Mac ends it. Workers and other surfaces keep their existing expiry rules.
+- Router deploy keeps the live service size: `deploy.sh` holds the size in one `SIZE` line and refuses to deploy when it differs from the live service (set `RESIZE=1` to resize on purpose). It also connects the receipts GitHub token from the existing `ADMIN_GITHUB_PAT` secret.
+- CI now builds the native CLI and runs `TestNativeCLIPodAuthorityQualification` against it on every non-docs PR/push (a skipped or unmatched run fails the Test job), making the ADR-120 independent-process retry proof permanent.
+- Ma'at front door stays fast: finished reservations older than 48 hours move out of the shared `maat:reservations` row into per-day `maat:reservations-archive:<date>` rows (every field kept, nothing deleted), at most every 10 minutes under the existing lock.
+- Horus can close its own "lane needs you" alerts once a lane recovers. The router used to refuse this, which left cleared alerts open and had each supervisor retry them every pass, about 17,000 refused calls a day across three Macs. Every other item stays closed to headless workers.
+- `sirsi router doctor` warns when a loaded relay runs without `SIRSI_ROUTER_SPKI_PIN`. It reads only whether the key is present and never prints launchctl's output, which also carries the host token.
+- Add owner sign-off and cancel to the hosted router board. A signed-in sirsi.ai account can mark a task done with a required reason; the reason is recorded as an owner receipt under `board:<email>`. It can also cancel a task, and a canceled task never counts as done. The router serves `CompleteTaskByOwner` and `CancelTask` only to the board's `@ledger-editor` token and only for a `board:<email>` actor. Lane tokens, observer tokens and the unscoped bootstrap token are refused.
+- Ma'at delegated resources: a legacy writer can now release its unstamped floor row inside the handback margin (expired/revoked delegation), so capacity returns and `who-is-on` stops reporting a finished run; nothing else is admitted there. The delegated-floor known limits are corrected and extended in the code comment, README and ADR-120: no pod-side conflict probe exists (the canonical `conflict-check` is the only detector, and it counts unattributed floor-lane processes as intruders), and the number of floor rows per resource is uncapped, as on the ordinary path.
+- `WithdrawTask` no longer wipes a live lease: withdrawal is refused with `ErrLeaseHeld` (holder and expiry named) while any unexpired lease exists, enforced in the UPDATE predicate so a claim landing mid-withdraw cannot race it. The wire API cannot identify the caller as the holder, so any live lease refuses; expired or absent leases still withdraw. `ErrLeaseHeld` crosses the wire as a named sentinel.
+- Refs: `internal/routerstore/receipts.go`, `internal/routerstore/lease.go`, `internal/routerstore/remote.go`
+- `scripts/router-service/cutover-m5.sh` now requires an explicit `M5=<user>@<host>` instead of defaulting to a stale LAN address. `scripts/release-train.sh` drops its hardcoded LAN fallback; `M5_FALLBACK` is honored only when set explicitly.
+- Refs: `scripts/router-service/cutover-m5.sh`, `scripts/release-train.sh`, `scripts/maat/fabric-endpoints.py`
+- `internal/routerstore` test suite: fresh SQLite stores are seeded from one already-migrated template (built once per test process by the real `OpenPath`) instead of replaying every schema migration per test, large fixtures insert in one transaction, and the 1,000-round claim contention test runs as four parallel shards of 250 rounds each. A new test compares the template with a freshly migrated store (schema, `user_version`, seed rows) so it cannot hide a migration bug; migration and open-from-empty tests still run the real path. `go test -race -short ./internal/routerstore` drops from about 510 s to under 150 s. Test-only; production behavior is unchanged.
+- Refs: `internal/routerstore/fasttemplate_test.go`
+- Router scoped host-token mint: a failed `MintScopedHostToken` now returns a `*MintError` carrying the nonsecret attempt id (the token id) and errors.Is-able outcomes (`ErrMintRolledBack`, `ErrMintRollbackFailed`, `ErrMintCommitUncertain`, `ErrMintPanic`) instead of ignoring rollback errors and returning a bare commit failure. The error text never contains the token or its hash.
+- `FindCallerRepoRoot` now bounds its `git rev-parse --show-toplevel` probe at 5s (same bound as `FindRepoRoot`, #1401) and still fails closed on timeout, so a hung git can no longer hang a completion-proof caller.
+- Refs: `internal/router/router.go`, `internal/router/router_findreporoot_test.go`
+- Router completion-receipt refusals now say why.
+- Router liveness: a legacy ps-style PID start-time mismatch is treated as ambiguous (same process, different local zone) only when both strings parse and the gap is a non-zero multiple of 15 minutes up to 26 h; every other mismatch is a recycled PID again and is reaped. Registration adopts the existing thread on an offset-shaped gap and mints a fresh one otherwise, never erroring.
+- Router: FinalWishes recipient-limit override extended to 2026-11-28T05:50Z
+- fix(maat):
+- Protect shared thread registries from cross-machine PID reaping when either
+  machine identity is unknown; find the macOS machine identifier even when
+  `/usr/sbin` is absent from PATH, and retry failed identity probes. Local
+  legacy registries retain their fallback.
+  Refs: ADR-022, ADR-024, ADR-036.
+- Hosted router snapshots:
+- Hosted board edits:
+- Fabric link discovery:
+- Disable curl's default configuration for the loopback metadata request so user-configured URLs or output settings are not inherited.
+- Fabric transport default:
+- Fabric host trust:
+- Stabilize the trusted-spool directory test by canceling and joining its request before removing the temporary fixture; the directory permission assertion remains unchanged.
+- Router recipient admission: the halt counts abandoned work, not planned backlog.
+- fix(router):
+- Router recipient admission: seven-day FinalWishes override, keyed on lane name.
+- `routerstore.DeliveryStateOf(Item)`: one derived, A2A-style delivery state per router item (SUBMITTED, ACKNOWLEDGED, WORKING, BLOCKED, COMPLETED, FAILED, CLOSED, UNKNOWN).
+- Cache the router client's runtime hash on disk (`~/.sirsi/runtime-hash/`, 0600, atomic) keyed by the binary's resolved path, size, mtime, ctime, inode and device, so each `sirsi` process no longer SHA-256s its whole ~40 MB binary; any key mismatch or unreadable cache falls back to hashing.
+- docs:
+- Ma'at reservations: the hot `maat:reservations` document now keeps only
+  non-terminal rows and rows that ended within the last 2 hours (it was every
+  row that STARTED within 48 hours, ~4 MB / ~8,000 rows, rewritten whole by every
+  reserve, heartbeat and release). Older finished rows move to the existing
+  per-day archive rows; nothing is deleted. Lookups by id (`maat:<id>` completion
+  receipts, `sirsi maat status --id`, replay/upsert idempotency, mutate-by-id,
+  caller-supplied duplicate ids) fall back to the archive and behave exactly as
+  on a hot row. Invalidated rows stay hot 25 h past their end so `maat plan`'s
+  24 h conflicts-caught count is unchanged. `sirsi maat status` (no id) lists
+  the last ~2 hours of finished rows instead of 48.
+- New additive reservation field `ended_at`, stamped on release, invalidation
+  and lease expiry. Older rows lack it and fall back to their own timestamps and
+  the previous 48 h-from-start rule. No schema change.
+- Refs: PANTHEON_RULES.md A35, maat-hot-row-shrink, maat-reserve-latency-dashboard-start
+- fix(maat):
+- ADR status records (docs only): ADR-065 (router-owned informer) accepted with conditions, with the open node-side credential-enforcement question and the actual implementation state recorded; ADR-079 (wake lanes are the interactive sessions) accepted, its stale "design only" header replaced by what is verified shipped; ADR-078 (signed LAN anchor) stays Proposed with only the verifier library and fixtures authorized; ADR-INDEX rows updated, ADR-079 added, and ADR-076 corrected (its claiming PR #1017 is closed unmerged).
+- `sirsi router wake-latency` now measures first claim minus opened. It
+  previously read `items.lease_updated`, which `RenewLease` and `StartWork`
+  overwrite, so any started or renewed item reported wake latency plus working
+  time. New column `items.first_claimed_at` (SQLite schema v27, Postgres schema
+  version 27) is written once by `ClaimNext`/`ClaimItem` and never by renew,
+  start-work or requeue. No backfill: items first claimed before v27 are
+  excluded, as are never-claimed items. The JSON sample key is now
+  `first_claimed_at` (was `lease_updated`). Apply the Postgres schema before
+  deploying the router service.
+- The shared `pct` percentile helper is now nearest-rank (`ceil(p*n/100)-1`).
+  It previously used `int((n-1)*p/100)`, which understated the tail (p95 of
+  four samples was the third smallest, not the largest). This also changes the
+  p50/p95/p99 printed by `sirsi router bench report`, which shares the helper.
+- Refs: PANTHEON_RULES.md A35, ADR-063, task ra-m0-fabric-baseline
+- feat(router):
+- fix(router):
+- feat(router):
+- fix(maat):
+- fix(maat):
+- feat(maat):
+- feat(router):
+- Lane-ledger availability:
+- Router
+- Router recipient admission (source candidate):
+- Ma’at unsent status-read recovery (source candidate):
+- Router dashboard redesign (owner mandate, Nov 6):
+- A quiet attended session whose process is still running no longer loses its thread when the 2h lease lapses. The reaper checks the process first, so waiting on the owner no longer burns a thread id and forces a re-register.
+- Ra's sends to sirsi-software-admin now pass the recipient limit, so a release request reaches that lane even when it is over the 99 limit. Every other sender and recipient stays limited.
+- Gate fabric payload launch on direct-child binding and retain cleanup debt when child or reservation custody is uncertain. Reobserve the process group immediately after escalation; isolated helper and lease-expiry limits remain. Refs: `docs/runbooks/maat-job-stop-ownership.md`, `scripts/maat/README.md`.
+- Make the dispatch cancellation regression fixture wait for its canceled caller before ending the HTTP response, avoiding an empty-response race in CI.
+- Allow complete Ma’at hook envelopes up to a bounded 8 MiB in the chain wrapper, heavy-launch classifier, and stop-policy adapter. Require strict UTF-8 and JSON, retain the separate shell-command limit and all existing checks, and refuse malformed, non-finite, or over-limit input. Source and inert-fixture coverage do not prove the installed legacy guard, any hook rollout, or an upload.
+- Keep the fabric leader waitable through a pre-reap native group snapshot; reap only the exact singleton leader zombie, retaining debt when additional zombies persist. For EPERM/ESRCH signal failures, require an independent WNOWAIT and group snapshot proving that singleton before acceptance. Document the observer's bounded, non-atomic completeness. Refs: `ADR-054-ONE-HORUS-UNIFIED-AGENT-FABRIC.md`, `scripts/maat/README.md`, `scripts/maat/admitted-run.py`, `scripts/maat/test_admitted_run.py`
+- Retain the fabric leader's unreaped custody when group observation drifts after TERM, retry within bounded grace and KILL windows, and leave unresolved state as cleanup debt. Reobserve WNOWAIT when a leader exits between its wait receipt and the group snapshot, and correct the fake exec-failure group fixture. Refs: `docs/ADR-054-ONE-HORUS-UNIFIED-AGENT-FABRIC.md`, `scripts/maat/README.md`, `scripts/maat/admitted-run.py`, `scripts/maat/test_admitted_run.py`.
+- Treat a timed-out non-Darwin process-group observation as uncertainty during the same bounded cleanup sequence.
+- fix(dashboard): when Apollo.app provides the local model, Ask no longer sends the placeholder model "local" (which Apollo's router rejects); a missing, unreadable or blank `~/.sirsi/gemma-model.conf` is a clear error instead. Model selection now follows the same order as liveness and the worker/CLI on every host: `GEMMA_MODEL`, then `~/.sirsi/gemma-model.conf`. Only a legacy-broker host with neither set keeps "local". An invalid Apollo router marker fails closed before either is read.
+- fix(liveness): an `Apollo.app` that exists without its router helper (for example mid-upgrade) or cannot be inspected now fails closed, like an invalid helper. Only a wholly absent `Apollo.app` keeps the legacy setup and healer behavior.
+- docs(liveness): the stand-down covers only legacy broker install and restore. The read-only liveness watch still sends its single chat probe, which can wake an idle Apollo model.
+- Remote pre-cutover sends now fetch the committed item through authenticated `Get` and write the canonical markdown audit projection on the client, without sending a client filesystem path to the router service. Projection failures preserve the committed result and do not retry dispatch; local SQLite export and StoreWake behavior are unchanged.
+- Refs: `docs/ADR-036-ROUTER-V2-DURABLE-DISPATCH.md`, `docs/ADR-062-ROUTER-SERVICE-RA-CONCURRENCY.md`, `internal/dispatch/facade.go`, `internal/routerstore/export.go`
+- Drain and close the stalled remote `Get` fixture's POST body before waiting for request cancellation, and bound handler cleanup so cancellation regressions fail without hanging the test suite. Production behavior is unchanged.
+- Refs: `docs/ADR-036-ROUTER-V2-DURABLE-DISPATCH.md`, `internal/routerstore/remote_test.go`
+- Bounded the remote post-commit audit read by the existing router per-call timeout while preserving any earlier caller cancellation or deadline.
+- Refs: `docs/ADR-036-ROUTER-V2-DURABLE-DISPATCH.md`, `docs/ADR-062-ROUTER-SERVICE-RA-CONCURRENCY.md`, `internal/routerstore/remote_export.go`, `internal/routerstore/remote_test.go`
+- Keep the fabric supervisor's direct child unreaped while TERM/KILL cleanup signals target its bound process group, then reap it once after signaling ends. Fail closed with cleanup debt when wait custody is uncertain; local-child cleanup and admission ownership remain unchanged. Refs: `ADR-054-ONE-HORUS-UNIFIED-AGENT-FABRIC.md`, `scripts/maat/README.md`, `scripts/maat/admitted-run.py`, `scripts/maat/test_admitted_run.py`
+- Align the PGID-reuse fixture's fake payload exit code with its asserted final reap result; keep the custody assertion unchanged. Refs: `scripts/maat/test_admitted_run.py`, `scripts/maat/admitted-run.py`, `scripts/maat/README.md`
+- Keep the fabric supervisor cadence fixture's exact terminal timestamp while exercising 20 ms non-reaping polls by advancing its fake monotonic clock on a nanosecond grid. Preserve the existing remote-read schedule assertion. Refs: `scripts/maat/admitted-run.py`, `scripts/maat/test_admitted_run.py`, `scripts/maat/README.md`
+- Make fake fabric children mark their bound identity reaped when successful poll/wait consumes terminal status, while timeout and nonterminal observations preserve custody. Retain the exact cadence assertion and PGID-reuse negative control. Refs: `scripts/maat/test_admitted_run.py`, `scripts/maat/admitted-run.py`, `scripts/maat/README.md`
+- Apollo-owned Gemma setup/healer stand down without rewriting the host-selected profile or port. Require a regular executable installed router; invalid markers fail closed without legacy restoration. Installation shape is not runtime/signature/readiness proof.
+- Router service (`internal/routerstore`) now maps caller/validation errors to HTTP 400, not a generic 500.
+- feat(maat):
+- `sirsi router wake-latency` — read-only M0 charter T4 instrument: opened ->
+  first-claim (`lease_updated`) elapsed time per item, aggregated (p50/p95/max)
+  or raw (`--json`). New `Store.WakeLatencySamples` method, implemented on
+  `SQLiteStore`, wired through `RemoteStore` and `ruleOfRaExempt`.
+  `lease_updated`/`opened` stay out of `Item`/`itemCols`
+  (`TestFieldFidelityWithWorkItem`) — this is a separate measurement-only read
+  path, not a struct field.
+- Refs: PANTHEON_RULES.md, task ra-m0-04-wake-latency-report (Ra charter M0, T4
+  slice of ra-m0-fabric-baseline)
+
 ## 2026-11-02 — v0.24.162 release candidate
 
 - fix(core): `board.sh verify` reads the IAP-enabled annotation via JSON (the escaped gcloud projection failed) and reports an unreadable IAP policy as a permission gap instead of a wrong binding.
