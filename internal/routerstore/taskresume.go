@@ -21,6 +21,10 @@ const taskResumePrefix = "task-resume:v1:"
 
 var ErrTaskResumeInput = errors.New("routerstore: invalid task resume input")
 
+// ErrTaskResumeRefused wraps every legitimate, policy-level refusal of a resume
+// request (HTTP 409). Store/DB failures never carry it and stay HTTP 500.
+var ErrTaskResumeRefused = errors.New("routerstore: task resume refused")
+
 // TaskResumeRequest attests a corrected cause, not permission to bypass an
 // owner. Actor/thread/host are injected by the authenticated server, not input.
 type TaskResumeRequest struct {
@@ -141,16 +145,16 @@ func ValidateTaskResumeRequest(r TaskResumeRequest) error {
 func taskResumeEligible(r taskResumeSnapshot, now time.Time) (int, error) {
 	attempts, err := strconv.Atoi(r[24].String)
 	if err != nil || attempts < 0 || attempts == int(^uint(0)>>1) {
-		return 0, errors.New("task resume: valid incrementable original attempts required")
+		return 0, fmt.Errorf("%w: valid incrementable original attempts required", ErrTaskResumeRefused)
 	}
 	// An inactive blocked task can still have ordinary attempts left. Its
 	// corrected-cause attestation consumes the next attempt, never a reset or
 	// fabricated exhaustion. Other below-ceiling states use ordinary claims.
 	if attempts < MaxRetriesPerItem && r[3].String != "blocked" {
-		return 0, errors.New("task resume: below-ceiling original must be blocked")
+		return 0, fmt.Errorf("%w: below-ceiling original must be blocked", ErrTaskResumeRefused)
 	}
 	if (r[3].String != "pending" && r[3].String != "blocked" && r[3].String != "in-progress") || r[6].String != "" {
-		return 0, errors.New("task resume: terminal/dependency state refuses")
+		return 0, fmt.Errorf("%w: terminal/dependency state refuses", ErrTaskResumeRefused)
 	}
 	// Like an explicit ordinary ClaimTask, this is not an automatic wake:
 	// responsible_party is preserved, not converted into a new permission gate.
@@ -159,7 +163,7 @@ func taskResumeEligible(r taskResumeSnapshot, now time.Time) (int, error) {
 	}
 	expiry, err := time.Parse(time.RFC3339, r[21].String)
 	if err != nil || r[20].String == "" || r[22].String == "" || r[23].String == "" || expiry.After(now) {
-		return 0, errors.New("task resume: live or malformed retained custody refuses")
+		return 0, fmt.Errorf("%w: live or malformed retained custody refuses", ErrTaskResumeRefused)
 	}
 	return attempts, nil
 }
@@ -211,11 +215,11 @@ func (s *SQLiteStore) ResumeTaskClaim(ctx context.Context, req TaskResumeRequest
 		if err == nil {
 			var audit taskResumeAudit
 			if json.Unmarshal([]byte(encoded), &audit) != nil || audit.Request != req || audit.Actor.Agent != a.Agent || audit.Actor.Host != a.Host || audit.Actor.ThreadID != a.ThreadID || audit.BeforeVersion != req.ExpectedVersion || audit.AfterVersion != before.version() {
-				return errors.New("task resume: changed request/after-state; no replay")
+				return fmt.Errorf("%w: changed request/after-state; no replay", ErrTaskResumeRefused)
 			}
 			expires, err := time.Parse(time.RFC3339, before[21].String)
 			if err != nil || !expires.After(s.clock()) || before[3].String != "in-progress" || before[20].String == "" || before[22].String != a.Agent || before[23].String != a.ThreadID {
-				return errors.New("task resume: recorded lease is no longer live")
+				return fmt.Errorf("%w: recorded lease is no longer live", ErrTaskResumeRefused)
 			}
 			out.Claimed, out.Repeated, out.AuditKey = true, true, key
 			out.Lease = &TaskLease{Agent: a.Agent, TaskID: req.TaskID, Worker: a.Agent, ThreadID: a.ThreadID, Token: before[20].String, Expires: expires, Attempt: attempts}
@@ -225,7 +229,7 @@ func (s *SQLiteStore) ResumeTaskClaim(ctx context.Context, req TaskResumeRequest
 			return err
 		}
 		if before.version() != req.ExpectedVersion {
-			return errors.New("task resume: stale row version")
+			return fmt.Errorf("%w: stale row version", ErrTaskResumeRefused)
 		}
 		now := s.clock().UTC() // AFTER lock acquisition, not a pre-wait timestamp.
 		attempts, err = taskResumeEligible(before, now)
@@ -245,7 +249,7 @@ func (s *SQLiteStore) ResumeTaskClaim(ctx context.Context, req TaskResumeRequest
 			return err
 		}
 		if n, err := res.RowsAffected(); err != nil || n != 1 {
-			return errors.New("task resume: lost row CAS")
+			return fmt.Errorf("%w: lost row CAS", ErrTaskResumeRefused)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO lease_sessions(kind,key,session) VALUES('task',?,?) ON CONFLICT(kind,key) DO UPDATE SET session=excluded.session`, a.Agent+"/"+req.TaskID, a.SessionID); err != nil {
 			return err
