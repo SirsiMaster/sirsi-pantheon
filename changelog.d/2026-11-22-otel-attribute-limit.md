@@ -1,0 +1,1 @@
+Upgrade the OpenTelemetry Go root, metric, and trace modules to v1.47.0 to address GHSA-q7gw-24fr-5p69 (CVE-2026-128085). Module resolution also selects otel/log v1.47.0 and logr v1.4.4; the application's Go language version is unchanged.
