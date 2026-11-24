@@ -1,4 +1,24 @@
 # 𓃣 Anubis Engineering Journal
+## Nov24 — private-umask service context repair
+
+The owner's original zero-traffic stage failed before application startup:
+root-owned COPY inputs created under umask077 were not accessible to the
+distroless nonroot user. Original native8a0db/own e46 and board artifact build
+metadata remain untouched. This isolated d8d56013/e917 repair uses exact-file
+0755/0644 publication modes and mandatory buildvcs=true in both builders.
+
+Fresh own native runs on M5 used a cooperative CPU1 mask, never a parent lease.
+Initial RED d19db369 failed4 expected checks. Strengthened RED cc45eac1 failed
+all8 binary/public-asset/VCS checks across4 tests on unchanged d8 source.
+GREEN cfbd113a passed4 tests with no skips; canonical exact-ID readbacks were
+released with exit1 and exit0 respectively. The compiler is explicitly inert:
+these runs prove mode handling and argv, not real VCS metadata or ELF startup.
+
+Parent source review and a clean-commit real compile remain next. Existing
+staged-tag/traffic-target fixtures have outputless Go mocks; minimal output-file
+adaptations were requested, not silently made outside the named file scope.
+No push, deployment, IAM/secret, installed CLI or service change was performed.
+
 ## Nov24 — versioned production completion policy candidate
 
 Replace caller-selected external algorithm authority with newly authored

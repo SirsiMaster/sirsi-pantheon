@@ -1,4 +1,14 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
+# Nov24 isolated service-context packaging repair on merged d8d56013/e917:
+# explicitly publish only binary0755 and copied public assets0644, preserving
+# private context0700 and unrelated private files0600; force buildvcs=true.
+# Actual inert-compiler RED cc45eac1: 4 tests/8 expected failures on d8 source;
+# GREEN cfbd113a: 4 tests PASS on repair, no skips. Fresh own M5 native CPU1
+# executions, canonical released outcomes1/0. Real compile/VCS stamping,
+# container startup and deployment remain unqualified; parent review first.
+# Existing staging fixtures have outputless Go mocks requiring separate narrow
+# adaptation before full fixture-suite acceptance. Original failed stage/image
+# receipts are preserved; no cloud, installed, auth or policy change performed.
 # Nov24 production completion-policy candidate: embeds newly authored protocol,
 # exact item/required commands/classification, fixed launcher and independent
 # physical Git boundary. Initial helper-selector RED/GREEN and upward-Git RED
