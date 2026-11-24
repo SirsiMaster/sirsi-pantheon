@@ -1,328 +1,475 @@
 package completionproof
 
 import (
-	"fmt"
+	"bytes"
+	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
+// Data fixtures only. Policy always comes from the production embed.
 func proofRepo(t *testing.T, name string) (string, string) {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), name)
-	proof := filepath.Join(root, ".agents", "proofs", "item-1.json")
-	if err := os.MkdirAll(filepath.Dir(proof), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agents", "proofs"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agents", "completion.contract.json"), []byte(`{}`), 0o644); err != nil {
-		t.Fatal(err)
+	root = mustEval(t, root)
+	writeTest(t, filepath.Join(root, "SCOPE.md"), []byte("Owned inert test scope\n"))
+	definitions := []map[string]any{}
+	closure := map[string]string{}
+	for _, category := range []string{"product", "design", "technical", "operational", "narrative"} {
+		definitions = append(definitions, map[string]any{"category": category, "criteria": []string{"fixture"}})
+		closure[category] = "inert evidence.txt"
 	}
-	if err := os.WriteFile(proof, []byte(`{"repo":"`+name+`","status":"completed","blockers":[]}`), 0o644); err != nil {
-		t.Fatal(err)
+	contract := map[string]any{
+		"repo_name": name, "release_target": "fixture", "classification": "internal-tool",
+		"canon_documents":                []map[string]string{{"path": "SCOPE.md", "role": "scope"}},
+		"done_definition":                definitions,
+		"required_verification_commands": []map[string]string{{"name": "first", "command": "inert first"}, {"name": "second", "command": "inert second"}},
 	}
-	return root, proof
+	proof := map[string]any{
+		"repo": root, "work_item_id": "item-1", "agent_id": "owned-test", "classification": "internal-tool", "status": "completed", "blockers": []string{},
+		"canon_read":         []map[string]string{{"path": "SCOPE.md", "read_at": "2026-11-24T00:00:00Z"}},
+		"requirements_trace": []map[string]any{{"doc": "SCOPE.md", "section": "fixture", "claim": "inert", "files_changed": []string{"SCOPE.md"}, "evidence": []string{"evidence.txt"}}},
+		"closure_evidence":   closure,
+		"verification":       []map[string]string{{"name": "first", "command": "inert first", "status": "pass", "evidence": "evidence.txt"}, {"name": "second", "command": "inert second", "status": "passed", "evidence": "evidence.txt"}},
+		"working_status":     map[string]string{"environment": "owned temp", "how_verified": "inert fixture", "observed_result": "not a product qualification", "verified_at": "2026-11-24T00:00:00Z"},
+		"handoffs":           []any{},
+	}
+	writeJSONTest(t, filepath.Join(root, ".agents", "completion.contract.json"), contract)
+	path := filepath.Join(root, ".agents", "proofs", "item-1.json")
+	writeJSONTest(t, path, proof)
+	return root, path
 }
 
-func validator(t *testing.T, root, proof string) string {
+func writeTest(t *testing.T, path string, data []byte) {
 	t.Helper()
-	script := filepath.Join(t.TempDir(), "validator.py")
-	expected, err := os.ReadFile(proof)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+func writeJSONTest(t *testing.T, path string, obj any) {
+	t.Helper()
+	data, err := json.Marshal(obj)
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := fmt.Sprintf(`import json, os, sys
-mode = sys.argv[1]
-repo = os.path.realpath(sys.argv[sys.argv.index("--repo") + 1])
-proof = sys.argv[sys.argv.index("--proof") + 1]
-if repo != %q:
-    print("wrong caller authority: repo=%%s proof=%%s" %% (repo, proof))
-    sys.exit(9)
-if mode == "validate":
-    if os.path.realpath(proof) != %q:
-        print("wrong proof pathname: %%s" %% proof)
-        sys.exit(10)
-elif mode == "validate-completion":
-    if os.path.realpath(proof) != %q:
-        print("wrong proof metadata: %%s" %% proof)
-        sys.exit(11)
-    if os.environ.get("SIRSI_TEST_SUBSTITUTE_PROOF") == "1":
-        with open(proof, "wb") as changed:
-            changed.write(b'{"status":"blocked","blockers":["substituted"]}')
-    captured = sys.stdin.buffer.read()
-    if os.environ.get("SIRSI_TEST_SUBSTITUTE_PROOF") == "1":
-        with open(proof, "wb") as restored:
-            restored.write((%q).encode("utf-8"))
-    if captured != (%q).encode("utf-8"):
-        print("validator did not receive the captured proof bytes")
-        sys.exit(12)
-    document = json.loads(captured)
-    if document.get("status") != "completed" or document.get("blockers") not in (None, []):
-        print("completion requires completed proof without blockers")
-        sys.exit(13)
-else:
-    print("unexpected validator mode: %%s" %% mode)
-    sys.exit(14)
-`, mustEval(t, root), mustEval(t, proof), mustEval(t, proof), expected, expected)
-	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	return script
+	writeTest(t, path, data)
 }
-
-func TestEnforceCompletionValidatorReceivesOneCapturedSnapshot(t *testing.T) {
-	caller, proof := proofRepo(t, "application")
-	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", validator(t, caller, proof))
-	t.Setenv("SIRSI_TEST_SUBSTITUTE_PROOF", "1")
-
-	if err := Enforce(caller, "item-1", proof, false, false, "done"); err != nil {
-		t.Fatalf("completion snapshot rejected: %v", err)
-	}
-	contents, err := os.ReadFile(proof)
+func readTest(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(contents) != `{"repo":"application","status":"completed","blockers":[]}` {
-		t.Fatalf("substitution-back did not restore original proof: %s", contents)
-	}
+	return data
 }
-
-func TestEnforceRejectsNonFinalProofBeforeRouterClose(t *testing.T) {
-	caller, proof := proofRepo(t, "application")
-	if err := os.WriteFile(proof, []byte(`{"repo":"application","status":"blocked","blockers":["unresolved"]}`), 0o644); err != nil {
+func mutateProof(t *testing.T, path string, change func(map[string]any)) {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(readTest(t, path), &doc); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", validator(t, caller, proof))
-
-	err := Enforce(caller, "item-1", proof, false, false, "done")
-	if err == nil {
-		t.Fatal("blocked proof unexpectedly accepted for implementation completion")
-	}
-	if !strings.Contains(err.Error(), "completion requires completed proof without blockers") {
-		t.Fatalf("blocked proof failed for the wrong reason: %v", err)
-	}
+	change(doc)
+	writeJSONTest(t, path, doc)
 }
-
-func TestStandaloneValidateKeepsLegacyWorkInProgressMode(t *testing.T) {
-	caller, proof := proofRepo(t, "application")
-	if err := os.WriteFile(proof, []byte(`{"repo":"application","status":"blocked","blockers":["review pending"]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", validator(t, caller, proof))
-
-	if err := Validate(caller, proof); err != nil {
-		t.Fatalf("standalone work-in-progress validation changed unexpectedly: %v", err)
-	}
-}
-
-func TestEnforceFailsClosedWhenValidatorLacksCompletionMode(t *testing.T) {
-	caller, proof := proofRepo(t, "application")
-	legacyOnly := filepath.Join(t.TempDir(), "legacy-only.py")
-	if err := os.WriteFile(legacyOnly, []byte(`import sys
-if sys.argv[1] == "validate":
-    raise SystemExit(0)
-print("unknown command", file=sys.stderr)
-raise SystemExit(64)
-`), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", legacyOnly)
-
-	if err := Enforce(caller, "item-1", proof, false, false, "done"); err == nil {
-		t.Fatal("completion unexpectedly fell back to the legacy validator")
-	}
-}
-
-func TestEnforceBoundsCapturedProof(t *testing.T) {
-	caller, proof := proofRepo(t, "application")
-	if err := os.WriteFile(proof, make([]byte, maxCompletionProofBytes+1), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := Enforce(caller, "item-1", proof, false, false, "done"); err == nil {
-		t.Fatal("oversized completion proof unexpectedly accepted")
-	}
-}
-
 func mustEval(t *testing.T, path string) string {
 	t.Helper()
-	got, err := filepath.EvalSymlinks(path)
+	actual, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return got
+	return actual
 }
 
-func TestEnforceBindsProofToCallerWorktree(t *testing.T) {
-	caller, proof := proofRepo(t, "application")
-	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", validator(t, caller, proof))
-
-	if err := Enforce(caller, "item-1", filepath.Join(".agents", "proofs", "item-1.json"), false, false, "done"); err != nil {
-		t.Fatalf("relative caller proof: %v", err)
+func TestProductionCompletionProtocolAndStandaloneParity(t *testing.T) {
+	cases := []struct {
+		name   string
+		change func(map[string]any)
+		good   bool
+	}{
+		{"completed", func(map[string]any) {}, true},
+		{"draft", func(p map[string]any) { p["status"] = "draft" }, false},
+		{"blocked", func(p map[string]any) { p["status"] = "blocked"; p["blockers"] = []string{"pending"} }, false},
+		{"ready", func(p map[string]any) { p["status"] = "ready_for_review" }, false},
+		{"missing-status", func(p map[string]any) { delete(p, "status") }, false},
+		{"malformed-status", func(p map[string]any) { p["status"] = map[string]bool{"completed": true} }, false},
+		{"blockers", func(p map[string]any) { p["blockers"] = []string{"pending"} }, false},
+		{"wrong-item", func(p map[string]any) { p["work_item_id"] = "item-2" }, false},
+		{"padded-item", func(p map[string]any) { p["work_item_id"] = " item-1" }, false},
+		{"classification-mismatch", func(p map[string]any) { p["classification"] = "commercial-product" }, false},
+		{"required-omitted", func(p map[string]any) { p["verification"] = p["verification"].([]any)[:1] }, false},
+		{"required-command-changed", func(p map[string]any) { p["verification"].([]any)[1].(map[string]any)["command"] = "different" }, false},
+		{"required-name-changed", func(p map[string]any) { p["verification"].([]any)[1].(map[string]any)["name"] = "different" }, false},
+		{"failed-verification", func(p map[string]any) { p["verification"].([]any)[1].(map[string]any)["status"] = "fail" }, false},
+		{"duplicate-verification", func(p map[string]any) { v := p["verification"].([]any); p["verification"] = append(v, v[0]) }, false},
+		{"missing-closure", func(p map[string]any) { delete(p["closure_evidence"].(map[string]any), "operational") }, false},
+		{"missing-working-status", func(p map[string]any) { delete(p, "working_status") }, false},
+		{"wrong-repo", func(p map[string]any) { p["repo"] = "/not-this-owned-fixture" }, false},
 	}
-	if err := Enforce(caller, "item-1", proof, false, false, "done"); err != nil {
-		t.Fatalf("absolute caller proof: %v", err)
-	}
-}
-
-func TestEnforceRejectsProofFromAnotherRepository(t *testing.T) {
-	caller, _ := proofRepo(t, "application")
-	_, foreignProof := proofRepo(t, "other")
-	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", validator(t, caller, filepath.Join(caller, ".agents", "proofs", "item-1.json")))
-	if err := Enforce(caller, "item-1", foreignProof, false, false, "done"); err == nil {
-		t.Fatal("foreign proof unexpectedly accepted")
-	}
-	linkedProof := filepath.Join(caller, ".agents", "proofs", "foreign.json")
-	if err := os.Symlink(foreignProof, linkedProof); err != nil {
-		t.Fatal(err)
-	}
-	if err := Enforce(caller, "item-1", linkedProof, false, false, "done"); err == nil {
-		t.Fatal("symlinked foreign proof unexpectedly accepted")
-	}
-}
-
-func TestEnforceRefusesProofWhenCallerHasNoContract(t *testing.T) {
-	root := t.TempDir()
-	proof := filepath.Join(root, "proof.json")
-	if err := os.WriteFile(proof, []byte(`{}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := Enforce(root, "item-1", proof, false, false, "done"); err == nil {
-		t.Fatal("proof without caller contract unexpectedly accepted")
-	}
-}
-
-func TestEnforceKeepsExplicitCoordinationOutcomes(t *testing.T) {
-	caller, _ := proofRepo(t, "application")
-	if err := Enforce(caller, "item-1", "", true, false, "blocked on upstream"); err != nil {
-		t.Fatalf("blocked outcome: %v", err)
-	}
-	if err := Enforce(caller, "item-1", "", false, true, "received for review"); err != nil {
-		t.Fatalf("acknowledgement outcome: %v", err)
-	}
-}
-
-func TestEnforceCurrentCallerKeepsCoordinationAvailableOutsideGit(t *testing.T) {
-	clearInheritedGitEnvironment(t)
-	t.Chdir(t.TempDir())
-	if err := EnforceCurrentCaller("", "item-1", "", false, true, "received for review"); err != nil {
-		t.Fatalf("non-Git acknowledgement: %v", err)
-	}
-	if err := EnforceCurrentCaller("", "item-1", "", true, false, "waiting for upstream"); err != nil {
-		t.Fatalf("non-Git blocker: %v", err)
-	}
-	if err := EnforceCurrentCaller("", "item-1", "", false, false, "done"); err == nil {
-		t.Fatal("non-Git implementation completion unexpectedly accepted")
-	}
-}
-
-// The caller can be a linked worktree below a .worktrees directory. Its proof
-// must still be validated by the portfolio tool next to the canonical router,
-// not by a made-up sibling of the caller worktree.
-func TestEnforceUsesCanonicalPortfolioValidatorForLinkedCallerWithoutOverride(t *testing.T) {
-	clearInheritedGitEnvironment(t)
-	development := t.TempDir()
-	canonical := filepath.Join(development, "sirsi-pantheon")
-	tools := filepath.Join(development, "tools")
-	appMain := filepath.Join(development, "compasspoint-client-reporting")
-	appWorktree := filepath.Join(appMain, ".worktrees", "reporting")
-	for _, dir := range []string{canonical, tools, appMain} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.MkdirAll(filepath.Join(canonical, ".agents", "idea-router"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(canonical, "README"), []byte("router\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git(t, canonical, "init", "-q")
-
-	git(t, appMain, "init", "-q")
-	git(t, appMain, "config", "user.email", "tests@example.invalid")
-	git(t, appMain, "config", "user.name", "tests")
-	if err := os.WriteFile(filepath.Join(appMain, "README"), []byte("application\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git(t, appMain, "add", "README")
-	git(t, appMain, "commit", "-qm", "initial")
-	git(t, appMain, "worktree", "add", "-q", "-b", "reporting", appWorktree, "HEAD")
-
-	proof := filepath.Join(appWorktree, ".agents", "proofs", "item-1.json")
-	if err := os.MkdirAll(filepath.Dir(proof), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(appWorktree, ".agents", "completion.contract.json"), []byte(`{}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(proof, []byte(`{"repo":"application"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	canonicalProof, err := filepath.EvalSymlinks(proof)
-	if err != nil {
-		t.Fatal(err)
-	}
-	canonicalCaller, err := filepath.EvalSymlinks(appWorktree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	validatorPath := filepath.Join(tools, "agent_completion_gate.py")
-	validatorBody := fmt.Sprintf(`import os, sys
-repo = os.path.realpath(sys.argv[sys.argv.index("--repo") + 1])
-proof = os.path.realpath(sys.argv[sys.argv.index("--proof") + 1])
-if repo != %q or proof != %q:
-    print("wrong caller authority: repo=%%s proof=%%s" %% (repo, proof))
-    sys.exit(9)
-`, canonicalCaller, canonicalProof)
-	if err := os.WriteFile(validatorPath, []byte(validatorBody), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	// No SIRSI_COMPLETION_GATE_SCRIPT override: the handler's canonical router
-	// root selects the Development/tools validator even though the current
-	// directory is the linked application worktree.
-	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", "")
-	t.Chdir(appWorktree)
-	if err := EnforceCurrentCaller(canonical, "item-1", filepath.Join(".agents", "proofs", "item-1.json"), false, false, "done"); err != nil {
-		t.Fatalf("canonical validator with linked caller: %v", err)
-	}
-}
-
-// Git hooks export repository variables for their own commands. Tests that
-// deliberately construct a non-Git caller or an independent nested worktree
-// must not inherit those variables as accidental caller authority.
-func clearInheritedGitEnvironment(t *testing.T) {
-	t.Helper()
-	for _, key := range []string{
-		"GIT_DIR",
-		"GIT_WORK_TREE",
-		"GIT_COMMON_DIR",
-		"GIT_INDEX_FILE",
-		"GIT_OBJECT_DIRECTORY",
-		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
-		"GIT_PREFIX",
-	} {
-		value, wasSet := os.LookupEnv(key)
-		if err := os.Unsetenv(key); err != nil {
-			t.Fatalf("unset %s: %v", key, err)
-		}
-		t.Cleanup(func() {
-			if wasSet {
-				_ = os.Setenv(key, value)
-				return
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, proof := proofRepo(t, "application")
+			mutateProof(t, proof, tc.change)
+			err := Enforce(root, "item-1", proof, false, false, "done")
+			if (err == nil) != tc.good {
+				t.Fatalf("embedded result=%v; want accepted=%v", err, tc.good)
 			}
-			_ = os.Unsetenv(key)
+			standalone := filepath.Join(root, "export.py")
+			if err := ExportValidator(standalone); err != nil {
+				t.Fatal(err)
+			}
+			if string(readTest(t, standalone)) != productionValidator {
+				t.Fatal("export is not exact embedded source")
+			}
+			args := []string{"validate-completion", "--repo", root, "--proof", "/metadata-only-never-open", "--expected-item-id", "item-1"}
+			if got := standaloneRun(t, root, standalone, readTest(t, proof), args...); got != tc.good {
+				t.Fatalf("standalone accepted=%v; want %v", got, tc.good)
+			}
 		})
 	}
 }
 
-func git(t *testing.T, dir string, args ...string) {
+func standaloneRun(t *testing.T, root, script string, input []byte, args ...string) bool {
 	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
+	ctx, cancel := context.WithTimeout(context.Background(), completionValidatorTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, completionPython, append([]string{"-I", "-S", script}, args...)...)
+	cmd.Dir, cmd.Env, cmd.Stdin = root, completionValidatorEnv(os.Environ()), bytes.NewReader(input)
+	cmd.WaitDelay = completionValidatorWaitDelay
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		t.Fatal("standalone validator exceeded test deadline")
+	}
+	if err != nil {
+		if _, ok := err.(*exec.ExitError); !ok {
+			t.Fatalf("could not start validator: %v", err)
+		}
+	}
+	return err == nil
+}
+
+func TestCapturedProofNotReopenedBothDirections(t *testing.T) {
+	root, path := proofRepo(t, "application")
+	_, relative, display, err := resolveProofCapture(root, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, err := captureCompletionProof(root, relative)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutateProof(t, path, func(p map[string]any) { p["status"] = "blocked"; p["blockers"] = []string{"pending"} })
+	bad, err := captureCompletionProof(root, relative)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runCompletionValidator(root, "item-1", display, good); err != nil {
+		t.Fatalf("pathname replacement overrode good capture: %v", err)
+	}
+	writeTest(t, path, good)
+	if err := runCompletionValidator(root, "item-1", display, bad); err == nil {
+		t.Fatal("good pathname overrode blocked capture")
+	}
+}
+
+func TestProductionJSONAndContractRefusals(t *testing.T) {
+	for _, raw := range []string{`{"status":`, `{"status":"completed","status":"completed"}`, `{"n":NaN}`, `{"n":1e999}`} {
+		root, path := proofRepo(t, "application")
+		writeTest(t, path, []byte(raw))
+		if err := Enforce(root, "item-1", path, false, false, "done"); err == nil {
+			t.Fatal("ambiguous/malformed JSON accepted")
+		}
+	}
+	root, path := proofRepo(t, "application")
+	contractPath := filepath.Join(root, ".agents", "completion.contract.json")
+	var contract map[string]any
+	if err := json.Unmarshal(readTest(t, contractPath), &contract); err != nil {
+		t.Fatal(err)
+	}
+	commands := contract["required_verification_commands"].([]any)
+	contract["required_verification_commands"] = append(commands, commands[0])
+	writeJSONTest(t, contractPath, contract)
+	if err := Enforce(root, "item-1", path, false, false, "done"); err == nil {
+		t.Fatal("duplicate contract command identity accepted")
+	}
+}
+
+func TestDiagnosticModesDoNotAuthorizeCompletion(t *testing.T) {
+	root, path := proofRepo(t, "application")
+	mutateProof(t, path, func(p map[string]any) { p["status"] = "blocked"; p["blockers"] = []string{"review"} })
+	if err := Validate(root, path); err != nil {
+		t.Fatalf("diagnostic blocked proof: %v", err)
+	}
+	if err := Enforce(root, "item-1", path, false, false, "done"); err == nil {
+		t.Fatal("diagnostic acceptance authorized completion")
+	}
+	standalone := filepath.Join(root, "export.py")
+	if err := ExportValidator(standalone); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"check-contract", "--repo", root},
+		{"init-proof", "--repo", root, "--work-item", "new-item", "--agent-id", "owned-test"},
+		{"validate", "--repo", root, "--proof", path},
+	} {
+		if !standaloneRun(t, root, standalone, nil, args...) {
+			t.Fatalf("standalone mode refused: %v", args)
+		}
+	}
+	initialized := filepath.Join(root, ".agents", "proofs", "new-item.json")
+	before := readTest(t, initialized)
+	if standaloneRun(t, root, standalone, nil, "init-proof", "--repo", root, "--work-item", "new-item") {
+		t.Fatal("init overwrote existing proof")
+	}
+	if !bytes.Equal(before, readTest(t, initialized)) {
+		t.Fatal("existing proof changed")
+	}
+	if standaloneRun(t, root, standalone, readTest(t, path), "validate-completion", "--repo", root, "--proof", path) {
+		t.Fatal("completion without expected item accepted")
+	}
+}
+
+func TestSubstitutedRootGitHelperCannotSupplyAuthority(t *testing.T) {
+	root, path := proofRepo(t, "application")
+	foreign, foreignProof := proofRepo(t, "foreign")
+	for _, dir := range []string{root, foreign} {
+		gitTest(t, dir, "init", "-q")
+	}
+	t.Chdir(root)
+	fakebin := t.TempDir()
+	marker := filepath.Join(fakebin, "executed")
+	for _, name := range []string{"git", "python3"} {
+		fake := filepath.Join(fakebin, name)
+		writeTest(t, fake, []byte("#!/bin/sh\n: > '"+marker+"'\nexit 0\n"))
+		if err := os.Chmod(fake, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	helper := filepath.Join(foreign, "forged.py")
+	writeTest(t, helper, []byte("from pathlib import Path\nPath("+strconvQuote(marker)+").write_text('selected')\n"))
+	t.Setenv("PATH", fakebin)
+	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", helper)
+	t.Setenv("SIRSI_ROUTER_REPO", foreign)
+	t.Setenv("GIT_DIR", filepath.Join(foreign, ".git"))
+	t.Setenv("GIT_WORK_TREE", foreign)
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "core.worktree")
+	t.Setenv("GIT_CONFIG_VALUE_0", foreign)
+	if err := EnforceCurrentCaller(foreign, "item-1", path, false, false, "done"); err != nil {
+		t.Fatalf("actual caller refused under substituted selectors: %v", err)
+	}
+	if err := EnforceCurrentCaller(foreign, "item-1", foreignProof, false, false, "done"); err == nil {
+		t.Fatal("foreign Git/root substituted for actual caller")
+	}
+	mutateProof(t, path, func(p map[string]any) { p["status"] = "draft" })
+	if err := EnforceCurrentCaller(foreign, "item-1", path, false, false, "done"); err == nil {
+		t.Fatal("forged helper authorized invalid proof")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("substituted executable/helper ran: %v", err)
+	}
+}
+
+func strconvQuote(s string) string { raw, _ := json.Marshal(s); return string(raw) }
+func gitTest(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(completionGit, args...)
+	cmd.Dir, cmd.Env = dir, append(completionValidatorEnv(os.Environ()), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
+		t.Fatalf("owned Git fixture: %v: %s", err, out)
+	}
+}
+
+func TestPythonEnvironmentCannotLoadCallerCode(t *testing.T) {
+	root, path := proofRepo(t, "application")
+	marker := filepath.Join(root, "startup-ran")
+	writeTest(t, filepath.Join(root, "sitecustomize.py"), []byte("from pathlib import Path\nPath("+strconvQuote(marker)+").touch()\n"))
+	t.Setenv("PYTHONPATH", root)
+	t.Setenv("PYTHONHOME", root)
+	t.Setenv("PYTHONSTARTUP", filepath.Join(root, "sitecustomize.py"))
+	if err := Enforce(root, "item-1", path, false, false, "done"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("caller Python startup ran: %v", err)
+	}
+	for _, env := range completionValidatorEnv([]string{"PYTHONPATH=x", "DYLD_INSERT_LIBRARIES=x", "LD_PRELOAD=x", "XCRUN_TOOLCHAIN=x", "DEVELOPER_DIR=x", "SDKROOT=x", "TOOLCHAINS=x", "GIT_DIR=x", "SIRSI_ROUTER_REPO=x", "HOME=/owned"}) {
+		if env != "HOME=/owned" {
+			t.Fatalf("unsafe environment retained: %q", env)
+		}
+	}
+}
+
+func TestLinkedCallerAndLocalGitRedirect(t *testing.T) {
+	root, proof := proofRepo(t, "application")
+	gitTest(t, root, "init", "-q")
+	gitTest(t, root, "-c", "user.name=owned-test", "-c", "user.email=owned@example.invalid", "commit", "--allow-empty", "-qm", "owned fixture")
+	linked := filepath.Join(mustEval(t, t.TempDir()), "relocated-linked-worktree")
+	gitTest(t, root, "worktree", "add", "-q", "-b", "owned-linked", linked, "HEAD")
+	if err := os.MkdirAll(filepath.Join(linked, ".agents", "proofs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"SCOPE.md", ".agents/completion.contract.json", ".agents/proofs/item-1.json"} {
+		writeTest(t, filepath.Join(linked, rel), readTest(t, filepath.Join(root, rel)))
+	}
+	linkedProof := filepath.Join(linked, ".agents", "proofs", "item-1.json")
+	mutateProof(t, linkedProof, func(p map[string]any) { p["repo"] = linked })
+	marker, err := os.Lstat(filepath.Join(linked, ".git"))
+	if err != nil || !marker.Mode().IsRegular() {
+		t.Fatalf("linked fixture must use an actual regular gitfile: %v, %v", marker, err)
+	}
+	t.Chdir(linked)
+	if err := EnforceCurrentCaller("/no-canonical-install-here", "item-1", ".agents/proofs/item-1.json", false, false, "done"); err != nil {
+		t.Fatalf("relocated linked caller refused: %v", err)
+	}
+	linkedNested := filepath.Join(linked, "nested", "caller")
+	if err := os.MkdirAll(linkedNested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(linkedNested)
+	if err := EnforceCurrentCaller("/no-canonical-install-here", "item-1", linkedProof, false, false, "done"); err != nil {
+		t.Fatalf("nested linked caller refused: %v", err)
+	}
+	t.Chdir(root)
+	if err := EnforceCurrentCaller("/no-canonical-install-here", "item-1", proof, false, false, "done"); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(root, "nested", "caller")
+	if err := os.MkdirAll(nested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(nested)
+	if err := EnforceCurrentCaller("/no-canonical-install-here", "item-1", proof, false, false, "done"); err != nil {
+		t.Fatalf("nested directory-backed caller refused: %v", err)
+	}
+	gitTest(t, root, "config", "core.worktree", linked)
+	if err := EnforceCurrentCaller(root, "item-1", linkedProof, false, false, "done"); err == nil {
+		t.Fatal("local Git redirect supplied foreign caller authority")
+	}
+}
+
+func TestCallerRefusesSymlinkGitBoundaryMarker(t *testing.T) {
+	root, _ := proofRepo(t, "application")
+	gitTest(t, root, "init", "-q")
+	marker := filepath.Join(root, ".git")
+	retained := filepath.Join(root, "retained-git-directory")
+	if err := os.Rename(marker, retained); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(retained, marker); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(root, "nested-caller")
+	if err := os.Mkdir(nested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(nested)
+	if err := EnforceCurrentCaller(root, "item-1", "", false, false, "done"); err == nil || !strings.Contains(err.Error(), "invalid physical Git boundary marker") {
+		t.Fatalf("symlink marker did not fail at physical boundary: %v", err)
+	}
+}
+
+func TestNearestGitBoundaryDoesNotSkipInvalidChildMarker(t *testing.T) {
+	root := mustEval(t, t.TempDir())
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(root, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, ".git"), filepath.Join(child, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	if boundary, err := nearestGitBoundary(child); err == nil || boundary != "" {
+		t.Fatalf("invalid child marker fell through to ancestor: boundary=%q error=%v", boundary, err)
+	}
+}
+
+func TestBareCompletionRefusesUpwardGitWorktreeRedirect(t *testing.T) {
+	root, _ := proofRepo(t, "application")
+	gitTest(t, root, "init", "-q")
+	ancestor := filepath.Dir(root)
+	if _, err := os.Stat(filepath.Join(ancestor, ".agents", "completion.contract.json")); !os.IsNotExist(err) {
+		t.Fatalf("owned ancestor must have no completion contract: %v", err)
+	}
+	subdir := filepath.Join(root, "actual-caller-subdir")
+	if err := os.Mkdir(subdir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(subdir)
+	// First establish that this same bare request discovers the actual child
+	// repository's contract without the upward core.worktree redirect.
+	if err := EnforceCurrentCaller(root, "item-1", "", false, false, "done"); err == nil || !strings.Contains(err.Error(), "completion proof required") {
+		t.Fatalf("actual child contract did not require proof before redirect: %v", err)
+	}
+	gitTest(t, root, "config", "core.worktree", ancestor)
+	// Confirm the fixture really makes fixed Git report an ancestor that still
+	// contains cwd. A sibling redirect would exercise a different existing guard.
+	cmd := exec.Command(completionGit, "-C", subdir, "rev-parse", "--show-toplevel")
+	cmd.Dir = subdir
+	cmd.Env = append(completionValidatorEnv(os.Environ()), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+	output, err := cmd.Output()
+	if err != nil || strings.TrimSuffix(string(output), "\n") != ancestor {
+		t.Fatalf("fixture did not report the contract-free ancestor: root=%q err=%v", output, err)
+	}
+	// Empty proof is essential: accepting a contract-free ancestor must not turn
+	// a child repository's proof-required implementation close into a bare close.
+	if err := EnforceCurrentCaller(root, "item-1", "", false, false, "done"); err == nil {
+		t.Fatal("upward Git worktree redirect bypassed actual child repository completion contract on bare close")
+	}
+}
+
+func TestCompletionContainmentLimitsAndCoordination(t *testing.T) {
+	root, path := proofRepo(t, "application")
+	_, foreign := proofRepo(t, "foreign")
+	if err := Enforce(root, "item-1", foreign, false, false, "done"); err == nil {
+		t.Fatal("foreign proof accepted")
+	}
+	writeTest(t, path, make([]byte, maxCompletionProofBytes+1))
+	if err := Enforce(root, "item-1", path, false, false, "done"); err == nil {
+		t.Fatal("oversized proof accepted")
+	}
+	if err := Enforce(root, "item-1", "", false, false, "done"); err == nil {
+		t.Fatal("bare contract completion accepted")
+	}
+	for _, outcome := range []struct{ blocked, ack bool }{{true, false}, {false, true}} {
+		if err := Enforce("", "item-1", "", outcome.blocked, outcome.ack, "owned coordination"); err != nil {
+			t.Fatal(err)
+		}
+		if err := Enforce("", "item-1", "", outcome.blocked, outcome.ack, " "); err == nil {
+			t.Fatal("coordination missing result accepted")
+		}
+	}
+	t.Chdir(t.TempDir())
+	if err := EnforceCurrentCaller("forged", "item-1", "", false, true, "coordination"); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnforceCurrentCaller("forged", "item-1", "", false, false, "done"); err == nil {
+		t.Fatal("non-Git completion accepted")
+	}
+}
+
+func TestValidatorDeadlineAndOutputBounds(t *testing.T) {
+	root, path := proofRepo(t, "application")
+	if err := runValidatorCommand(root, []string{"validate-completion", "--repo", root, "--proof", path, "--expected-item-id", "item-1"}, readTest(t, path), 0*time.Second); err == nil {
+		t.Fatal("expired validator deadline accepted")
+	}
+	var output limitedOutput
+	if n, err := output.Write(make([]byte, 1<<20)); err != nil || n != 1<<20 || !output.exceeded || len(output.data) != 16<<10 {
+		t.Fatal("output retention is not bounded")
+	}
+	if n, err := output.Write([]byte("tail")); err != nil || n != 4 || len(output.data) != 16<<10 {
+		t.Fatal("output bound did not remain stable")
+	}
+	if strings.Contains(ValidatorSHA256(), "\n") || len(ValidatorSHA256()) != 64 {
+		t.Fatal("invalid source identity")
 	}
 }

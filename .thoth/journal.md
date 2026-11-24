@@ -1,4 +1,20 @@
 # 𓃣 Anubis Engineering Journal
+## Nov24 — versioned production completion policy candidate
+
+Replace caller-selected external algorithm authority with newly authored
+embedded production Python, exact item/contract command and classification
+checks, bounded captured proof stdin, fixed launchers and nearest physical Git
+boundary. Keep existing actor/session/lease authorization unchanged. Explicit
+standalone export is non-overwriting and does not install or auto-trust a path.
+
+Old caller-helper selection and upward core.worktree bypass each have actual
+failing controls. Corrected31af targeted execution passed21root44sub tests,
+zero test skips; entryfixture is explicitly a no-test package. Source reviewed
+through twelve finite Sonnet facets; candidate composes onto main349. Full
+normal gates, source publication, standalone distribution and three-home sync
+are not implied by those focused results. Historical152, interpreter/library
+provenance and atomic contract/canon/proof snapshots remain separate.
+
 # Running commentary and insights — a documentary of the build process.
 # Each entry is timestamped with context and reasoning.
 # This is the "why" behind every decision.
