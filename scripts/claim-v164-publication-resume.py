@@ -13,7 +13,7 @@ import sys
 spec = importlib.util.spec_from_file_location('base', Path(__file__).with_name('claim-v164-metadata-resume.py'))
 base = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(base)
-REF = 'refs/heads/pantheon-recovery/v0.24.164-456022306-publish-after-45284797296'
+REF = 'refs/heads/pantheon-recovery/v0.24.164-456022306-publish-after-45291181859'
 WORKFLOW = 'recover-v164-publication-only.yml'
 OLD_MOUNT = '/private/var/folders/qs/sx7tq5qd6y5f8tq30v4gsmkc0000gn/T/pantheon-guard-publication-mount-ia3ennux'
 HASHES = {
@@ -105,7 +105,6 @@ def main():
         ('release.yml', 'push', '&branch=v0.24.164', 45270278775, base.COMMIT),
         ('recover-v164-after-guard.yml', 'workflow_dispatch', '', 45278099354, '371057ee20cbb5f2f80a8bef43766a4986f741c0'),
         ('recover-v164-after-metadata.yml', 'workflow_dispatch', '', 45284797296, '3fe7dde3526a1e905f7b5aefd00af541a37a1941'),
-        (WORKFLOW, 'workflow_dispatch', '', int(run_id), controller),
     ):
         data = base.api(prefix + '/actions/workflows/' + workflow + '/runs?event=' + event + branch + '&per_page=100')
         entries = data.get('workflow_runs')
@@ -115,6 +114,34 @@ def main():
                 or entries[0].get('run_attempt') != 1 or entries[0].get('status') != status
                 or (run != int(run_id) and entries[0].get('conclusion') != 'failure')):
             raise RuntimeError('release or recovery run history changed')
+    runs = base.api(prefix + '/actions/workflows/' + WORKFLOW + '/runs?event=workflow_dispatch&per_page=100')
+    entries = runs.get('workflow_runs', [])
+    expected_runs = {
+        45291181859: ('f630401e1b3a1cb1ed679422f7dcf5b332edb4be', 'completed', 'failure'),
+        int(run_id): (controller, 'in_progress', None),
+    }
+    if runs.get('total_count') != 2 or len(entries) != 2 or {e.get('id') for e in entries} != set(expected_runs):
+        raise RuntimeError('publication run history changed')
+    for entry in entries:
+        sha, status, conclusion = expected_runs[entry['id']]
+        if (entry.get('head_sha') != sha or entry.get('status') != status
+                or entry.get('conclusion') != conclusion or entry.get('run_attempt') != 1):
+            raise RuntimeError('publication run identity changed')
+    failed = base.api(prefix + '/actions/runs/45291181859/jobs?per_page=100')
+    prior_jobs = [job for job in failed.get('jobs', []) if job.get('id') == 138100055662]
+    if len(prior_jobs) != 1 or prior_jobs[0].get('conclusion') != 'failure':
+        raise RuntimeError('prior publication-only job changed')
+    prior_steps = {step.get('name'): step.get('conclusion') for step in prior_jobs[0].get('steps', [])}
+    if (prior_steps.get('Claim one publication-only continuation') != 'failure'
+            or prior_steps.get('Publish only the existing draft') != 'skipped'):
+        raise RuntimeError('prior publication-only lifecycle changed')
+    refs = base.api(prefix + '/git/matching-refs/heads/pantheon-recovery/v0.24.164-456022306')
+    expected_refs = {
+        'refs/heads/pantheon-recovery/v0.24.164-456022306-after-45270278775',
+        'refs/heads/pantheon-recovery/v0.24.164-456022306-after-45278099354',
+    }
+    if not isinstance(refs, list) or {ref.get('ref') for ref in refs} != expected_refs:
+        raise RuntimeError('unexpected publication claim exists')
     prior = base.api(prefix + '/actions/runs/45284797296/jobs?per_page=100')
     jobs = [job for job in prior.get('jobs', []) if job.get('id') == 138078240323]
     if len(jobs) != 1 or jobs[0].get('conclusion') != 'failure':
@@ -130,7 +157,7 @@ def main():
         if old.get('ref') != ref or old.get('object', {}).get('sha') != base.COMMIT:
             raise RuntimeError('prior claim changed')
     for artifact_id, name, artifact_digest in (
-        (14872220529, 'v164-metadata-custody-45284797296', 'sha256:790a270ed85bac61524ec3ff8fedd2b92c183f2db5e2b7bf8c5c8b31be2e0bd3'),
+        (14872220529, 'v164-metadata-custody-45284797296', 'sha256:790a270ed85bac61524ec3ff8fedd2b92c183f2db6e2b7bf8c5c8b31be2e0bd3'),
         (14872310501, 'v164-metadata-successor-45284797296-1', 'sha256:23ea294fac9c404903ee47c15ed7eacebbef334fc01de5c7f97915ef4a499f14'),
     ):
         artifact = base.api(prefix + '/actions/artifacts/' + str(artifact_id))
