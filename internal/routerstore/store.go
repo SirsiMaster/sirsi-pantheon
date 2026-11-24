@@ -828,6 +828,14 @@ ALTER TABLE items ADD COLUMN first_claimed_at TEXT NOT NULL DEFAULT '';
 	{28, `
 ALTER TABLE tasks ADD COLUMN first_claimed_at TEXT NOT NULL DEFAULT '';
 `},
+	// v29 — the host token that issued each session. Set by the SERVER at mint from the
+	// authenticated bearer (never from client input), so DiscardMintedToken can revoke
+	// exactly the sessions one token issued instead of every session on the host.
+	// '' = bootstrap/legacy/in-process mint: unattributed, never matched by a discard.
+	// No backfill: pre-v29 sessions stay ''.
+	{29, `
+ALTER TABLE sessions ADD COLUMN token_id TEXT NOT NULL DEFAULT '';
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite

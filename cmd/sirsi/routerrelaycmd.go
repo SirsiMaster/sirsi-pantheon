@@ -37,7 +37,7 @@ var routerRelayServeCmd = &cobra.Command{
 	Long: `Reads SIRSI_ROUTER_URL (https://…) and SIRSI_ROUTER_TOKEN from its own environment,
 polls <spool>/<agent>/req/*.json, forwards each to the service replacing only the
 Authorization header, and writes <spool>/<agent>/res/<id>.json atomically.
-MintHostToken, RevokeHostToken and ListHostTokens are refused by name. Lanes set
+MintHostToken, RevokeHostToken, DiscardMintedToken and ListHostTokens are refused by name. Lanes set
 SIRSI_ROUTER_URL=spool://<spool> and need no token.
 
 SIRSI_RELAY_TRUST_GROUP names a group whose members may also own the spool
