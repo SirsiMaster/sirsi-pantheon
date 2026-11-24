@@ -32,6 +32,51 @@ func TestHostTokenMintLookupRevoke(t *testing.T) {
 	}
 }
 
+func TestPublicationTokenPendingActivationAndIsolatedCancellation(t *testing.T) {
+	s := newDst(t)
+	old, _, err := s.MintHostToken("fixture-host", "existing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := s.MintSession("fixture-host", "existing-lane", "fixture-runtime")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, rec, err := s.MintPublicationToken("fixture-host", "new", []string{"lane-b", "lane-a", "lane-a"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LookupHostToken(pending); !errors.Is(err, ErrTokenRevoked) {
+		t.Fatal("pending token was accepted")
+	}
+	if err := s.CancelPublicationToken(rec.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LookupHostToken(old); err != nil {
+		t.Fatal("existing token was affected")
+	}
+	if _, err := s.GetSession(sess.ID); err != nil {
+		t.Fatal("existing session was affected")
+	}
+	if err := s.ActivatePublicationToken(rec.ID); !errors.Is(err, ErrTokenUnknown) {
+		t.Fatal("canceled token reactivated")
+	}
+	active, next, err := s.MintPublicationToken("fixture-host", "new", []string{"lane-b", "lane-a"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ActivatePublicationToken(next.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.LookupHostToken(active)
+	if err != nil || len(got.Agents) != 2 || got.Agents[0] != "lane-a" || got.Agents[1] != "lane-b" {
+		t.Fatal("activated token lost scope")
+	}
+	if err := s.CancelPublicationToken(next.ID); !errors.Is(err, ErrTokenUnknown) {
+		t.Fatal("active token could be canceled via pending-only path")
+	}
+}
+
 func TestHostTokenAuthorizesOnlyItsOwnHost(t *testing.T) {
 	h := newIdentityHarness(t)
 	plain, _, err := h.backend.MintHostToken("m1", "")

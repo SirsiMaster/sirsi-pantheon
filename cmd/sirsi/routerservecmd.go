@@ -213,6 +213,16 @@ var routerTokenMintCmd = &cobra.Command{
 		case secret != "" && len(agents) == 0 && !hostWide:
 			return errors.New("--secret-resource requires a nonempty --agents scope (or --host-wide for a Mac host token)")
 		}
+		if secret != "" {
+			// Never expose a credential that can create sessions before its
+			// receipt is durable: a failed publication must not revoke other
+			// tokens' live sessions for the same host.
+			stager, ok := store.(publicationTokenStore)
+			if !ok {
+				return errors.New("secure publication requires staged-token support")
+			}
+			return publishStagedToken(cmd.Context(), cmd.OutOrStdout(), stager, args[0], label, agents, hostWide, secret, publishScopedRouterSecret)
+		}
 		mint := func() (string, routerstore.HostToken, error) { return store.MintHostToken(args[0], label) }
 		if len(agents) > 0 {
 			mint = func() (string, routerstore.HostToken, error) {
@@ -222,12 +232,6 @@ var routerTokenMintCmd = &cobra.Command{
 		plain, rec, err := mint()
 		if err != nil {
 			return err
-		}
-		if secret != "" && hostWide {
-			return publishMintedHostWideToken(cmd.Context(), cmd.OutOrStdout(), plain, rec, secret, publishScopedRouterSecret, store.RevokeHostToken)
-		}
-		if secret != "" {
-			return publishMintedRouterToken(cmd.Context(), cmd.OutOrStdout(), plain, rec, secret, publishScopedRouterSecret, store.RevokeHostToken)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "token id: %s  host: %s  created: %s\n", rec.ID, rec.Host, rec.Created)
 		if len(rec.Agents) > 0 {

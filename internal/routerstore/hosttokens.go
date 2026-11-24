@@ -57,6 +57,76 @@ func hashToken(tok string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// A publication token is unusable until both secure delivery and its receipt
+// have succeeded. Existing lookups reject every nonempty revoked value, so even
+// an older serving revision cannot mint sessions with a pending credential.
+const tokenPendingPublication = "pending-publication"
+
+// MintPublicationToken creates an inert token and its complete scope in one
+// transaction. It is activated only after the secure-publication receipt.
+func (s *SQLiteStore) MintPublicationToken(host, label string, agents []string, hostWide bool) (string, HostToken, error) {
+	if host == "" {
+		return "", HostToken{}, errors.New("routerstore: publication token host is required")
+	}
+	seen := map[string]bool{}
+	var list []string
+	for _, a := range agents {
+		if a = strings.TrimSpace(a); a != "" && !seen[a] {
+			seen[a] = true
+			list = append(list, a)
+		}
+	}
+	if (hostWide && len(list) != 0) || (!hostWide && len(list) == 0) {
+		return "", HostToken{}, errors.New("routerstore: invalid publication token scope")
+	}
+	id, err := randomHex(8)
+	if err != nil {
+		return "", HostToken{}, err
+	}
+	tok, err := randomHex(32)
+	if err != nil {
+		return "", HostToken{}, err
+	}
+	now := s.clock().Format(time.RFC3339)
+	if err := s.mintScopedTxState(id, tok, host, label, now, list, tokenPendingPublication, mintFaults{}); err != nil {
+		return "", HostToken{}, err
+	}
+	sort.Strings(list)
+	return tok, HostToken{ID: id, Host: host, Label: label, Created: now, Agents: list}, nil
+}
+
+// ActivatePublicationToken and CancelPublicationToken race by compare-and-
+// swap. Cleanup never touches an active token or any other token's sessions.
+func (s *SQLiteStore) ActivatePublicationToken(id string) error {
+	r, err := s.exec(`UPDATE host_tokens SET revoked='' WHERE token_id=? AND revoked=?`, id, tokenPendingPublication)
+	if err != nil {
+		return fmt.Errorf("routerstore: publication token activation: %w", err)
+	}
+	n, err := r.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return ErrTokenUnknown
+	}
+	return nil
+}
+
+func (s *SQLiteStore) CancelPublicationToken(id string) error {
+	r, err := s.exec(`UPDATE host_tokens SET revoked=? WHERE token_id=? AND revoked=?`, s.clock().Format(time.RFC3339), id, tokenPendingPublication)
+	if err != nil {
+		return fmt.Errorf("routerstore: publication token cancellation: %w", err)
+	}
+	n, err := r.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return ErrTokenUnknown
+	}
+	return nil
+}
+
 // MintHostToken creates a token for host and returns the plaintext once.
 func (s *SQLiteStore) MintHostToken(host, label string) (string, HostToken, error) {
 	if host == "" {
@@ -154,6 +224,10 @@ type mintFaults struct {
 }
 
 func (s *SQLiteStore) mintScopedTx(id, tok, host, label, now string, list []string, f mintFaults) (err error) {
+	return s.mintScopedTxState(id, tok, host, label, now, list, "", f)
+}
+
+func (s *SQLiteStore) mintScopedTxState(id, tok, host, label, now string, list []string, revoked string, f mintFaults) (err error) {
 	tx, berr := s.beginImmediate()
 	if berr != nil {
 		return berr // nothing was started
@@ -198,8 +272,8 @@ func (s *SQLiteStore) mintScopedTx(id, tok, host, label, now string, list []stri
 		}
 	}()
 	fail := func(cause error) error { return outcome(nil, cause.Error()) }
-	if _, e := tx.Exec(`INSERT INTO host_tokens(token_id,token_hash,host,label,created,revoked) VALUES(?,?,?,?,?,'')`,
-		id, hashToken(tok), host, label, now); e != nil {
+	if _, e := tx.Exec(`INSERT INTO host_tokens(token_id,token_hash,host,label,created,revoked) VALUES(?,?,?,?,?,?)`,
+		id, hashToken(tok), host, label, now, revoked); e != nil {
 		return fail(fmt.Errorf("insert token: %w", e))
 	}
 	for _, a := range list {
