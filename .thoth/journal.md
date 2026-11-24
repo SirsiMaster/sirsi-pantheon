@@ -1,4 +1,17 @@
 # 𓃣 Anubis Engineering Journal
+## Nov24 — accepted context repair, existing fixture compatibility
+
+Parent SOURCE_ACCEPT bound64505/63b70 and authorized the two existing inert Go
+mock adaptations. Each now creates the exact -o executable with private0700
+mode; all traffic/tag/refusal assertions remain unchanged and the real builder
+still performs the chmod. Fresh own Native b249ed76 passed all4 new tests and
+both existing fixtures. No real compilation is claimed by these inert controls.
+
+This commit is the clean source boundary for the separately admitted Go1.26.11
+offline stage+board builds. Preserve actual embedded VCS metadata, exact modes
+and static ELF evidence; refusal must be diagnosed, never remove buildvcs=true.
+No Cloud Build, deployment, push or publication runs in this workstream.
+
 ## Nov24 — private-umask service context repair
 
 The owner's original zero-traffic stage failed before application startup:

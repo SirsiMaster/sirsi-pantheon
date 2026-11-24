@@ -5,10 +5,12 @@
 # Actual inert-compiler RED cc45eac1: 4 tests/8 expected failures on d8 source;
 # GREEN cfbd113a: 4 tests PASS on repair, no skips. Fresh own M5 native CPU1
 # executions, canonical released outcomes1/0. Real compile/VCS stamping,
-# container startup and deployment remain unqualified; parent review first.
-# Existing staging fixtures have outputless Go mocks requiring separate narrow
-# adaptation before full fixture-suite acceptance. Original failed stage/image
-# receipts are preserved; no cloud, installed, auth or policy change performed.
+# container startup and deployment remain unqualified. Parent source-accepted
+# exact64505/63b70 and authorized clean real compilation. Both existing staging
+# Go mocks now create only the named inert executable0700; all prior guards
+# remain. Fresh b249ed76 passed the4 new tests plus staged-tag/traffic-target
+# fixtures; clean-commit offline static compilation is the next qualification.
+# Original failed stage/image receipts preserved; no cloud/installed/policy change.
 # Nov24 production completion-policy candidate: embeds newly authored protocol,
 # exact item/required commands/classification, fixed launcher and independent
 # physical Git boundary. Initial helper-selector RED/GREEN and upward-Git RED
