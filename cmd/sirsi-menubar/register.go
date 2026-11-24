@@ -66,8 +66,8 @@ func isDir(p string) bool {
 // Idempotency: RegisterThread reuses a live record with the same (agent_id, pid),
 // so a re-register within one process lifetime never duplicates. Across launch
 // restarts the PID differs; the prior record is retired by OS-truth reaping
-// (ADR-022), and `sirsi thread list` reaps dead PIDs before printing, so no
-// duplicate *active* record is ever shown.
+// (ADR-022) when an explicit lifecycle reconciliation runs. Listing alone
+// does not retire records and can still show an older active registration.
 func registerMenubarThread(ctx context.Context) (routerRoot, threadID string) {
 	root, ok := resolveRouterRoot()
 	if !ok {
