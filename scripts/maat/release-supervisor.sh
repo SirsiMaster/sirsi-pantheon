@@ -1,6 +1,7 @@
 #!/bin/bash
 # Native release supervisor selection. An independently enrolled v164 pair is
-# required; this helper never stages, installs or changes either launcher.
+# required for the v164/v165 native-only routes. Reuse the exact enrolled v164
+# pair; this helper never stages, installs or changes either launcher.
 set -euo pipefail
 
 fail() { echo "release Ma’at preflight: $*" >&2; exit 1; }
@@ -8,8 +9,8 @@ mode=${1:-}
 case "$mode" in verify) [[ $# == 1 ]] || fail 'verify takes no payload' ;; run) [[ $# -gt 1 ]] || fail 'run needs a payload'; shift ;; *) fail 'use verify or run' ;; esac
 source_path=scripts/maat/admitted-run.py
 
-if [[ ${GITHUB_REF:-} == refs/tags/v0.24.164 || ${BUILD_VERSION:-} == 0.24.164 ]]; then
-    [[ ${GITHUB_REF:-} == refs/tags/v0.24.164 && ${BUILD_VERSION:-} == 0.24.164 ]] || fail 'v164 tag/version disagree'
+if [[ ${GITHUB_REF:-} == refs/tags/v0.24.164 || ${GITHUB_REF:-} == refs/tags/v0.24.165 || ${BUILD_VERSION:-} == 0.24.164 || ${BUILD_VERSION:-} == 0.24.165 ]]; then
+    [[ ${GITHUB_REF:-} == "refs/tags/v${BUILD_VERSION:-}" && ( ${BUILD_VERSION:-} == 0.24.164 || ${BUILD_VERSION:-} == 0.24.165 ) ]] || fail 'protected native tag/version disagree'
     [[ ${PANTHEON_RUNNER_NAME:-} == m1-pantheon && ${PANTHEON_RUNNER_OS:-} == macOS && ${PANTHEON_RUNNER_ARCH:-} == ARM64 ]] || fail 'v164 qualified runner context required'
     [[ $(/usr/bin/uname -s) == Darwin && $(/usr/bin/uname -m) == arm64 && $(/usr/sbin/sysctl -n hw.model) == MacBookPro18,1 ]] || fail 'v164 native M1 required'
     [[ $HOME == /Users/sirsimasterdev && $(/usr/bin/id -u) == 501 && $(/usr/bin/id -ru) == 501 ]] || fail 'v164 enrolled runner account required'

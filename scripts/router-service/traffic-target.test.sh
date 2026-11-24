@@ -53,6 +53,16 @@ MOCK
 cat >"$tmp/bin/go" <<'MOCK'
 #!/usr/bin/env bash
 touch "$BUILD_DONE"
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = -o ]; then
+    printf '#!/bin/sh\nexit 0\n' >"$2"
+    chmod 0700 "$2"
+    exit 0
+  fi
+  shift
+done
+echo 'mock build omitted -o' >&2
+exit 88
 MOCK
 chmod +x "$tmp/bin/git" "$tmp/bin/go"
 SERVICE='{"metadata":{"name":"sirsi-router"},"status":{"traffic":[{"revisionName":"current","percent":100}]}}'

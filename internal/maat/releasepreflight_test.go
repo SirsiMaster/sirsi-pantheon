@@ -131,6 +131,10 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	// changes (verified + published but no marker = exit 9, not FAILED/exit 1).
 	// No copied script is executed. Future route changes must deliberately
 	// update this provenance and the observer together.
+	// The v165 native continuation reuses the exact enrolled v164 pair and
+	// preserves legacy keychain checks while excluding their execution and
+	// imported signing secrets for the protected v165 route. Its reviewed
+	// workflow bytes and causal route/retry/CI fixtures are pinned deliberately.
 	pinned := map[string]string{
 		"cmd/sirsi/update.go":                  "6afdb9391a36adf4d1ca46d630bdeaa863f04002c4923ece204e41dafef09567",
 		"cmd/sirsi/update_app_darwin.go":       "bf03bf0ebba9c49b65382ecbaa2f0e35dd38f773a56722e2ea54edba77fcfa0b",
@@ -139,7 +143,7 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
 		// Keep both reviewed source digests exact; changes require deliberate
 		// provenance review while the negative contract controls remain in force.
-		".github/workflows/release.yml": "f897c8691981feb97e0d775d03f4bcfbeca07b1aa82fac87da597c9cb0a8d778",
+		".github/workflows/release.yml": "b2ce4acfcb3ce5eaed44179a62d2ef564632ac5348fed4eea05c123bcc1ce088",
 		"tools/signing/sirsi-sign":      "12829a2eda097571aa6d182ecb46328894e0e9390957649294898461107571ba",
 	}
 	for _, requirement := range releaseContractRequirements {
