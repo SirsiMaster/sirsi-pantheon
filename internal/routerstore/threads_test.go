@@ -12,16 +12,16 @@ func TestThreadMigrationIsCeilingAndUpgradesV15(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := MaxSupportedSchemaVersion(); got != 27 {
-		t.Fatalf("schema ceiling = %d, want 27", got)
+	if got := MaxSupportedSchemaVersion(); got != 28 {
+		t.Fatalf("schema ceiling = %d, want 28", got)
 	}
 	var version int
 	err = s.db.QueryRow(`PRAGMA user_version`).Scan(&version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 27 {
-		t.Fatalf("fresh schema = %d, want 27", version)
+	if version != 28 {
+		t.Fatalf("fresh schema = %d, want 28", version)
 	}
 	// Rewind v21's scope columns/indexes too (drop the index before the columns
 	// it references — SQLite errors "error in index ... after drop column"
@@ -36,6 +36,7 @@ func TestThreadMigrationIsCeilingAndUpgradesV15(t *testing.T) {
 		ALTER TABLE tasks DROP COLUMN project_id; ALTER TABLE tasks DROP COLUMN router_namespace;
 		ALTER TABLE items DROP COLUMN acked_at;
 		ALTER TABLE items DROP COLUMN first_claimed_at; -- v27 rewound too
+		ALTER TABLE tasks DROP COLUMN first_claimed_at; -- v28 rewound too
 		DROP INDEX idx_host_tokens_machine_id; ALTER TABLE host_tokens DROP COLUMN machine_id;
 		PRAGMA user_version=15;`)
 	if err != nil {

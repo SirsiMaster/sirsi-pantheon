@@ -844,6 +844,14 @@ CREATE INDEX IF NOT EXISTS idx_maat_decisions_host_time ON maat_decisions(produc
 	{27, `
 ALTER TABLE items ADD COLUMN first_claimed_at TEXT NOT NULL DEFAULT '';
 `},
+	// v28 — durable "was started" witness on tasks. Set ONCE by the two task
+	// claim UPDATEs (ClaimTask, resume-claim) and never rewritten or cleared:
+	// ResetTaskAttempts zeroes attempts, so attempts alone cannot say a task was
+	// ever started. '' = no recorded first claim. No backfill: rows claimed
+	// before v28 stay '' and keep counting through attempts>0 / in-progress.
+	{28, `
+ALTER TABLE tasks ADD COLUMN first_claimed_at TEXT NOT NULL DEFAULT '';
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite

@@ -288,6 +288,10 @@ ALTER TABLE items ADD COLUMN IF NOT EXISTS acked_at TEXT NOT NULL DEFAULT '';
 -- the claim UPDATEs (CASE WHEN first_claimed_at='' ...), never by renew/start/
 -- requeue; no backfill, so rows claimed before v27 stay '' and are excluded.
 ALTER TABLE items ADD COLUMN IF NOT EXISTS first_claimed_at TEXT NOT NULL DEFAULT '';
+-- v28 — durable "was started" witness on tasks. Written once by the task claim
+-- UPDATEs (CASE WHEN first_claimed_at='' ...), never cleared by reset-attempts,
+-- release or withdraw; no backfill, so rows claimed before v28 stay ''.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS first_claimed_at TEXT NOT NULL DEFAULT '';
 
 
 -- Which session holds each lease. A side table, not columns on items/tasks:
@@ -559,6 +563,6 @@ DO $$ BEGIN
 END $$;
 
 -- ── version — last, so a partial apply never publishes a version it does not have ──
-INSERT INTO schema_version(version, applied_at) VALUES (27, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 27, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 27;
+INSERT INTO schema_version(version, applied_at) VALUES (28, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 28, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 28;
