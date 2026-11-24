@@ -67,6 +67,28 @@ cmd/sirsi verbs ──► dispatch.Facade ──► routerstore.Store (interface
 
 ## Tests
 
+### Task eligibility diagnostics are row-only
+
+`TaskEligibility(agent, taskID)` has no caller/session argument. Its `claimable`
+and `dispatchable` booleans retain their existing task-row predicates; neither
+means that a particular caller can claim or execute. New responses explicitly
+carry `scope: "task-row"` and `caller_evaluation: "not-evaluated"`. The default
+reason no longer promises that a lane's claim would succeed.
+
+`sirsi router task why` prints this boundary before its row verdict. Missing,
+partial or unrecognized metadata from an older service is unknown-scope; the CLI
+warns that caller/session eligibility is not confirmed rather than inferring
+authorization. JSON retains the received flags/metadata, including empty metadata
+for legacy responses, without a plain-text warning contaminating the JSON.
+
+This is an additive read-model/presentation change. No new RPC/signature/schema,
+authorization preview, claim attempt, session mutation, grant, reset or guard
+relaxation is involved. Service auth and actual claim/session fences remain
+separate and unchanged. This diagnostic change is not the M5 caller-binding
+repair: that operational recovery is documented separately. Current-main source
+verification must name the exact composed tree; old-base focused passes do not
+qualify a successor composition. No installed fix is claimed.
+
 ### Fenced task withdrawal
 
 `WithdrawTaskLease` binds a withdrawal to the live task token and authenticated

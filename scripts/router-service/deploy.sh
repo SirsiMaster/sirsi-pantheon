@@ -27,7 +27,7 @@ read -r CPU MEM CONC MIN MAX <<<"$(sed 's/[a-z]*=//g' <<<"$SIZE")"
   --set-secrets="SIRSI_ROUTER_SERVE_TOKEN=sirsi-router-bootstrap-token:latest,SIRSI_ROUTER_STORE=sirsi-router-service-dsn:latest,SIRSI_ROUTER_GITHUB_TOKEN=ADMIN_GITHUB_PAT:latest" \
   --args="router,serve" \
   --min-instances="$MIN" --max-instances="$MAX" --cpu="$CPU" --memory="$MEM" --concurrency="$CONC" --timeout=90 \
-  --labels=adr=062,workstream=router-service
+  --labels="adr=062,workstream=router-service,source=$(git rev-parse --short=8 HEAD)"
 # --allow-unauthenticated: nodes authenticate with per-host bearer tokens inside the service (rs-10/11);
 # Cloud Run IAM would require a Google identity on every Mac, which the design rejects.
 URL=$(gcloud --project="$PROJECT" run services describe sirsi-router --region="$REGION" --format="value(status.url)")

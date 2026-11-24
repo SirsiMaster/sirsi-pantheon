@@ -128,7 +128,14 @@ sirsi router task complete <agent> <task-id> --lease <token> --receipt pr:SirsiM
 - **Bound.** Repos must belong to an allowed GitHub owner (`SirsiMaster` by
   default, `routerstore.ReceiptRepoOwners`); empty, `.` and `..` path segments are
   refused; and one receipt proves one task — a receipt already recorded for
-  another task is refused.
+  another task is refused. **One exception:** a `pr:` receipt already used by
+  another task is accepted again when the router, reading the PR from GitHub
+  itself, finds the PR merged and its description naming this exact task id as
+  `Task `<id>``, `Task <id>` or `Closes task <id>` (whole id, any case for the
+  word "task"; `foo` does not match `foo-bar` or `xfoo`). A description edited
+  at or after the merge, or metadata the router cannot read, refuses with the
+  usual "already used" message. `ci:`, `tag:` and `maat:` receipts stay
+  single-use.
 - **Ma'at exit outcome.** A release only carries an exit status when it is made
   with `sirsi maat release <id> --exit-code N`. Until the launcher
   (`sirsi-maat-run`) passes it, `maat:` receipts are refused as unverifiable.

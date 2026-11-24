@@ -111,3 +111,17 @@ the full and summary views.
 - **ADR-026** — the design (`docs/ADR-026-HORUS-OPS-DASHBOARD.md`).
 - **R4 inventory** — what the read-model aggregates
   (`docs/HORUS_OPS_READMODEL_R4_INVENTORY.md`).
+
+Thread listing does not retire or import registry records. It can therefore show
+an active record whose process is no longer alive; stale indicators are not a
+reconciliation. For an intentional local lifecycle sweep, use `sirsi thread sweep
+--agent <agent-id>`; `--all` explicitly selects every agent on this host. The
+command changes thread state and reports dead and superseded results separately;
+`--json` also reports either sweep error and exits unsuccessfully on an error.
+An empty canonical store is shown as empty, without importing a legacy file.
+An explicit local SQLite store is opened without creating or migrating it;
+normal remote authentication and transport behavior still applies. Older
+installed versions may still sweep during `thread list`, including JSON and
+agent-filtered calls. Upgrade and verify the executing binary before relying on
+the new behavior. Other lifecycle commands and independently running consumers
+can still reconcile threads; this change does not disable them.

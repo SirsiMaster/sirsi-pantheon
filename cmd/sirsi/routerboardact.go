@@ -30,15 +30,16 @@ type boardLedger interface {
 // board cannot hold one for another lane (routerstore ledgerEdits). sign-off and cancel-task are the owner's
 // own terminal word on a task, with a required reason; sign-off records an owner receipt, cancel never counts as done.
 type boardAct struct {
-	ID          string  `json:"id"`          // router item id
-	To          string  `json:"to"`          // reassign-item target agent
-	Note        string  `json:"note"`        // close result / reassign note
-	Agent       string  `json:"agent"`       // task agent
-	TaskID      string  `json:"task_id"`     // task id
-	Subject     string  `json:"subject"`     // add-task / convert / update-task
-	Status      string  `json:"status"`      // update-task: pending | blocked
-	Responsible string  `json:"responsible"` // add-task / update-task / reassign-task
-	BlockedBy   *string `json:"blocked_by"`  // update-task; "" clears
+	ID            string  `json:"id"`             // router item id
+	To            string  `json:"to"`             // reassign-item target agent
+	Note          string  `json:"note"`           // close result / reassign note
+	Agent         string  `json:"agent"`          // task agent
+	TaskID        string  `json:"task_id"`        // task id
+	Subject       string  `json:"subject"`        // add-task / convert / update-task
+	Status        string  `json:"status"`         // update-task: pending | blocked
+	Responsible   string  `json:"responsible"`    // add-task / update-task / reassign-task
+	BlockedBy     *string `json:"blocked_by"`     // update-task; "" clears
+	ExpectedOwner string  `json:"expected_owner"` // verified sign-off binds the opening signed-in account
 }
 
 func runBoardAct(st boardLedger, actor, verb string, body []byte) (any, error) {
@@ -99,6 +100,14 @@ func runBoardAct(st boardLedger, actor, verb string, body []byte) (any, error) {
 		}
 		return ok(st.AddTask(routerstore.Task{Agent: a.Agent, TaskID: a.TaskID, Subject: a.Subject,
 			ResponsibleParty: a.Responsible, CommissionedBy: actor}))
+	case "sign-off-verified":
+		if err := need("agent", a.Agent, "task_id", a.TaskID, "note", a.Note, "expected_owner", a.ExpectedOwner); err != nil {
+			return nil, err
+		}
+		if a.ExpectedOwner != actor || len(a.Agent) > 200 || len(a.TaskID) > 200 || len(a.Note) > 16000 {
+			return nil, fmt.Errorf("board: verified completion input or owner changed")
+		}
+		return ok(st.CompleteTaskByOwner(a.Agent, a.TaskID, actor, a.Note))
 	case "sign-off", "cancel-task":
 		if err := need("agent", a.Agent, "task_id", a.TaskID, "note", a.Note); err != nil {
 			return nil, err
