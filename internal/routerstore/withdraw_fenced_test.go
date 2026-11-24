@@ -307,3 +307,32 @@ func TestWithdrawTaskLeaseOppositeDirectionsSerialize(t *testing.T) {
 		t.Fatalf("success=%d refused=%d", success, refused)
 	}
 }
+
+func TestWithdrawTaskLeaseEnforcesRegisteredClaimSession(t *testing.T) {
+	var logs strings.Builder
+	store, clients := ruleHarness(t, "enforce", &logs)
+	backend := store.(*SQLiteStore)
+	for _, id := range []string{"old", "next"} {
+		if err := backend.AddTask(Task{Agent: "lane", TaskID: id, Subject: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	owner := clients("lane", "owner-thread")
+	register(t, backend, "owner-thread", "lane", owner.host, "active", owner.now())
+	lease, err := owner.ClaimTask("lane", "old", "worker", "owner-thread", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := clients("lane", "other-thread")
+	register(t, backend, "other-thread", "lane", other.host, "active", other.now())
+	if err = other.WithdrawTaskLease("lane", "old", lease.Token, "lane/next", "forged", "dup"); !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("other registered thread spent token: %v", err)
+	}
+	if err = owner.WithdrawTaskLease("lane", "old", lease.Token, "lane/next", "forged", "dup"); err != nil {
+		t.Fatalf("owner denied: %v", err)
+	}
+	row, err := backend.GetTask("lane", "old")
+	if err != nil || row.Status != "withdrawn" {
+		t.Fatalf("row=%+v err=%v", row, err)
+	}
+}
