@@ -248,7 +248,11 @@ func (s *SQLiteStore) ResumeTaskClaim(ctx context.Context, req TaskResumeRequest
 		if err != nil {
 			return err
 		}
-		if n, err := res.RowsAffected(); err != nil || n != 1 {
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err // driver failure: a store fault, stays HTTP 500
+		}
+		if n != 1 {
 			return fmt.Errorf("%w: lost row CAS", ErrTaskResumeRefused)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO lease_sessions(kind,key,session) VALUES('task',?,?) ON CONFLICT(kind,key) DO UPDATE SET session=excluded.session`, a.Agent+"/"+req.TaskID, a.SessionID); err != nil {
