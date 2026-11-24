@@ -122,6 +122,24 @@ func TestAnswerHandoffFailClosedControls(t *testing.T) {
 		t.Fatal("busy owner overridden")
 	}
 }
+func TestAnswerHandoffGenericStateAccessRefused(t *testing.T) {
+	s := openBackendStore(t, filepath.Join(t.TempDir(), "handoff-generic.db"))
+	defer s.Close()
+	a, lead, _, _ := answerFixture()
+	if e := s.CreateAnswerAssignment(a.Lane, lead, "source", 60); e != nil {
+		t.Fatal(e)
+	}
+	key := answerStatePrefix + a.Lane
+	if e := s.SetState(key, `{}`); e == nil {
+		t.Fatal("generic SetState overwrote single-answerer authority")
+	}
+	if _, e := s.CompareAndSwapState(key, "", false, `{}`); e == nil {
+		t.Fatal("generic CompareAndSwapState overwrote single-answerer authority")
+	}
+	if _, _, e := s.GetState(key); e == nil {
+		t.Fatal("generic GetState inspected single-answerer candidate identity")
+	}
+}
 func TestAnswerHandoffTransactionCASAndRollback(t *testing.T) {
 	s := openBackendStore(t, filepath.Join(t.TempDir(), "handoff.db"))
 	defer s.Close()
