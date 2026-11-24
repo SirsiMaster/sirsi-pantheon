@@ -5,7 +5,7 @@ import Darwin
 // function. Bind the latter explicitly so this stays an FD-held lock rather
 // than falling back to a stale path/PID marker.
 @_silgen_name("flock")
-private func lockFileDescriptor(_ descriptor: Int32, _ operation: Int32) -> Int32
+func lockFileDescriptor(_ descriptor: Int32, _ operation: Int32) -> Int32
 
 // MenubarInstanceLease keeps exactly one modern Pantheon menubar process alive
 // for this macOS user. It is intentionally local to the user environment: a
