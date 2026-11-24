@@ -1,1 +1,0 @@
-- `scripts/router-service/deploy.sh` now sets the Cloud Run `source` label to the deployed commit (`git rev-parse --short=8 HEAD`, the same HEAD `stage.sh` requires clean and builds). No script ever wrote that label, so every revision kept the value set once out of band (`d7e1a505`) and carried forward.
