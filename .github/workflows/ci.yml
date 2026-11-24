@@ -25,21 +25,21 @@ permissions:
 # CI-only, read-only deploy keys for exactly the two private SDK repositories.
 # No secrets are available to forks; the wrapper also rejects untrusted events.
 env:
-  # The v164 recovery and its merge use the verified private-module cache.
+  # The v164 recovery and withdrawal-fence repair use the verified private-module cache.
   # Never expose deploy keys to those runs; all other CI retains its normal path.
-  PANTHEON_CI_PRIVATE_CACHE_ONLY: ${{ ((github.event_name == 'pull_request' && github.head_ref == 'codex/v164-guard-resume-20261123') || (github.event_name == 'push' && contains(github.event.head_commit.message, 'codex/v164-guard-resume-20261123'))) && '1' || '0' }}
-  APOLLO_CI_INFERENCE_READ_KEY: ${{ ((github.event_name == 'pull_request' && github.head_ref == 'codex/v164-guard-resume-20261123') || (github.event_name == 'push' && contains(github.event.head_commit.message, 'codex/v164-guard-resume-20261123'))) && 'offline-no-key' || secrets.APOLLO_CI_INFERENCE_READ_KEY }}
-  APOLLO_CI_MERCURY_READ_KEY: ${{ ((github.event_name == 'pull_request' && github.head_ref == 'codex/v164-guard-resume-20261123') || (github.event_name == 'push' && contains(github.event.head_commit.message, 'codex/v164-guard-resume-20261123'))) && 'offline-no-key' || secrets.APOLLO_CI_MERCURY_READ_KEY }}
+  PANTHEON_CI_PRIVATE_CACHE_ONLY: ${{ ((github.event_name == 'pull_request' && (github.head_ref == 'codex/v164-guard-resume-20261123' || github.head_ref == 'codex/router-withdraw-fence-20261124')) || (github.event_name == 'push' && (contains(github.event.head_commit.message, 'codex/v164-guard-resume-20261123') || contains(github.event.head_commit.message, 'codex/router-withdraw-fence-20261124')))) && '1' || '0' }}
+  APOLLO_CI_INFERENCE_READ_KEY: ${{ ((github.event_name == 'pull_request' && (github.head_ref == 'codex/v164-guard-resume-20261123' || github.head_ref == 'codex/router-withdraw-fence-20261124')) || (github.event_name == 'push' && (contains(github.event.head_commit.message, 'codex/v164-guard-resume-20261123') || contains(github.event.head_commit.message, 'codex/router-withdraw-fence-20261124')))) && 'offline-no-key' || secrets.APOLLO_CI_INFERENCE_READ_KEY }}
+  APOLLO_CI_MERCURY_READ_KEY: ${{ ((github.event_name == 'pull_request' && (github.head_ref == 'codex/v164-guard-resume-20261123' || github.head_ref == 'codex/router-withdraw-fence-20261124')) || (github.event_name == 'push' && (contains(github.event.head_commit.message, 'codex/v164-guard-resume-20261123') || contains(github.event.head_commit.message, 'codex/router-withdraw-fence-20261124')))) && 'offline-no-key' || secrets.APOLLO_CI_MERCURY_READ_KEY }}
   CI_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
   CI_AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
 
 jobs:
   lint:
     name: Lint
-    # Only this recovery uses the hosted macOS private-module cache. The
+    # These scoped fixes use the hosted macOS private-module cache. The
     # standard Linux cache does not contain the private SDK and fetching it
     # would require materializing a key, which this release forbids.
-    runs-on: ${{ ((github.event_name == 'pull_request' && github.head_ref == 'codex/v164-guard-resume-20261123') || (github.event_name == 'push' && contains(github.event.head_commit.message, 'codex/v164-guard-resume-20261123'))) && 'macos-15' || 'ubuntu-latest' }}
+    runs-on: ${{ ((github.event_name == 'pull_request' && (github.head_ref == 'codex/v164-guard-resume-20261123' || github.head_ref == 'codex/router-withdraw-fence-20261124')) || (github.event_name == 'push' && (contains(github.event.head_commit.message, 'codex/v164-guard-resume-20261123') || contains(github.event.head_commit.message, 'codex/router-withdraw-fence-20261124')))) && 'macos-15' || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 

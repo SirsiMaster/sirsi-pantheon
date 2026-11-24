@@ -1,1 +1,2 @@
 - Allow a task's authenticated lease holder to withdraw duplicate work with a live fence, while serializing successor validation and refusing expired leases.
+- Run this repair's protected checks without materializing private SDK deploy keys.
