@@ -1,4 +1,68 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
+# Current composition: release route328ba6d passed normal deep107 packages and
+# remote exact-head verification; packaging8f05e61 passed4 new+2 existing
+# fixtures and real static builds in a normal .git-directory clone. Both fixes
+# are composed here; this new head still needs its own checks/publication/CI.
+# Earlier candidate notes below are retained historical states, not new claims.
+# Composed e212a9e checks now pass21 release/commercial+4 context fixtures,
+# both staging fixtures and targeted Go preflight; fresh Sonnet SOURCE_ACCEPT.
+# Normal publication and exact-head hosted CI/deployment remain outstanding.
+# Nov24 v165 protected native continuation source: explicitly select the existing
+# pinned v164 runtime/signer and secret-free/no-npm artifact scope for v165;
+# mismatched ref/version cannot fall through to legacy. Original synthetic RED10
+# retained. Corrected tests/review/publication and real M1 source-bound readback
+# pending; no tag, signing, enrollment, keys or host adoption changed.
+# Qualification update: runtime71ef unchanged; final47084 synthetic19+contract
+# PASS, fresh exact-source Sonnet ACCEPT. OriginalRED10 and laterc89 test-harness
+# failure retained. SHA11:53 pinned M1 metadata accepted, not job/signing proof.
+# Normal publication/CI and actual artifact/cask acceptance remain required.
+# CI increment: both release-route suites now run unconditionally in existing
+# Lint; 20 focused fixtures plus the commercial contract passed on5ab2. Fixed
+# synthetic PATH does not inherit runner secrets/context. This composition on
+# reviewed signoff1c8 needs its own execution/review and normal publication.
+# Normal deep60693 publication failed on stale deliberate workflow test pin;
+# update only reviewed workflow SHA b2ce4acf and provenance, not observer policy
+# or negative controls. Preserve original failure; fresh full gate still owed.
+
+# Nov24 isolated service-context packaging repair on merged d8d56013/e917:
+# explicitly publish only binary0755 and copied public assets0644, preserving
+# private context0700 and unrelated private files0600; force buildvcs=true.
+# Actual inert-compiler RED cc45eac1: 4 tests/8 expected failures on d8 source;
+# GREEN cfbd113a: 4 tests PASS on repair, no skips. Fresh own M5 native CPU1
+# executions, canonical released outcomes1/0. Real compile/VCS stamping,
+# container startup and deployment remain unqualified. Parent source-accepted
+# exact64505/63b70 and authorized clean real compilation. Both existing staging
+# Go mocks now create only the named inert executable0700; all prior guards
+# remain. Fresh b249ed76 passed the4 new tests plus staged-tag/traffic-target
+# fixtures; clean-commit offline static compilation is the next qualification.
+# Original failed stage/image receipts preserved; no cloud/installed/policy change.
+# Go1.26.11 silently omits VCS data in linked worktrees even with buildvcs=true;
+# normal clone+exact embedded revision/modified=false checks are required by
+# the publisher. No failed revision was promoted; old service remains100%.
+# Nov24 production completion-policy candidate: embeds newly authored protocol,
+# exact item/required commands/classification, fixed launcher and independent
+# physical Git boundary. Initial helper-selector RED/GREEN and upward-Git RED
+# retained; corrected31af21root44sub PASS0testskip (entryfixture no-test package).
+# Current-main349 composition retains exact runtime/test blobs; normal full
+# publication, standalone distribution and owner-readable mirrors still pending.
+# No historical152, system-library provenance or atomic canon snapshot claim.
+# Nov24 verified idle owner sign-off candidate: shared board gains one exact-task
+# evidence form using existing IAP/editor authority, explicit opening-account
+# binding and single-attempt uncertainty handling. Owner completion must refuse
+# every retained custody field atomically, including expired/malformed state.
+# Authored synthetic controls UNRUN; no deployment, task completion or historical
+# admission backfill is implied. Original rootguard evidence separately accepted.
+# Qualification update: signoffbc9 actual19root34subGo+13NodePASS0skip; detector0;
+# synthetic desktop/mobile onePOST/focus-inside confirmed, fresh Sonnet finish
+# disposition ship for UI extension only. Publication/CI/deployment still owed.
+# PR1441 mergedb696, standalonebb2c698 restored/check-contractPASS; old installed
+# v162 exact-item incompatibility remains separately tracked, no CLI adoption.
+# Nov22 combined TaskWhy diagnostic+inert thread-watch fixture source onmain7e56.
+# Ten non-memory paths match reviewed baca(8) and4b757(2) blobs exactly. THIS
+# COMPOSITION UNRUN; separatebaca5+13/red6/staticpass andfixture5/red1 packets
+# are not combined-runtime proof. No claim/service/install guard changed.
+# Full gates/race, formal validator custody and publication remain open;
+# ReadingRoom/Workspace mirrors unpublished. Root105/retentionHOLD separate.
 # 2026-11-08 isolated router-recipient-terminal candidate on main1ddd529: RecipientLoad excludes done+canceled, preserving age/lease/threshold checks. Guarded/raw fixture controls added; no tests/builds run, pending separate explicit SHA scope and fresh admission. Disjoint from Ma'at PR1375; no sends, bypass, deployment or product-completion claim. See journal 2026-11-08.
 # Current release preparation 2026-10-25: candidate0.24.137 derives from exact
 # Main1f227096/treea1977180 on public136eff2. Qualified976 normal/race names each,

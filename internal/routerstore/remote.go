@@ -36,6 +36,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SirsiMaster/sirsi-pantheon/internal/maat/schedule"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/machineid"
 )
 
@@ -43,6 +44,7 @@ import (
 // TestSentinelsRoundTrip pins the list.
 var sentinelErrors = map[string]error{
 	"ErrTaskResumeInput":      ErrTaskResumeInput,
+	"ErrTaskResumeRefused":    ErrTaskResumeRefused,
 	"ErrNotComplete":          ErrNotComplete,
 	"ErrBreakerOpen":          ErrBreakerOpen,
 	"ErrOverQuota":            ErrOverQuota,
@@ -74,6 +76,7 @@ var sentinelErrors = map[string]error{
 	"ErrWorkerAnswers":        ErrWorkerAnswers,
 	"ErrReceiptInvalid":       ErrReceiptInvalid,
 	"ErrReceiptUnverifiable":  ErrReceiptUnverifiable,
+	"ErrWaiterFirst":          schedule.ErrWaiterFirst,
 }
 
 // ErrServiceUnavailable is a transient service/database failure (HTTP 503):
@@ -101,6 +104,10 @@ func (e *wireSentinel) Unwrap() error { return e.sentinel }
 type wireError struct {
 	Name    string `json:"name,omitempty"`
 	Message string `json:"message"`
+	// Detail carries the structured payload of a typed refusal (today only
+	// *schedule.WaiterFirstError) so the client can rebuild it. Additive: old
+	// peers ignore it and still see the sentinel by Name.
+	Detail json.RawMessage `json:"detail,omitempty"`
 }
 
 type wireRequest struct {
@@ -559,6 +566,12 @@ func (rs *RemoteStore) do(ctx context.Context, method string, args []any, sess *
 	}
 	if wr.Error != nil {
 		if s, ok := sentinelErrors[wr.Error.Name]; ok {
+			if s == schedule.ErrWaiterFirst && len(wr.Error.Detail) > 0 {
+				var wf schedule.WaiterFirstError
+				if json.Unmarshal(wr.Error.Detail, &wf) == nil {
+					return &wf
+				}
+			}
 			// Keep the service's reason: a bare sentinel ("completion receipt
 			// invalid") hid whether the receipt was unmerged, unreadable or already used.
 			if msg := wr.Error.Message; msg != s.Error() && strings.Contains(msg, s.Error()) {

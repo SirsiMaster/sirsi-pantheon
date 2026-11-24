@@ -1,0 +1,1 @@
+- Embed versioned production completion policy, require exact item and contract-command declarations, refuse caller-selected helper and Git-root substitution, and provide explicit non-overwriting standalone export. Preserve actor/session/lease fences; declaration validation is not proof that tests or delivery occurred.

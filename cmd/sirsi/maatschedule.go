@@ -13,6 +13,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -91,6 +92,11 @@ func recordReservationDecision(req schedule.Reservation, result schedule.Reserve
 		if result.Conflict != nil {
 			decision.Affected = result.Conflict.Holder
 			decision.Evidence = "reservation:" + result.Conflict.ID
+		}
+		if result.Waiter != nil {
+			decision.Assessed = "a lane queued behind this holder is waiting"
+			decision.Why = "request queued behind the waiting lane (" + result.ReasonCode + ")"
+			decision.Affected = result.Waiter.Holder
 		}
 	default:
 		decision.Kind = "reservation refusal"
@@ -196,6 +202,16 @@ a cable; it is the rails.lock replacement.`,
 		}
 		res, err := l.Reserve(req, resQueue)
 		if err != nil {
+			// A waiter-first refusal under --json prints the structured reason on
+			// stdout (no reservation) and STILL returns the error: same exit 1 and
+			// stderr line an ordinary refusal has, so an old guard fails closed.
+			var wf *schedule.WaiterFirstError
+			if maatJSON && errors.As(err, &wf) {
+				_ = emitJSON(struct {
+					schedule.ReserveResult
+					Error string `json:"error"`
+				}{schedule.ReserveResult{ReasonCode: wf.ReasonCode, Waiter: &wf.Waiter}, err.Error()})
+			}
 			return err
 		}
 		// The router's grant is the authoritative outcome and is already
@@ -219,6 +235,8 @@ a cable; it is the rails.lock replacement.`,
 		switch {
 		case maatJSON:
 			_ = emitJSONWithJournalError(res, journalErr)
+		case res.Queued && res.Conflict == nil && res.Waiter != nil:
+			fmt.Printf("𓆄 QUEUED on %s: %s has been waiting since %s and goes next (%s)\n", req.Resource, res.Waiter.Holder, res.Waiter.QueuedAt, res.ReasonCode)
 		case res.Queued:
 			fmt.Printf("𓆄 QUEUED behind %s on %s (held until %s)\n", res.Conflict.Holder, req.Resource, orNow(res.Conflict.EstEnd))
 		case res.Reservation.Share == schedule.ShareFloor:

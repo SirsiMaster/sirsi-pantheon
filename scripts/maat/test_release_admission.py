@@ -42,7 +42,7 @@ class ReleaseAdmissionContract(unittest.TestCase):
         block = source.split('\n  publish-npm:\n', 1)[1]
         # Require the exact job-level full-ref fence, not a step-level skip.
         conditions = [line for line in block.splitlines() if line.startswith('    if:')]
-        self.assertEqual(conditions, ["    if: ${{ github.ref != 'refs/tags/v0.24.164' }}"])
+        self.assertEqual(conditions, ["    if: ${{ github.ref != 'refs/tags/v0.24.164' && github.ref != 'refs/tags/v0.24.165' }}"])
 
     def test_v164_protects_runtime_and_holds_before_draft(self):
         source = (ROOT / '.github/workflows/release.yml').read_text()

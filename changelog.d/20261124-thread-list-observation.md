@@ -1,0 +1,1 @@
+- `sirsi thread list` no longer retires or imports thread records as a side effect of listing. Intentional dead and superseded local-thread reconciliation is available through `sirsi thread sweep --agent <id>` or the explicitly broad `--all`; JSON reports partial results and errors. Older installed clients retain their old behavior until updated.

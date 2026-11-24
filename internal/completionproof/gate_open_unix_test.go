@@ -18,35 +18,32 @@ import (
 const completionProofFIFOChildEnv = "SIRSI_TEST_COMPLETION_PROOF_FIFO"
 
 func TestCaptureCompletionProofRegularFileAndSymlinkLeaf(t *testing.T) {
-	root := t.TempDir()
+	root := mustEval(t, t.TempDir())
 	proof := filepath.Join(root, "proof.json")
 	want := []byte(" {\"status\":\"completed\",\"blockers\":[]}\n\t")
 	if err := os.WriteFile(proof, want, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := captureCompletionProof(proof); err != nil || !bytes.Equal(got, want) {
+	if got, err := captureCompletionProof(root, "proof.json"); err != nil || !bytes.Equal(got, want) {
 		t.Fatalf("regular proof capture = %q, %v; want exact bytes %q", got, err, want)
 	}
 	link := filepath.Join(root, "proof-link.json")
 	if err := os.Symlink(proof, link); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := captureCompletionProof(link); err == nil || got != nil {
+	if got, err := captureCompletionProof(root, "proof-link.json"); err == nil || got != nil {
 		t.Fatalf("direct symlink leaf accepted: contents=%q error=%v", got, err)
 	}
-	// Caller-contained aliases remain supported through the existing resolver;
-	// the opener only refuses a symlink still present at the resolved leaf.
-	_, resolved, err := resolveProof(root, link)
-	if err != nil {
+	if err := os.Symlink(root, filepath.Join(root, "linked-parent")); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := captureCompletionProof(resolved); err != nil || !bytes.Equal(got, want) {
-		t.Fatalf("resolved caller proof capture = %q, %v; want exact bytes %q", got, err, want)
+	if got, err := captureCompletionProof(root, "linked-parent/proof.json"); err == nil || got != nil {
+		t.Fatal("symlink parent accepted")
 	}
 }
 
 func TestCaptureCompletionProofRejectsFIFOWithoutWriter(t *testing.T) {
-	proof := filepath.Join(t.TempDir(), "proof.fifo")
+	proof := filepath.Join(mustEval(t, t.TempDir()), "proof.fifo")
 	if err := unix.Mkfifo(proof, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -76,11 +73,77 @@ func TestCaptureCompletionProofFIFOChild(t *testing.T) {
 	if proof == "" {
 		return
 	}
-	contents, err := captureCompletionProof(proof)
+	contents, err := captureCompletionProof(filepath.Dir(proof), filepath.Base(proof))
 	if err == nil || !strings.Contains(err.Error(), "must be a regular file") {
 		t.Fatalf("FIFO was not refused at the regular-file check: %v", err)
 	}
 	if contents != nil {
 		t.Fatal("FIFO refusal returned proof contents")
+	}
+}
+
+func TestProofOpenerRejectsSubstitutedRootAndUnsafeComponents(t *testing.T) {
+	base := mustEval(t, t.TempDir())
+	root := filepath.Join(base, "root")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeTest(t, filepath.Join(root, "proof.json"), []byte(`{}`))
+	if err := os.Rename(root, root+"-original"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(root+"-original", root); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := openCompletionProof(root, "proof.json"); err == nil {
+		f.Close()
+		t.Fatal("substituted symlink root accepted")
+	}
+	for _, relative := range []string{"..", "../proof.json", "/proof.json", "x/../proof.json", ".", ""} {
+		if f, err := openCompletionProof(root+"-original", relative); err == nil {
+			f.Close()
+			t.Fatalf("unsafe relative path accepted: %q", relative)
+		}
+	}
+}
+
+func TestValidatorExportExactExclusiveAndNoFollow(t *testing.T) {
+	root := mustEval(t, t.TempDir())
+	path := filepath.Join(root, "validator.py")
+	if err := ExportValidator(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTest(t, path); string(got) != productionValidator {
+		t.Fatal("export bytes differ from embed")
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("export permissions: %v, %v", info, err)
+	}
+	if err := ExportValidator(path); err == nil {
+		t.Fatal("export overwrote existing file")
+	}
+	link := filepath.Join(root, "symlink.py")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := ExportValidator(link); err == nil {
+		t.Fatal("export followed leaf symlink")
+	}
+	parent := filepath.Join(root, "linked-parent")
+	if err := os.Symlink(root, parent); err != nil {
+		t.Fatal(err)
+	}
+	if err := ExportValidator(filepath.Join(parent, "new.py")); err == nil {
+		t.Fatal("export followed parent symlink")
+	}
+	if _, err := os.Stat(filepath.Join(root, "new.py")); !os.IsNotExist(err) {
+		t.Fatal("failed export created a file through symlink")
+	}
+	if err := ExportValidator(filepath.Join(root, "absent-parent", "new.py")); err == nil {
+		t.Fatal("export created parents")
+	}
+	if err := ExportValidator(""); err == nil {
+		t.Fatal("export guessed a destination")
 	}
 }

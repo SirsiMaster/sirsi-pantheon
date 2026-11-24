@@ -1,1 +1,0 @@
-- Guard signing verification accepts either adjacent 16 KiB `__LINKEDIT` virtual-size rounding when both Mach-O layouts are valid and every other byte is identical. The v0.24.164 failed run's retained input and output exposed the downward case; arbitrary size changes and other byte differences remain refused.

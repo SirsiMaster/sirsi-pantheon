@@ -222,12 +222,20 @@ func TestEveryDonePathIsGated(t *testing.T) {
 
 func TestOwnerSignOffAndCancel(t *testing.T) {
 	s := openTestStore(t)
-	claimed(t, s, "lane", "decide")
+	token := claimed(t, s, "lane", "decide")
 	if err := s.AddTask(Task{Agent: "lane", TaskID: "drop", Subject: "x"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.CompleteTaskByOwner("lane", "decide", "board:owner@sirsi.ai", ""); !errors.Is(err, ErrReasonRequired) {
 		t.Fatalf("owner done without reason: %v", err)
+	}
+	before := ownerSignOffSnapshot(t, s, "lane", "decide")
+	if err := s.CompleteTaskByOwner("lane", "decide", "board:owner@sirsi.ai", "must not settle worker claim"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("owner done while claimed: %v", err)
+	}
+	assertOwnerSignOffUnchanged(t, s, "lane", "decide", before)
+	if err := s.ReleaseTaskLease("lane", "decide", token, "worker explicitly yielded before owner review"); err != nil {
+		t.Fatal(err)
 	}
 	if err := s.CompleteTaskByOwner("lane", "decide", "board:owner@sirsi.ai", "decision recorded in chat"); err != nil {
 		t.Fatal(err)

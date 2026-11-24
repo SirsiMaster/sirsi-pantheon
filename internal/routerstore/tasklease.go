@@ -204,6 +204,22 @@ func (s *SQLiteStore) CompleteTaskLease(agent, taskID, token, resultRef string) 
 	if err != nil {
 		return err
 	}
+	err = s.completeTaskLeaseTx(agent, taskID, token, receipt, now, false)
+	var used *receiptUsedError
+	if receipt.Kind != "pr" || !errors.As(err, &used) {
+		return err
+	}
+	// The PR receipt is already another task's. The network check runs outside
+	// any transaction; the retry re-takes the fence and the receipt lock, so
+	// concurrent completions stay serialized.
+	if nerr := prNamesTask(receipt.Value, taskID); nerr != nil {
+		return &receiptUsedError{used.msg + "; shared use refused: " + nerr.Error()}
+	}
+	receipt.Reason = "shared: merged PR description names task " + taskID
+	return s.completeTaskLeaseTx(agent, taskID, token, receipt, now, true)
+}
+
+func (s *SQLiteStore) completeTaskLeaseTx(agent, taskID, token string, receipt Receipt, now time.Time, reuseOK bool) error {
 	tx, err := s.beginImmediate()
 	if err != nil {
 		return err
@@ -217,7 +233,7 @@ func (s *SQLiteStore) CompleteTaskLease(agent, taskID, token, resultRef string) 
 	if n, _ := res.RowsAffected(); n != 1 {
 		return ErrLeaseInvalid
 	}
-	if err = s.putReceiptTx(tx, agent, taskID, receipt); err != nil {
+	if err = s.putReceiptTx(tx, agent, taskID, receipt, reuseOK); err != nil {
 		return err
 	}
 	return tx.Commit()

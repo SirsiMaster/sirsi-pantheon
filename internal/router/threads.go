@@ -243,16 +243,31 @@ func LoadThreadRegistry(routerRoot string) (*ThreadRegistry, error) {
 	return LoadThreadRegistryContext(context.Background(), routerRoot)
 }
 func LoadThreadRegistryContext(ctx context.Context, routerRoot string) (*ThreadRegistry, error) {
+	return loadThreadRegistryContext(ctx, routerRoot, true)
+}
+
+// LoadThreadRegistryReadOnly never imports legacy records as a side effect of a read.
+func LoadThreadRegistryReadOnly(routerRoot string) (*ThreadRegistry, error) {
+	return loadThreadRegistryContext(context.Background(), routerRoot, false)
+}
+
+func loadThreadRegistryContext(ctx context.Context, routerRoot string, importLegacy bool) (*ThreadRegistry, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if routercfg.StoreWake() {
-		store, err := openThreadStore()
+		var store routerstore.Store
+		var err error
+		if importLegacy {
+			store, err = openThreadStore()
+		} else {
+			store, err = routerstore.ResolveReadOnlyLocal()
+		}
 		if err != nil {
 			return nil, err
 		}
 		defer store.Close()
-		return loadThreadRegistryStoreContext(ctx, routerRoot, store)
+		return loadThreadRegistryStoreContextWithImport(ctx, routerRoot, store, importLegacy)
 	}
 	return loadLegacyThreadRegistry(routerRoot)
 }
@@ -261,6 +276,9 @@ func loadThreadRegistryStore(routerRoot string, store routerstore.Store) (*Threa
 	return loadThreadRegistryStoreContext(context.Background(), routerRoot, store)
 }
 func loadThreadRegistryStoreContext(ctx context.Context, routerRoot string, store routerstore.Store) (*ThreadRegistry, error) {
+	return loadThreadRegistryStoreContextWithImport(ctx, routerRoot, store, true)
+}
+func loadThreadRegistryStoreContextWithImport(ctx context.Context, routerRoot string, store routerstore.Store, importLegacy bool) (*ThreadRegistry, error) {
 	list := func() ([]routerstore.ThreadRecord, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -276,7 +294,7 @@ func loadThreadRegistryStoreContext(ctx context.Context, routerRoot string, stor
 	if err != nil {
 		return nil, err
 	}
-	if len(records) == 0 {
+	if importLegacy && len(records) == 0 {
 		if legacy, legacyErr := loadLegacyThreadRegistry(routerRoot); legacyErr == nil && len(legacy.Threads) > 0 {
 			seed, seedErr := threadRecords(legacy)
 			if seedErr != nil {
@@ -1421,8 +1439,14 @@ type ReapedThread struct {
 // Returns the reaped records (empty if none). The registry is saved only when
 // at least one thread was reaped.
 func ReapDeadThreads(routerRoot string) ([]ReapedThread, error) {
+	return ReapDeadThreadsForAgent(routerRoot, "")
+}
+
+// ReapDeadThreadsForAgent restricts the existing machine-scoped sweep to agent;
+// an empty agent is the existing all-agent behavior.
+func ReapDeadThreadsForAgent(routerRoot, agent string) ([]ReapedThread, error) {
 	return retryOnLostFence(func() ([]ReapedThread, error) {
-		return reapDeadThreadsOnce(routerRoot)
+		return reapDeadThreadsOnce(routerRoot, agent)
 	})
 }
 
@@ -1435,8 +1459,8 @@ func threadReapMachineMatches(recordID, localID string, shared bool) bool {
 	return SameMachine(recordID, localID)
 }
 
-func reapDeadThreadsOnce(routerRoot string) ([]ReapedThread, error) {
-	reg, err := LoadThreadRegistry(routerRoot)
+func reapDeadThreadsOnce(routerRoot, agent string) ([]ReapedThread, error) {
+	reg, err := loadSweepRegistry(routerRoot, agent)
 	if err != nil {
 		return nil, err
 	}
@@ -1445,7 +1469,7 @@ func reapDeadThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 	thisMachine := MachineID()
 	shared := routercfg.StoreWake()
 	for _, t := range reg.Threads {
-		if t == nil || t.Status.IsTerminal() {
+		if t == nil || t.Status.IsTerminal() || (agent != "" && t.AgentID != agent) {
 			continue
 		}
 		// ADR-025: suspended is resumable, not dead. Its PID is EXPECTED to be
@@ -1554,13 +1578,18 @@ func isLiveWatcher(t *Thread) bool {
 // Returns the retired records (empty if none). The registry is saved only when at
 // least one record was retired.
 func ReapStrayThreads(routerRoot string) ([]ReapedThread, error) {
+	return ReapStrayThreadsForAgent(routerRoot, "")
+}
+
+// ReapStrayThreadsForAgent restricts both supersession passes to agent.
+func ReapStrayThreadsForAgent(routerRoot, agent string) ([]ReapedThread, error) {
 	return retryOnLostFence(func() ([]ReapedThread, error) {
-		return reapStrayThreadsOnce(routerRoot)
+		return reapStrayThreadsOnce(routerRoot, agent)
 	})
 }
 
-func reapStrayThreadsOnce(routerRoot string) ([]ReapedThread, error) {
-	reg, err := LoadThreadRegistry(routerRoot)
+func reapStrayThreadsOnce(routerRoot, agent string) ([]ReapedThread, error) {
+	reg, err := loadSweepRegistry(routerRoot, agent)
 	if err != nil {
 		return nil, err
 	}
@@ -1572,7 +1601,7 @@ func reapStrayThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 	// Pass 1: find the canonical live watcher per group (newest by last_seen).
 	live := map[groupKey]*Thread{}
 	for _, t := range reg.Threads {
-		if t == nil || !threadReapMachineMatches(t.MachineID, thisMachine, shared) {
+		if t == nil || (agent != "" && t.AgentID != agent) || !threadReapMachineMatches(t.MachineID, thisMachine, shared) {
 			continue
 		}
 		// Unknown liveness protects this record from retirement, but cannot
@@ -1607,7 +1636,7 @@ func reapStrayThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 		salvage []pendingSalvage
 	)
 	for _, t := range reg.Threads {
-		if t == nil || t.Status.IsTerminal() || !threadReapMachineMatches(t.MachineID, thisMachine, shared) {
+		if t == nil || t.Status.IsTerminal() || (agent != "" && t.AgentID != agent) || !threadReapMachineMatches(t.MachineID, thisMachine, shared) {
 			continue
 		}
 		anchor, ok := live[groupKey{t.AgentID, t.Surface}]
@@ -1644,6 +1673,15 @@ func reapStrayThreadsOnce(routerRoot string) ([]ReapedThread, error) {
 		}
 	}
 	return retired, nil
+}
+
+// A scoped sweep must not import other agents from a legacy registry.
+// Preserve the pre-existing import behavior for legacy all-agent callers.
+func loadSweepRegistry(routerRoot, agent string) (*ThreadRegistry, error) {
+	if agent != "" {
+		return LoadThreadRegistryReadOnly(routerRoot)
+	}
+	return LoadThreadRegistry(routerRoot)
 }
 
 // boilerplateResumePrompts are the auto-generated continuation strings that carry

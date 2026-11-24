@@ -1,7 +1,163 @@
 # 𓃣 Anubis Engineering Journal
+## Nov24 — composed source checkpoint
+
+Normal deep publication of328ba6d passed107 Go packages and unchanged gates,
+native7a6cf91/ownae829 RELEASED0,929.619seconds, exact remote head verified.
+Packaging8f05e61 has four new fixtures plus both existing staging fixtures
+passing and actual static builds with0755/0644 assets/private0700 context,
+exact clean VCS metadata. Go1.26.11 does not recognize linked-worktree gitfiles;
+the qualified normal .git-directory layout is required, not synthesized stamps.
+Compose these independently reviewed changes without modifying any Go file or
+the already reviewed v165 workflow. This new composition needs its own checks
+and publication. Earlier dated candidate notes below remain historical.
+
+Composed e212a9e qualification completed:21 release/commercial fixtures,4 context
+mode fixtures, both staging fixtures and targeted Go preflight passed; a fresh
+independent Sonnet source review accepted the composition. No Go or release
+workflow blob changed from the full-test-passed328 source. Normal publication
+and exact-head hosted checks remain required; no deployment pass is inferred.
+
+## Nov24 — v165 protected native continuation, unqualified source
+
+The v165 release preparation had merged, but the executing release workflow
+selected protected supervisor/signer preflight, secret-free delegated signing
+and npm exclusion only for v164. Before consuming any v165 tag or signing
+attempt, explicitly carry that narrow native-only route to v165. Reuse the exact
+enrolled root-owned v164 runtime, CLI/interpreter/supervisor pins and signer;
+do not invent another enrollment, copy keys, weaken modes or install anything.
+Mismatched refs/versions refuse rather than using the legacy supervisor.
+
+Actual unchanged-source causal controls failed10 assertions/subcases, including
+the real shell invoking a synthetic legacy tripwire for v165. That RED is not a
+product pass. Corrected source and controls still need independent review,
+admitted execution and normal protected publication. Actual M1 enrolled-pair
+readback, exact release-source CI and signing/artifact/cask receipts remain owed;
+SHA owns subsequent per-host adoption, not this source change.
+
+Qualification update: final47084 test/source snapshot passed19 focused fixtures
+and the commercial source contract. Twelve finite Sonnet facets inspected71ef
+runtime; one unsupported retry claim was rejected against the actual existing
+first-attempt build guard, with an additional causal mutant fixture. The first
+extra fixture c89 failed on its own subTest/assertRaises boundary; that failure
+is retained, and the corrected direct-assert helper passed fresh execution.
+A fresh exact47084 Sonnet review accepted the source. SHA's11:53 M1 metadata
+readback matches the unchanged pins/signer and was accepted only at that scope.
+No source publication, tag, signing, artifact or installed-adoption pass yet.
+
+CI integration now invokes both protected-route suites in the existing Lint job,
+without another runner, privilege or skip. Actual20 focused fixtures plus the
+commercial contract passed on5ab2. The subsequent synthetic-only fixed PATH
+avoids inheriting real runner context/secrets. Compose on reviewed signoff1c8;
+fresh combined-source fixtures, independent review and normal gates remain due.
+
+Normal deep publication of60693b6 failed at the deliberate release-workflow
+digest pin in Ma'at fixture construction; no remote push occurred. The exact
+reviewed workflow now pins b2ce4acf instead of the prior f897c869. Runtime
+observer needles and all missing-control/symlink/duplicate-publisher negatives
+remain unchanged. This is a deliberate provenance update, not a waived gate;
+fresh targeted and full normal publication checks remain required.
+
+## Nov24 — accepted context repair, existing fixture compatibility
+
+Parent SOURCE_ACCEPT bound64505/63b70 and authorized the two existing inert Go
+mock adaptations. Each now creates the exact -o executable with private0700
+mode; all traffic/tag/refusal assertions remain unchanged and the real builder
+still performs the chmod. Fresh own Native b249ed76 passed all4 new tests and
+both existing fixtures. No real compilation is claimed by these inert controls.
+
+This commit is the clean source boundary for the separately admitted Go1.26.11
+offline stage+board builds. Preserve actual embedded VCS metadata, exact modes
+and static ELF evidence; refusal must be diagnosed, never remove buildvcs=true.
+No Cloud Build, deployment, push or publication runs in this workstream.
+
+## Nov24 — private-umask service context repair
+
+The owner's original zero-traffic stage failed before application startup:
+root-owned COPY inputs created under umask077 were not accessible to the
+distroless nonroot user. Original native8a0db/own e46 and board artifact build
+metadata remain untouched. This isolated d8d56013/e917 repair uses exact-file
+0755/0644 publication modes and mandatory buildvcs=true in both builders.
+
+Fresh own native runs on M5 used a cooperative CPU1 mask, never a parent lease.
+Initial RED d19db369 failed4 expected checks. Strengthened RED cc45eac1 failed
+all8 binary/public-asset/VCS checks across4 tests on unchanged d8 source.
+GREEN cfbd113a passed4 tests with no skips; canonical exact-ID readbacks were
+released with exit1 and exit0 respectively. The compiler is explicitly inert:
+these runs prove mode handling and argv, not real VCS metadata or ELF startup.
+
+Parent source review and a clean-commit real compile remain next. Existing
+staged-tag/traffic-target fixtures have outputless Go mocks; minimal output-file
+adaptations were requested, not silently made outside the named file scope.
+No push, deployment, IAM/secret, installed CLI or service change was performed.
+
+## Nov24 — versioned production completion policy candidate
+
+Replace caller-selected external algorithm authority with newly authored
+embedded production Python, exact item/contract command and classification
+checks, bounded captured proof stdin, fixed launchers and nearest physical Git
+boundary. Keep existing actor/session/lease authorization unchanged. Explicit
+standalone export is non-overwriting and does not install or auto-trust a path.
+
+Old caller-helper selection and upward core.worktree bypass each have actual
+failing controls. Corrected31af targeted execution passed21root44sub tests,
+zero test skips; entryfixture is explicitly a no-test package. Source reviewed
+through twelve finite Sonnet facets; candidate composes onto main349. Full
+normal gates, source publication, standalone distribution and three-home sync
+are not implied by those focused results. Historical152, interpreter/library
+provenance and atomic contract/canon/proof snapshots remain separate.
+
+## Nov24 — verified idle owner sign-off candidate
+
+The shared hosted board withholds private task rows, leaving existing owner
+sign-off unavailable in its visible workflow. Extend the existing surface with
+one deliberate exact-task/evidence form rather than exposing enumeration or
+calling cancellation completion. New verified action binds the opening IAP
+owner; transport failures stay unconfirmed and are not automatically retried.
+
+Owner completion now uses the same final custody-empty predicate as cancellation,
+so a live, expired or malformed retained claim is never erased by sign-off.
+Existing editor/board-actor authorization and owner-tier receipt attribution
+remain unchanged. Source preparation and authored controls are not executed
+qualification, deployed behavior, original admission repair or whole-lane DONE.
+
+Qualification update: exact sign-off runtime/test tree bc9 passed19 root and34
+subtests plus13 Node tests with no skips; the detector returned no findings.
+Owned synthetic browser capture at desktop1280x900 and mobile390x844 confirmed
+one exact POST, retained evidence and in-dialog keyboard focus. Fresh independent
+Sonnet finish review returned ship at this UI-extension scope; normal publication,
+hosted CI, deployment and actual ledger actions remain separate.
+
+Completion policy PR1441 merged as b6968fd3 after full normal/hosted qualification;
+its approved standalone source bb2c698 was restored to the canonical tools path
+and passed check-contract. Older installed v162 still lacks the new exact-item
+argument and has not been replaced. Both histories are preserved in this merge.
+
 # Running commentary and insights — a documentary of the build process.
 # Each entry is timestamped with context and reasoning.
 # This is the "why" behind every decision.
+
+## 2026-11-22 — Combined diagnostic and inert-fixture candidate, unrun
+
+Classification: platform-foundation. Source composition on main7e56 applies the
+eight non-memory paths from TaskWhybaca and two from thread-watch fixture4b757,
+without changing their code/test/document blobs. Independent review of this
+composition and fresh exact-source qualification remain required. Separatebaca
+positive5+13, six diagnostic reds and pristine5+13 pass; subsequent full current-
+platform vet/lint pass under declared tooling/config. Separate fixture4b757 five
+positive tests, safe ambient-spy red and five pristine tests pass. Both packets
+were independently inspected, but none is silently promoted to this new tree.
+
+The row diagnostic remains additive metadata/presentation only; actual claim and
+session authorization is unchanged. Private inert launchctl is a test-helper
+boundary, not a product uninstall exception, service restart or proof of general
+hostile-code isolation. A temporary HOME alone did not isolate GUI launchd;
+the source-derived conditional risk was not an observed consumer incident.
+
+Remaining: combined-source review/testing/race and required full gates, approved
+completion-validator custody, normal source publication and three-home document
+access. No installed change, live job controller, counter-retention action or
+product completion is claimed. Root105 and its legacy canonical-outcome gap stay
+separate; no unrelated proof receipt may be substituted.
 
 ## 2026-11-08 — Isolated recipient terminal-task accounting candidate
 

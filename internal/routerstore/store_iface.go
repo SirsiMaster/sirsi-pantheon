@@ -176,7 +176,7 @@ type Store interface {
 	SetState(key, value string) error
 	SetWake(id, status, attemptedAt, adapter, wakeErr string) error
 	StartWork(id, token string) error
-	// TaskEligibility is the read-only "why would a claim be refused" diagnosis.
+	// TaskEligibility diagnoses row predicates only, not caller/session eligibility.
 	TaskEligibility(agent, taskID string) (TaskEligibility, error)
 	// RecordTaskLeaseEvent is server-side only — a lane never writes the
 	// task-lease audit log itself (mirrors RecordAudience).

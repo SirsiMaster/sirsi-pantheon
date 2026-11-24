@@ -81,7 +81,7 @@ jobs:
         run: |
           printf 'PANTHEON_RUNNER_NAME=%s\nPANTHEON_RUNNER_OS=%s\nPANTHEON_RUNNER_ARCH=%s\n' \
             "$BOUND_RUNNER_NAME" "$BOUND_RUNNER_OS" "$BOUND_RUNNER_ARCH" >> "$GITHUB_ENV"
-          if [[ "$GITHUB_REF" == refs/tags/v0.24.164 ]]; then
+          if [[ "$GITHUB_REF" == refs/tags/v0.24.164 || "$GITHUB_REF" == refs/tags/v0.24.165 ]]; then
             printf '%s\n' 'SIRSI_ROUTER_URL=spool:///var/sirsipantheon/relay' \
               'SIRSI_RELAY_TRUST_GROUP=_sirsipantheon' >> "$GITHUB_ENV"
           fi
@@ -112,13 +112,13 @@ jobs:
         run: python3 -B scripts/check-release-run-custody.py "$(git rev-parse "${GITHUB_SHA}^{commit}")"
 
       - name: Verify v164 release supervisor before reserving a draft
-        if: github.ref == 'refs/tags/v0.24.164' && github.run_attempt == 1
+        if: (github.ref == 'refs/tags/v0.24.164' || github.ref == 'refs/tags/v0.24.165') && github.run_attempt == 1
         env:
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
         run: /bin/bash scripts/maat/release-supervisor.sh verify
 
       - name: Verify v164 signer before reserving a draft
-        if: github.ref == 'refs/tags/v0.24.164' && github.run_attempt == 1
+        if: (github.ref == 'refs/tags/v0.24.164' || github.ref == 'refs/tags/v0.24.165') && github.run_attempt == 1
         run: |
           set -euo pipefail
           cmp -s "$HOME/sirsi-sign/bin/sirsi-signd.sh" tools/signing/sirsi-signd.sh || {
@@ -154,7 +154,7 @@ jobs:
 
       - name: Import Developer ID signing identities
         id: keychain_setup
-        if: github.run_attempt == 1 && github.ref != 'refs/tags/v0.24.164'
+        if: github.run_attempt == 1 && github.ref != 'refs/tags/v0.24.164' && github.ref != 'refs/tags/v0.24.165'
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -200,7 +200,7 @@ jobs:
           fi
 
       - name: Select v164 delegated signing client
-        if: github.run_attempt == 1 && github.ref == 'refs/tags/v0.24.164'
+        if: github.run_attempt == 1 && (github.ref == 'refs/tags/v0.24.164' || github.ref == 'refs/tags/v0.24.165')
         run: |
           set -euo pipefail
           SIGN_CLIENT="${GITHUB_WORKSPACE}/tools/signing/sirsi-sign"
@@ -209,7 +209,7 @@ jobs:
           echo "PANTHEON_SIGN_CLIENT=$SIGN_CLIENT" >> "$GITHUB_ENV"
 
       - name: Resolve enrolled or imported Developer ID identity
-        if: github.run_attempt == 1 && github.ref != 'refs/tags/v0.24.164'
+        if: github.run_attempt == 1 && github.ref != 'refs/tags/v0.24.164' && github.ref != 'refs/tags/v0.24.165'
         run: |
           set -euo pipefail
           KEYCHAIN="${PANTHEON_SIGNING_KEYCHAIN:?Signing keychain was not selected}"
@@ -225,7 +225,7 @@ jobs:
           echo "Resolved Developer ID Application identity using ${PANTHEON_SIGNING_MODE}."
 
       - name: Preflight imported Developer ID Installer identity
-        if: github.run_attempt == 1 && github.ref != 'refs/tags/v0.24.164'
+        if: github.run_attempt == 1 && github.ref != 'refs/tags/v0.24.164' && github.ref != 'refs/tags/v0.24.165'
         env:
           DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
         run: |
@@ -261,10 +261,10 @@ jobs:
           PANTHEON_BUILD_JOBS: "1"
           PANTHEON_APOLLO_CAPABILITY: disabled
           BUILD_VERSION: ${{ steps.version.outputs.VERSION }}
-          DEVELOPER_ID_INSTALLER: ${{ (github.ref != 'refs/tags/v0.24.164' && secrets.DEVELOPER_ID_INSTALLER) || '' }}
-          APPLE_ID: ${{ (github.ref != 'refs/tags/v0.24.164' && secrets.APPLE_ID) || '' }}
-          APPLE_TEAM_ID: ${{ (github.ref != 'refs/tags/v0.24.164' && secrets.APPLE_TEAM_ID) || '' }}
-          APPLE_APP_PASSWORD: ${{ (github.ref != 'refs/tags/v0.24.164' && secrets.APPLE_APP_PASSWORD) || '' }}
+          DEVELOPER_ID_INSTALLER: ${{ (github.ref != 'refs/tags/v0.24.164' && github.ref != 'refs/tags/v0.24.165' && secrets.DEVELOPER_ID_INSTALLER) || '' }}
+          APPLE_ID: ${{ (github.ref != 'refs/tags/v0.24.164' && github.ref != 'refs/tags/v0.24.165' && secrets.APPLE_ID) || '' }}
+          APPLE_TEAM_ID: ${{ (github.ref != 'refs/tags/v0.24.164' && github.ref != 'refs/tags/v0.24.165' && secrets.APPLE_TEAM_ID) || '' }}
+          APPLE_APP_PASSWORD: ${{ (github.ref != 'refs/tags/v0.24.164' && github.ref != 'refs/tags/v0.24.165' && secrets.APPLE_APP_PASSWORD) || '' }}
         run: |
           set -euo pipefail
           if [[ "${PANTHEON_SIGNING_EXECUTION:-}" != remote-service ]]; then
@@ -493,9 +493,9 @@ jobs:
 
   publish-npm:
     name: Publish thoth-init to npm (OIDC)
-    # The owner approved the three native artifacts and cask only for v164.
+    # The v165 continuation retains the approved native-artifact/cask-only scope.
     # Skip the entire job, including checkout and npm OIDC authorization.
-    if: ${{ github.ref != 'refs/tags/v0.24.164' }}
+    if: ${{ github.ref != 'refs/tags/v0.24.164' && github.ref != 'refs/tags/v0.24.165' }}
     runs-on: ubuntu-latest
     needs: release
     # Non-fatal: thoth-init publishing 404'd (package not yet claimed / OIDC

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -344,42 +345,71 @@ so undoing exhaustion undoes it too. A row genuinely blocked on a dependency
 	},
 }
 
-var taskWhyJSON bool
+var routerTaskWhyCmd = newTaskWhyCommand(openTaskFacade)
 
-var routerTaskWhyCmd = &cobra.Command{
-	Use: "why <agent> <task-id>", Args: cobra.ExactArgs(2),
-	Short: "Read-only: why a claim of this task would be refused (holder, lease expiry, attempts, dependency)",
-	Long: `Reports the fields the task list omits — claimed_by, thread, lease expiry, attempts
+// Per-command read resolver/flag state lets tests exercise the actual command
+// without a live service or mutable package-wide caller/session injection.
+func newTaskWhyCommand(open func() (*dispatch.Facade, error)) *cobra.Command {
+	var jsonOutput bool
+	cmd := &cobra.Command{
+		Use: "why <agent> <task-id>", Args: cobra.ExactArgs(2),
+		Short: "Read-only task-row diagnosis; caller/session eligibility is not evaluated",
+		Long: `Reports the fields the task list omits — claimed_by, thread, lease expiry, attempts
 against the ceiling, failure reason, and the blocked_by dependency's own state —
-and names every cause that blocks a claim. Never changes anything and never prints
-the lease token. Use it instead of probing with claim attempts.
+and names task-row conditions only. It does not evaluate whether a particular
+caller/session may claim. Claimable/dispatchable are row predicates, not permission
+or a guarantee of a successful claim. Existing service authorization still applies.
+Never changes anything and never prints the lease token. Older services without
+scope metadata are reported as unknown-scope, not caller-aware.
 
   sirsi router task why codex-finalwishes FW-RELEASE-ACCEPTANCE-WIRING-20261002`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		f, err := openTaskFacade()
-		if err != nil {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			f, err := open()
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			e, err := f.Store().TaskEligibility(args[0], args[1])
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(e)
+			}
+			return renderTaskEligibility(cmd.OutOrStdout(), e)
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit JSON")
+	return cmd
+}
+
+func renderTaskEligibility(out io.Writer, e routerstore.TaskEligibility) error {
+	scope := "unknown-scope"
+	if e.Scope == routerstore.TaskEligibilityScopeRow && e.CallerEvaluation == routerstore.TaskEligibilityCallerNotEvaluated {
+		scope = "task-row"
+		if _, err := fmt.Fprintln(out, "Scope: task-row only; caller/session eligibility is NOT EVALUATED. Row flags are not claim authorization."); err != nil {
 			return err
 		}
-		defer f.Close()
-		e, err := f.Store().TaskEligibility(args[0], args[1])
-		if err != nil {
+	} else {
+		if _, err := fmt.Fprintf(out, "WARNING: diagnostic scope is unknown or unsupported (scope=%q, caller_evaluation=%q); caller/session eligibility is NOT CONFIRMED. Reported flags and reasons are not claim authorization.\n", e.Scope, e.CallerEvaluation); err != nil {
 			return err
 		}
-		if taskWhyJSON {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(e)
+	}
+	verdict := "NOT claimable"
+	if e.Claimable {
+		verdict = "claimable"
+	}
+	if _, err := fmt.Fprintf(out, "%s/%s — %s %s (status %s, attempts %d/%d)\n", e.Agent, e.TaskID, scope, verdict, e.Status, e.Attempts, e.MaxAttempts); err != nil {
+		return err
+	}
+	for _, reason := range e.Reasons {
+		if _, err := fmt.Fprintf(out, "  • %s\n", reason); err != nil {
+			return err
 		}
-		verdict := "NOT claimable"
-		if e.Claimable {
-			verdict = "claimable"
-		}
-		fmt.Printf("%s/%s — %s (status %s, attempts %d/%d)\n", e.Agent, e.TaskID, verdict, e.Status, e.Attempts, e.MaxAttempts)
-		for _, r := range e.Reasons {
-			fmt.Printf("  • %s\n", r)
-		}
-		return nil
-	},
+	}
+	return nil
 }
 
 var routerTaskAddCmd = &cobra.Command{
@@ -557,7 +587,6 @@ func init() {
 	routerTaskReleaseCmd.Flags().StringVar(&taskLeaseReason, "reason", "", "Recoverable failure reason")
 	routerTaskReclaimExpiredCmd.Flags().BoolVar(&taskReclaimDryRun, "dry-run", false, "Report what would be reclaimed without writing")
 	routerTaskReclaimExpiredCmd.Flags().BoolVar(&ledgerJSON, "json", false, "Emit JSON")
-	routerTaskWhyCmd.Flags().BoolVar(&taskWhyJSON, "json", false, "Emit JSON")
 	routerTaskWithdrawCmd.Flags().StringVar(&taskWithdrawSupersededBy, "superseded-by", "", "<agent>/<task-id> of the task that carries this work (required)")
 	routerTaskWithdrawCmd.Flags().StringVar(&taskLeaseReason, "reason", "", "Why this task is withdrawn (required)")
 	routerTaskWithdrawCmd.Flags().StringVar(&taskLeaseToken, "lease", "", "Live fenced task lease token")

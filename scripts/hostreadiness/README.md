@@ -17,8 +17,12 @@ is always the latest observation.
 ## Retention
 
 `--history changes` (what the watch script passes) writes a run receipt under
-`receipts/<run-id>/` only when the admission state or the GUI lock state differs
-from `current.json`. A missing or unreadable `current.json` counts as a change.
+`receipts/<run-id>/` when the admission or GUI state, status or reason, or a distinct per-channel
+transport state and reason differs from `current.json`. Attempt order and timestamps
+do not create a transition. A missing, unreadable or malformed `current.json`
+counts as a change. Reasons can contain OS or SSH diagnostic text: history already
+stores full receipts, and retaining more distinct reasons can increase both private
+history and storage use. No pruning or bounded-retention policy is implied.
 `--history all` (the default) keeps the old behavior: one directory per run,
 about 1,440 a day. On the M1 that reached 96,740 directories (378 MB) between
 2026-08-28 and 2026-11-10.

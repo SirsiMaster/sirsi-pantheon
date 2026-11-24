@@ -8,12 +8,19 @@ import (
 	"time"
 )
 
-// TaskEligibility is a read-only answer to "why would a claim of this task be
-// refused?" It exposes the fields the supported task list omits (holder, lease
-// expiry, attempts, failure reason) and NEVER the lease token. Reasons names every
-// cause that currently blocks a claim, most decisive first, so a worker or an
-// auditor reads the refusal instead of probing it with claim attempts.
+const (
+	TaskEligibilityScopeRow           = "task-row"
+	TaskEligibilityCallerNotEvaluated = "not-evaluated"
+)
+
+// TaskEligibility is a read-only task-row diagnosis, not a caller/session claim
+// authorization preview. It exposes holder, expiry, attempts and failure reason,
+// NEVER the lease token. Reasons describe row conditions only. Empty scope or
+// caller-evaluation metadata from an older service means unknown; it must not
+// be treated as a caller verdict.
 type TaskEligibility struct {
+	Scope            string   `json:"scope"`
+	CallerEvaluation string   `json:"caller_evaluation"`
 	Agent            string   `json:"agent"`
 	TaskID           string   `json:"task_id"`
 	Status           string   `json:"status"`
@@ -28,15 +35,17 @@ type TaskEligibility struct {
 	Attempts         int      `json:"attempts"`
 	MaxAttempts      int      `json:"max_attempts"`
 	FailureReason    string   `json:"failure_reason"`
-	Claimable        bool     `json:"claimable"`
-	Dispatchable     bool     `json:"dispatchable"` // claimable AND the lane's own to do (what a wake loop may start a worker for)
+	Claimable        bool     `json:"claimable"`    // row predicate only; no caller/session evaluation
+	Dispatchable     bool     `json:"dispatchable"` // row predicate plus responsible party; not execution permission
 	Reasons          []string `json:"reasons"`
 }
 
-// TaskEligibility reads one task's claim eligibility without changing anything.
+// TaskEligibility has no caller/session context. It reads row predicates without
+// changing anything; service authorization and actual claim guards are separate.
 func (s *SQLiteStore) TaskEligibility(agent, taskID string) (TaskEligibility, error) {
 	agent, taskID = strings.TrimSpace(agent), strings.TrimSpace(taskID)
-	e := TaskEligibility{Agent: agent, TaskID: taskID, MaxAttempts: MaxRetriesPerItem}
+	e := TaskEligibility{Scope: TaskEligibilityScopeRow, CallerEvaluation: TaskEligibilityCallerNotEvaluated,
+		Agent: agent, TaskID: taskID, MaxAttempts: MaxRetriesPerItem}
 	var leaseToken string
 	err := s.db.QueryRow(`SELECT status,responsible_party,blocked_by,claimed_by,thread_id,lease_token,lease_expires,attempts,failure_reason
 		FROM tasks WHERE agent=? AND task_id=?;`, agent, taskID).
@@ -96,10 +105,10 @@ func (s *SQLiteStore) TaskEligibility(agent, taskID string) (TaskEligibility, er
 	e.Claimable = (e.Status == "pending" || e.Status == "in-progress") && depDone && !e.LeaseHeld && e.Attempts < MaxRetriesPerItem
 	e.Dispatchable = e.Claimable && (e.ResponsibleParty == "" || e.ResponsibleParty == "self" || e.ResponsibleParty == e.Agent)
 	if e.Claimable && !e.Dispatchable {
-		e.Reasons = append(e.Reasons, fmt.Sprintf("claimable, but responsible_party is %q: a wake loop will not start this lane's worker for it", e.ResponsibleParty))
+		e.Reasons = append(e.Reasons, fmt.Sprintf("task-row is claimable, but responsible_party is %q: a wake loop will not start this lane's worker for it", e.ResponsibleParty))
 	}
 	if len(e.Reasons) == 0 {
-		e.Reasons = []string{"no blocking cause: a claim by this lane would succeed"}
+		e.Reasons = []string{"row predicates only; caller/session eligibility is not evaluated"}
 	}
 	return e, nil
 }

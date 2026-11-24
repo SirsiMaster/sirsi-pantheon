@@ -13,7 +13,7 @@ import (
 // internal/brand (ADR-038) so the dashboard cannot drift from the CLI, menubar
 // and Swift app.
 //
-//go:embed ui/index.html ui/app.css ui/app.js ui/maat-history.js ui/fabric.js ui/ledger.js ui/board-actions.js ui/board-retire.js ui/sw.js ui/offline.html ui/manifest.webmanifest ui/consoleprobe.js
+//go:embed ui/index.html ui/app.css ui/app.js ui/maat-history.js ui/fabric.js ui/ledger.js ui/board-actions.js ui/board-retire.js ui/board-signoff.js ui/sw.js ui/offline.html ui/manifest.webmanifest ui/consoleprobe.js
 var uiFS embed.FS
 
 // handleHome serves the dashboard at exactly "/". The previous terminal-style page
@@ -43,6 +43,8 @@ func (s *Server) handleUIAsset(w http.ResponseWriter, r *http.Request) {
 		s.serveEmbedded(w, "ui/board-actions.js", "application/javascript; charset=utf-8")
 	case "/assets/board-retire.js":
 		s.serveEmbedded(w, "ui/board-retire.js", "application/javascript; charset=utf-8")
+	case "/assets/board-signoff.js":
+		s.serveEmbedded(w, "ui/board-signoff.js", "application/javascript; charset=utf-8")
 	case "/assets/maat-history.js":
 		s.serveEmbedded(w, "ui/maat-history.js", "application/javascript; charset=utf-8")
 	case "/assets/mercury.css":
