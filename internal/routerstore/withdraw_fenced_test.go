@@ -2,11 +2,47 @@ package routerstore
 
 import (
 	"errors"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// Exercise the actual least-privileged service role, not only the scratch
+// cluster's schema-owning test user.
+func TestWithdrawTaskLeasePostgresServiceRole(t *testing.T) {
+	if pgTestDSN() == "" {
+		t.Skip("PostgreSQL service-role check")
+	}
+	s := openTestStore(t)
+	for _, id := range []string{"old", "next"} {
+		if err := s.AddTask(Task{Agent: "lane", TaskID: id, Subject: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lease, err := s.ClaimTask("lane", "old", "worker", "thread", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsn, err := url.Parse(pgTestDSN())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsn.User = url.User("router_service")
+	service, err := OpenPostgres(dsn.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	if err = service.WithdrawTaskLease("lane", "old", lease.Token, "lane/next", "lane@host", "duplicate"); err != nil {
+		t.Fatalf("service-role fenced withdrawal: %v", err)
+	}
+	got, err := s.GetTask("lane", "old")
+	if err != nil || got.Status != "withdrawn" {
+		t.Fatalf("row=%+v err=%v", got, err)
+	}
+}
 
 func TestWithdrawTaskLeaseFenceAndSuccessor(t *testing.T) {
 	s := openTestStore(t)
