@@ -375,7 +375,8 @@ func (g *githubVerifier) verifyTag(ctx context.Context, value string) error {
 
 // CompleteTaskByOwner is owner sign-off for work with nothing to build. Over the
 // wire only the @ledger-editor board token may call it, for a board:<email>
-// actor its IAP check verified. Any live lease is released.
+// actor its IAP check verified. Any retained custody, even expired or malformed,
+// refuses atomically; the original claim must be reconciled before sign-off.
 func (s *SQLiteStore) CompleteTaskByOwner(agent, taskID, actor, reason string) error {
 	return s.ownerTerminal(agent, taskID, actor, reason, "done")
 }
@@ -514,10 +515,11 @@ func (s *SQLiteStore) ownerTerminal(agent, taskID, actor, reason, status string)
 	defer func() { _ = tx.Rollback() }()
 	ref := "owner:" + actor
 	guard := ""
-	if status == "canceled" {
+	if status == "canceled" || status == "done" {
 		// The final UPDATE is the fence, not an earlier UI read or status edit.
 		// A concurrent claim either wins first (this predicate refuses) or sees
-		// the committed terminal status and cannot claim. Unknown/expired lease
+		// the committed terminal status and cannot claim. Owner sign-off is not
+		// authority to settle another worker's claim. Unknown/expired lease
 		// fields are retained rather than interpreted as permission to interrupt.
 		guard = ` AND status IN ('pending','blocked','in-progress') AND lease_token='' AND lease_expires='' AND claimed_by='' AND thread_id=''`
 	}

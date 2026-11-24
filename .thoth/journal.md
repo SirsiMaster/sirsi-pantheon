@@ -15,6 +15,32 @@ normal gates, source publication, standalone distribution and three-home sync
 are not implied by those focused results. Historical152, interpreter/library
 provenance and atomic contract/canon/proof snapshots remain separate.
 
+## Nov24 — verified idle owner sign-off candidate
+
+The shared hosted board withholds private task rows, leaving existing owner
+sign-off unavailable in its visible workflow. Extend the existing surface with
+one deliberate exact-task/evidence form rather than exposing enumeration or
+calling cancellation completion. New verified action binds the opening IAP
+owner; transport failures stay unconfirmed and are not automatically retried.
+
+Owner completion now uses the same final custody-empty predicate as cancellation,
+so a live, expired or malformed retained claim is never erased by sign-off.
+Existing editor/board-actor authorization and owner-tier receipt attribution
+remain unchanged. Source preparation and authored controls are not executed
+qualification, deployed behavior, original admission repair or whole-lane DONE.
+
+Qualification update: exact sign-off runtime/test tree bc9 passed19 root and34
+subtests plus13 Node tests with no skips; the detector returned no findings.
+Owned synthetic browser capture at desktop1280x900 and mobile390x844 confirmed
+one exact POST, retained evidence and in-dialog keyboard focus. Fresh independent
+Sonnet finish review returned ship at this UI-extension scope; normal publication,
+hosted CI, deployment and actual ledger actions remain separate.
+
+Completion policy PR1441 merged as b6968fd3 after full normal/hosted qualification;
+its approved standalone source bb2c698 was restored to the canonical tools path
+and passed check-contract. Older installed v162 still lacks the new exact-item
+argument and has not been replaced. Both histories are preserved in this merge.
+
 # Running commentary and insights — a documentary of the build process.
 # Each entry is timestamped with context and reasoning.
 # This is the "why" behind every decision.
