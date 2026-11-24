@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [0.24.165] — 2026-11-24
 
+- Host-readiness change-only history retains changes in admission and GUI reasons and distinct SSH and screen-sharing probe state/reason signatures, while ignoring timestamps and attempt ordering. Existing history is not removed; variable diagnostic text may increase retained private history and storage. This is a source change; live deployment remains separate.
+
 - Upgrade the OpenTelemetry Go root, metric, and trace modules to v1.47.0 to address GHSA-q7gw-24fr-5p69 (CVE-2026-128085). Module resolution also selects otel/log v1.47.0 and logr v1.4.4; the application's Go language version is unchanged.
 
 - Ma'at: a lane waiting with `--queue` now goes before the same lane's next full hold on that resource (waiters first, ADR-120). The repeat request is queued behind the waiter or refused with reason code `waiter-first` (`waiter-bound` after 120 s, reachable only with a queued lease of 121-600 s); `sirsi maat reserve --json` names the waiter and still exits non-zero. The older queued row always keeps precedence (no cycle can starve the owed waiter), only an overlapping FULL grant counts as serving a waiter, and a queued row's lease is capped at 600 s. Only a lane that queues is protected.
