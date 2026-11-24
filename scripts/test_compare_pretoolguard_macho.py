@@ -24,6 +24,7 @@ class MachoIdentityTests(unittest.TestCase):
     def test_identical_and_exact_page_rounding_accept(self):
         self.assertEqual(module.compare(image(), image())['input_linkedit_vmsize'], 0x1235)
         self.assertEqual(module.compare(image(), image(0x4000))['output_linkedit_vmsize'], 0x4000)
+        self.assertEqual(module.compare(image(536002), image(524288))['output_linkedit_vmsize'], 524288)
 
     def test_unapproved_size_and_any_other_byte_refuse(self):
         candidates = [image(0x1236), image(0x8000), image(0x1000), image() + b'x']

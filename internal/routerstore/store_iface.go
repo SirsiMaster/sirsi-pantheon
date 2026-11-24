@@ -71,6 +71,8 @@ type Store interface {
 	// WithdrawTask retires the lane's own task in favor of supersededBy ("agent/task-id"); never done.
 	// actor is overwritten server-side with the authenticated session over the wire.
 	WithdrawTask(agent, taskID, supersededBy, actor, reason string) error
+	// WithdrawTaskLease uses the authenticated holder's unexpired task fence.
+	WithdrawTaskLease(agent, taskID, token, supersededBy, actor, reason string) error
 	Counters() (DispatchCounters, error)
 	// DeleteThreadCAS retires the exact ordinary row to a retained pruned key
 	// with empty user payload. Existing fences remain unchanged. True means

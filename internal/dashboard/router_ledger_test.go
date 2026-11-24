@@ -352,3 +352,26 @@ func TestEveryServedUIAssetIsEmbedded(t *testing.T) {
 		t.Fatalf("scan found too little (%d files, %d paths): the test lost its anchor", served, len(paths))
 	}
 }
+
+// Checking only registered routes misses scripts referenced by HTML but never
+// mounted. Exercise the real index and actual handler, not a list in this test.
+func TestEveryIndexScriptIsServed(t *testing.T) {
+	home, err := uiFS.ReadFile("ui/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := regexp.MustCompile(`<script src="(/assets/[^"]+)"`).FindAllStringSubmatch(string(home), -1)
+	if len(paths) < 6 {
+		t.Fatal("index script anchor lost")
+	}
+	s := New(Config{CloudBoard: true})
+	for _, path := range paths {
+		t.Run(path[1], func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			s.handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path[1], nil))
+			if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "javascript") {
+				t.Fatalf("script status=%d content-type=%s", rec.Code, rec.Header().Get("Content-Type"))
+			}
+		})
+	}
+}

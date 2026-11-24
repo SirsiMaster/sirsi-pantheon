@@ -83,7 +83,7 @@ var itemOwnership = map[string]int{
 
 // taskOwnership: method → indexes of (agent, taskID).
 var taskOwnership = map[string][2]int{
-	"CompleteTaskLease": {0, 1}, "ReleaseTaskLease": {0, 1}, "RenewTaskLease": {0, 1},
+	"CompleteTaskLease": {0, 1}, "ReleaseTaskLease": {0, 1}, "RenewTaskLease": {0, 1}, "WithdrawTaskLease": {0, 1},
 }
 
 const nonceWindow = 60 * time.Second
@@ -626,12 +626,16 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		in[3] = reflect.ValueOf(sess.Agent + "@" + sess.Host)
 	}
 	// A lane withdraws only its own task, and the audit names the authenticated session.
-	if name == "WithdrawTask" {
+	if name == "WithdrawTask" || name == "WithdrawTaskLease" {
 		if sess.Agent == "" || in[0].String() != sess.Agent {
 			writeErr(w, http.StatusForbidden, "ErrLaneScope", ErrLaneScope.Error()+": WithdrawTask is for the task's own lane session")
 			return
 		}
-		in[3] = reflect.ValueOf(sess.Agent + "@" + sess.Host)
+		actor := 3
+		if name == "WithdrawTaskLease" {
+			actor = 4
+		}
+		in[actor] = reflect.ValueOf(sess.Agent + "@" + sess.Host)
 	}
 	// The board names the signed-in account it verified through IAP; anything else is not an owner actor.
 	if ownerTerminals[name] {

@@ -1,5 +1,6 @@
 import datetime as dt
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -43,6 +44,26 @@ class Backend:
 
 
 class RegistryDeadlineTests(unittest.TestCase):
+
+    def test_explicit_protected_cli_never_resolves_a_home_alias(self):
+        with mock.patch.object(Path, 'home', return_value=Path('/fixture-home')):
+            self.assertEqual(runner.Native().cli, '/fixture-home/.local/bin/sirsi')
+            self.assertEqual(runner.Native(protected_cli=True).cli,
+                             '/usr/local/libexec/sirsi-pantheon/sirsi')
+
+    def test_protected_cli_requires_registered_explicit_fabric_before_any_work(self):
+        for flags in ([], ['--scope', 'fabric'], ['--register-executor'],
+                      ['--scope', 'local', '--register-executor'],
+                      ['--scope', 'fabric', '--register-executor', '--reconcile-local', 'fixture']):
+            with self.subTest(flags=flags), mock.patch.object(
+                    sys, 'argv', ['admitted-run.py', '--protected-cli', *flags]), \
+                    mock.patch.object(sys, 'stderr', new_callable=io.StringIO) as error, \
+                    mock.patch.object(runner, 'Native') as native:
+                with self.assertRaises(SystemExit) as caught:
+                    runner.main()
+                self.assertEqual(caught.exception.code, 2)
+                self.assertIn('Protected CLI selection requires explicit fabric scope', error.getvalue())
+                native.assert_not_called()
 
     def test_native_cpu_request_reaches_reservation(self):
         native = runner.Native()
