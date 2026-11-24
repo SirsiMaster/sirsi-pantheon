@@ -63,6 +63,28 @@ load and marks a quiet or loaded measurement contaminated. The result lists
 `floor_holders` (the lanes holding a live floor share at that moment) so you
 know whom to ask; this is co-presence, not a finding that they caused the load.
 
+### Waiting for a resource
+
+```bash
+sirsi maat reserve m5 --holder me --work cells --regime loaded --queue --wait 1800 --json
+```
+
+`--queue --wait <seconds>` stays attached. If the resource is free you get the
+grant at once; otherwise the command queues behind the holder, renews its queued
+row every few seconds, and prints the grant the moment the resource frees (the
+queued row becomes your grant, same id, window starting then). The grant is made
+by the router in one step, so two waiters can never both get it, and if the
+reply is lost the command asks again by reservation id and gets the same grant.
+
+On timeout the queued row is cancelled and the command exits `1` (JSON carries
+`reason_code: "wait-timeout"`). Ctrl-C or SIGTERM also cancels the queued row.
+If the process is killed outright nothing runs, but its row stops counting as a
+waiter within one lease (`--lease-ttl`, default 120 s, at most 600 s): there is no
+background daemon and a dead waiter never holds its turn longer than that. The
+wait length is `--wait`, not the lease, so there is no reason to raise
+`--lease-ttl` to wait longer. A router service too old to support `--wait`
+fails with a clear message and leaves no queued row.
+
 ### GitHub submission attribution (Phase 1)
 ```bash
 sirsi maat submit --kind release --repo OWNER/REPO --ref v1.2.3

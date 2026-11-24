@@ -12,11 +12,14 @@ package main
 // change.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
@@ -160,6 +163,7 @@ var (
 	resPriority, resLeaseTTL, resExemptPID                       int
 	resCores                                                     int
 	resQueue, maatJSON                                           bool
+	resWait                                                      int
 	maatOperationNonce                                           string
 	covHorizon                                                   int
 	conflictMachine                                              string
@@ -200,8 +204,26 @@ a cable; it is the rails.lock replacement.`,
 			Repro: resRepro, Start: start, EstEnd: resEstEnd, LeaseTTLSec: resLeaseTTL,
 			ExemptPID: resExemptPID, Cores: resCores,
 		}
-		res, err := l.Reserve(req, resQueue)
+		var res schedule.ReserveResult
+		if resWait > 0 {
+			if !resQueue || os.Getenv("SIRSI_MAAT_POD") != "" || maatOperationNonce != "" {
+				return fmt.Errorf("maat: --wait needs --queue and does not combine with pod routing or --operation-nonce")
+			}
+			// SIGINT/SIGTERM cancel the wait, which releases the queued row.
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			res, err = l.ReserveWait(ctx, req, time.Duration(resWait)*time.Second)
+		} else {
+			res, err = l.Reserve(req, resQueue)
+		}
 		if err != nil {
+			// A timed-out wait prints its reason_code the same way, then exits non-zero.
+			if maatJSON && res.ReasonCode == schedule.ReasonWaitTimeout {
+				_ = emitJSON(struct {
+					schedule.ReserveResult
+					Error string `json:"error"`
+				}{res, err.Error()})
+			}
 			// A waiter-first refusal under --json prints the structured reason on
 			// stdout (no reservation) and STILL returns the error: same exit 1 and
 			// stderr line an ordinary refusal has, so an old guard fails closed.
@@ -635,6 +657,7 @@ func init() {
 	maatReserveCmd.Flags().IntVar(&resPriority, "priority", 0, "priority (higher wins the queue)")
 	maatReserveCmd.Flags().IntVar(&resLeaseTTL, "lease-ttl", 120, "lease TTL seconds (expires without heartbeat)")
 	maatReserveCmd.Flags().BoolVar(&resQueue, "queue", false, "queue behind the holder instead of refusing")
+	maatReserveCmd.Flags().IntVar(&resWait, "wait", 0, "with --queue: stay attached up to N seconds, keep the queued row alive, and return the grant when the resource frees (exit 1, reason_code wait-timeout, on timeout; SIGINT/SIGTERM cancel the queued row)")
 	maatReserveCmd.Flags().IntVar(&resExemptPID, "exempt-pid", 0, "PID of this reservation's own guarded-run process tree (e.g. the run-guard script); conflict-check never treats its ancestors or descendants as intruders")
 	maatReserveCmd.Flags().BoolVar(&maatJSON, "json", false, "JSON output")
 

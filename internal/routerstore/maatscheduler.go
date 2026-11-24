@@ -85,6 +85,23 @@ func (s *SQLiteStore) MaatReserve(req schedule.Reservation, queue bool) (schedul
 
 func (s *SQLiteStore) MaatMutate(action, id, value string) (*schedule.Reservation, error) {
 	var out *schedule.Reservation
+	if action == "claim" {
+		// A claim is an admission: same transaction, lock and custody fence as MaatReserve.
+		err := s.withMaatTransaction(func(tx *txHandle, l *schedule.Ledger) (err error) {
+			rows, err := l.ExactReservation(id)
+			if err != nil {
+				return err
+			}
+			if len(rows) == 1 {
+				if err = sleepReserveFence(tx, l, rows[0].Resource); err != nil {
+					return err
+				}
+			}
+			out, err = l.Claim(id)
+			return err
+		})
+		return out, err
+	}
 	err := s.withMaatScheduler(func(l *schedule.Ledger) (err error) {
 		switch action {
 		case "heartbeat":
