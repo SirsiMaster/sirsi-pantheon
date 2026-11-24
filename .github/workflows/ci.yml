@@ -72,6 +72,9 @@ jobs:
       - name: board mint principal binding check
         run: bash scripts/router-service/board-binding.test.sh
 
+      - name: owner reviewed-retirement workflow
+        run: node --test internal/dashboard/board_retire_ui_test.cjs
+
       - name: ADR number uniqueness
         run: bash scripts/check-adr-numbers.sh
 
