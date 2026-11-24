@@ -36,6 +36,48 @@ class HistoryTests(unittest.TestCase):
         with open(self.current, encoding="utf-8") as f:
             self.assertIn('"captured_at": "5"', f.read())
 
+    def test_changed_failure_details_are_retained_without_timestamp_noise(self):
+        first = receipt("observer-uncertain", at="1")
+        first["admission"]["reason"] = "observer limited"
+        first["transport"] = {"attempts": [{"captured_at": "1", "ssh": {"state": "unknown", "reason": "network down"}, "screen-sharing": {"state": "timeout"}}]}
+        second = receipt("observer-uncertain", at="2")
+        second["admission"]["reason"] = "observer limited"
+        second["transport"] = {"attempts": [{"captured_at": "2", "ssh": {"state": "unknown", "reason": "network down"}, "screen-sharing": {"state": "timeout"}}]}
+        third = receipt("observer-uncertain", at="3")
+        third["admission"]["reason"] = "observer limited"
+        third["transport"] = {"attempts": [{"captured_at": "3", "ssh": {"state": "unknown", "reason": "network unreachable"}, "screen-sharing": {"state": "timeout"}}]}
+        self.publish(first, 1)
+        self.publish(second, 2)
+        self.publish(third, 3)
+        self.assertEqual(self.runs(), ["1", "3"])
+
+    def test_transport_attempt_reordering_does_not_create_history(self):
+        first = receipt("available", at="1")
+        first["transport"] = {"attempts": [
+            {"ssh": {"state": "reachable"}, "screen-sharing": {"state": "timeout"}},
+            {"ssh": {"state": "timeout"}, "screen-sharing": {"state": "reachable"}},
+        ]}
+        second = receipt("available", at="2")
+        second["transport"] = {"attempts": list(reversed(first["transport"]["attempts"]))}
+        self.publish(first, 1)
+        self.publish(second, 2)
+        self.assertEqual(self.runs(), ["1"])
+
+    def test_gui_reason_change_is_retained(self):
+        first = receipt("available", at="1")
+        first["gui_session"].update(status="deferred", reason="first failure")
+        second = receipt("available", at="2")
+        second["gui_session"].update(status="deferred", reason="second failure")
+        self.publish(first, 1)
+        self.publish(second, 2)
+        self.assertEqual(self.runs(), ["1", "2"])
+
+    def test_malformed_current_attempts_count_as_change(self):
+        with open(self.current, "w", encoding="utf-8") as f:
+            f.write('{"admission": {"state": "available"}, "gui_session": {"gui_state": "unknown"}, "transport": {"attempts": null}}')
+        self.publish(receipt("available"), 1)
+        self.assertEqual(self.runs(), ["1"])
+
     def test_all_keeps_every_run(self):
         for n in range(3):
             self.publish(receipt("available"), n, history="all")
