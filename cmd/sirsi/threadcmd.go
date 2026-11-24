@@ -57,9 +57,6 @@ func killRouterWatcher(threadID string) {
 // (remote process tables are unobservable) and delegates the OS-truth check to
 // router.ReapDeadThreads, which detects zombies that `kill -0` cannot.
 //
-// Called automatically at the top of `sirsi thread list` so orphans get
-// swept whenever anyone reads the registry — no daemon, no polling,
-// per AGENTS.md §Lean #1 (the read IS the event).
 // reapDeadPIDThreads returns every thread retired this pass and any error that
 // prevented a full sweep. A non-nil error means the OS-truth reconciliation is
 // incomplete: the returned slice contains whatever was salvaged, but callers
@@ -91,6 +88,8 @@ var (
 	threadListStale        time.Duration
 	threadListAgentFilter  string
 	threadListThreadFilter string
+	threadSweepAgent       string
+	threadSweepAll         bool
 )
 
 var threadCmd = &cobra.Command{
@@ -954,22 +953,7 @@ var threadListCmd = &cobra.Command{
 			return fmt.Errorf("no idea-router found: %w", err)
 		}
 		routerRoot := filepath.Join(repoRoot, ".agents", "idea-router")
-		// Bounded exact-thread observation (2026-10-18, Ma'at registration-timeout
-		// review): an admission check that already re-verifies PID ancestry/start
-		// time itself doesn't need the OS-truth reap sweep below — that sweep scans
-		// every active thread's process table entry and its cost grows with the
-		// registry, which is what turned a single-record lookup into an occasional
-		// multi-second call on a loaded host. Skip it only when both --agent and
-		// --thread pin the request to one record; the default (unfiltered) list
-		// keeps reaping, so registry-police/CTR behavior is unchanged.
-		targeted := threadListAgentFilter != "" && threadListThreadFilter != ""
-		var reapedNow []router.ReapedThread
-		var reapErr error
-		if !targeted {
-			// Sweep dead/defunct-PID threads to `reaped` before reading (OS truth).
-			reapedNow, reapErr = reapDeadPIDThreads(routerRoot)
-		}
-		reg, err := router.LoadThreadRegistry(routerRoot)
+		reg, err := router.LoadThreadRegistryReadOnly(routerRoot)
 		if err != nil {
 			return err
 		}
@@ -1018,22 +1002,6 @@ var threadListCmd = &cobra.Command{
 
 		output.Header("CTR — Live Threads")
 		fmt.Println()
-		// OS-truth integrity warning: surface what the reaper just retired so
-		// the operator knows the registry disagreed with the live process table.
-		// A sweep error is a separate warning: a failed reconciliation is
-		// byte-identical to "nothing to reap", so dead threads would silently
-		// render as 🟢 active without this notice (D-TL-1).
-		if reapErr != nil {
-			fmt.Printf("  ⚠️  integrity: OS-truth sweep incomplete — dead threads may appear active: %v\n", reapErr)
-			fmt.Println()
-		}
-		if len(reapedNow) > 0 {
-			fmt.Printf("  ⚠️  integrity: reaped %d dead/defunct thread(s) against OS truth this read:\n", len(reapedNow))
-			for _, r := range reapedNow {
-				fmt.Printf("       %s (agent=%s pid=%d %s)\n", r.ThreadID, r.AgentID, r.PID, r.State)
-			}
-			fmt.Println()
-		}
 		if len(rows) == 0 {
 			fmt.Println("  No registered threads. Run `sirsi thread register --agent <id> --surface <surface>`.")
 			return nil
@@ -1068,6 +1036,46 @@ var threadListCmd = &cobra.Command{
 	},
 }
 
+var threadSweepCmd = &cobra.Command{
+	Use:   "sweep",
+	Short: "Explicitly retire dead and superseded local threads",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		agent := strings.TrimSpace(threadSweepAgent)
+		if (agent == "") == !threadSweepAll {
+			return errors.New("choose exactly one scope: --agent <id> or --all")
+		}
+		repoRoot, err := router.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("no idea-router found: %w", err)
+		}
+		root := filepath.Join(repoRoot, ".agents", "idea-router")
+		dead, deadErr := router.ReapDeadThreadsForAgent(root, agent)
+		stray, strayErr := router.ReapStrayThreadsForAgent(root, agent)
+		if JsonOutput {
+			type result struct {
+				Dead       []router.ReapedThread `json:"dead"`
+				Stray      []router.ReapedThread `json:"stray"`
+				DeadError  string                `json:"dead_error,omitempty"`
+				StrayError string                `json:"stray_error,omitempty"`
+			}
+			out := result{Dead: dead, Stray: stray}
+			if deadErr != nil {
+				out.DeadError = deadErr.Error()
+			}
+			if strayErr != nil {
+				out.StrayError = strayErr.Error()
+			}
+			if err := json.NewEncoder(cmd.OutOrStdout()).Encode(out); err != nil {
+				return err
+			}
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "Retired %d dead and %d superseded thread(s).\n", len(dead), len(stray))
+		}
+		return errors.Join(deadErr, strayErr)
+	},
+}
+
 func displayUnknown(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return "unknown"
@@ -1091,7 +1099,9 @@ func init() {
 	threadListCmd.Flags().BoolVar(&threadListAll, "all", false, "Include closed threads")
 	threadListCmd.Flags().DurationVar(&threadListStale, "stale-after", router.DefaultThreadStaleAfter, "Stale threshold")
 	threadListCmd.Flags().StringVar(&threadListAgentFilter, "agent", "", "Filter to one agent ID")
-	threadListCmd.Flags().StringVar(&threadListThreadFilter, "thread", "", "Filter to one thread ID (with --agent, skips the OS-truth reap sweep for a bounded single-record lookup)")
+	threadListCmd.Flags().StringVar(&threadListThreadFilter, "thread", "", "Filter to one thread ID")
+	threadSweepCmd.Flags().StringVar(&threadSweepAgent, "agent", "", "Limit the mutating sweep to one agent")
+	threadSweepCmd.Flags().BoolVar(&threadSweepAll, "all", false, "Explicitly sweep all agents on this host")
 
 	threadWatchRouterCmd.Flags().StringVar(&watchThreadID, "thread", "", "Thread ID")
 	threadWatchRouterCmd.Flags().StringVar(&watchAgentID, "agent", "", "Agent ID")
@@ -1105,5 +1115,5 @@ func init() {
 	threadWatchCmd.Flags().BoolVar(&threadWatchUninstall, "uninstall", false, "Remove the durable wake LaunchAgent for the current thread's agent")
 	threadWatchCmd.Flags().StringVar(&threadWatchAgent, "agent", "", "Agent id override (defaults to the current thread's agent)")
 
-	threadCmd.AddCommand(threadRegisterCmd, threadHeartbeatCmd, threadCloseCmd, threadListCmd, threadPruneCmd, threadWatchRouterCmd, threadWatchCmd, threadAttendedCmd)
+	threadCmd.AddCommand(threadRegisterCmd, threadHeartbeatCmd, threadCloseCmd, threadListCmd, threadSweepCmd, threadPruneCmd, threadWatchRouterCmd, threadWatchCmd, threadAttendedCmd)
 }

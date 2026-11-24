@@ -31,6 +31,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -205,6 +206,29 @@ func OpenPath(path string) (*SQLiteStore, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// openPathReadOnly never creates or migrates the selected local database.
+// Querying an old schema may fail rather than silently changing it.
+func openPathReadOnly(path string) (*SQLiteStore, error) {
+	if path == ":memory:" {
+		return nil, errors.New("routerstore: read-only listing requires an existing database")
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("routerstore: resolve read-only path: %w", err)
+	}
+	u := &url.URL{Scheme: "file", Path: filepath.ToSlash(abs), RawQuery: "mode=ro&_pragma=busy_timeout(5000)"}
+	db, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return nil, fmt.Errorf("routerstore: open read-only %q: %w", path, err)
+	}
+	db.SetMaxOpenConns(1)
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("routerstore: open read-only %q: %w", path, err)
+	}
+	return &SQLiteStore{db: &dbHandle{db: db, d: sqliteDialect}, d: sqliteDialect, path: path}, nil
 }
 
 // Close releases the underlying database handle.

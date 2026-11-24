@@ -47,6 +47,17 @@ func ResolveForCaller(agent, threadID string) (Store, error) {
 }
 
 func resolve(caller *callerBinding) (Store, error) {
+	return resolveWithReadOnlyLocal(caller, false)
+}
+
+// ResolveReadOnlyLocal preserves the normal authority selection. An explicit
+// local SQLite store is opened without creation or migrations; remote transport
+// retains its ordinary authentication/session behavior.
+func ResolveReadOnlyLocal() (Store, error) {
+	return resolveWithReadOnlyLocal(nil, true)
+}
+
+func resolveWithReadOnlyLocal(caller *callerBinding, readOnlyLocal bool) (Store, error) {
 	if u := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_URL")); u != "" {
 		tok := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_TOKEN"))
 		if tok == "" && SpoolDir(u) == "" {
@@ -89,6 +100,9 @@ func resolve(caller *callerBinding) (Store, error) {
 	path, err := LocalPath()
 	if err != nil {
 		return nil, err
+	}
+	if readOnlyLocal {
+		return openPathReadOnly(path)
 	}
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
