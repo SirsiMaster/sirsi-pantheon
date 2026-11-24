@@ -148,8 +148,13 @@ type Registered struct {
 }
 
 type Consumer struct {
+	// Armed/Loop retain the legacy watcher-liveness contract used by NO WATCHER.
 	Armed bool   `json:"armed"`
 	Loop  string `json:"loop"`
+	// RoutingAvailable is canonical PingLane availability (nil means unknown),
+	// not autonomous answering authority or evidence an item is being consumed.
+	RoutingAvailable *bool  `json:"routing_available"`
+	Consumption      string `json:"consumption"`
 }
 
 type Item struct {

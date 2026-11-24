@@ -68,6 +68,8 @@ func TestPrivateMemoryStoreRootCanonicalizesSymlinkedTempDir(t *testing.T) {
 		t.Fatalf("create temporary directory alias: %v", err)
 	}
 	t.Setenv("TMPDIR", alias)
+	// testing.TempDir prefers GOTMPDIR when supplied by the runner.
+	t.Setenv("GOTMPDIR", alias)
 
 	t.Run("fresh TempDir parent", func(t *testing.T) {
 		root := privateMemoryStoreRoot(t)

@@ -415,6 +415,66 @@ def local_owned_identity(child):
     return owned
 
 
+@dataclass(frozen=True)
+class _LatchedChildTerminal:
+    owner: object
+    code: int
+    raw_status: int
+    portable_exit: int
+    expected_reap_exit: int
+    observation: dict
+
+
+def _latch_child_terminal(child, owned, code, status, observation):
+    # This is an OBSERVED-status mapping, never recovery of unreported C input.
+    # The prospective Darwin27.2 measurement covered positive bits8-23 and
+    # stable repeated reads. No wide-first/narrow-later exception is qualified.
+    upper = 0x00ffffff if sys.platform == 'darwin' else 255
+    if type(code) is not int or type(status) is not int:
+        raise LocalWaitRefused('Owned child terminal types differ', observation)
+    if code == 1 and 0 <= status <= upper:
+        reap_exit = status & 255
+        portable = status if status <= 255 else (reap_exit or 1)
+    elif code in (2, 3) and 0 < status < signal.NSIG:
+        portable = reap_exit = -status
+    else:
+        raise LocalWaitRefused('Unknown owned child terminal status', observation)
+    prior = getattr(child, '_sirsi_terminal_receipt', None)
+    if prior is not None:
+        if (not isinstance(prior, _LatchedChildTerminal) or prior.owner is not owned
+                or prior.code != code or prior.raw_status != status):
+            raise LocalWaitRefused('Owned child terminal observation changed after latch', observation)
+        return prior.portable_exit
+    child._sirsi_terminal_receipt = _LatchedChildTerminal(
+        owned, code, status, portable, reap_exit, dict(observation))
+    return portable
+
+
+def _terminal_expected_reap(child, portable):
+    receipt = getattr(child, '_sirsi_terminal_receipt', None)
+    if receipt is None:
+        # Existing injected plain-integer observers retain their strict old
+        # comparison. They cannot supply a normalized wide exit this way.
+        return portable
+    if (not isinstance(receipt, _LatchedChildTerminal)
+            or receipt.owner.handle is not child or receipt.owner.pid != child.pid
+            or not (getattr(child, '_sirsi_fabric_identity', None) is receipt.owner
+                    or getattr(child, '_sirsi_local_identity', None) is receipt.owner)
+            or type(portable) is not int or portable != receipt.portable_exit):
+        raise Refused('Owned child terminal/reap binding differs')
+    return receipt.expected_reap_exit
+
+
+def _child_terminal_evidence(child):
+    receipt = getattr(child, '_sirsi_terminal_receipt', None)
+    if receipt is None:
+        return None
+    _terminal_expected_reap(child, receipt.portable_exit)
+    return dict(receipt.observation, raw_code=receipt.code,
+                raw_status=receipt.raw_status, portable_exit=receipt.portable_exit,
+                expected_reap_exit=receipt.expected_reap_exit)
+
+
 def _nonreaping_child_terminal(child, owned, wait=None):
     """Observe a bound direct child with WNOWAIT; never consume its PID anchor."""
     if (owned.handle is not child or owned.pid != child.pid or child.returncode is not None
@@ -432,6 +492,7 @@ def _nonreaping_child_terminal(child, owned, wait=None):
             wait.restype = ctypes.c_int
         info = _Siginfo()
         # P_PID=1; WNOHANG=1, WEXITED=4, WNOWAIT=0x20. Never consumes the child.
+        ctypes.set_errno(0)
         result = wait(1, child.pid, ctypes.byref(info), 1 | 4 | 0x20)
         observation = dict(api='libSystem.waitid', result=result,
                            errno=ctypes.get_errno() if result else 0,
@@ -445,6 +506,8 @@ def _nonreaping_child_terminal(child, owned, wait=None):
         if info.pid == 0:
             if any((info.signo, info.error, info.code, info.uid, info.status)):
                 raise LocalWaitRefused('Malformed empty owned child wait observation', observation)
+            if getattr(child, '_sirsi_terminal_receipt', None) is not None:
+                raise LocalWaitRefused('Owned terminal disappeared after latch', observation)
             return None
         # XNU's waitid path may leave si_uid zero; that is not a credential.
         # Accept it only because the exact bound unreaped Popen is also required.
@@ -464,6 +527,8 @@ def _nonreaping_child_terminal(child, owned, wait=None):
             raise LocalWaitRefused('Owned child wait observation failed; no exit or absence inferred',
                                    dict(api='os.waitid', pid=child.pid, error=str(error))) from error
         if info is None:
+            if getattr(child, '_sirsi_terminal_receipt', None) is not None:
+                raise LocalWaitRefused('Owned terminal disappeared after latch', dict(api='os.waitid', pid=child.pid))
             return None
         pid = getattr(info, 'si_pid', None)
         uid = getattr(info, 'si_uid', None)
@@ -474,11 +539,7 @@ def _nonreaping_child_terminal(child, owned, wait=None):
                            status=status, expected_pid=owned.pid, expected_uid=owned.uid)
         if pid != owned.pid or uid != owned.uid or signo != signal.SIGCHLD:
             raise LocalWaitRefused('Owned child wait PID/UID/signal differs', observation)
-    if code == 1 and 0 <= status <= 255:  # CLD_EXITED
-        return status
-    if code in (2, 3) and 0 < status < signal.NSIG:  # CLD_KILLED/DUMPED
-        return -status
-    raise LocalWaitRefused('Unknown owned child terminal status', observation)
+    return _latch_child_terminal(child, owned, code, status, observation)
 
 
 def local_child_terminal(child, wait=None):
@@ -548,7 +609,13 @@ def local_stop_owned(child, birth):
         if any(x['uid']!=os.getuid() for x in rows):
             raise Refused('Foreign UID in local group; no signal sent')
         if not any(not x['status'].startswith('Z') for x in rows):
-            child.wait(timeout=1)  # Reap only after every member is non-running.
+            terminal = local_child_terminal(child)
+            if terminal is None:
+                raise Refused('Local terminal receipt absent before reap')
+            expected_reap = _terminal_expected_reap(child, terminal)
+            reaped = child.wait(timeout=1)  # Only after all members are non-running.
+            if reaped != expected_reap or child.returncode != expected_reap:
+                raise Refused('Local child reap differs from terminal receipt')
             if local_group_snapshot(child.pid):
                 raise Refused('Local group absence unconfirmed after reap')
             return
@@ -572,7 +639,13 @@ def local_stop_owned(child, birth):
         if any(x['uid']!=os.getuid() for x in rows):
             raise Refused('Foreign UID after local signal wait')
         if not any(not x['status'].startswith('Z') for x in rows):
-            child.wait(timeout=1)
+            terminal = local_child_terminal(child)
+            if terminal is None:
+                raise Refused('Local terminal receipt absent before reap')
+            expected_reap = _terminal_expected_reap(child, terminal)
+            reaped = child.wait(timeout=1)
+            if reaped != expected_reap or child.returncode != expected_reap:
+                raise Refused('Local child reap differs from terminal receipt')
             if local_group_snapshot(child.pid):raise Refused('Local group absence unconfirmed after reap')
             return
     raise Refused('Owned local group quiescence unconfirmed; debt retained')
@@ -867,6 +940,9 @@ def supervise_local(command, timeout, record, folder, persist):
         os.close(gate_write);gate_write=None
         code = local_wait_terminal(child,timeout)
         record['child_exit_code'] = code
+        evidence = _child_terminal_evidence(child)
+        if evidence is not None:
+            record['child_terminal_observation'] = evidence
         record['status'] = 'success' if code == 0 else 'child_failed'
     except subprocess.TimeoutExpired:
         record.update(status='refused_or_stopped', reason='Local execution timeout; no remote lease or delivery was inferred')
@@ -1013,6 +1089,23 @@ class Native:
         if self.executor_thread:
             self.call('thread', 'close', '--thread', self.executor_thread, '--json', timeout=30, json_result=False)
 
+    def exact_owned_release_control(self, args):
+        """Recognize only our literal release, optionally with observed int64 exit."""
+        if (not self.owned_admission or not isinstance(self.release_scope, dict) or
+                self.release_scope.get('id') != self.owned_admission):
+            return False
+        if args == ('maat', 'release', self.owned_admission, '--json'):
+            return True
+        if (len(args) != 6 or args[:3] != ('maat', 'release', self.owned_admission) or
+                args[3] != '--exit-code' or args[5] != '--json'):
+            return False
+        value = args[4]
+        if not isinstance(value, str) or re.fullmatch(r'0|-?[1-9][0-9]{0,18}', value) is None:
+            return False
+        # Go's Int flag on these arm64 hosts is signed64. This is only a
+        # recovery classifier, not an independent outcome or execution grant.
+        return -(1 << 63) <= int(value) <= (1 << 63) - 1
+
     def call(self, *args, timeout=60, json_result=True):
         if self.deadline is not None:
             timeout = min(timeout, self.deadline - time.monotonic())
@@ -1030,10 +1123,16 @@ class Native:
             response = subprocess.run([self.cli, *args], check=True, capture_output=True,
                                       text=True, timeout=timeout, env=control_env)
         except subprocess.TimeoutExpired as error:
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                raise Refused('Proven admission deadline exceeded') from error
+            if self.exact_owned_release_control(args):
+                raise TransientTransport('Control transport uncertain: exact owned release timed out') from error
             if args[:2] in (('maat', 'heartbeat'), ('maat', 'status'), ('thread', 'heartbeat'), ('thread', 'register')):
                 raise TransientTransport('Control transport timed out') from error
             raise
         except subprocess.CalledProcessError as error:
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                raise Refused('Proven admission deadline exceeded') from error
             stderr = error.stderr or ''
             detail = stderr[-1600:]
             # Denial takes precedence over transport text; unknown errors refuse.
@@ -1043,6 +1142,28 @@ class Native:
             # Only the exact never-sent read for our own admitted reservation
             # is eligible; this does not extend the previously proven lease.
             rendered = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', stderr)
+            own_scope = (self.owned_admission and isinstance(self.release_scope, dict) and
+                         self.release_scope.get('id') == self.owned_admission)
+            exact_status = (own_scope and self.deadline is not None and
+                            args == ('maat', 'status', '--id', self.owned_admission, '--json'))
+            exact_release = self.exact_owned_release_control(args)
+            # The real incident's 'a relay consumed' occurs AFTER OUTCOME
+            # UNKNOWN, so the older relay.*OUTCOME matcher missed it. Accept
+            # ONLY this complete local spool deadline form for our exact owned
+            # status/release operation. A canceled caller, malformed response,
+            # denial, foreign ID, extra diagnostic or broad lookup still refuses.
+            method = 'MaatRead' if exact_status else 'MaatMutate'
+            spool_timeout = re.fullmatch(
+                r'\s*(?:𓁵\s+)?routerstore: remote ' + method +
+                r': Post "http://spool/v1/call/' + method + r'": spool: ' + method +
+                r' id [0-9]+-[0-9]+-[0-9a-f]{8}: OUTCOME UNKNOWN — '
+                r'a relay consumed the request but no response arrived '
+                r'\(context deadline exceeded\); re-query before retrying a mutation\s*', rendered)
+            if not denied and (exact_status or exact_release) and spool_timeout is not None:
+                # No subprocess is repeated here. The supervisor must first
+                # re-check its proven deadline, then use exact-ID readback;
+                # release's recovery below performs READS ONLY.
+                raise TransientTransport('Control transport uncertain: exact owned spool deadline') from error
             sentinel = "routerstore: router service unavailable (retry): relay: Ma'at read unavailable; service not reached and read not queued"
             exact_error = re.fullmatch(r'\s*(?:𓁵\s+)?' + re.escape(sentinel) + r'\s*', rendered)
             unsent_read = (not denied and self.deadline is not None and self.owned_admission and
@@ -1061,6 +1182,10 @@ class Native:
             if not denied and (transient or partial_registration):
                 raise TransientTransport('Control transport uncertain: '+detail) from error
             raise Refused('Control call '+str(args[:2])+' failed: '+detail) from error
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            # A late ACTIVE read is not a renewal or permission to keep a child
+            # alive after the pre-existing monotonic proof has expired.
+            raise Refused('Proven admission deadline exceeded')
         return (json.loads(response.stdout) if response.stdout.strip() else None) if json_result else response.stdout
 
     def registration_observation(self, thread, *, pending_registration=False):
@@ -1174,33 +1299,41 @@ class Native:
             self.call('thread', 'heartbeat', '--thread', self.executor_thread, '--json', timeout=30, json_result=False)
 
     def release_supports_exit_code(self):
-        # An installed CLI older than `maat release --exit-code` rejects the
-        # flag; ask its help once instead of failing the release.
         if getattr(self, '_release_exit_flag', None) is None:
             try:
                 probe = subprocess.run([self.cli, 'maat', 'release', '--help'],
                                        capture_output=True, text=True, timeout=10)
-                self._release_exit_flag = '--exit-code' in probe.stdout + probe.stderr
+                self._release_exit_flag = probe.returncode == 0 and '--exit-code' in probe.stdout + probe.stderr
             except (OSError, subprocess.SubprocessError):
                 self._release_exit_flag = False
         return self._release_exit_flag
 
     def release(self, identity, exit_code=None):
-        # The guarded run's exit status rides on the release so a maat:
-        # receipt can be verified (the ledger refuses one without it).
-        args = ('maat', 'release', identity)
-        if exit_code is not None and self.release_supports_exit_code():
-            args += ('--exit-code', str(exit_code))
-        args += ('--json',)
+        if exit_code is not None and type(exit_code) is not int:
+            raise Refused('Release requires an observed integer child exit, not a default')
+        self.last_release_exit_recorded = False
+        supported = exit_code is not None and self.release_supports_exit_code()
+        outcome = ('--exit-code', str(exit_code)) if supported else ()
+        command = ('maat', 'release', identity, *outcome, '--json')
+
+        def confirmed(row):
+            if supported and (not isinstance(row, dict) or row.get('id') != identity or
+                    row.get('status') not in ('released', 'done') or
+                    type(row.get('exit_code')) is not int or row['exit_code'] != exit_code):
+                raise Refused('Reservation release child exit outcome unconfirmed; never backfill a terminal row')
+            self.last_release_exit_recorded = bool(supported)
+            return row
+
         try:
-            return self.call(*args)
+            return confirmed(self.call(*command))
         except TransientTransport as uncertain:
             # The write may already have committed. Never blindly replay it or
             # release a reservation selected only by a lane/work name.
             if not self.release_scope or self.release_scope.get('id') != identity:
                 raise
             prior_deadline = self.deadline
-            self.deadline = time.monotonic() + 30
+            recovery_deadline = time.monotonic() + 30
+            self.deadline = min(prior_deadline, recovery_deadline) if prior_deadline is not None else recovery_deadline
             try:
                 for attempt in range(3):
                     try:
@@ -1208,13 +1341,16 @@ class Native:
                         if any(row.get(k) != v for k, v in self.release_scope.items()):
                             raise Refused('Uncertain release readback changed exact reservation identity')
                         if row.get('status') in ('released', 'expired', 'invalidated', 'done'):
-                            return row
+                            return confirmed(row)
                         if row.get('status') != 'active':
                             raise Refused('Uncertain release readback has unknown status')
-                        # Exact readback proves this same owned grant remains
-                        # active. A repeated release is now deliberate, not a
-                        # replay used to discover an unknown write outcome.
-                        return self.call(*args)
+                        # ACTIVE is not evidence the uncertain release failed:
+                        # its independent relay forward may still be in flight.
+                        # Read again within this finite cleanup budget; NEVER
+                        # repeat the mutation or extend execution authority.
+                        if attempt == 2 or time.monotonic() + 2 >= self.deadline:
+                            raise uncertain
+                        time.sleep(1 << attempt)
                     except TransientTransport:
                         if attempt == 2 or time.monotonic() + 2 >= self.deadline:
                             raise uncertain
@@ -1409,9 +1545,10 @@ def stop(child, observe=None, send_group=None, reap=None, monotonic=None, sleep=
         # Includes initial observation/snapshot failures and signal failures.
         if isinstance(custody, _FabricChildIdentity):
             custody.signals_closed = True
+    expected_reap = _terminal_expected_reap(child, terminal)
     custody.reap_started = True
     reaped = (reap or (lambda target: target.wait(timeout=1)))(child)
-    if reaped != terminal or child.returncode != terminal:
+    if reaped != expected_reap or child.returncode != expected_reap:
         raise Refused('Fabric child reap differs from terminal receipt')
     custody.reaped = True
 
@@ -1497,6 +1634,7 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
     release_attempted = False
     release_outcome = 'not_attempted'
     code = 78
+    settled_child_exit = None
     reservation_requested = reservation_replied = False
     cpu_cores = getattr(backend, 'cpu_cores', None)
     regime = None
@@ -1665,7 +1803,13 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                     # readback. Cleanup runs immediately; uncertainty is debt.
                     raise Refused('Child completion admission readback unavailable')
                 check_deadlines(deadline, lease, started_at, timeout, record)
+                if type(code) is not int:
+                    raise Refused('Child terminal exit receipt is not an observed integer')
+                evidence = _child_terminal_evidence(child)
+                if evidence is not None:
+                    record['child_terminal_observation'] = evidence
                 record['status'] = 'success' if code == 0 else 'child_failed'
+                settled_child_exit = code
                 break
             except subprocess.TimeoutExpired:
                 pass
@@ -1695,6 +1839,10 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
                     stop(child)
                 else:
                     wait_unreleased_fabric_child(child)
+                if (isinstance(backend, Native) and settled_child_exit is not None and
+                        (type(child.returncode) is not int
+                         or child.returncode != _terminal_expected_reap(child, settled_child_exit))):
+                    raise Refused('Child cleanup exit receipt differs from observed terminal outcome')
                 child_cleanup_confirmed = True
             except (Exception, KeyboardInterrupt) as error:
                 append_cleanup_debt(record, 'Child group cleanup unconfirmed: '+str(error))
@@ -1706,7 +1854,17 @@ def supervise(command, resource, agent, thread, work, timeout, backend, record):
             append_cleanup_debt(record, 'Owned reservation release deferred; lease may expire before child cleanup')
         elif owned:
             try:
-                backend.release(owned, code)
+                if isinstance(backend, Native):
+                    # Only a terminal child with final admission check and
+                    # confirmed cleanup can populate the canonical run outcome.
+                    # Pre-spawn/refusal/control/gate debt NEVER manufactures 0.
+                    observed = (settled_child_exit if record.get('status') in ('success', 'child_failed')
+                                and not record.get('cleanup_debt') and code == settled_child_exit else None)
+                    backend.release(owned, exit_code=observed)
+                    if observed is not None and getattr(backend, 'last_release_exit_recorded', None) is False:
+                        record['canonical_exit_code'] = 'not_recorded_or_unverified'
+                else:
+                    backend.release(owned, code)  # Preserve the existing non-Native fixture/backend interface.
             except (Exception, KeyboardInterrupt) as error:
                 append_cleanup_debt(record, 'Reservation release unconfirmed: '+str(error))
                 record['reservation_outcome_unconfirmed'] = True

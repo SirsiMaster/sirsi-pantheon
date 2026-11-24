@@ -1,4 +1,4 @@
-"""No network/process-launch fixtures: --plan or pre-transport refusal only."""
+"""Plan-only Bash fixtures: no selector, supervisor, payload or network execution."""
 import json
 import os
 import shlex
@@ -9,6 +9,7 @@ import unittest
 
 SCRIPT = Path(os.environ.get('SIRSI_FABRIC_FIXTURE_SCRIPT',
                              str(Path(__file__).with_name('fabric-run.sh'))))
+PROXY_KEYS = ('ALL_PROXY', 'all_proxy', 'HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy')
 
 
 class TransportPlan(unittest.TestCase):
@@ -18,20 +19,40 @@ class TransportPlan(unittest.TestCase):
         helper_argv = shlex.split(proxy_command)
         return helper_argv[helper_argv.index('--transport') + 1]
 
-    def run_plan(self, *options, proxy=None, proxy_env=None, host='m1', payload=('/usr/bin/true',)):
-        environment = dict(os.environ)
-        for key in ('ALL_PROXY', 'all_proxy', 'HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy'):
-            environment.pop(key, None)
-        environment['SIRSI_AGENT_ID'] = 'sirsi-software-admin'
-        environment['SIRSI_ROUTER_AGENT'] = 'sirsi-software-admin'
+    def setUp(self):
+        private = tempfile.TemporaryDirectory(prefix='fabric-run-plan-')
+        self.addCleanup(private.cleanup)
+        self.fixture_home = private.name
+
+    def run_plan(self, *options, proxy=None, proxies=None, proxy_env=None, host='m1', payload=('/usr/bin/true',)):
+        # No inherited proxy, Bash startup hook, credential or installed HOME.
+        environment = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'LANG': 'C', 'LC_ALL': 'C',
+                       'HOME': self.fixture_home, 'TMPDIR': self.fixture_home,
+                       'TMP': self.fixture_home, 'TEMP': self.fixture_home,
+                       'SIRSI_AGENT_ID': 'sirsi-software-admin',
+                       'SIRSI_ROUTER_AGENT': 'sirsi-software-admin'}
         if proxy is not None:
             environment['ALL_PROXY'] = proxy
-        if proxy_env:
+        if proxies is not None:
+            environment.update(proxies)
+        if proxy_env is not None:
             environment.update(proxy_env)
         return subprocess.run(['/bin/bash', str(SCRIPT), '--plan', *options,
                                host, '--work', 'fixture-only', '--', *payload],
                               env=environment, text=True, capture_output=True,
                               timeout=5, check=False)
+
+    def test_default_without_proxy_matches_explicit_pinned_direct(self):
+        for host in ('m1', 'm5', 'studio'):
+            for proxies in ({}, dict.fromkeys(PROXY_KEYS, '')):
+                with self.subTest(host=host, empty_keys=bool(proxies)):
+                    result = self.run_plan(host=host, proxies=proxies)
+                    explicit = self.run_plan('--transport', 'direct', host=host, proxies=proxies)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(explicit.returncode, 0, explicit.stderr)
+                    self.assertEqual(result.stdout, explicit.stdout)
+                    self.assertEqual(result.stderr, explicit.stderr)
+                    self.assertIn('PLAN_ONLY_NO_EXECUTION', result.stdout)
 
     def test_default_uses_direct_when_no_proxy_exists(self):
         result = self.run_plan()
@@ -84,10 +105,44 @@ class TransportPlan(unittest.TestCase):
                 self.assertNotIn('/usr/bin/nc', result.stdout)
 
     def test_direct_cannot_bypass_present_runtime_proxy(self):
-        result = self.run_plan('--transport', 'direct', proxy='socks5://127.0.0.1:19001')
-        self.assertEqual(result.returncode, 78)
-        self.assertIn('must not be bypassed', result.stderr)
-        self.assertEqual(result.stdout, '')
+        for key in PROXY_KEYS:
+            with self.subTest(key=key):
+                result = self.run_plan('--transport', 'direct',
+                                       proxies={key: 'socks5://127.0.0.1:19001', 'NO_PROXY': '*'})
+                self.assertEqual(result.returncode, 78)
+                self.assertIn('must not be bypassed', result.stderr)
+                self.assertEqual(result.stdout, '')
+
+    def test_default_preserves_upper_lower_and_precedence_socks(self):
+        cases = [{key: scheme + '127.0.0.1:19001'}
+                 for key in ('ALL_PROXY', 'all_proxy') for scheme in ('socks5://', 'socks5h://')]
+        cases.append({'ALL_PROXY': '', 'all_proxy': 'socks5://127.0.0.1:19001'})
+        for proxies in cases:
+            with self.subTest(keys=tuple(proxies)):
+                result = self.run_plan(proxies=proxies)
+                explicit = self.run_plan('--transport', 'socks', proxies=proxies)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(explicit.returncode, 0, explicit.stderr)
+                self.assertEqual(result.stdout, explicit.stdout)
+                self.assertEqual(result.stderr, explicit.stderr)
+                self.assertIn('socks', result.stdout)
+                self.assertNotIn('19001', result.stdout)
+
+    def test_default_refuses_each_unsupported_proxy_without_direct_fallback(self):
+        for key in PROXY_KEYS:
+            with self.subTest(key=key):
+                result = self.run_plan(proxies={key: 'unsupported-fixture-proxy', 'NO_PROXY': '*'})
+                self.assertEqual(result.returncode, 78)
+                self.assertIn('supported runtime SOCKS proxy required', result.stderr)
+                self.assertEqual(result.stdout, '')
+
+    def test_explicit_socks_still_refuses_absent_or_empty_proxy(self):
+        for proxies in ({}, dict.fromkeys(PROXY_KEYS, '')):
+            with self.subTest(empty_keys=bool(proxies)):
+                result = self.run_plan('--transport', 'socks', proxies=proxies)
+                self.assertEqual(result.returncode, 78)
+                self.assertIn('supported runtime SOCKS proxy required', result.stderr)
+                self.assertEqual(result.stdout, '')
 
     def test_effective_ssh_config_restricts_host_key_sources(self):
         result = self.run_plan('--transport', 'direct')

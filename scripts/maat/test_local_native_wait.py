@@ -15,7 +15,7 @@ spec.loader.exec_module(runner)
 
 class NativeWaitTests(unittest.TestCase):
     def child(self, birth='retained-before-release'):
-        child=mock.Mock(pid=24680,returncode=None)
+        child=mock.Mock(pid=24680,returncode=None,_sirsi_terminal_receipt=None)
         child._sirsi_local_identity=runner._LocalChildIdentity(child,child.pid,os.getpid(),os.getuid(),os.getuid(),child.pid,birth)
         return child
 
@@ -38,7 +38,6 @@ class NativeWaitTests(unittest.TestCase):
                 signals.assert_not_called(); child.wait.assert_not_called()
 
     def test_waitid_exact_public_abi_status_and_nonreaping_options(self):
-        child = self.child()
         cases = [
             ('alive', {}, None),
             ('exit-zero', {'code': 1, 'status': 0}, 0),
@@ -49,6 +48,9 @@ class NativeWaitTests(unittest.TestCase):
         ]
         for name, values, expected in cases:
             with self.subTest(name=name), mock.patch.object(runner.sys, 'platform', 'darwin'):
+                # Independent children, not one impossible process changing
+                # terminal status after its first immutable observation.
+                child = self.child()
                 def wait(kind, pid, pointer, options):
                     self.assertEqual((kind, pid, options), (1, child.pid, 0x25))
                     self.assertEqual(ctypes.sizeof(runner._Siginfo), 104)
@@ -60,12 +62,12 @@ class NativeWaitTests(unittest.TestCase):
                         for key, value in values.items(): setattr(info, key, value)
                     return 0
                 self.assertEqual(runner.local_child_terminal(child, wait=wait), expected)
-        child.wait.assert_not_called()
+                child.wait.assert_not_called()
 
     def test_waitid_foreign_malformed_and_echild_never_infer_exit_or_absence(self):
         child = self.child()
         cases = [{'pid': 24681}, {'uid': os.getuid()+1}, {'signo': 0}, {'code': 6},
-                 {'error': 1}, {'status': 256}, {'pid': 0, 'uid': os.getuid()}]
+                 {'error': 1}, {'status': 0x01000000}, {'pid': 0, 'uid': os.getuid()}]
         for overrides in cases:
             with self.subTest(overrides=overrides), mock.patch.object(runner.sys, 'platform', 'darwin'):
                 def wait(_kind, _pid, pointer, _options):
@@ -106,29 +108,42 @@ class NativeWaitTests(unittest.TestCase):
             with self.assertRaises(runner.Refused): runner.local_anchor_matches(child, 'retained-before-release')
 
     def test_positive_owned_zombie_receipt_allows_reap_only_after_quiescence(self):
-        child = self.child(); reaped = []
+        child = self.child(); reaped = []; events = []
         def snapshot(_group):
             return [] if reaped else [dict(pid=child.pid, uid=os.getuid(), status='Z')]
-        child.wait.side_effect = lambda timeout: reaped.append(timeout)
+        def terminal(target):
+            self.assertIs(target, child)
+            events.append('terminal')
+            return 0
+        def reap(timeout):
+            # One receipt substitutes for omitted libproc metadata; a fresh
+            # second receipt is required immediately before consuming wait.
+            self.assertEqual(events, ['terminal', 'terminal'])
+            events.append('reap')
+            reaped.append(timeout)
+            child.returncode = 0
+            return 0
+        child.wait.side_effect = reap
         with mock.patch.object(runner, 'local_group_snapshot', side_effect=snapshot), \
                 mock.patch.object(runner, 'process_identity', side_effect=runner.Refused('libproc omitted zombie')), \
-                mock.patch.object(runner, 'local_child_terminal', return_value=0) as wait, \
+                mock.patch.object(runner, 'local_child_terminal', side_effect=terminal) as wait, \
                 mock.patch.object(runner.os, 'killpg') as signals:
             runner.local_stop_owned(child, 'retained-before-release')
-            wait.assert_called_once_with(child)
+            self.assertEqual(wait.call_args_list, [mock.call(child), mock.call(child)])
+            self.assertEqual(events, ['terminal', 'terminal', 'reap'])
             signals.assert_not_called(); child.wait.assert_called_once_with(timeout=1)
 
     def test_live_binding_requires_real_and_effective_uid_parent_start_and_group(self):
         values=dict(pid=24680,ppid=os.getpid(),uid=os.getuid(),ruid=os.getuid(),pgid=24680,start_sec=1000000000)
         birth=runner._process_start(SimpleNamespace(**values))
-        child=mock.Mock(pid=24680,returncode=None)
+        child=mock.Mock(pid=24680,returncode=None,_sirsi_terminal_receipt=None)
         with mock.patch.object(runner,'native_process_info',return_value=SimpleNamespace(**values)):
             runner.local_bind_owned_child(child,birth)
         self.assertIs(runner.local_owned_identity(child).handle,child)
         for key,value in [('uid',0),('ruid',0),('ppid',1),('pgid',24681),('start_sec',1000000001),('pid',24681)]:
             changed=dict(values);changed[key]=value
             with self.subTest(field=key),mock.patch.object(runner,'native_process_info',return_value=SimpleNamespace(**changed)):
-                with self.assertRaises(runner.Refused):runner.local_bind_owned_child(mock.Mock(pid=24680,returncode=None),birth)
+                with self.assertRaises(runner.Refused):runner.local_bind_owned_child(mock.Mock(pid=24680,returncode=None,_sirsi_terminal_receipt=None),birth)
 
     def test_zero_wait_uid_never_substitutes_for_missing_drifted_or_reaped_handle(self):
         for change in ('missing','pid','handle','reaped','foreign-uid'):
