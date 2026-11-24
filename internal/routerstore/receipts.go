@@ -381,7 +381,8 @@ func (s *SQLiteStore) CompleteTaskByOwner(agent, taskID, actor, reason string) e
 }
 
 // CancelTask ends a task that will not be done. Canceled never counts as done.
-// Like CompleteTaskByOwner it is owner-only: served to the board token alone.
+// It is owner-only and refuses any retained custody fields atomically, even
+// expired custody: reconcile the original lease before administrative retirement.
 func (s *SQLiteStore) CancelTask(agent, taskID, actor, reason string) error {
 	return s.ownerTerminal(agent, taskID, actor, reason, "canceled")
 }
@@ -512,8 +513,16 @@ func (s *SQLiteStore) ownerTerminal(agent, taskID, actor, reason, status string)
 	}
 	defer func() { _ = tx.Rollback() }()
 	ref := "owner:" + actor
+	guard := ""
+	if status == "canceled" {
+		// The final UPDATE is the fence, not an earlier UI read or status edit.
+		// A concurrent claim either wins first (this predicate refuses) or sees
+		// the committed terminal status and cannot claim. Unknown/expired lease
+		// fields are retained rather than interpreted as permission to interrupt.
+		guard = ` AND status IN ('pending','blocked','in-progress') AND lease_token='' AND lease_expires='' AND claimed_by='' AND thread_id=''`
+	}
 	res, err := tx.Exec(`UPDATE tasks SET status=?,result_ref=?,failure_reason=?,lease_token='',lease_expires='',claimed_by='',thread_id='',updated=?
-		WHERE agent=? AND task_id=? AND status NOT IN ('done','canceled','withdrawn');`, status, ref, reason, now.Format(time.RFC3339), agent, taskID)
+		WHERE agent=? AND task_id=? AND status NOT IN ('done','canceled','withdrawn')`+guard+`;`, status, ref, reason, now.Format(time.RFC3339), agent, taskID)
 	if err != nil {
 		return fmt.Errorf("routerstore: owner %s %s/%s: %w", status, agent, taskID, err)
 	}

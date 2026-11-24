@@ -1,8 +1,9 @@
 # Hosted router board
 
 The hosted board is the owner's router console on Cloud Run (`sirsi-router-board`), reachable from any device
-by a signed-in **sirsi.ai** Google account through IAP. It shows every lane, mailbox, thread and ledger task
-the way `sirsi dashboard` does on a Mac, and it can **edit the ledger**.
+by a signed-in **sirsi.ai** Google account through IAP. The shared hosted read view
+shows aggregate work and lane counts, withholding private task and message details.
+Verified owners can **edit the ledger** through the separate authenticated controls.
 
 ## What you can change
 
@@ -50,3 +51,20 @@ scripts/router-service/board.sh deploy
 `mint` issues the token with `--agents router-board,@observer,@ledger-editor` straight into Secret Manager.
 `deploy` sets `SIRSI_BOARD_IAP_AUDIENCE=/projects/<number>/locations/<region>/services/sirsi-router-board`
 and ends with `verify`. `DRY_RUN=1` prints the gcloud commands without changing anything.
+## Retiring reviewed task records
+
+Signed-in owners can select **Retire reviewed tasks**, enter one lane and the
+exact reviewed task IDs (one per line, up to 500), and give a reason. Confirm the
+review checkbox, then select **Retire entered tasks**. This is administrative
+cancellation, not proof that the underlying work was completed. History stays
+in the canonical registry; private task details remain withheld on the shared
+board.
+
+The server atomically refuses records with custody or an existing terminal
+outcome. Even expired custody must first be reconciled by its original lane.
+No preparatory status change reopens a record. You may stop after
+the current request; this is not an atomic batch and acknowledged changes are
+not rolled back. A timeout or lost response is unknown, never a success claim.
+Retain the displayed results and verify the canonical after-state before
+retrying unknown or unprocessed records. Do not use this to cancel work
+another operator is actively managing or to replace a completion receipt.
