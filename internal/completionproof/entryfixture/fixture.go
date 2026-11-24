@@ -1,13 +1,10 @@
 // Package entryfixture supplies inert test inputs for the CLI and MCP close
-// entry points. No product imports this package. Validation executes the
-// byte-pinned portfolio helper, not a replacement policy implementation.
+// entry points. No product imports this package. Policy is the product embed,
+// never this package's historical Python copies or caller helper overrides.
 package entryfixture
 
 import (
-	"crypto/sha256"
-	_ "embed"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,29 +16,22 @@ import (
 	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 )
 
-//go:embed capture_and_forward.py
-var validator []byte
-
-//go:embed agent_completion_gate.py
-var portfolioHelper []byte
-
-const helperSHA256 = "a4953e61937d8bf03dfe9fbbcd6a0decb3fa44ad56fd4550fab0b0444cbf8ab9"
-
 const Agent = "completion-entry-fixture"
 
 type Case struct {
-	Name, Refusal      string
-	Status             interface{}
-	OmitStatus         bool
-	Blockers           []string
-	VerificationStatus string
-	MalformedJSON      bool
+	Name, Refusal                                             string
+	Status                                                    interface{}
+	OmitStatus                                                bool
+	Blockers                                                  []string
+	VerificationStatus                                        string
+	MalformedJSON                                             bool
+	WrongItem, MissingCommand, WrongCommand, DuplicateCommand bool
 }
 
 // The negative statuses are proof statuses, NOT --blocked/--ack coordination
 // outcomes. Those intentionally retain different shipped semantics.
 func Cases() []Case {
-	return []Case{
+	cases := []Case{
 		{Name: "completed", Status: "completed"},
 		{Name: "draft", Status: "draft", Refusal: "completion requires status `completed`"},
 		{Name: "blocked", Status: "blocked", Refusal: "completion requires status `completed`"},
@@ -51,7 +41,18 @@ func Cases() []Case {
 		{Name: "completed-with-blockers", Status: "completed", Blockers: []string{"unresolved"}, Refusal: "completion requires an empty blockers list"},
 		{Name: "failed-verification", Status: "completed", VerificationStatus: "fail", Refusal: "final proof requires passing status"},
 		{Name: "malformed-json", MalformedJSON: true, Refusal: "invalid completion proof on stdin"},
+		{Name: "wrong-item", Status: "completed", WrongItem: true, Refusal: "refuse"},
+		{Name: "missing-required-command", Status: "completed", MissingCommand: true, Refusal: "refuse"},
+		{Name: "wrong-required-command", Status: "completed", WrongCommand: true, Refusal: "refuse"},
+		{Name: "duplicate-command", Status: "completed", DuplicateCommand: true, Refusal: "refuse"},
 	}
+	// Product errors intentionally do not echo proof-derived diagnostics.
+	for i := range cases {
+		if cases[i].Refusal != "" {
+			cases[i].Refusal = "completion proof validation failed"
+		}
+	}
+	return cases
 }
 
 type Fixture struct {
@@ -76,8 +77,12 @@ func New(t *testing.T, tc Case) *Fixture {
 		}
 	}
 	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Chdir(root)
-	git := exec.Command("git", "init", "-q", root)
+	git := exec.Command("/usr/bin/git", "init", "-q", root)
 	if out, err := git.CombinedOutput(); err != nil {
 		t.Fatalf("owned fixture git init: %v: %s", err, out)
 	}
@@ -91,14 +96,15 @@ func New(t *testing.T, tc Case) *Fixture {
 	write(t, filepath.Join(root, "SCOPE.md"), "# Owned completion-entry fixture\nNo application, model, or live service is exercised.\n")
 	write(t, filepath.Join(root, "evidence.txt"), "Inert evidence for the owned entry-point regression.\n")
 	f := &Fixture{Proof: filepath.Join(root, "proof.json"), Receipt: filepath.Join(root, "validator-receipt.json")}
-	if got := fmt.Sprintf("%x", sha256.Sum256(portfolioHelper)); got != helperSHA256 {
-		t.Fatalf("retained portfolio helper changed: %s", got)
+	// A selectable-helper regression would either create this marker or falsely
+	// accept negative proofs. The true policy cannot be supplied by the fixture.
+	script := filepath.Join(root, "forged-helper.py")
+	markerJSON, err := json.Marshal(f.Receipt)
+	if err != nil {
+		t.Fatal(err)
 	}
-	write(t, filepath.Join(root, "agent_completion_gate.py"), string(portfolioHelper))
-	script := filepath.Join(root, "capture_and_forward.py")
-	write(t, script, string(validator))
+	write(t, script, "from pathlib import Path\nPath("+string(markerJSON)+").write_text('forged helper selected')\n")
 	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", script)
-	t.Setenv("SIRSI_COMPLETION_ENTRY_RECEIPT", f.Receipt)
 	t.Setenv("SIRSI_ROUTER_REPO", root)
 	t.Setenv("SIRSI_AGENT_ID", Agent)
 	t.Setenv(routercfg.StoreWakeEnv, "1")
@@ -138,6 +144,19 @@ func New(t *testing.T, tc Case) *Fixture {
 	if tc.VerificationStatus != "" {
 		document["verification"].([]map[string]interface{})[0]["status"] = tc.VerificationStatus
 	}
+	if tc.WrongItem {
+		document["work_item_id"] = f.ID + "-different"
+	}
+	if tc.MissingCommand {
+		document["verification"] = document["verification"].([]map[string]interface{})[:1]
+	}
+	if tc.WrongCommand {
+		document["verification"].([]map[string]interface{})[1]["command"] = "different-command"
+	}
+	if tc.DuplicateCommand {
+		checks := document["verification"].([]map[string]interface{})
+		document["verification"] = append(checks, checks[0])
+	}
 	raw, err := json.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
@@ -150,22 +169,19 @@ func New(t *testing.T, tc Case) *Fixture {
 	return f
 }
 
-// AssertValidator proves the actual entry reached the completion-mode helper
-// with exactly the captured bytes, independently of its error/success result.
+// AssertValidator retains the existing entry-test API, but now proves only
+// nonselection of the forged external helper and preservation of proof bytes.
+// Actual status/lease assertions remain in the callers. Captured-stdin causality
+// is independently exercised against the production helper in gate_test.go;
+// there is deliberately no injectable policy/capture wrapper in product code.
 func (f *Fixture) AssertValidator(t *testing.T) {
 	t.Helper()
-	data, err := os.ReadFile(f.Receipt)
-	if err != nil {
-		t.Fatalf("completion validator was not reached: %v", err)
+	if _, err := os.Stat(f.Receipt); !os.IsNotExist(err) {
+		t.Fatalf("forged helper selected or unexpected marker error: %v", err)
 	}
-	var receipt struct {
-		Mode, Captured string
-	}
-	if err := json.Unmarshal(data, &receipt); err != nil {
-		t.Fatal(err)
-	}
-	if receipt.Mode != "validate-completion" || receipt.Captured != f.Captured {
-		t.Fatalf("wrong completion protocol/captured bytes: %+v", receipt)
+	data, err := os.ReadFile(f.Proof)
+	if err != nil || string(data) != f.Captured {
+		t.Fatalf("entry changed fixture proof: %v", err)
 	}
 }
 
@@ -182,7 +198,7 @@ func completeContract() map[string]interface{} {
 		"repo_name": "completion-entry-fixture", "release_target": "fixture-only", "classification": "internal-tool",
 		"canon_documents":                []map[string]string{{"path": "SCOPE.md", "role": "scope"}},
 		"done_definition":                definitions,
-		"required_verification_commands": []map[string]string{{"name": "fixture", "command": "inert-fixture"}},
+		"required_verification_commands": []map[string]string{{"name": "fixture", "command": "inert-fixture"}, {"name": "second", "command": "inert-second"}},
 	}
 }
 
@@ -197,7 +213,7 @@ func completeProof(root, id string) map[string]interface{} {
 		"canon_read":         []map[string]string{{"path": "SCOPE.md", "read_at": "2026-10-24T00:00:00Z"}},
 		"requirements_trace": []map[string]interface{}{{"doc": "SCOPE.md", "section": "owned fixture", "claim": "entry wiring", "files_changed": []string{"SCOPE.md"}, "evidence": []string{"evidence.txt"}}},
 		"closure_evidence":   closure,
-		"verification":       []map[string]interface{}{{"name": "fixture", "command": "inert-fixture", "status": "pass", "evidence": "evidence.txt"}},
+		"verification":       []map[string]interface{}{{"name": "fixture", "command": "inert-fixture", "status": "pass", "evidence": "evidence.txt"}, {"name": "second", "command": "inert-second", "status": "pass", "evidence": "evidence.txt"}},
 		"working_status":     map[string]string{"environment": "owned temp fixture", "how_verified": "entry-point regression", "observed_result": "fixture data, not live proof", "verified_at": "2026-10-24T00:00:00Z"},
 		"handoffs":           []interface{}{}, "blockers": []string{},
 	}

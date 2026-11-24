@@ -5,6 +5,7 @@ package main
 // fail if a bare close ever slips past a contract-carrying repo again.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -65,7 +66,7 @@ func TestRouterCloseProofGateDefersCallerLookupForCoordination(t *testing.T) {
 	}
 }
 
-func TestValidateCompletionProofUsesGateScript(t *testing.T) {
+func TestValidateCompletionProofDoesNotTrustCallerGateScript(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".agents"), 0o755); err != nil {
 		t.Fatal(err)
@@ -78,8 +79,9 @@ func TestValidateCompletionProofUsesGateScript(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	marker := filepath.Join(t.TempDir(), "caller-helper-ran")
 	pass := filepath.Join(t.TempDir(), "pass.py")
-	if err := os.WriteFile(pass, []byte("import sys; sys.exit(0)\n"), 0o644); err != nil {
+	if err := os.WriteFile(pass, []byte("from pathlib import Path\nPath("+fmt.Sprintf("%q", marker)+").write_text('caller helper executed')\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	fail := filepath.Join(t.TempDir(), "fail.py")
@@ -88,11 +90,14 @@ func TestValidateCompletionProofUsesGateScript(t *testing.T) {
 	}
 
 	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", pass)
-	if err := completionproof.Enforce(repo, "item-1", proof, false, false, "done"); err != nil {
-		t.Fatalf("passing validator: %v", err)
+	if err := completionproof.Enforce(repo, "item-1", proof, false, false, "done"); err == nil {
+		t.Fatal("caller-selected success script accepted invalid completion evidence")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("caller-selected helper executed or marker state unavailable: %v", err)
 	}
 	t.Setenv("SIRSI_COMPLETION_GATE_SCRIPT", fail)
 	if err := completionproof.Enforce(repo, "item-1", proof, false, false, "done"); err == nil {
-		t.Fatal("failing validator: want error, got nil")
+		t.Fatal("caller-selected failure script changed invalid completion into success")
 	}
 }
