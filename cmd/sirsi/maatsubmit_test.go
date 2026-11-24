@@ -8,6 +8,43 @@ import (
 	"testing"
 )
 
+// A linked worktree deliberately resolves the production router at its shared
+// main checkout. These tests need real declaration validation, not a dependency
+// on whatever registry another working session currently has there. Use a
+// non-Git fixture and keep the real discovery/validation paths unchanged.
+func submitRegistryFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agents", "idea-router")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	registry := `{"agents":{
+		"mercury":{"id":"mercury","type":"claude","repo":"/fixture","workstream":"fixture","wake":{"mechanism":"none"}},
+		"claude-pantheon":{"id":"claude-pantheon","type":"claude","repo":"/fixture","workstream":"fixture","wake":{"mechanism":"none"}},
+		"codex-apollo":{"id":"codex-apollo","type":"codex","repo":"/fixture","workstream":"fixture","wake":{"mechanism":"none"}},
+		"codex-parent":{"id":"codex-parent","type":"codex","repo":"/fixture","workstream":"fixture","wake":{"mechanism":"none"}}
+	}}`
+	if err := os.WriteFile(filepath.Join(dir, "agents.json"), []byte(registry), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// A child must discover its fixture from cmd.Dir, never inherit Git routing or
+// a different provider's live session identity from the invoking shell.
+func submitFixtureEnv() []string {
+	env := make([]string, 0, len(os.Environ()))
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(key, "GIT_") || key == "CLAUDE_CODE_SESSION_ID" || key == "CODEX_SESSION_ID" || key == "CODEX_THREAD_ID" {
+			continue
+		}
+		env = append(env, entry)
+	}
+	return env
+}
+
 func TestCanonicalRepo(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -84,6 +121,14 @@ func TestCaseFoldedRepoCannotBypassPolicy(t *testing.T) {
 }
 
 func TestResolveSubmitRequester(t *testing.T) {
+	root := submitRegistryFixture(t)
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(key, "GIT_") {
+			t.Setenv(key, "")
+		}
+	}
+	t.Chdir(root)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_SESSION_ID", "")
@@ -173,8 +218,30 @@ func TestResolveSubmitRequester(t *testing.T) {
 		const sid = "sid-forged"
 		t.Setenv("CLAUDE_CODE_SESSION_ID", sid)
 		writeMarker(t, sid, "totally-not-a-real-agent")
-		if _, err := resolveSubmitRequester(); err == nil {
-			t.Fatal("expected error for marker naming an unregistered agent id, got nil")
+		if _, err := resolveSubmitRequester(); err == nil || !strings.Contains(err.Error(), "not a declared agent") {
+			t.Fatalf("undeclared marker must reach declaration refusal, got %v", err)
+		}
+	})
+
+	t.Run("missing fixture registry refuses a registered marker", func(t *testing.T) {
+		const sid = "sid-registry-missing"
+		t.Setenv("CLAUDE_CODE_SESSION_ID", sid)
+		writeMarker(t, sid, "mercury")
+		path := filepath.Join(root, ".agents", "idea-router", "agents.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Error(err)
+			}
+		})
+		if _, err := resolveSubmitRequester(); err == nil || !strings.Contains(err.Error(), "read agents.json") || !strings.Contains(err.Error(), path) {
+			t.Fatalf("missing owned registry must fail closed, got %v", err)
 		}
 	})
 }
@@ -189,6 +256,7 @@ func TestSubmitCommandExitCode(t *testing.T) {
 		runSubmitHelper()
 		return
 	}
+	root := submitRegistryFixture(t)
 
 	// Manual MkdirTemp + best-effort cleanup, not t.TempDir(): each subtest
 	// below spawns this binary as a real OS subprocess, and on this host that
@@ -226,7 +294,8 @@ func TestSubmitCommandExitCode(t *testing.T) {
 			}
 			args := []string{"-test.run=TestSubmitCommandExitCode", "-test.v"}
 			cmd := exec.Command(os.Args[0], args...)
-			cmd.Env = append(os.Environ(),
+			cmd.Dir = root
+			cmd.Env = append(submitFixtureEnv(),
 				"MAAT_SUBMIT_HELPER=1",
 				"HOME="+home,
 				"SIRSI_ROUTER_URL=",
@@ -249,6 +318,9 @@ func TestSubmitCommandExitCode(t *testing.T) {
 			if exitCode != c.wantExitCode {
 				t.Errorf("exit code = %d, want %d (output: %s)", exitCode, c.wantExitCode, out)
 			}
+			if c.agent == "claude-pantheon" && !strings.Contains(string(out), "not in repo policy") {
+				t.Errorf("declared identity must reach policy refusal, not registry failure: %s", out)
+			}
 		})
 	}
 }
@@ -263,6 +335,7 @@ func TestSubmitCommandExitCode(t *testing.T) {
 // SIRSI_MAAT_DECISIONS_PATH at an existing DIRECTORY so the ledger write
 // fails with a real I/O error, not a mock.
 func TestSubmitCommandLedgerFailureVisibility(t *testing.T) {
+	root := submitRegistryFixture(t)
 	home, err := os.MkdirTemp("", "maat-submit-ledger-failure-test")
 	if err != nil {
 		t.Fatal(err)
@@ -276,7 +349,8 @@ func TestSubmitCommandLedgerFailureVisibility(t *testing.T) {
 	runHelper := func(t *testing.T, env ...string) (exitCode int, out string) {
 		t.Helper()
 		cmd := exec.Command(os.Args[0], "-test.run=TestSubmitCommandExitCode", "-test.v")
-		cmd.Env = append(append([]string{}, os.Environ()...), env...)
+		cmd.Dir = root
+		cmd.Env = append(submitFixtureEnv(), env...)
 		cmd.Env = append(cmd.Env,
 			"MAAT_SUBMIT_HELPER=1",
 			"SIRSI_ROUTER_URL=",
