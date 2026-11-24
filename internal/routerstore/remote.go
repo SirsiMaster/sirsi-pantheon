@@ -43,6 +43,7 @@ import (
 // TestSentinelsRoundTrip pins the list.
 var sentinelErrors = map[string]error{
 	"ErrTaskResumeInput":      ErrTaskResumeInput,
+	"ErrTaskResumeRefused":    ErrTaskResumeRefused,
 	"ErrNotComplete":          ErrNotComplete,
 	"ErrBreakerOpen":          ErrBreakerOpen,
 	"ErrOverQuota":            ErrOverQuota,
