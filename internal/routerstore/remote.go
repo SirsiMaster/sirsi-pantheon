@@ -77,6 +77,7 @@ var sentinelErrors = map[string]error{
 	"ErrReceiptInvalid":       ErrReceiptInvalid,
 	"ErrReceiptUnverifiable":  ErrReceiptUnverifiable,
 	"ErrWaiterFirst":          schedule.ErrWaiterFirst,
+	"ErrReservationRefused":   schedule.ErrReservationRefused,
 	"ErrNotQueued":            schedule.ErrNotQueued,
 }
 
@@ -575,7 +576,9 @@ func (rs *RemoteStore) do(ctx context.Context, method string, args []any, sess *
 			}
 			// Keep the service's reason: a bare sentinel ("completion receipt
 			// invalid") hid whether the receipt was unmerged, unreadable or already used.
-			if msg := wr.Error.Message; msg != s.Error() && strings.Contains(msg, s.Error()) {
+			// A reservation refusal carries its historical text verbatim (it does
+			// not embed the sentinel text), so its reason is always kept.
+			if msg := wr.Error.Message; msg != s.Error() && (strings.Contains(msg, s.Error()) || (s == schedule.ErrReservationRefused && msg != "")) {
 				return &wireSentinel{s, msg}
 			}
 			return s

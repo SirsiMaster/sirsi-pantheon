@@ -174,7 +174,7 @@ func (s *SQLiteStore) verifyReceipt(agent, raw string, now time.Time) (Receipt, 
 	if v == nil {
 		return Receipt{}, fmt.Errorf("%w: no verifier configured", ErrReceiptUnverifiable)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), receiptVerifyTimeout)
 	defer cancel()
 	if err := v.Verify(ctx, kind, value); err != nil {
 		return Receipt{}, err
@@ -606,7 +606,24 @@ type ReceiptRecheck struct {
 	Receipt  string `json:"receipt"`
 	Reopened bool   `json:"reopened"`
 	Error    string `json:"error,omitempty"`
+	// Checked and Remaining are set only on the trailing summary entry (empty
+	// Agent/TaskID) a call appends when its time budget stopped it early.
+	Checked   int `json:"checked,omitempty"`
+	Remaining int `json:"remaining,omitempty"`
 }
+
+const (
+	// receiptRecheckCursorKey is outside receiptStatePrefix so receipt scans
+	// never see it. It holds the last receipt key attempted.
+	receiptRecheckCursorKey = "task-receipt-recheck-cursor"
+	// receiptRecheckBudget keeps one RecheckTaskReceipts call well inside the
+	// 90 s service limit; receiptVerifyTimeout is verifyReceipt's own bound.
+	receiptRecheckBudget = 60 * time.Second
+	receiptVerifyTimeout = 20 * time.Second
+)
+
+// receiptRecheckNow is the budget clock (a variable so tests can drive it).
+var receiptRecheckNow = time.Now
 
 // RecheckTaskReceipts re-verifies pr/ci/tag receipts last verified more than
 // olderThan ago. Only a receipt now positively proven false reopens its task
@@ -630,7 +647,14 @@ func (s *SQLiteStore) RecheckTaskReceipts(olderThan time.Duration) ([]ReceiptRec
 		all = append(all, r)
 	}
 	rows.Close()
-	var out []ReceiptRecheck
+	// Eligible receipts in key order, starting after the persisted cursor: repeated calls walk the whole set even when some receipts stay
+	// unverifiable (those never refresh verified_at, so age order would starve
+	// the rest behind them).
+	type eligible struct {
+		row
+		rc Receipt
+	}
+	var queue []eligible
 	for _, r := range all {
 		var rc Receipt
 		if json.Unmarshal([]byte(r.value), &rc) != nil || rc.Tier != "router-verified" || rc.Kind == "maat" {
@@ -639,6 +663,29 @@ func (s *SQLiteStore) RecheckTaskReceipts(olderThan time.Duration) ([]ReceiptRec
 		if at, perr := time.Parse(time.RFC3339, rc.VerifiedAt); perr == nil && now.Sub(at) < olderThan {
 			continue
 		}
+		queue = append(queue, eligible{r, rc})
+	}
+	sort.Slice(queue, func(i, j int) bool { return queue[i].key < queue[j].key })
+	cursor, _, _ := s.GetState(receiptRecheckCursorKey)
+	start := sort.Search(len(queue), func(i int) bool { return queue[i].key > cursor })
+	if start == len(queue) {
+		start = 0 // the cursor is past the last receipt: begin a new pass
+	}
+	queue = queue[start:] // a call never wraps: it ends at the end of the pass
+
+	var out []ReceiptRecheck
+	began := receiptRecheckNow()
+	attempted := 0
+	for _, e := range queue {
+		// Never start a verification that could outlive the call's budget: one
+		// verification is bounded by receiptVerifyTimeout. Skipped receipts are
+		// untouched (never reopened) and picked up by the next call.
+		if receiptRecheckNow().Sub(began)+receiptVerifyTimeout > receiptRecheckBudget {
+			break
+		}
+		attempted++
+		r, rc := e.row, e.rc
+		cursor = r.key
 		agent, taskID, _ := strings.Cut(strings.TrimPrefix(r.key, receiptStatePrefix), "/")
 		res := ReceiptRecheck{Agent: agent, TaskID: taskID, Receipt: rc.String()}
 		fresh, verr := s.verifyReceipt(agent, rc.String(), now)
@@ -660,6 +707,18 @@ func (s *SQLiteStore) RecheckTaskReceipts(olderThan time.Duration) ([]ReceiptRec
 			res.Reopened = reopened
 		}
 		out = append(out, res)
+	}
+	remaining := len(queue) - attempted
+	next := cursor
+	if remaining == 0 {
+		next = "" // full pass done: start over at the first receipt
+	}
+	if _, err := s.exec(`INSERT INTO state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value;`, receiptRecheckCursorKey, next); err != nil {
+		return out, fmt.Errorf("routerstore: save receipt recheck cursor: %w", err)
+	}
+	if remaining > 0 {
+		// In-band report, only when truncated, so a complete pass is unchanged.
+		out = append(out, ReceiptRecheck{Checked: attempted, Remaining: remaining, Error: fmt.Sprintf("time budget reached: checked %d, %d remain for the next call", attempted, remaining)})
 	}
 	return out, nil
 }
