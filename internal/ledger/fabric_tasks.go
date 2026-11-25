@@ -143,7 +143,7 @@ func fabricTaskMatches(task routerstore.Task, filter string) bool {
 	if filter == "done" {
 		return task.Status == "done"
 	}
-	if task.Status == "done" {
+	if taskTerminal(task.Status) {
 		return false
 	}
 	switch filter {
@@ -203,7 +203,8 @@ func FabricTasksFilteredFrom(s Snapshot, offset int, expected, filter string) (F
 	return page, nil
 }
 
-// FabricAllTasksFrom projects open and completed rows once, with the same
+// FabricAllTasksFrom projects every retained task row, including terminal
+// dispositions, with the same
 // allowlist and identity checks as paged Fabric. It fails instead of silently
 // returning an incomplete lane when the bounded response limit is exceeded.
 func FabricAllTasksFrom(s Snapshot) ([]FabricTask, error) {
@@ -272,6 +273,10 @@ func fabricTask(agent string, task routerstore.Task) FabricTask {
 	}
 	if task.Status == "blocked" || task.Liveness == "stalled" {
 		row.Role = brand.Warn.Name()
+	}
+	if task.Status == "canceled" || task.Status == "withdrawn" {
+		row.Status = task.Status
+		row.Role = brand.Dim.Name()
 	}
 	for _, value := range []string{"spec", "build", "review", "verify", "shipped"} {
 		if task.Stage == value {
