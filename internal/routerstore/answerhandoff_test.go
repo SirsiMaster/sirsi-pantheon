@@ -189,7 +189,14 @@ func TestAnswerHandoffTransactionCASAndRollback(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = s.exec(`CREATE TRIGGER reject_handoff BEFORE UPDATE ON state BEGIN SELECT RAISE(ABORT,'write refused'); END`); e != nil {
+	// The SQLite trigger syntax (BEGIN ... RAISE(ABORT)) is a syntax error on
+	// PostgreSQL, which needs a plpgsql function; both fail the state write.
+	pg := s.dialect().name == "postgres"
+	trigger := `CREATE TRIGGER reject_handoff BEFORE UPDATE ON state BEGIN SELECT RAISE(ABORT,'write refused'); END`
+	if pg {
+		trigger = `CREATE FUNCTION reject_handoff_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.key LIKE 'answer-handoff:%' THEN RAISE EXCEPTION 'write refused'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_handoff BEFORE UPDATE ON state FOR EACH ROW EXECUTE FUNCTION reject_handoff_fn()`
+	}
+	if _, e = s.exec(trigger); e != nil {
 		t.Fatal(e)
 	}
 	c = answerCall(state, "ack-drain")
@@ -197,7 +204,11 @@ func TestAnswerHandoffTransactionCASAndRollback(t *testing.T) {
 	if _, e = s.applyAnswerHandoff(a.Lane, lead, c); e == nil {
 		t.Fatal("persistence error accepted")
 	}
-	if _, e = s.exec(`DROP TRIGGER reject_handoff`); e != nil {
+	drop := `DROP TRIGGER reject_handoff`
+	if pg {
+		drop += ` ON state; DROP FUNCTION reject_handoff_fn()`
+	}
+	if _, e = s.exec(drop); e != nil {
 		t.Fatal(e)
 	}
 	if e = s.withAnswerState(a.Lane, func(_ *txHandle, a *AnswerAssignment) error {
