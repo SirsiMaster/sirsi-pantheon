@@ -185,14 +185,26 @@ def verify_guard_image(path, expected, run=execute):
             if not devices or len(roots) != 1:
                 raise ValueError("ambiguous image devices")
             candidate = roots.pop()
-            matching = [entity for entity in entities if entity.get("mount-point") == str(mount)]
+            def is_expected_mount(reported):
+                # hdiutil may report the canonical /private/... spelling while
+                # tempfile created the same macOS directory through /var/...
+                # Compare the filesystem object, not its symlink-dependent text.
+                if not isinstance(reported, str) or not reported:
+                    return False
+                try:
+                    return os.path.samefile(reported, mount)
+                except (OSError, TypeError, ValueError):
+                    return False
+
+            matching = [entity for entity in entities
+                        if is_expected_mount(entity.get("mount-point"))]
             if len(matching) != 1 or matching[0].get("dev-entry") not in devices:
                 raise Refusal("guard image mount/device association unknown; inspect " + str(mount) + " and " + str(metadata_path))
             mounted_device = matching[0]["dev-entry"]
             device = candidate
             mounts = [entity["mount-point"] for entity in entities
                       if isinstance(entity, dict) and "mount-point" in entity]
-            if mounts != [str(mount)]:
+            if len(mounts) != 1 or not is_expected_mount(mounts[0]):
                 raise Refusal("guard image has unexpected mounted volumes")
             if mounted_device not in devices or set(devices) != {device, mounted_device}:
                 raise Refusal("guard image has unexpected unmounted device entities")

@@ -340,6 +340,43 @@ class GuardImageVerificationTests(unittest.TestCase):
             self.assertFalse(mount.exists())
             self.assertEqual(calls[-1][:2], ["/usr/bin/hdiutil", "detach"])
 
+    def test_canonical_mount_path_alias_is_matched_by_filesystem_identity(self):
+        payloads = {"sirsi-display-power-guard": b"guard", "sirsi-pretoolguard-install": b"installer"}
+        expected = {name: {"sha256": hashlib.sha256(data).hexdigest(), "identifier": name}
+                    for name, data in payloads.items()}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            mount = root / "mount"
+            mount.mkdir()
+            alias = root / "canonical-mount-alias"
+            alias.symlink_to(mount, target_is_directory=True)
+            calls = []
+
+            def run(argv):
+                calls.append(argv)
+                if argv[:2] == ["/usr/bin/hdiutil", "attach"]:
+                    for name, data in payloads.items():
+                        (mount / name).write_bytes(data)
+                        (mount / name).chmod(0o755)
+                    details = plistlib.dumps({"system-entities": [
+                        {"dev-entry": "/dev/disk123"},
+                        {"dev-entry": "/dev/disk123s1", "mount-point": str(alias)},
+                    ]})
+                elif argv[:2] == ["/usr/bin/hdiutil", "detach"]:
+                    for name in payloads:
+                        (mount / name).unlink()
+                    details = b""
+                elif argv[:2] == ["/usr/bin/codesign", "-d"]:
+                    details = b"Timestamp=fixture\nCodeDirectory v=1 flags=0x10000(runtime)\n"
+                else:
+                    details = b""
+                return subprocess.CompletedProcess(argv, 0, details, b"")
+
+            with mock.patch.object(publication.tempfile, "mkdtemp", return_value=str(mount)):
+                publication.verify_guard_image(Path("inert.dmg"), expected, run)
+            self.assertEqual(calls[-1][:2], ["/usr/bin/hdiutil", "detach"])
+            self.assertTrue(alias.is_symlink())
+
     def test_invalid_manifest_refuses_before_attach(self):
         with self.assertRaises(publication.Refusal):
             publication.verify_guard_image(Path("inert.dmg"), {},
