@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -72,7 +74,7 @@ func TestTaskOutcomeRealCallerResumesSameOriginal(t *testing.T) {
 	if e := s.AddTask(Task{Agent: "ra", TaskID: "original", Subject: "phase"}); e != nil {
 		t.Fatal(e)
 	}
-	for i := 0; i < 5; i++ {
+	for i := 0; i < MaxRefundedYields; i++ {
 		l, e := s.ClaimTask("ra", "original", "w", "thread", time.Minute)
 		if e != nil {
 			t.Fatal(e)
@@ -90,11 +92,16 @@ func TestTaskOutcomeRealCallerResumesSameOriginal(t *testing.T) {
 // Actual HTTP path, not the fake dispatch: a revoked/unknown protocol cannot
 // change executable ownership. Normal failure callers remain compatible.
 func TestTaskOutcomeWireProtocolAndRefund(t *testing.T) {
-	backend, rs := remoteHarness(t)
+	// main requires a registered thread for a remote claim (Rule of Ra).
+	var logs strings.Builder
+	backend, client := ruleHarness(t, "enforce", &logs)
+	host, _ := os.Hostname()
+	register(t, backend, "own", "ra", host, "active", time.Date(2026, 9, 10, 15, 0, 0, 0, time.UTC))
+	rs := client("ra", "own")
 	if e := backend.AddTask(Task{Agent: "ra", TaskID: "wire", Subject: "work"}); e != nil {
 		t.Fatal(e)
 	}
-	l, e := rs.ClaimTask("ra", "wire", "w", "thread", time.Minute)
+	l, e := rs.ClaimTask("ra", "wire", "w", "own", time.Minute)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -113,10 +120,15 @@ func TestTaskOutcomeOldHTTPServerRetainsLease(t *testing.T) {
 	if e := s.AddTask(Task{Agent: "ra", TaskID: "old", Subject: "work"}); e != nil {
 		t.Fatal(e)
 	}
-	h, e := Handler(s, ServerOptions{Token: "test-token"})
+	host, _ := os.Hostname()
+	fixed := time.Date(2026, 9, 10, 15, 0, 0, 0, time.UTC)
+	register(t, s, "own", "ra", host, "active", fixed)
+	h, e := Handler(s, ServerOptions{Token: "test-token", RuleOfRa: "enforce", RuleOfRaStale: 10 * time.Minute, now: func() time.Time { return fixed }})
 	if e != nil {
 		t.Fatal(e)
 	}
+	t.Setenv("SIRSI_AGENT_ID", "ra")
+	t.Setenv("SIRSI_THREAD_ID", "own")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/call/TaskYieldCapabilities" {
 			writeErr(w, http.StatusNotFound, "", "no such store method")
@@ -127,7 +139,8 @@ func TestTaskOutcomeOldHTTPServerRetainsLease(t *testing.T) {
 	defer srv.Close()
 	rs := NewRemoteStore(srv.URL, "test-token")
 	rs.sessionDir = ""
-	l, e := rs.ClaimTask("ra", "old", "w", "thread", time.Minute)
+	rs.now = func() time.Time { return fixed }
+	l, e := rs.ClaimTask("ra", "old", "w", "own", time.Minute)
 	if e != nil {
 		t.Fatal(e)
 	}

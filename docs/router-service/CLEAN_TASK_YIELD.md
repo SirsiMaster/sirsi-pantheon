@@ -31,7 +31,12 @@ transport improvement is not implemented here. Result evidence describes the
 partial outcome; yield NEVER completes the original. On return, resolve only
 that owner's genuinely satisfied dependency through the normal metadata API,
 then claim the SAME original task normally. No reset-attempts is needed for
-repeated clean yields. Unknown RPC on older servers is refusal: no fallback to
+a few clean yields. Bound (Ra, 2026-11-25; not part of the SSA-accepted source):
+at most `MaxRefundedYields` (3) refunded yields per task since the last
+unrefunded one, counted from the `verdict='yielded'` rows of `task_lease_log`
+(no schema change). The next yield keeps its attempt charged, is logged as
+`yield-bounded`, opens a new window, and blocks the task at the retry ceiling.
+Failure releases and lease expiries do not reset the window (conservative). Unknown RPC on older servers is refusal: no fallback to
 failure release or automatic reset, and no rewrite of historical failures.
 
 Tests reproduce fourth-phase exhaustion with legacy release, then verify

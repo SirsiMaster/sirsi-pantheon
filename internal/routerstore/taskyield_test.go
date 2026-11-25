@@ -14,7 +14,7 @@ func TestTaskYieldResumesWithoutFailureExhaustion(t *testing.T) {
 	if err := s.AddTask(Task{Agent: "ra", TaskID: "original", Subject: "phased work"}); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < MaxRefundedYields; i++ {
 		l, err := s.ClaimTask("ra", "original", "w", "thread", time.Minute)
 		if err != nil {
 			t.Fatal(i, err)
@@ -31,14 +31,12 @@ func TestTaskYieldResumesWithoutFailureExhaustion(t *testing.T) {
 		}
 	}
 	events, err := s.TaskLeaseEventsSince("ra", "original", "2020-01-01T00:00:00Z")
-	if err != nil || len(events) != 10 {
+	if err != nil || len(events) != MaxRefundedYields {
 		t.Fatal("audit", len(events), err)
 	}
-	l, err := s.ClaimTask("ra", "original", "w", "thread", time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = s.CompleteTaskLease("ra", "original", l.Token, "actual-final-proof"); err != nil {
+	// The original is still claimable after its refunded phases (completion
+	// itself needs a verified receipt, which is out of scope here).
+	if _, err = s.ClaimTask("ra", "original", "w", "thread", time.Minute); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -133,6 +131,79 @@ func TestTaskYieldFourthPhaseNeedsNoReset(t *testing.T) {
 		t.Fatal("fourth clean phase refused", err)
 	}
 }
+
+// tick makes every clock read later than the last, so log ordering is strict.
+func tick(s *SQLiteStore) {
+	t0 := time.Date(2026, 11, 25, 0, 0, 0, 0, time.UTC)
+	n := 0
+	s.now = func() time.Time { n++; return t0.Add(time.Duration(n) * time.Millisecond) }
+}
+
+func yieldOnce(t *testing.T, s *SQLiteStore, id string) TaskEligibility {
+	t.Helper()
+	l, err := s.ClaimTask("ra", id, "w", "thread", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.YieldTaskLease("ra", id, l.Token, "clean", "receipt:phase", ""); err != nil {
+		t.Fatal(err)
+	}
+	e, err := s.TaskEligibility("ra", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+// A worker that yields forever must run out: after MaxRefundedYields refunds the
+// yield keeps its attempt charged, and the retry ceiling then blocks the task.
+func TestTaskYieldRefundsAreBounded(t *testing.T) {
+	s := newTestStore(t)
+	tick(s)
+	_ = s.AddTask(Task{Agent: "ra", TaskID: "loop", Subject: "work"})
+	for i := 0; i < MaxRefundedYields; i++ {
+		if e := yieldOnce(t, s, "loop"); e.Attempts != 0 || !e.Claimable {
+			t.Fatal("refund", i, e)
+		}
+	}
+	if e := yieldOnce(t, s, "loop"); e.Attempts != 1 || !e.Claimable {
+		t.Fatal("bounded yield must keep its attempt charged", e)
+	}
+	// The bounded yield is a real attempt: it opens a new window of refunds.
+	for i := 0; i < MaxRefundedYields; i++ {
+		if e := yieldOnce(t, s, "loop"); e.Attempts != 1 {
+			t.Fatal("new window refund", i, e)
+		}
+	}
+	yieldOnce(t, s, "loop") // bounded: attempts 2
+	for i := 0; i < MaxRefundedYields; i++ {
+		yieldOnce(t, s, "loop")
+	}
+	yieldOnce(t, s, "loop") // bounded: attempts 3, blocked
+	e, _ := s.TaskEligibility("ra", "loop")
+	if e.Attempts != MaxRetriesPerItem || e.Status != "blocked" || e.Claimable {
+		t.Fatal("endless yields never exhausted", e)
+	}
+}
+
+// Past failures are never refunded, bounded or not.
+func TestTaskYieldBoundKeepsFailureHistory(t *testing.T) {
+	s := newTestStore(t)
+	tick(s)
+	_ = s.AddTask(Task{Agent: "ra", TaskID: "f", Subject: "work"})
+	l, _ := s.ClaimTask("ra", "f", "w", "thread", time.Minute)
+	if err := s.ReleaseTaskLease("ra", "f", l.Token, "real failure"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i <= MaxRefundedYields; i++ {
+		yieldOnce(t, s, "f")
+	}
+	e, _ := s.TaskEligibility("ra", "f")
+	if e.Attempts != 2 || e.FailureReason != "real failure" {
+		t.Fatal(e)
+	}
+}
+
 func TestTaskYieldNoReasonHeuristics(t *testing.T) {
 	s := newTestStore(t)
 	_ = s.AddTask(Task{Agent: "ra", TaskID: "t", Subject: "work"})

@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+// MaxRefundedYields bounds consecutive refunded yields per task (Ra decision,
+// 2026-11-25). The count lives in task_lease_log, no schema change.
+const MaxRefundedYields = 3
+
 // YieldTaskLease refunds ONLY the current live executable attempt. Explicit
 // typed intent, never free-form reason inference. Earlier failures and their
 // failure_reason survive. Receipt audit and lease clearing commit together.
@@ -52,7 +56,27 @@ func (s *SQLiteStore) YieldTaskLease(agent, taskID, token, disposition, evidence
 			}
 			blocked = dependency
 		}
-		res, err := tx.Exec(`UPDATE tasks SET status='pending',attempts=attempts-1,blocked_by=?,lease_token='',lease_expires='',claimed_by='',thread_id='',updated=? WHERE agent=? AND task_id=?`+taskLeaseFence+` AND blocked_by=?`, blocked, now.Format(time.RFC3339), agent, taskID, token, now.Format(time.RFC3339), observedBlocked)
+		// Bound: a worker cannot yield forever without consuming attempts. At most
+		// MaxRefundedYields refunded yields per task since the last unrefunded
+		// one; the next yield releases like a failure-free release that keeps its
+		// attempt charged (and blocks at the retry ceiling). ts >= errs on the
+		// conservative side: a tie counts old refunds against the new window.
+		var refunded int
+		if err = tx.QueryRow(`SELECT count(*) FROM task_lease_log WHERE agent=? AND task_id=? AND verdict='yielded'
+			AND ts >= COALESCE((SELECT max(ts) FROM task_lease_log WHERE agent=? AND task_id=? AND verdict='yield-bounded'),'')`,
+			agent, taskID, agent, taskID).Scan(&refunded); err != nil {
+			return err
+		}
+		refund := refunded < MaxRefundedYields
+		verdict, status, failure := "yielded", "pending", ""
+		delta := 1
+		if !refund {
+			verdict, delta = "yield-bounded", 0
+			if attempts >= MaxRetriesPerItem {
+				status, failure = "blocked", fmt.Sprintf("task lease attempts exhausted: %d consecutive clean yields without completion", MaxRefundedYields)
+			}
+		}
+		res, err := tx.Exec(`UPDATE tasks SET status=?,attempts=attempts-?,blocked_by=?,failure_reason=CASE WHEN ?<>'' THEN ? ELSE failure_reason END,lease_token='',lease_expires='',claimed_by='',thread_id='',updated=? WHERE agent=? AND task_id=?`+taskLeaseFence+` AND blocked_by=?`, status, delta, blocked, failure, failure, now.Format(time.RFC3339), agent, taskID, token, now.Format(time.RFC3339), observedBlocked)
 		if err != nil {
 			return err
 		}
@@ -69,12 +93,13 @@ func (s *SQLiteStore) YieldTaskLease(agent, taskID, token, disposition, evidence
 			Before     int    `json:"attempts_before"`
 			After      int    `json:"attempts_after"`
 			Dependency string `json:"dependency"`
-		}{evidenceRef, attempts, attempts - 1, blocked})
+			Refunded   bool   `json:"refunded"`
+		}{evidenceRef, attempts, attempts - delta, blocked, refund})
 		if err != nil {
 			return err
 		}
 		// Existing public task-lease audit schema.
-		_, err = tx.Exec(`INSERT INTO task_lease_log(ts,task_id,agent,op,session_id,thread_id,host,verdict,reason) VALUES(?,?,?,?,?,?,?,?,?)`, now.Format(AudienceTS), taskID, agent, "yield:"+disposition, "", thread, "", "yielded", string(audit))
+		_, err = tx.Exec(`INSERT INTO task_lease_log(ts,task_id,agent,op,session_id,thread_id,host,verdict,reason) VALUES(?,?,?,?,?,?,?,?,?)`, now.Format(AudienceTS), taskID, agent, "yield:"+disposition, "", thread, "", verdict, string(audit))
 		if err != nil {
 			return err
 		}
