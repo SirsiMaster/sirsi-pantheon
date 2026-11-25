@@ -576,7 +576,7 @@ func (l *Ledger) Heartbeat(id string) (*Reservation, error) {
 	}
 	return l.mutate(id, func(r *Reservation) error {
 		if r.Status != StatusActive {
-			return fmt.Errorf("maat: reservation %s is %s, not active", id, r.Status)
+			return refuse("maat: reservation %s is %s, not active", id, r.Status)
 		}
 		r.HeartbeatAt = l.now().Format(time.RFC3339)
 		return nil
@@ -597,7 +597,7 @@ func (l *Ledger) Extend(id, newEstEnd string) (*Reservation, error) {
 	}
 	return l.mutate(id, func(r *Reservation) error {
 		if r.Status != StatusActive {
-			return fmt.Errorf("maat: reservation %s is %s, not active", id, r.Status)
+			return refuse("maat: reservation %s is %s, not active", id, r.Status)
 		}
 		pendingCedes, err := l.pendingCedeIDs(r.Holder)
 		if err != nil {
@@ -630,7 +630,7 @@ func (l *Ledger) Release(id string) (*Reservation, error) {
 	}
 	return l.mutate(id, func(r *Reservation) error {
 		if isTerminal(r.Status) {
-			return fmt.Errorf("maat: reservation %s already %s", id, r.Status)
+			return refuse("maat: reservation %s already %s", id, r.Status)
 		}
 		r.Status = StatusReleased
 		r.EndedAt = l.now().UTC().Format(time.RFC3339)
@@ -646,7 +646,7 @@ func (l *Ledger) ReleaseExit(id string, exitCode int) (*Reservation, error) {
 	}
 	return l.mutate(id, func(r *Reservation) error {
 		if isTerminal(r.Status) {
-			return fmt.Errorf("maat: reservation %s already %s", id, r.Status)
+			return refuse("maat: reservation %s already %s", id, r.Status)
 		}
 		r.Status = StatusReleased
 		r.EndedAt = l.now().UTC().Format(time.RFC3339)
@@ -725,7 +725,7 @@ func (l *Ledger) mutateAttempt(id string, fn func(*Reservation) error) (*Reserva
 		}
 		return &row, nil
 	}
-	return nil, fmt.Errorf("maat: reservation %s not found", id)
+	return nil, refuse("maat: reservation %s not found", id)
 }
 
 // WhoIsOn returns the current live (active, non-expired) holder of a resource

@@ -1031,6 +1031,10 @@ func (s *server) writeCallErr(w http.ResponseWriter, method string, err error) {
 		writeErr(w, http.StatusConflict, "ErrTaskResumeRefused", err.Error())
 		return
 	}
+	if errors.Is(err, schedule.ErrReservationRefused) {
+		writeErr(w, http.StatusConflict, "ErrReservationRefused", err.Error())
+		return
+	}
 	if errors.Is(err, ErrLaneScope) {
 		writeErr(w, http.StatusForbidden, "ErrLaneScope", err.Error())
 		return
