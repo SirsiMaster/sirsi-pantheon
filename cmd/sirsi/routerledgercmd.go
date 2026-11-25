@@ -409,6 +409,10 @@ func renderTaskEligibility(out io.Writer, e routerstore.TaskEligibility) error {
 			return err
 		}
 	}
+	if e.Claimable {
+		_, err := fmt.Fprintln(out, "  Claiming also needs this process's session bound to the same agent and --thread (SIRSI_AGENT_ID / SIRSI_THREAD_ID or a registered session marker); a refusal names which one differs.")
+		return err
+	}
 	return nil
 }
 

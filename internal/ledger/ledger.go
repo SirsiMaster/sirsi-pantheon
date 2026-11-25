@@ -127,7 +127,7 @@ func BuildFrom(all []work.Item, tasks []routerstore.Task, threads *router.Thread
 			agents[t.Agent] = &Agent{AgentID: t.Agent}
 		}
 		agents[t.Agent].Tasks = append(agents[t.Agent].Tasks, t)
-		if t.Status == "done" {
+		if routerstore.IsTerminalTaskStatus(t.Status) {
 			continue
 		}
 		agents[t.Agent].OpenTasks++

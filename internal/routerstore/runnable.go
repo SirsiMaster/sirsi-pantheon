@@ -66,7 +66,7 @@ func postEnforcementTaskPredicate(alias string) string {
 func (s *SQLiteStore) OperationalAgents() ([]string, error) {
 	rows, err := s.db.Query(`SELECT agent FROM (
 		SELECT to_agent AS agent FROM items WHERE status IN ('open','claimed','working','blocked')
-		UNION SELECT agent FROM tasks WHERE status<>'done'
+		UNION SELECT agent FROM tasks WHERE status NOT IN ('done','canceled','withdrawn')
 		UNION SELECT owner AS agent FROM requirements WHERE status NOT IN ('satisfied','waived')
 	) WHERE agent<>'' ORDER BY agent`)
 	if err != nil {

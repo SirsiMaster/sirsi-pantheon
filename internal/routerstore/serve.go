@@ -756,11 +756,12 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if strings.TrimSpace(sess.ThreadID) == "" || in[threadIndex].String() != sess.ThreadID || in[0].String() != sess.Agent {
+		if reason := taskClaimBindingRefusal(sess, in[0].String(), in[threadIndex].String()); reason != "" {
 			if exactID != "" {
 				s.recordTaskLeaseEvent(exactID, in[0].String(), "bind", sess, "refused", "empty or mismatched authenticated caller thread/agent; task unchanged")
 			}
-			writeErr(w, http.StatusForbidden, "ErrNotOwner", "routerstore: task claim requires this authenticated agent and bound caller thread; body --thread is not a session binding")
+			// The message must contain ErrNotOwner's text so the client keeps the whole reason (remote.go wireSentinel).
+			writeErr(w, http.StatusForbidden, "ErrNotOwner", ErrNotOwner.Error()+": task claim refused, "+reason)
 			return
 		}
 		backend, ok := s.store.(interface {
@@ -917,6 +918,21 @@ func (s *server) checkNonce(sid, nonce string) error {
 	}
 	s.nonces[key] = now.Add(nonceWindow)
 	return nil
+}
+
+// taskClaimBindingRefusal returns why an authenticated task claim is refused, or "" when the claim's agent and
+// --thread are exactly this session's bound agent and thread. The refusal is right (body --thread is never an
+// identity) — this only names which of the three differing facts failed and the next step.
+func taskClaimBindingRefusal(sess Session, agent, thread string) string {
+	switch {
+	case strings.TrimSpace(sess.ThreadID) == "":
+		return fmt.Sprintf("this session (agent %q) is bound to no thread, so --thread cannot be honored; the process had no SIRSI_THREAD_ID and no registered session marker when it minted. Register or resume the thread (or export SIRSI_AGENT_ID and SIRSI_THREAD_ID) and claim again with the same --thread", sess.Agent)
+	case agent != sess.Agent:
+		return fmt.Sprintf("claim names agent %q but this session is agent %q; claim as the session's own agent id (check SIRSI_AGENT_ID)", agent, sess.Agent)
+	case thread != sess.ThreadID:
+		return fmt.Sprintf("--thread %q is not this session's bound thread %q; pass --thread %s (or run from the session that owns %q)", thread, sess.ThreadID, sess.ThreadID, thread)
+	}
+	return ""
 }
 
 func (s *server) checkItemOwner(id string, caller Session) error {

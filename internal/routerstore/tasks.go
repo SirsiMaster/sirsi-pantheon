@@ -70,6 +70,10 @@ func terminalTaskStatus(status string) bool {
 	return status == "done" || status == "canceled" || status == "withdrawn"
 }
 
+// IsTerminalTaskStatus is the one terminal list for every open/closed count outside this package. A reader that
+// tests only "done" counts canceled and withdrawn tasks as open work.
+func IsTerminalTaskStatus(status string) bool { return terminalTaskStatus(status) }
+
 func validTestState(state string) bool {
 	switch state {
 	case "untested", "tested", "passed", "failed":
