@@ -176,14 +176,15 @@ func TestConsumerPromptCarriesThePermanentLoopContract(t *testing.T) {
 		"NOT COMPLETION", // the explicit correction of the old behavior
 		"EVIDENCE",       // never a bare ack
 	}
-	// ADR-079 D3: an attended lane's headless worker becomes a one-pass job, lane by
-	// lane as each lead confirms (Ra first). The live interactive session owns the
-	// ledger, so that worker finishes the items it was woken for and exits instead
-	// of looping beside the session. A one-pass prompt must be complete and on an
-	// attended lane; every other prompt keeps the loop contract.
-	onePass := []string{"ONE-PASS", "EXIT", "EVIDENCE"}
-	if ra, ok := reg.Agents["ra"]; !ok || !strings.Contains(ra.Consumer.Prompt, "ONE-PASS") {
-		t.Errorf("ra: worker prompt is not the ADR-079 D3 one-pass contract")
+	// ADR-079 D3: a lane with a live interactive session gets a one-pass headless
+	// worker (explicit onePassLanes list). That session owns the ledger, so the
+	// worker finishes the items it was woken for and exits instead of looping beside
+	// it. A one-pass prompt must be complete and on a listed lane; every other prompt
+	// keeps the loop contract.
+	for id := range onePassLanes {
+		if _, ok := reg.Agents[id]; !ok {
+			t.Errorf("%s: listed one-pass lane is missing from the registry", id)
+		}
 	}
 	for id, cfg := range reg.Agents {
 		p := cfg.Consumer.Prompt
@@ -193,18 +194,10 @@ func TestConsumerPromptCarriesThePermanentLoopContract(t *testing.T) {
 		if strings.Contains(p, "exit immediately and do nothing else") {
 			t.Errorf("%s: prompt still tells the agent to quit on an empty inbox", id)
 		}
-		if strings.Contains(p, "ONE-PASS") {
-			if !cfg.Attended {
-				t.Errorf("%s: one-pass worker prompt on a lane with no attended session would leave its ledger unworked", id)
-			}
-			for _, want := range onePass {
-				if !strings.Contains(p, want) {
-					t.Errorf("%s: attended lane's worker prompt omits %q — the ADR-079 D3 one-pass contract is incomplete", id, want)
-				}
-			}
-			if strings.Contains(p, "pull again") {
-				t.Errorf("%s: attended lane's worker prompt still loops (pull again) beside the interactive session", id)
-			}
+		if msg := onePassViolation(id, p); msg != "" {
+			t.Errorf("%s: %s", id, msg)
+		}
+		if onePassLanes[id] {
 			continue
 		}
 		for _, want := range required {
@@ -212,6 +205,58 @@ func TestConsumerPromptCarriesThePermanentLoopContract(t *testing.T) {
 				t.Errorf("%s: prompt omits %q — the permanent-loop contract is incomplete", id, want)
 			}
 		}
+	}
+}
+
+// onePassLanes is the EXPLICIT list of lanes with a live interactive session whose
+// headless worker is a one-pass job (ADR-079 D3; owner 2026-11-24). Adding a lane
+// takes a deliberate edit here, so the contract cannot spread by accident: every
+// lane not listed keeps the loop contract and must not carry ONE-PASS.
+var onePassLanes = map[string]bool{
+	"ra":                    true,
+	"codex-finalwishes":     true,
+	"claude-finalwishes-m1": true,
+	"mercury":               true,
+}
+
+// onePassViolation returns why prompt p breaks the list above for lane id, or "".
+func onePassViolation(id, p string) string {
+	if !onePassLanes[id] {
+		if strings.Contains(p, "ONE-PASS") {
+			return "one-pass prompt on a lane not in onePassLanes — add it to the list deliberately or restore the loop contract"
+		}
+		return ""
+	}
+	for _, want := range []string{"ONE-PASS", "EXIT", "EVIDENCE"} {
+		if !strings.Contains(p, want) {
+			return "one-pass lane's worker prompt omits " + want + " — the ADR-079 D3 contract is incomplete"
+		}
+	}
+	if strings.Contains(p, "pull again") {
+		return "one-pass lane's worker prompt still loops (pull again) beside the interactive session"
+	}
+	return ""
+}
+
+// Negative controls, both directions: a listed lane losing the contract fails, an
+// unlisted lane gaining it fails, and the right shape on each side passes.
+func TestOnePassGuardBothDirections(t *testing.T) {
+	onePass := "You are {{agent}}. ONE-PASS job: close each WITH EVIDENCE, then EXIT 0."
+	loop := "You are {{agent}}. LOOP: pull again. NOT COMPLETION. EVIDENCE."
+	if onePassViolation("codex-finalwishes", loop) == "" {
+		t.Error("listed lane that lost the one-pass contract was not rejected")
+	}
+	if onePassViolation("codex-finalwishes", "ONE-PASS EVIDENCE but never leaves") == "" {
+		t.Error("listed lane with an incomplete one-pass prompt was not rejected")
+	}
+	if onePassViolation("claude-home", onePass) == "" {
+		t.Error("unlisted lane that gained the one-pass contract was not rejected")
+	}
+	if msg := onePassViolation("mercury", onePass); msg != "" {
+		t.Errorf("complete one-pass prompt on a listed lane rejected: %s", msg)
+	}
+	if msg := onePassViolation("claude-home", loop); msg != "" {
+		t.Errorf("loop prompt on an unlisted lane rejected: %s", msg)
 	}
 }
 
