@@ -1275,8 +1275,13 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
-	log.Printf("wake-loop %s: started (thread=%s pid=%d interval=%s consumer=%v)",
-		agentID, thr.ThreadID, os.Getpid(), interval, consumer != nil)
+	// Default-OFF event-driven early wake (A27): nil unless SIRSI_WAKE_EVENT_TICK=1.
+	// It only shortens the final wait below; the ticker stays as the fallback.
+	events, stopEvents := startLoopWakeEvents(ctx, routerRoot, agentID, interval, os.Getenv(WakeEventTickEnv) == "1")
+	defer stopEvents()
+	byEvent := false
+	log.Printf("wake-loop %s: started (thread=%s pid=%d interval=%s consumer=%v events=%v)",
+		agentID, thr.ThreadID, os.Getpid(), interval, consumer != nil, events != nil)
 	lastDepth := -1
 	lastTasks := 0
 	taskReadLogged := false
@@ -1628,10 +1633,14 @@ func RunWakeLoop(ctx context.Context, routerRoot, agentID string, interval time.
 			}
 		}
 
+		events.observed(depth, lerr, byEvent, interval)
+		byEvent = false
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-tick.C:
+		case <-events.hints():
+			byEvent = true
 		}
 	}
 }

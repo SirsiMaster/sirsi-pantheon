@@ -87,6 +87,11 @@ func TestRunStaleThreadReconcileDuty_SkipsAliveSession(t *testing.T) {
 		return old(pid)
 	})
 	defer setPIDStateFn(nil)
+	// a real process may hold this PID on the host: fake its start and command too.
+	setPIDStartFn(func(int) string { return "" })
+	defer setPIDStartFn(nil)
+	setPIDCommandFn(func(int) string { return "" })
+	defer setPIDCommandFn(nil)
 
 	thr := &Thread{
 		ThreadID:   "thr-alive-001",
