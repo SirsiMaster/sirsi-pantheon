@@ -292,6 +292,9 @@ ALTER TABLE items ADD COLUMN IF NOT EXISTS first_claimed_at TEXT NOT NULL DEFAUL
 -- UPDATEs (CASE WHEN first_claimed_at='' ...), never cleared by reset-attempts,
 -- release or withdraw; no backfill, so rows claimed before v28 stay ''.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS first_claimed_at TEXT NOT NULL DEFAULT '';
+-- v29 — the host token that issued each session, set by the server from the authenticated bearer at mint.
+-- '' = bootstrap/legacy/unattributed; no backfill. DiscardMintedToken revokes only sessions with a matching id.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS token_id TEXT NOT NULL DEFAULT '';
 
 
 -- Which session holds each lease. A side table, not columns on items/tasks:
@@ -563,6 +566,6 @@ DO $$ BEGIN
 END $$;
 
 -- ── version — last, so a partial apply never publishes a version it does not have ──
-INSERT INTO schema_version(version, applied_at) VALUES (28, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 28, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 28;
+INSERT INTO schema_version(version, applied_at) VALUES (29, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 29, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 29;

@@ -281,6 +281,45 @@ func (s *SQLiteStore) RevokeHostToken(id string) error {
 	return nil
 }
 
+// ErrDiscardTokenID: DiscardMintedToken needs the exact id of the token it discards.
+var ErrDiscardTokenID = errors.New("routerstore: DiscardMintedToken: token id is required")
+
+// DiscardMintedToken is the publish-failure cleanup for a freshly minted token: one transaction marks THAT token
+// revoked and revokes only the sessions whose token_id equals it. Unlike RevokeHostToken it never touches another
+// token's sessions on the same host, so a failed same-host replacement cannot sign out the live fleet. Rows are
+// marked, never deleted (the revocation stays auditable; host_token_scopes is left in place like RevokeHostToken).
+// Idempotent: a token already revoked still has its sessions swept, so a retried cleanup converges. An id with no
+// token row is ErrTokenUnknown. Server-side only (notServed); the empty id is refused because ” is the
+// unattributed-session marker and would otherwise match every legacy session.
+func (s *SQLiteStore) DiscardMintedToken(tokenID string) error {
+	if strings.TrimSpace(tokenID) == "" {
+		return ErrDiscardTokenID
+	}
+	now := s.clock().Format(time.RFC3339)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("routerstore: DiscardMintedToken: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var exists string
+	if err := tx.QueryRow(`SELECT token_id FROM host_tokens WHERE token_id=?`, tokenID).Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrTokenUnknown
+		}
+		return fmt.Errorf("routerstore: DiscardMintedToken: %w", err)
+	}
+	if _, err := tx.Exec(`UPDATE host_tokens SET revoked=? WHERE token_id=? AND revoked=''`, now, tokenID); err != nil {
+		return fmt.Errorf("routerstore: DiscardMintedToken: revoke token: %w", err)
+	}
+	if _, err := tx.Exec(`UPDATE sessions SET revoked=? WHERE token_id=? AND revoked=''`, now, tokenID); err != nil {
+		return fmt.Errorf("routerstore: DiscardMintedToken: revoke sessions: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("routerstore: DiscardMintedToken: commit: %w", err)
+	}
+	return nil
+}
+
 // AdoptTokenMachineID records that the live host token for `host` also answers
 // to the stable `machineID` (ADR-067, rs-42). The credential is the token
 // itself: the SERVER injects host=sess.Host from the authenticated session

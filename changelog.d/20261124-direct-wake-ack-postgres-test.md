@@ -1,0 +1,1 @@
+- The direct task claim's transactional wake-ACK rollback test now runs on Postgres as well as SQLite (test-only; the other direct-claim ACK tests already ran on both through `ci-postgres.sh`).

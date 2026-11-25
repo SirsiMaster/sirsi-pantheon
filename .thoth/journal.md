@@ -2667,6 +2667,40 @@ selection. A named SNE/Native-v2/OMLX engine must provide its own loopback
 endpoint; it cannot silently adopt `gemma-server.port`. A direct native-v2
 fixture proves the CLI sends the configured model to the configured service.
 
+### v0.24.165 publication attempt and safe correction (2026-11-24)
+
+The authorized sole-publisher workflow `45427969009` verified source commit
+`9f7b0362018e5ecd738dbbf7c91899c3a8f2c723`, bound the qualified M1 runner,
+created the exact reserved draft (`456974029`), signed/notarized the DMG and
+PKG, retained custody, and then refused publication before any upload. The
+retained receipt reports that hdiutil spelled the same mount `/private/var/...`
+while Python had requested `/var/...`; literal path comparison rejected the
+mount/device association. Signature and stapler checks passed, but the draft
+has no assets and release is not complete.
+
+On a clean exact-source clone, branch
+`codex/recover-v165-publication-mount-alias-20261124` commit
+`21aa4a36384369cfcc521a4cea2c64bdbf1ba748` changes the guard verifier to use
+`os.path.samefile`, retaining the exact-one-mount and device-topology gates,
+and adds a symlink-alias regression. Publisher and guard suites passed 83/83
+under Maat terminal `ecabf6a0a6b9421084b24a11e22a9b80`; an earlier failed test
+attempt exposed and corrected a test-fixture cleanup branch and remains in its
+own terminal. Draft PR #1444 is open; CI and claude-deck review are pending.
+Do not retry the old tag workflow with its old helper. A publication-only
+continuation must first be reviewed and use the exact retained signed inputs,
+same draft identity, and sole qualified M1 route—no rebuild, re-sign, or host
+restart. No release completion, production adoption, or counter-retention
+approval is implied. Counter retention remains HELD until the in-flight upload
+gap is resolved.
+
+The same review found the #1863 composed evidence tree has a real stale Rules
+catalog entry: its `firestore.indexes.json` digest differs from the merged
+source; catalog, selector, and qualification wording need a fresh cut. The
+reported reset-related “not a git repository” diagnostics come from a separate
+attach-evidence fixture lacking `.git`/`treeOf`; reset's actual test gap is
+missing Functions `firebase-admin/firestore` dependencies and the rerun used
+Node 25 rather than the supported Node 22. No code or tests were changed there.
+
 MCP startup failure output is engine-neutral. A failed Native v2/SNE/OMLX probe
 now preserves the actual cause and points to the shared engine-selection guide,
 instead of falsely telling an operator to install MLX.
