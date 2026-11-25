@@ -121,6 +121,9 @@ func (rs *RemoteStore) DeleteThreadCAS(threadID, status, lastSeenAt, host string
 	err := rs.call("DeleteThreadCAS", []any{threadID, status, lastSeenAt, host}, &o0)
 	return o0, err
 }
+func (rs *RemoteStore) DiscardMintedToken(tokenID string) error {
+	return rs.call("DiscardMintedToken", []any{tokenID})
+}
 func (rs *RemoteStore) ExportItem(dir, id string) (string, error) {
 	var o0 string
 	err := rs.call("ExportItem", []any{dir, id}, &o0)

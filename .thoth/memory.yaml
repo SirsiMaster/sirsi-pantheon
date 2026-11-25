@@ -383,6 +383,17 @@ sync_protocol:
 # Only loopback endpoints are accepted; the same local-provider predicate
 # prevents a selected Native v2 endpoint from becoming a remote rung. This is
 # ABI consumption only—SNE retains runtime lifecycle and qualification.
+# 2026-11-24: v0.24.165 tag 9f7b0362018e5ecd738dbbf7c91899c3a8f2c723 reached the
+# single M1 signer, and DMG/PKG signatures plus notarization validated, but run
+# 45427969009 stopped before upload/publication: hdiutil reported the guard mount
+# through /private/var while tempfile requested /var. Draft 456974029 remains
+# empty. Do not claim release completion. Branch
+# codex/recover-v165-publication-mount-alias-20261124 (21aa4a36384369cfcc521a4cea2c64bdbf1ba748)
+# compares actual mount identity with os.path.samefile; its 83 publisher/guard
+# tests passed under Maat. Draft PR #1444 is awaiting CI and claude-deck review.
+# Exact signed assets and failure receipts remain in Actions artifacts for run
+# 45427969009; any continuation must reuse them on the sole qualified M1 route,
+# without rebuilding or re-signing. Counter retention remains HELD.
 # 2026-09-27 (SSA): Pantheon v0.24.2 release candidate head 96d78cf1 binds
 # native Ra handoff messages to the declared local Horus identity `horus` and
 # removes the editable sender field/undeclared `horus-local` alias. Swift

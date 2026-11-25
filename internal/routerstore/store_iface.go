@@ -79,6 +79,9 @@ type Store interface {
 	// with empty user payload. Existing fences remain unchanged. True means
 	// this CAS retired one row; stale predicates and repeat retirement are no-ops.
 	DeleteThreadCAS(threadID, status, lastSeenAt, host string) (bool, error)
+	// DiscardMintedToken revokes ONE freshly minted token and only the sessions it issued
+	// (sessions.token_id, v29). Server-side only (notServed); the publish-failure cleanup.
+	DiscardMintedToken(tokenID string) error
 	ExportItem(dir, id string) (string, error)
 	ExportMarkdown(dir string) (int, error)
 	Fail(id, token, reason, failureClass string) error

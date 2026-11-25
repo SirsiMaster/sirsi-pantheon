@@ -65,6 +65,12 @@ func (s *SQLiteStore) MintSession(host, agent, runtimeHash string) (Session, err
 // of Ra, ADR-062 20b.1). threadID may be empty for legacy callers; the service
 // then treats every mutation from that session as unregistered.
 func (s *SQLiteStore) MintSessionForThread(host, agent, runtimeHash, threadID string) (Session, error) {
+	return s.mintSessionForToken("", host, agent, runtimeHash, threadID)
+}
+
+// mintSessionForToken is the one session INSERT. tokenID is the host token that authenticated the mint; only the
+// server (serve.go) supplies it, from the bearer it verified — it is never a wire argument. ” = unattributed.
+func (s *SQLiteStore) mintSessionForToken(tokenID, host, agent, runtimeHash, threadID string) (Session, error) {
 	if host == "" || agent == "" || runtimeHash == "" {
 		return Session{}, errors.New("routerstore: MintSession: host, agent and runtime hash are all required")
 	}
@@ -77,8 +83,8 @@ func (s *SQLiteStore) MintSessionForThread(host, agent, runtimeHash, threadID st
 		return Session{}, err
 	}
 	now := s.clock().Format(time.RFC3339)
-	if _, err := s.exec(`INSERT INTO sessions(session_id,secret,host,agent,runtime_hash,thread_id,created,last_seen,revoked)
-		VALUES(?,?,?,?,?,?,?,?,'')`, id, secret, host, agent, runtimeHash, threadID, now, now); err != nil {
+	if _, err := s.exec(`INSERT INTO sessions(session_id,secret,host,agent,runtime_hash,thread_id,token_id,created,last_seen,revoked)
+		VALUES(?,?,?,?,?,?,?,?,?,'')`, id, secret, host, agent, runtimeHash, threadID, tokenID, now, now); err != nil {
 		return Session{}, fmt.Errorf("routerstore: MintSession: %w", err)
 	}
 	s.maybeGCSessions()

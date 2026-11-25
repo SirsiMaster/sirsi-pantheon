@@ -56,7 +56,9 @@ func TestTaskResumePreservesOriginalHistoryAndNormalCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := taskEvidenceRaw(t, s, req.Agent, req.TaskID)
-	if len(before) != len(taskResumeSnapshot{}) {
+	// The resume row version deliberately excludes tasks.first_claimed_at (v28):
+	// it is not eligibility evidence, and adding it would change every row version.
+	if len(before) != len(taskResumeSnapshot{})+1 {
 		t.Fatal("complete persisted schema snapshot is out of date")
 	}
 	req = taskResumePin(t, s, ctx, req)
@@ -65,7 +67,10 @@ func TestTaskResumePreservesOriginalHistoryAndNormalCompletion(t *testing.T) {
 		t.Fatalf("RESUME_HISTORY_PATH_MISSING: %+v %v", out, err)
 	}
 	after := taskEvidenceRaw(t, s, req.Agent, req.TaskID)
-	changed := map[string]bool{"status": true, "claimed_by": true, "thread_id": true, "lease_token": true, "lease_expires": true, "attempts": true, "updated": true}
+	changed := map[string]bool{"status": true, "claimed_by": true, "thread_id": true, "lease_token": true, "lease_expires": true, "attempts": true, "updated": true, "first_claimed_at": true}
+	if after["first_claimed_at"].String == "" {
+		t.Fatal("resume-claim did not set first_claimed_at on a pre-v28 row")
+	}
 	for col, want := range before {
 		if !changed[col] && after[col] != want {
 			t.Fatalf("non-lifecycle column %s changed", col)
@@ -167,7 +172,7 @@ func TestTaskResumeBlockedWithOrdinaryAttemptsRemaining(t *testing.T) {
 				t.Fatalf("BLOCKED_ORDINARY_ATTEMPT_STRANDED: %+v %v", out, err)
 			}
 			after := taskEvidenceRaw(t, s, req.Agent, req.TaskID)
-			changed := map[string]bool{"status": true, "claimed_by": true, "thread_id": true, "lease_token": true, "lease_expires": true, "attempts": true, "updated": true}
+			changed := map[string]bool{"status": true, "claimed_by": true, "thread_id": true, "lease_token": true, "lease_expires": true, "attempts": true, "updated": true, "first_claimed_at": true}
 			for column, value := range before {
 				if !changed[column] && after[column] != value {
 					t.Fatalf("history changed: %s", column)

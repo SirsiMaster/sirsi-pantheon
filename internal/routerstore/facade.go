@@ -62,16 +62,18 @@ var ErrRecipientSaturated = errors.New("routerstore: recipient saturated — not
 // Stalled: ABANDONED work only (owner decision 2026-11-11, "count only abandoned
 // work"): a task someone STARTED and then left. Concretely, a nonterminal task
 // (not done/canceled/withdrawn) that has been claimed at least once
-// (attempts > 0, or status 'in-progress'), whose row has not moved for
-// RecipientStallAfter, and that holds no live lease. Planned work nobody has
-// started (never claimed, attempts = 0) is NOT counted, however large.
+// (first_claimed_at set, attempts > 0, or status 'in-progress'), whose row has
+// not moved for RecipientStallAfter, and that holds no live lease. Planned work
+// nobody has started (never claimed, attempts = 0) is NOT counted, however large.
+// first_claimed_at (schema v28) survives ResetTaskAttempts; attempts>0 stays in
+// the predicate because rows claimed before v28 have no backfilled timestamp.
 //
 // The JSON name "stalled" is kept for wire compatibility; only its meaning narrows.
 //
 // What this does not see (A35): a started task whose evidence was erased
-// (ResetTaskAttempts zeroes attempts, and returns an exhausted blocked task to
-// pending, so a reset task reads as never started); a planned backlog of any
-// size; and work started outside the ledger (no claim, no status change).
+// (a task claimed and reset BEFORE v28 has attempts = 0 and no timestamp, so it
+// reads as never started; from v28 on, a reset keeps first_claimed_at); a
+// planned backlog of any size; and work started outside the ledger (no claim, no status change).
 type RecipientLoad struct {
 	Unacked int `json:"unacked"`
 	Stalled int `json:"stalled"`
@@ -96,7 +98,7 @@ func recipientLoad(q interface {
 	err := q.QueryRow(`SELECT
 	    (SELECT COUNT(*) FROM items WHERE to_agent = ? AND status = 'open' AND acked_at = ''),
 	    (SELECT COUNT(*) FROM tasks WHERE agent = ? AND status NOT IN ('done','canceled','withdrawn')
-	        AND (status = 'in-progress' OR attempts > 0) AND updated < ?
+	        AND (status = 'in-progress' OR first_claimed_at <> '' OR attempts > 0) AND updated < ?
 	        AND (lease_expires IS NULL OR lease_expires = '' OR lease_expires < ?));`,
 		agent, agent, cutoff, nowS).Scan(&l.Unacked, &l.Stalled)
 	if err != nil {

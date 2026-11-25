@@ -66,8 +66,11 @@ echo "== 2. the real bundle upgrades in place"
 apply "$ROOT/internal/routerstore/pg/schema.sql" >/dev/null
 v1=$(q 'SELECT version FROM router.schema_version'); [ "$v1" = "$VT" ] || { echo "FAIL upgraded version $v1"; exit 1; }
 [ "$(col)" = 1 ] || { echo "FAIL thread_id missing after upgrade"; exit 1; }
+[ "$(q "SELECT count(*) FROM information_schema.columns WHERE table_schema='router' AND table_name='tasks' AND column_name='first_claimed_at'")" = 1 ] || { echo "FAIL tasks.first_claimed_at missing after upgrade"; exit 1; }
 rows=$(q "SELECT (SELECT count(*) FROM router.items)||'/'||(SELECT count(*) FROM router.threads)||'/'||(SELECT count(*) FROM router.sessions)")
 [ "$rows" = 1/1/1 ] || { echo "FAIL rows lost: $rows"; exit 1; }
+[ "$(q "SELECT count(*) FROM information_schema.columns WHERE table_schema='router' AND table_name='sessions' AND column_name='token_id'")" = 1 ] || { echo "FAIL sessions.token_id missing after upgrade"; exit 1; }
+[ "$(q "SELECT token_id FROM router.sessions WHERE session_id='s-1'")" = "" ] || { echo "FAIL legacy session token_id not blank"; exit 1; }
 [ "$(q "SELECT thread_id FROM router.sessions WHERE session_id='s-1'")" = "" ] || { echo "FAIL legacy session thread_id not blank"; exit 1; }
 s1=$(snap); echo "   v$VT, thread_id present, rows/columns/triggers = $s1"
 

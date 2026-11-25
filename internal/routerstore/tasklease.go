@@ -125,9 +125,9 @@ func (s *SQLiteStore) claimTaskSession(agent, exactTaskID, worker, threadID, ses
 		return nil, fmt.Errorf("routerstore: select task claim: %w", err)
 	}
 	expires := now.Add(ttl)
-	res, err := tx.Exec(`UPDATE tasks AS t SET status='in-progress',claimed_by=?,thread_id=?,lease_token=?,lease_expires=?,attempts=attempts+1,updated=?
+	res, err := tx.Exec(`UPDATE tasks AS t SET status='in-progress',claimed_by=?,thread_id=?,lease_token=?,lease_expires=?,attempts=attempts+1,updated=?,first_claimed_at=CASE WHEN first_claimed_at='' THEN ? ELSE first_claimed_at END
 		WHERE agent=? AND task_id=? AND `+claimableTaskPredicate("t")+`;`,
-		worker, threadID, token, expires.Format(time.RFC3339), now.Format(time.RFC3339), agent, taskID)
+		worker, threadID, token, expires.Format(time.RFC3339), now.Format(time.RFC3339), now.Format(time.RFC3339), agent, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("routerstore: claim task: %w", err)
 	}

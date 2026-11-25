@@ -178,14 +178,21 @@ func TestDirectTaskCompletionResolvesOlderLaneFailure(t *testing.T) {
 
 func TestDirectTaskWakeAckFailureRollsBackClaim(t *testing.T) {
 	s := newTestStore(t)
-	if !s.dialect().hasPragmas {
-		t.Skip("SQLite-specific injected ABORT; portable claim/ACK tests run on both backends")
-	}
 	if err := s.AddTask(Task{Agent: "lane", TaskID: "A", Subject: "work"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`CREATE TRIGGER reject_test_wake_ack BEFORE UPDATE OF status ON wake_events WHEN NEW.status='acked' BEGIN SELECT RAISE(ABORT,'injected ACK failure'); END;`); err != nil {
-		t.Fatal(err)
+	// Inject an ACK-update failure with each backend's own trigger dialect.
+	triggers := []string{`CREATE TRIGGER reject_test_wake_ack BEFORE UPDATE OF status ON wake_events WHEN NEW.status='acked' BEGIN SELECT RAISE(ABORT,'injected ACK failure'); END;`}
+	if !s.dialect().hasPragmas {
+		triggers = []string{
+			`CREATE FUNCTION router.reject_test_wake_ack() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected ACK failure'; END; $$;`,
+			`CREATE TRIGGER reject_test_wake_ack BEFORE UPDATE OF status ON router.wake_events FOR EACH ROW WHEN (NEW.status='acked') EXECUTE FUNCTION router.reject_test_wake_ack();`,
+		}
+	}
+	for _, ddl := range triggers {
+		if _, err := s.db.Exec(ddl); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := s.ClaimTask("lane", "A", "worker", "thread", time.Minute); err == nil {
 		t.Fatal("ACK failure returned successful claim")

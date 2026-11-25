@@ -57,7 +57,8 @@ var notServed = map[string]bool{
 	"GetSession": true, "RevokeSession": true, "TouchSession": true,
 	"BindItemSession": true, "ItemSession": true, "BindTaskSession": true, "TaskSession": true,
 	"MintHostToken": true, "MintScopedHostToken": true, "LookupHostToken": true, "RevokeHostToken": true, "ListHostTokens": true,
-	"Close": true, "RecordAudience": true, "RecordTaskLeaseEvent": true,
+	"DiscardMintedToken": true,
+	"Close":              true, "RecordAudience": true, "RecordTaskLeaseEvent": true,
 	// HostIdentity is the ADR-067 identity resolver: read by threadAuthority and
 	// the mint host-check, never a node-reachable RPC (it takes no credential).
 	"HostIdentity": true,
@@ -374,7 +375,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// A store failure here (database down) is 503, never 401: a node must
 	// retry, not conclude its credentials died (rs-13 outage finding — every
 	// call during a 30 s Postgres outage came back "invalid bearer token").
-	tokenHost, tokenScope, ok, lookupErr := s.hostForBearer(r)
+	tokenHost, tokenScope, ok, tokenID, lookupErr := s.hostForBearer(r)
 	tokenScope, observer, editor := splitCapabilities(tokenScope)
 	if lookupErr != nil {
 		writeErr(w, http.StatusServiceUnavailable, "", "ledger unavailable: "+lookupErr.Error())
@@ -706,7 +707,24 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var outs []reflect.Value
-	if sess.ID != "" && (name == "ClaimNext" || name == "ClaimItem") {
+	if isMint && tokenID != "" {
+		// Record the issuing token on the session. tokenID is the bearer this request authenticated with, never a
+		// wire argument, and a mint is the only way a session row is created (a session cannot mint a session), so
+		// no later path can rewrite or blank it. The bootstrap token (tokenID "") falls through to the plain mint.
+		backend, ok := s.store.(interface {
+			mintSessionForToken(tokenID, host, agent, runtimeHash, threadID string) (Session, error)
+		})
+		if !ok {
+			writeErr(w, http.StatusServiceUnavailable, "", "token-attributed session mint unavailable")
+			return
+		}
+		thread := ""
+		if name == "MintSessionForThread" {
+			thread = in[3].String()
+		}
+		minted, err := backend.mintSessionForToken(tokenID, in[0].String(), in[1].String(), in[2].String(), thread)
+		outs = []reflect.Value{reflect.ValueOf(minted), reflect.ValueOf(&err).Elem()}
+	} else if sess.ID != "" && (name == "ClaimNext" || name == "ClaimItem") {
 		// Never acknowledge a newly authenticated lease before durable owner
 		// binding commits. No caller-supplied owner or new wire method exists.
 		backend, ok := s.store.(interface {
@@ -1085,25 +1103,28 @@ func (s *server) sameIdentity(a, b string) (bool, error) {
 // hostForBearer resolves the bearer to a host: the bootstrap token → "*",
 // a minted per-host token → its host, anything else → not authorized. The
 // third result is a STORE failure (not an auth verdict) and maps to 503.
-func (s *server) hostForBearer(r *http.Request) (string, map[string]bool, bool, error) {
+//
+// The fifth result is the authenticated token's id ("" for the bootstrap token): the only source of
+// sessions.token_id, so a client can never choose it.
+func (s *server) hostForBearer(r *http.Request) (string, map[string]bool, bool, string, error) {
 	h := r.Header.Get("Authorization")
 	const p = "Bearer "
 	if !strings.HasPrefix(h, p) {
-		return "", nil, false, nil
+		return "", nil, false, "", nil
 	}
 	got := strings.TrimSpace(strings.TrimPrefix(h, p))
 	if subtle.ConstantTimeCompare([]byte(got), []byte(s.opts.Token)) == 1 {
-		return bootstrapHost, nil, true, nil
+		return bootstrapHost, nil, true, "", nil
 	}
 	t, err := s.store.LookupHostToken(got)
 	switch {
 	case err == nil:
 		// scope is nil for an unscoped host token (every pre-v25 token): the lane API is not applied to it.
-		return t.Host, scopeSet(t.Agents), true, nil
+		return t.Host, scopeSet(t.Agents), true, t.ID, nil
 	case errors.Is(err, ErrTokenUnknown), errors.Is(err, ErrTokenRevoked):
-		return "", nil, false, nil
+		return "", nil, false, "", nil
 	default:
-		return "", nil, false, err
+		return "", nil, false, "", err
 	}
 }
 
