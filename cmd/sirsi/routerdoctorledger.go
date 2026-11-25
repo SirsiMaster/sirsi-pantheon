@@ -64,7 +64,7 @@ type ledgerFinding struct {
 // them into one count would tell an operator nothing actionable.
 func findLedgerRot(tasks []routerstore.Task) (stalled, contradicted []ledgerFinding) {
 	for _, t := range tasks {
-		if t.Status == "done" {
+		if routerstore.IsTerminalTaskStatus(t.Status) {
 			continue
 		}
 		if assertsTerminalVerdict(t.Subject) {

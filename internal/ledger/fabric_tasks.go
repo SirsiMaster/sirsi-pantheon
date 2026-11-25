@@ -143,7 +143,7 @@ func fabricTaskMatches(task routerstore.Task, filter string) bool {
 	if filter == "done" {
 		return task.Status == "done"
 	}
-	if task.Status == "done" {
+	if routerstore.IsTerminalTaskStatus(task.Status) {
 		return false
 	}
 	switch filter {

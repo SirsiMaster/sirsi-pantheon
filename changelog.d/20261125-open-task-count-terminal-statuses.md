@@ -1,0 +1,1 @@
+- Open-task counts no longer include canceled and withdrawn tasks: the ledger `OpenTasks` figure (CLI `router ledger`, `ctr`), the fabric "open" drill-down filter, `router doctor` ledger-rot findings and `OperationalAgents` now all use the single terminal-status list (`routerstore.IsTerminalTaskStatus`: done, canceled, withdrawn) instead of testing only `done`.

@@ -48,3 +48,13 @@ func TestFindLedgerRotCleanLedgerIsSilent(t *testing.T) {
 		t.Fatalf("clean ledger produced findings: stalled=%+v contradicted=%+v", stalled, contradicted)
 	}
 }
+
+func TestFindLedgerRotSkipsCanceledAndWithdrawn(t *testing.T) {
+	stalled, contradicted := findLedgerRot([]routerstore.Task{
+		{Agent: "a", TaskID: "c", Subject: "shipped it, PR MERGED", Status: "canceled", Liveness: "stalled"},
+		{Agent: "a", TaskID: "w", Subject: "shipped it, PR MERGED", Status: "withdrawn", Liveness: "stalled"},
+	})
+	if len(stalled) != 0 || len(contradicted) != 0 {
+		t.Fatalf("closed tasks produced findings: stalled=%+v contradicted=%+v", stalled, contradicted)
+	}
+}
