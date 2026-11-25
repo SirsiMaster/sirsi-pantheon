@@ -223,11 +223,13 @@ var routerTokenMintCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// Publish-failure cleanup is DiscardMintedToken, not RevokeHostToken: a failed same-host replacement
+		// revokes only the fresh token and the sessions it issued, never every session on the host.
 		if secret != "" && hostWide {
-			return publishMintedHostWideToken(cmd.Context(), cmd.OutOrStdout(), plain, rec, secret, publishScopedRouterSecret, store.RevokeHostToken)
+			return publishMintedHostWideToken(cmd.Context(), cmd.OutOrStdout(), plain, rec, secret, publishScopedRouterSecret, store.DiscardMintedToken)
 		}
 		if secret != "" {
-			return publishMintedRouterToken(cmd.Context(), cmd.OutOrStdout(), plain, rec, secret, publishScopedRouterSecret, store.RevokeHostToken)
+			return publishMintedRouterToken(cmd.Context(), cmd.OutOrStdout(), plain, rec, secret, publishScopedRouterSecret, store.DiscardMintedToken)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "token id: %s  host: %s  created: %s\n", rec.ID, rec.Host, rec.Created)
 		if len(rec.Agents) > 0 {
