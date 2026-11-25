@@ -243,6 +243,10 @@ var routerTaskRecheckReceiptsCmd = &cobra.Command{
 			return json.NewEncoder(os.Stdout).Encode(found)
 		}
 		for _, r := range found {
+			if r.TaskID == "" && r.Remaining > 0 { // trailing summary: the service's time budget stopped this call early
+				fmt.Printf("%s; run again to continue\n", r.Error)
+				continue
+			}
 			state := "still valid"
 			switch {
 			case r.Reopened:
