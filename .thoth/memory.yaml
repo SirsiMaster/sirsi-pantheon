@@ -1,4 +1,35 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
+# Successor review fixes: --install removed; ArmHooks refuses conflicting
+# local/worktree/global/system hook paths; malformed nonempty pre-push lines
+# fail; result JSON separates scope, skipped checks, and completeness. Tests
+# authored but not run; fresh Ma-at admission still required. Frozen parent
+# candidate eeba761 remains intact.
+# Follow-up to independent CHANGES on frozen dfe9a29: new successor applies
+# pre-push branch classification to remote destination (including tag→branch),
+# requires executable regular pre-push hook before ArmHooks configures, makes
+# enforcement fail on incomplete/skipped checks while surveys remain explicit
+# informational results, and reconciles the legacy Ma'at guide (no automatic
+# hook or MAAT_DEPTH tiers). Regression tests authored, not run; no admission,
+# live hook configuration, commit, push, or publication. Successor is isolated
+# at /private/tmp/sirsi-pantheon-maat-gate-successor-20261125-next.
+# Independent CHANGES follow-up on frozen tree 9c7e495: explicit ranges now
+# reject --lint-only in CLI validation and trustboundary.Gate.Run; no-range
+# lint-only remains informational compatibility with explicit CLI/docs labeling.
+# CLI and result tests authored; no tests or fresh Ma-at admission run.
+# New frozen successor: /private/tmp/sirsi-pantheon-maat-gate-successor-20261125-v3.
+# Follow-up to independent review of frozen 769e7658: worksheet output now uses
+# valid no-range `--all --lint-only` and labels it informational; an output
+# regression test is authored. No tests or fresh admission run. Successor:
+# /private/tmp/sirsi-pantheon-maat-gate-successor-20261125-v4.
+# Test-gap successor from frozen dfa4b268: five focused range-lint tests call
+# Gate.lint directly (the public range+lint-only mode remains refused); the
+# symlink fixture creates .githooks first; worksheet label is lowercase to
+# match its output regression assertion. No tests run by this session.
+# Candidate path: /private/tmp/sirsi-pantheon-maat-gate-successor-20261125-v5.
+# Nov25 isolated uncommitted candidate restores `sirsi maat gate` from the
+# historical command/package on origin/main 16e80ab. A–H are heuristic-only;
+# ADR-076 remains unallocated. No tests/build/admission, hook install, commit,
+# push, publication or deployment. Candidate: /private/tmp/sirsi-pantheon-maat-gate-20261125.
 # Current composition: release route328ba6d passed normal deep107 packages and
 # remote exact-head verification; packaging8f05e61 passed4 new+2 existing
 # fixtures and real static builds in a normal .git-directory clone. Both fixes

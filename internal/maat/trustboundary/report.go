@@ -1,0 +1,32 @@
+package trustboundary
+
+import "strings"
+
+// Checklist is an optional compatibility worksheet. FinalWishes adopted this
+// vocabulary locally; it is not adopted Pantheon canon. Rule letters correspond
+// to the lint's historical heuristic classes.
+var Checklist = []struct{ Rule, Item string }{
+	{"A", "Bounds: every loop/allocation bound is a server constant or contiguous validated input — never a client-supplied number (row key 250000 → 250k rows; max-of-keys loop bound)"},
+	{"B", "Ceilings: every client-driven output (pages, carried text, attachments) has a hard server ceiling with a typed refusal above it; no quadratic work on untrusted input"},
+	{"C", "Provenance: the server attests provenance (HMAC / signed token / server record); no client-sent hash, receipt or tag is trusted, even when it matches the bytes the client also sent"},
+	{"D", "Sibling gates: a new path through a resource calls the same gate functions as the existing paths — named here: <gate functions>"},
+	{"E", "Replace-not-merge: persisted maps carrying user data are replaced whole, never merged; a stale-key test proves a prior version's keys do not survive"},
+	{"F", "Reader classification: every stored field is classified client-readable vs server-only; PII is server-only and encrypted; nothing sensitive sits on a viewer-readable document path"},
+	{"G", "No silent loss / no meaning change: accepted input is never dropped without a typed refusal; no normalisation turns a value into a different meaning ('-500' → '500')"},
+	{"H", "Process: verifiers gate by their own exit status (never `… | tail && push`); zero self-exemptions in the pushed range; algorithms are bounded-but-complete (iterative with cycle detection, no depth cap that rejects valid input) and order-independent"},
+}
+
+// Report renders the checklist skeleton as Markdown.
+func Report() string {
+	var b strings.Builder
+	b.WriteString("### Trust-Boundary compatibility worksheet (optional; not Pantheon canon) — `satisfied` | `n/a — <reason>`\n\n")
+	for _, c := range Checklist {
+		b.WriteString("- [ ] **")
+		b.WriteString(c.Rule)
+		b.WriteString(".** ")
+		b.WriteString(c.Item)
+		b.WriteString(" — _verdict:_ \n")
+	}
+	b.WriteString("\ninformational lint-only compatibility (not a full enforcement pass): `sirsi maat gate --all --lint-only` → <no findings | findings listed below>\n")
+	return b.String()
+}
