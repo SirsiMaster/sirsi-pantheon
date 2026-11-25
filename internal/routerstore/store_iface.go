@@ -122,6 +122,13 @@ type Store interface {
 	// spool's 64 MiB response ceiling; callers that need history page with ListAllPaged.
 	ListPage(ctx context.Context, afterID string, limit int) ([]Item, error)
 	ListHostTokens() ([]HostToken, error)
+	// Lane-to-Mac pins (v30, lanepins.go). Operator-only: none is served over the wire or forwarded by the relay.
+	// SetLanePin is idempotent for an existing active pin; RetireLanePin keeps the row (history); ListLanePins
+	// optionally includes retired rows; ActiveLanePinMachines is the evaluator's read (active pins only).
+	SetLanePin(agent, machineID, setBy, reason string) (LanePin, error)
+	RetireLanePin(agent, machineID string) error
+	ListLanePins(includeRetired bool) ([]LanePin, error)
+	ActiveLanePinMachines(agent string) ([]string, error)
 	ListIdentifiers(namespace string) ([]Identifier, error)
 	ListRequirements(owner string) ([]Requirement, error)
 	ListTasks(agent string) ([]Task, error)

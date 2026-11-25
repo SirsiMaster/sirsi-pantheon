@@ -72,6 +72,8 @@ rows=$(q "SELECT (SELECT count(*) FROM router.items)||'/'||(SELECT count(*) FROM
 [ "$(q "SELECT count(*) FROM information_schema.columns WHERE table_schema='router' AND table_name='sessions' AND column_name='token_id'")" = 1 ] || { echo "FAIL sessions.token_id missing after upgrade"; exit 1; }
 [ "$(q "SELECT token_id FROM router.sessions WHERE session_id='s-1'")" = "" ] || { echo "FAIL legacy session token_id not blank"; exit 1; }
 [ "$(q "SELECT thread_id FROM router.sessions WHERE session_id='s-1'")" = "" ] || { echo "FAIL legacy session thread_id not blank"; exit 1; }
+[ "$(q "SELECT count(*) FROM information_schema.tables WHERE table_schema='router' AND table_name='lane_machine_pins'")" = 1 ] || { echo "FAIL lane_machine_pins missing after upgrade"; exit 1; }
+[ "$(q "SELECT count(*) FROM router.lane_machine_pins")" = 0 ] || { echo "FAIL lane_machine_pins must start empty (no backfill)"; exit 1; }
 s1=$(snap); echo "   v$VT, thread_id present, rows/columns/triggers = $s1"
 
 echo "== 3. applying again is a no-op"

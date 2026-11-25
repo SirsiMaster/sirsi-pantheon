@@ -860,6 +860,24 @@ ALTER TABLE tasks ADD COLUMN first_claimed_at TEXT NOT NULL DEFAULT '';
 	{29, `
 ALTER TABLE sessions ADD COLUMN token_id TEXT NOT NULL DEFAULT '';
 `},
+	// v30 — the router's own record of which Mac each lane belongs to (owner decision 2026-11-25). Set and
+	// retired ONLY by the router operator (never served, never relayed); never derived from a thread's
+	// self-asserted host. A lane may hold several active pins (it can run on more than one Mac). History is
+	// kept: a pin is retired (retired = timestamp), never deleted. REPORT-ONLY today: serve.go counts the
+	// verdict at Wait and changes no outcome. The partial unique index forbids two ACTIVE rows for one
+	// (agent, machine_id); a retired row does not block re-pinning.
+	{30, `
+CREATE TABLE IF NOT EXISTS lane_machine_pins (
+    agent      TEXT NOT NULL,
+    machine_id TEXT NOT NULL,
+    set_by     TEXT NOT NULL DEFAULT '',
+    reason     TEXT NOT NULL DEFAULT '',
+    created    TEXT NOT NULL,
+    retired    TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (agent, machine_id, created)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lane_machine_pins_active ON lane_machine_pins(agent, machine_id) WHERE retired = '';
+`},
 }
 
 // migrate applies any pending numbered migrations, tracked via the SQLite
