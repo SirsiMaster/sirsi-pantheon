@@ -267,7 +267,8 @@ const (
 
 // spoolRefused lists the methods the relay never forwards: a lane must not be
 // able to mint, list or revoke host tokens through the relay's own token.
-var spoolRefused = map[string]bool{"MintHostToken": true, "MintScopedHostToken": true, "RevokeHostToken": true, "ListHostTokens": true, "DiscardMintedToken": true}
+var spoolRefused = map[string]bool{"MintHostToken": true, "MintScopedHostToken": true, "RevokeHostToken": true, "ListHostTokens": true, "DiscardMintedToken": true,
+	"SetLanePin": true, "RetireLanePin": true, "ListLanePins": true, "ActiveLanePinMachines": true}
 
 var errSpoolMaintenancePending = errors.New("spool admission: retained root maintenance transaction")
 var errRelaySettlementUnresolved = errors.New("relay: response settlement remains unresolved; retained inflight/outbox evidence requires recovery")

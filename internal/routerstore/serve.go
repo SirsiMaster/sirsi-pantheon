@@ -58,7 +58,9 @@ var notServed = map[string]bool{
 	"BindItemSession": true, "ItemSession": true, "BindTaskSession": true, "TaskSession": true,
 	"MintHostToken": true, "MintScopedHostToken": true, "LookupHostToken": true, "RevokeHostToken": true, "ListHostTokens": true,
 	"DiscardMintedToken": true,
-	"Close":              true, "RecordAudience": true, "RecordTaskLeaseEvent": true,
+	// Lane-to-Mac pins are the router operator's record: a lane must never set, retire or read them.
+	"SetLanePin": true, "RetireLanePin": true, "ListLanePins": true, "ActiveLanePinMachines": true,
+	"Close": true, "RecordAudience": true, "RecordTaskLeaseEvent": true,
 	// HostIdentity is the ADR-067 identity resolver: read by threadAuthority and
 	// the mint host-check, never a node-reachable RPC (it takes no credential).
 	"HostIdentity": true,
@@ -327,12 +329,20 @@ type server struct {
 
 	nonceMu sync.Mutex
 	nonces  map[string]time.Time // "session|nonce" → expiry
+
+	pins lanePinObserver // report-only lane-to-Mac pin verdicts (lanepinobserve.go)
 }
 
 // Handler serves store over HTTP at /v1/call/{Method}.
 func Handler(store Store, opts ServerOptions) (http.Handler, error) {
+	h, _, err := newHandler(store, opts)
+	return h, err
+}
+
+// newHandler is Handler plus the server, so tests can read the lane-pin counters.
+func newHandler(store Store, opts ServerOptions) (http.Handler, *server, error) {
 	if strings.TrimSpace(opts.Token) == "" {
-		return nil, errors.New("routerstore: serve: a bearer token is required (ADR-062 §3); refusing to serve an unauthenticated ledger")
+		return nil, nil, errors.New("routerstore: serve: a bearer token is required (ADR-062 §3); refusing to serve an unauthenticated ledger")
 	}
 	if opts.MaxWait <= 0 {
 		opts.MaxWait = 60 * time.Second
@@ -351,7 +361,7 @@ func Handler(store Store, opts ServerOptions) (http.Handler, error) {
 		opts.RuleOfRa = "log"
 	case "off", "log", "enforce":
 	default:
-		return nil, fmt.Errorf("routerstore: serve: SIRSI_ROUTER_RULE_OF_RA=%q is not off|log|enforce; refusing to serve with an unknown gate mode", opts.RuleOfRa)
+		return nil, nil, fmt.Errorf("routerstore: serve: SIRSI_ROUTER_RULE_OF_RA=%q is not off|log|enforce; refusing to serve with an unknown gate mode", opts.RuleOfRa)
 	}
 	s := &server{store: store, sv: reflect.ValueOf(store), opts: opts, nonces: map[string]time.Time{}}
 	mux := http.NewServeMux()
@@ -362,7 +372,7 @@ func Handler(store Store, opts ServerOptions) (http.Handler, error) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	mux.HandleFunc("/v1/call/", gzipped(s.call))
-	return mux, nil
+	return mux, s, nil
 }
 
 func (s *server) call(w http.ResponseWriter, r *http.Request) {
@@ -375,7 +385,7 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 	// A store failure here (database down) is 503, never 401: a node must
 	// retry, not conclude its credentials died (rs-13 outage finding — every
 	// call during a 30 s Postgres outage came back "invalid bearer token").
-	tokenHost, tokenScope, ok, tokenID, lookupErr := s.hostForBearer(r)
+	tokenHost, tokenScope, ok, tokenID, tokenMachineID, lookupErr := s.hostForBearer(r)
 	tokenScope, observer, editor := splitCapabilities(tokenScope)
 	if lookupErr != nil {
 		writeErr(w, http.StatusServiceUnavailable, "", "ledger unavailable: "+lookupErr.Error())
@@ -607,6 +617,10 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		if d, ok := in[2].Interface().(time.Duration); ok && (d <= 0 || d > s.opts.MaxWait) {
 			in[2] = reflect.ValueOf(s.opts.MaxWait)
 		}
+		// Lane-to-Mac pin: REPORT-ONLY (owner decision 2026-11-25). The verdict is counted and the request
+		// proceeds exactly as before whatever it is; both results are deliberately discarded here. The
+		// enforcement seam is lanePinRefuses, not this line.
+		_, _ = s.observeLanePin(in[1].String(), tokenMachineID)
 	}
 
 	// Delegation administration stays off the scoped lane API. Pod grants and
@@ -1125,26 +1139,28 @@ func (s *server) sameIdentity(a, b string) (bool, error) {
 // third result is a STORE failure (not an auth verdict) and maps to 503.
 //
 // The fifth result is the authenticated token's id ("" for the bootstrap token): the only source of
-// sessions.token_id, so a client can never choose it.
-func (s *server) hostForBearer(r *http.Request) (string, map[string]bool, bool, string, error) {
+// sessions.token_id, so a client can never choose it. The sixth is that token's adopted machine id
+// (host_tokens.machine_id, "" until adopted and for the bootstrap token): the only input the lane-pin
+// verdict takes from the caller, read by the same lookup as the rest of the record.
+func (s *server) hostForBearer(r *http.Request) (string, map[string]bool, bool, string, string, error) {
 	h := r.Header.Get("Authorization")
 	const p = "Bearer "
 	if !strings.HasPrefix(h, p) {
-		return "", nil, false, "", nil
+		return "", nil, false, "", "", nil
 	}
 	got := strings.TrimSpace(strings.TrimPrefix(h, p))
 	if subtle.ConstantTimeCompare([]byte(got), []byte(s.opts.Token)) == 1 {
-		return bootstrapHost, nil, true, "", nil
+		return bootstrapHost, nil, true, "", "", nil
 	}
 	t, err := s.store.LookupHostToken(got)
 	switch {
 	case err == nil:
 		// scope is nil for an unscoped host token (every pre-v25 token): the lane API is not applied to it.
-		return t.Host, scopeSet(t.Agents), true, t.ID, nil
+		return t.Host, scopeSet(t.Agents), true, t.ID, t.MachineID, nil
 	case errors.Is(err, ErrTokenUnknown), errors.Is(err, ErrTokenRevoked):
-		return "", nil, false, "", nil
+		return "", nil, false, "", "", nil
 	default:
-		return "", nil, false, "", err
+		return "", nil, false, "", "", err
 	}
 }
 

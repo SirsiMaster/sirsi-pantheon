@@ -542,6 +542,19 @@ CREATE TABLE IF NOT EXISTS maat_decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_maat_decisions_host_time ON maat_decisions(producer_host, receipt_time);
 
+-- v30 — lane-to-Mac pins, operator-set, report-only (see store.go v30). Retired rows are kept. Not granted to
+-- router_reader.
+CREATE TABLE IF NOT EXISTS lane_machine_pins (
+    agent      TEXT NOT NULL,
+    machine_id TEXT NOT NULL,
+    set_by     TEXT NOT NULL DEFAULT '',
+    reason     TEXT NOT NULL DEFAULT '',
+    created    TEXT NOT NULL,
+    retired    TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (agent, machine_id, created)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lane_machine_pins_active ON lane_machine_pins(agent, machine_id) WHERE retired = '';
+
 -- ── grants: the service is DML-only; DDL belongs to router_migrator ────────
 GRANT USAGE ON SCHEMA router TO router_service;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA router TO router_service;
@@ -566,6 +579,6 @@ DO $$ BEGIN
 END $$;
 
 -- ── version — last, so a partial apply never publishes a version it does not have ──
-INSERT INTO schema_version(version, applied_at) VALUES (29, router.now_rfc3339())
-  ON CONFLICT (singleton) DO UPDATE SET version = 29, applied_at = router.now_rfc3339()
-  WHERE schema_version.version < 29;
+INSERT INTO schema_version(version, applied_at) VALUES (30, router.now_rfc3339())
+  ON CONFLICT (singleton) DO UPDATE SET version = 30, applied_at = router.now_rfc3339()
+  WHERE schema_version.version < 30;

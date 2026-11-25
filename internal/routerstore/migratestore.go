@@ -59,6 +59,8 @@ var migratedTables = []migratedTable{
 	// so a copy that carries host_tokens must carry host_token_scopes too (SSA 20261106-164621).
 	{"host_token_scopes", []string{"token_id", "agent"}},
 	{"maat_decisions", []string{"id"}},
+	// The lane-to-Mac pin record (v30), history included: a copy that dropped it would silently un-pin every lane.
+	{"lane_machine_pins", []string{"agent", "machine_id", "created"}},
 }
 
 // unmigratedTables are left out on purpose; TestMigratedTablesCoverSchema refuses any other omission.

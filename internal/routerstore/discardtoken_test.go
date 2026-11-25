@@ -339,8 +339,8 @@ func TestV28ToV29AddsSessionTokenID(t *testing.T) {
 		t.Fatalf("v28 to v29 upgrade must apply cleanly: %v", err)
 	}
 	defer func() { _ = s2.Close() }()
-	if v, e := ReadSchemaVersion(path); e != nil || v != 29 {
-		t.Fatalf("post-upgrade version = %d (%v), want 29", v, e)
+	if v, e := ReadSchemaVersion(path); e != nil || v != 30 {
+		t.Fatalf("post-upgrade version = %d (%v), want 30 (v28 climbs through v29 to the v30 ceiling)", v, e)
 	}
 	if got := sessionToken(t, s2, sess.ID); got != "" {
 		t.Fatalf("pre-v29 session token_id = %q, want ''", got)

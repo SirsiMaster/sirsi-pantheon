@@ -203,6 +203,24 @@ func (rs *RemoteStore) ListAgents() ([]Agent, error) {
 	err := rs.call("ListAgents", nil, &o0)
 	return o0, err
 }
+func (rs *RemoteStore) SetLanePin(agent, machineID, setBy, reason string) (LanePin, error) {
+	var o0 LanePin
+	err := rs.call("SetLanePin", []any{agent, machineID, setBy, reason}, &o0)
+	return o0, err
+}
+func (rs *RemoteStore) RetireLanePin(agent, machineID string) error {
+	return rs.call("RetireLanePin", []any{agent, machineID})
+}
+func (rs *RemoteStore) ListLanePins(includeRetired bool) ([]LanePin, error) {
+	var o0 []LanePin
+	err := rs.call("ListLanePins", []any{includeRetired}, &o0)
+	return o0, err
+}
+func (rs *RemoteStore) ActiveLanePinMachines(agent string) ([]string, error) {
+	var o0 []string
+	err := rs.call("ActiveLanePinMachines", []any{agent}, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) ListHostTokens() ([]HostToken, error) {
 	var o0 []HostToken
 	err := rs.call("ListHostTokens", nil, &o0)
