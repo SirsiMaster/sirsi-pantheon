@@ -24,6 +24,7 @@ type Store interface {
 	DesktopSleep(context.Context, desktopcustody.CustodyCall) (desktopcustody.CustodyState, error)
 	CompareAndSwapState(key, expected string, exists bool, value string) (bool, error)
 	MaatReserve(req schedule.Reservation, queue bool) (schedule.ReserveResult, error)
+	MaatReserveMulti(reqs []schedule.Reservation) (schedule.MultiResult, error)
 	MaatMutate(action, id, value string) (*schedule.Reservation, error)
 	MaatRead(kind, resource string) ([]schedule.Reservation, error)
 	AckItem(id string) error
