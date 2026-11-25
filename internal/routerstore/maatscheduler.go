@@ -83,8 +83,42 @@ func (s *SQLiteStore) MaatReserve(req schedule.Reservation, queue bool) (schedul
 	return out, err
 }
 
+// MaatReserveMulti admits every resource or none: one transaction, one lock on
+// the reservation row, one write, each resource behind the same custody fence a
+// single reserve passes.
+func (s *SQLiteStore) MaatReserveMulti(reqs []schedule.Reservation) (schedule.MultiResult, error) {
+	var out schedule.MultiResult
+	err := s.withMaatTransaction(func(tx *txHandle, l *schedule.Ledger) (err error) {
+		for _, r := range reqs {
+			if err = sleepReserveFence(tx, l, r.Resource); err != nil {
+				return err
+			}
+		}
+		out, err = l.ReserveMulti(reqs)
+		return err
+	})
+	return out, err
+}
+
 func (s *SQLiteStore) MaatMutate(action, id, value string) (*schedule.Reservation, error) {
 	var out *schedule.Reservation
+	if action == "claim" {
+		// A claim is an admission: same transaction, lock and custody fence as MaatReserve.
+		err := s.withMaatTransaction(func(tx *txHandle, l *schedule.Ledger) (err error) {
+			rows, err := l.ExactReservation(id)
+			if err != nil {
+				return err
+			}
+			if len(rows) == 1 {
+				if err = sleepReserveFence(tx, l, rows[0].Resource); err != nil {
+					return err
+				}
+			}
+			out, err = l.Claim(id)
+			return err
+		})
+		return out, err
+	}
 	err := s.withMaatScheduler(func(l *schedule.Ledger) (err error) {
 		switch action {
 		case "heartbeat":

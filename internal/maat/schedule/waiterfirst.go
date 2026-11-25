@@ -12,11 +12,12 @@ package schedule
 // quiet is never floor-granted.
 //
 // KNOWN LIMIT: the rule protects only a lane that QUEUES. A lane that polls for
-// "clear", takes a floor grant, or gives up is invisible to it. A queued row is
-// also never heartbeated (Heartbeat refuses non-active rows, and `reserve
-// --queue` returns at once), so a waiter is protected only for its row's lease
-// (LeaseTTLSec, default 120 s from queueing, capped at maxQueuedLeaseSec) or
-// until it re-queues, pending a `reserve --queue --wait`.
+// "clear", takes a floor grant, or gives up is invisible to it. A plain `reserve
+// --queue` returns at once and its row is never heartbeated, so that waiter is
+// protected only for its row's lease (LeaseTTLSec, default 120 s from queueing,
+// capped at maxQueuedLeaseSec). `reserve --queue --wait` (reservewait.go) stays
+// attached and renews the lease on every claim poll, so it is protected for as
+// long as it is alive and for at most one lease after it dies.
 
 import (
 	"errors"
@@ -171,8 +172,13 @@ func waiterServed(rows []Reservation, w Reservation, queuedAt time.Time) bool {
 
 // maxQueuedLeaseSec caps a QUEUED row's lease (Mercury review 20261111-065127):
 // a lane that queues with a huge --lease-ttl and dies would otherwise hold the
-// repeater off the resource for that long. Active rows are unaffected. Lift when
-// `reserve --queue --wait` exists.
+// repeater off the resource for that long. Active rows are unaffected.
+//
+// NOT lifted by `reserve --queue --wait`, deliberately: the cap bounds how long
+// a DEAD waiter keeps the repeater out, and that bound is the lease TTL however
+// often a live waiter heartbeats. What --wait removes is the reason anyone asked
+// for a long lease: the wait length is now the client's --wait, not the lease, so
+// a waiter wanting an hour uses the default 120 s lease and renews it.
 const maxQueuedLeaseSec = 600
 
 // defaultQueuedLeaseSec is the finite lease a queued row gets when the request

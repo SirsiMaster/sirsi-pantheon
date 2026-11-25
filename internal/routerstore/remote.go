@@ -78,6 +78,7 @@ var sentinelErrors = map[string]error{
 	"ErrReceiptUnverifiable":  ErrReceiptUnverifiable,
 	"ErrWaiterFirst":          schedule.ErrWaiterFirst,
 	"ErrReservationRefused":   schedule.ErrReservationRefused,
+	"ErrNotQueued":            schedule.ErrNotQueued,
 }
 
 // ErrServiceUnavailable is a transient service/database failure (HTTP 503):

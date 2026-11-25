@@ -63,6 +63,56 @@ load and marks a quiet or loaded measurement contaminated. The result lists
 `floor_holders` (the lanes holding a live floor share at that moment) so you
 know whom to ask; this is co-presence, not a finding that they caused the load.
 
+### Waiting for a resource
+
+```bash
+sirsi maat reserve m5 --holder me --work cells --regime loaded --queue --wait 1800 --json
+```
+
+`--queue --wait <seconds>` stays attached. If the resource is free you get the
+grant at once; otherwise the command queues behind the holder, renews its queued
+row every few seconds, and prints the grant the moment the resource frees (the
+queued row becomes your grant, same id, window starting then). The grant is made
+by the router in one step, so two waiters can never both get it, and if the
+reply is lost the command asks again by reservation id and gets the same grant.
+
+On timeout the queued row is cancelled and the command exits `1` (JSON carries
+`reason_code: "wait-timeout"`). Ctrl-C or SIGTERM also cancels the queued row.
+If the process is killed outright nothing runs, but its row stops counting as a
+waiter within one lease (`--lease-ttl`, default 120 s, at most 600 s): there is no
+background daemon and a dead waiter never holds its turn longer than that. The
+wait length is `--wait`, not the lease, so there is no reason to raise
+`--lease-ttl` to wait longer. A router service too old to support `--wait`
+fails with a clear message and leaves no queued row.
+
+### Reserving several resources at once
+
+```bash
+sirsi maat reserve m5 rail-a --holder me --work cells --lease-ttl 120 \
+  --regime loaded --exempt-pid m5=4242 --exempt-pid rail-a=4243 --json
+```
+
+All resources are reserved together or not at all: one transaction, one write.
+Each resource gets its own share (a floor beside a live holder on one, full on
+another). A refusal on any resource refuses the whole request and reserves
+nothing: for example a lane waiting on one of them goes first, and the error
+names that resource, the waiter and the reason (`waiter-first` or
+`waiter-bound`). It exits non-zero. `--json` prints
+
+```json
+{"granted": true,
+ "reservations": [{"resource": "m5", "id": "...", "share": "full", "regime": "loaded"},
+                  {"resource": "rail-a", "id": "...", "share": "floor", "regime": "loaded",
+                   "conflict": {"holder": "other", "...": "..."}, "reason": "...", "cores": 4}]}
+```
+
+or, on refusal, `{"granted": false, "reservations": [], "reason_code": "...", "error": "..."}`.
+`--exempt-pid` takes `PID` (all resources) or `resource=PID` (one). Several
+resources do not combine with `--queue`/`--wait`. A router service too old to
+support it answers with a "not supported" error (`reason_code: "not-supported"`);
+reserve each resource separately then, and release the ones you got if a later
+one fails. One resource behaves exactly as before.
+
 ### GitHub submission attribution (Phase 1)
 ```bash
 sirsi maat submit --kind release --repo OWNER/REPO --ref v1.2.3
