@@ -1,4 +1,10 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
+# Nov25 terminal task-count candidate: canceled/withdrawn retained as terminal
+# history, excluded from open/actionable totals while raw status counts remain.
+# Dashboard API comment/fixture cover all retained dispositions. Fresh admitted
+# vet+full dashboard/ledger tests pass at b5c03bdf217b4c818c3027fc50c24426;
+# independent source review accepted aggregation and endpoint scope. Candidate
+# is uncommitted/unmerged; no mass task status changes or entire-router-zero claim.
 # Current composition: release route328ba6d passed normal deep107 packages and
 # remote exact-head verification; packaging8f05e61 passed4 new+2 existing
 # fixtures and real static builds in a normal .git-directory clone. Both fixes
@@ -399,3 +405,7 @@ sync_protocol:
 # removes the editable sender field/undeclared `horus-local` alias. Swift
 # release build and CLI flag checks pass; full Go-suite host/router failures are
 # recorded in the build log.
+# 2026-11-25 reviewer correction: terminal-count change adds explicit zero
+# canceled/withdrawn buckets; updated the dashboard exact-map fixtures to the
+# new histogram shape. Changelog now records terminal/open semantics. Focused
+# requalification required after this fixture delta; no merge/release claim.

@@ -106,7 +106,11 @@ func TestRouterLedgerExcludesPrivateTaskPayloadAcrossPages(t *testing.T) {
 			a.Tasks = append(a.Tasks, routerstore.Task{TaskID: fmt.Sprintf("task-%03d", i), Subject: "safe", Status: "pending", Phase: "safe phase", BlockedBy: secret})
 		}
 		a.Tasks[0].BlockedBy = "done-001"
-		a.Tasks = append(a.Tasks, routerstore.Task{TaskID: "done-001", Subject: "safe done", Status: "done", Phase: "safe phase", BlockedBy: secret})
+		a.Tasks = append(a.Tasks,
+			routerstore.Task{TaskID: "done-001", Subject: "safe done", Status: "done", Phase: "safe phase", BlockedBy: secret},
+			routerstore.Task{TaskID: "canceled-001", Subject: "safe canceled", Status: "canceled", Phase: "safe phase", BlockedBy: secret},
+			routerstore.Task{TaskID: "withdrawn-001", Subject: "safe withdrawn", Status: "withdrawn", Phase: "safe phase", BlockedBy: secret},
+		)
 		a.Items = append(a.Items, ledger.Item{ID: "item-1", Title: "safe item", From: "ra", Type: "request", Blocked: true, BlockedBy: secret})
 		return ledger.Snapshot{Agents: []ledger.Agent{a}}, nil
 	}})
@@ -118,12 +122,16 @@ func TestRouterLedgerExcludesPrivateTaskPayloadAcrossPages(t *testing.T) {
 	if len(items) != 1 || items[0].(map[string]any)["blocked"] != true {
 		t.Fatalf("item or its blocked flag lost: %v", items)
 	}
-	if got := len(m["tasks"].([]any)); got != 131 {
-		t.Fatalf("got %d tasks; want all 130 open and 1 completed", got)
+	if got := len(m["tasks"].([]any)); got != 133 {
+		t.Fatalf("got %d tasks; want all 130 open, one completed, one canceled, and one withdrawn", got)
 	}
 	found := false
 	for _, raw := range m["tasks"].([]any) {
 		task := raw.(map[string]any)
+		if (task["task_id"] == "canceled-001" && task["status"] != "canceled") ||
+			(task["task_id"] == "withdrawn-001" && task["status"] != "withdrawn") {
+			t.Fatalf("terminal disposition was not preserved: %v", task)
+		}
 		if task["task_id"] == "task-000" {
 			found = true
 			if task["blocked_by"] != "done-001" {

@@ -67,10 +67,10 @@ func TestSummarizePhaseGroups(t *testing.T) {
 }
 
 // Regression: claude-home rendered "0 open · blocked 0 · unblocked/unpicked 0"
-// while 41 non-done task rows sat in the SAME output. All three header counters
+// while 41 nonterminal task rows sat in the SAME output. All three header counters
 // are item-only, so an empty inbox zeroed the header regardless of ledger depth
 // and a conduit run reading it concluded there was no work. The task counters
-// must be non-zero exactly when the registry has non-done rows, independently of
+// must be non-zero exactly when the registry has nonterminal rows, independently of
 // whether any inbox item exists.
 func TestOpenTaskCountsAreIndependentOfInboxItems(t *testing.T) {
 	tasks := []routerstore.Task{
@@ -89,10 +89,32 @@ func TestOpenTaskCountsAreIndependentOfInboxItems(t *testing.T) {
 		t.Fatalf("item counters must stay item-scoped: %+v", a)
 	}
 	if a.OpenTasks != 3 {
-		t.Fatalf("OpenTasks = %d, want 3 (pending+in-progress+blocked, done excluded)", a.OpenTasks)
+		t.Fatalf("OpenTasks = %d, want 3 (pending+in-progress+blocked, terminal excluded)", a.OpenTasks)
 	}
 	if a.BlockedTasks != 1 {
 		t.Fatalf("BlockedTasks = %d, want 1", a.BlockedTasks)
+	}
+}
+
+func TestTerminalTaskStatusesDoNotInflatePerAgentOpenCounts(t *testing.T) {
+	tasks := []routerstore.Task{
+		{Agent: "lane", TaskID: "pending", Status: "pending"},
+		{Agent: "lane", TaskID: "active", Status: "in-progress"},
+		{Agent: "lane", TaskID: "blocked", Status: "blocked"},
+		{Agent: "lane", TaskID: "done", Status: "done"},
+		{Agent: "lane", TaskID: "canceled", Status: "canceled"},
+		{Agent: "lane", TaskID: "withdrawn", Status: "withdrawn"},
+	}
+	s := BuildFrom(nil, tasks, nil, "", time.Now().UTC(), time.Hour)
+	if len(s.Agents) != 1 {
+		t.Fatalf("agents = %d, want one", len(s.Agents))
+	}
+	a := s.Agents[0]
+	if len(a.Tasks) != len(tasks) {
+		t.Fatalf("registry rows = %d, want all %d unchanged", len(a.Tasks), len(tasks))
+	}
+	if a.OpenTasks != 3 || a.BlockedTasks != 1 {
+		t.Fatalf("per-agent counts include terminal rows: open=%d blocked=%d", a.OpenTasks, a.BlockedTasks)
 	}
 }
 

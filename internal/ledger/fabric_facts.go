@@ -31,7 +31,7 @@ func fabricFacts(s Snapshot) FabricFacts {
 	var order []string
 	for _, a := range s.Agents {
 		// These are known zeros from a captured lane, not an unavailable read.
-		lane := FabricLaneFacts{Counts: map[string]int{"done": 0, "in-progress": 0, "pending": 0, "blocked": 0}, Inbox: len(a.Items)}
+		lane := FabricLaneFacts{Counts: map[string]int{"done": 0, "in-progress": 0, "pending": 0, "blocked": 0, "canceled": 0, "withdrawn": 0}, Inbox: len(a.Items)}
 		lanePhases := map[string]*FabricPhaseFacts{}
 		for _, task := range a.Tasks {
 			status := task.Status
@@ -39,8 +39,8 @@ func fabricFacts(s Snapshot) FabricFacts {
 				status = "pending"
 			}
 			lane.Counts[status]++
-			// Canceled and withdrawn tasks are closed without being done: they
-			// are neither progress nor open work, so they stay off the board totals.
+			// Canceled and withdrawn are visible in the raw lane status counts,
+			// but are terminal dispositions rather than progress or open work.
 			if status == "canceled" || status == "withdrawn" {
 				continue
 			}
@@ -49,7 +49,7 @@ func fabricFacts(s Snapshot) FabricFacts {
 			if task.Updated > lane.LastTouch {
 				lane.LastTouch = task.Updated
 			}
-			if task.Status == "done" {
+			if status == "done" {
 				f.Work.Done++
 			} else {
 				lane.Open++
@@ -87,11 +87,11 @@ func fabricFacts(s Snapshot) FabricFacts {
 			}
 			p := phases[label]
 			p.Total++
-			if task.Status == "done" {
+			if status == "done" {
 				p.Done++
 			} else {
 				p.Active++
-				if task.Status == "blocked" {
+				if status == "blocked" {
 					p.Blocked++
 				}
 			}
@@ -100,11 +100,11 @@ func fabricFacts(s Snapshot) FabricFacts {
 			}
 			lp := lanePhases[task.Phase]
 			lp.Total++
-			if task.Status == "done" {
+			if status == "done" {
 				lp.Done++
 			} else {
 				lp.Active++
-				if task.Status == "blocked" {
+				if status == "blocked" {
 					lp.Blocked++
 				}
 			}

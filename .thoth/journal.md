@@ -1,4 +1,25 @@
 # 𓃣 Anubis Engineering Journal
+## Nov25 — terminal task dispositions qualify
+
+Kept canceled and withdrawn tasks in the history/read model while excluding
+them from open-work aggregates; preserved raw disposition counts. Dashboard
+endpoint comment and response fixture now cover canceled/withdrawn rows. Fresh
+M5-admitted `go vet ./internal/dashboard ./internal/ledger` and complete
+`go test ./internal/dashboard ./internal/ledger -count=1` passed at terminal
+`b5c03bdf217b4c818c3027fc50c24426`; `git diff --check` is clean. Existing
+independent source review accepted the aggregation semantics and endpoint
+coverage. This remains uncommitted/unmerged; whole-router counts, other lanes,
+history retention and task completion are not inferred.
+
+## Nov25 — terminal ledger-count review correction
+
+Independent source review found the dashboard's exact count-map fixtures still
+expected only four keys after the candidate began emitting canceled/withdrawn
+zero buckets. Updated the pending-only and empty-lane fixture expectations and
+added a changelog note. This is a test-shape correction, not a new runtime
+semantic change. Fresh admitted regression execution and full completion gates
+remain due; candidate is unmerged.
+
 ## Nov24 — composed source checkpoint
 
 Normal deep publication of328ba6d passed107 Go packages and unchanged gates,

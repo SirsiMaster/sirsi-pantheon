@@ -42,10 +42,10 @@ type Agent struct {
 	BlockedCount      int                `json:"blocked_count"`
 	UnblockedUnpicked int                `json:"unblocked_unpicked_count"`
 	LatestHeartbeat   string             `json:"latest_heartbeat,omitempty"`
-	// OpenTasks/BlockedTasks count the TASK REGISTRY, not the inbox. The three
-	// counters above are item-only; without these a lane with an empty inbox and
-	// a full ledger renders "0 open · blocked 0 · unblocked/unpicked 0" and reads
-	// as no-work-to-do (A35: scope the check to the claim).
+	// OpenTasks/BlockedTasks count nonterminal TASK REGISTRY rows, not the inbox.
+	// The three counters above are item-only; without these a lane with an empty
+	// inbox and a full ledger renders "0 open · blocked 0 · unblocked/unpicked 0"
+	// and reads as no-work-to-do (A35: scope the check to the claim).
 	OpenTasks    int `json:"open_tasks"`
 	BlockedTasks int `json:"blocked_tasks"`
 }
@@ -127,7 +127,7 @@ func BuildFrom(all []work.Item, tasks []routerstore.Task, threads *router.Thread
 			agents[t.Agent] = &Agent{AgentID: t.Agent}
 		}
 		agents[t.Agent].Tasks = append(agents[t.Agent].Tasks, t)
-		if t.Status == "done" {
+		if taskTerminal(t.Status) {
 			continue
 		}
 		agents[t.Agent].OpenTasks++
@@ -233,6 +233,17 @@ func dependencyChain(first string, byID map[string]work.Item) ([]string, bool) {
 func itemTerminal(status string) bool {
 	switch status {
 	case "closed", "completed", "dead_letter":
+		return true
+	}
+	return false
+}
+
+// taskTerminal is the task-registry lifecycle, distinct from inbox item status.
+// Canceled and withdrawn rows remain visible in the registry, but never count
+// as open work or successful completion.
+func taskTerminal(status string) bool {
+	switch status {
+	case "done", "canceled", "withdrawn":
 		return true
 	}
 	return false
