@@ -1,4 +1,15 @@
 # 𓃣 Anubis Engineering Journal
+## Nov25 — Ma'at gate hosted-lint correction
+
+PR #1454 head b87c9541 failed hosted lint because `RangesFromPrePush` retained
+an unused zero-hash constant after the helper refactor. Removed that dead
+declaration. Fresh admitted `go vet` and both affected package suites passed
+after explicitly removing inherited `GIT_CONFIG_*` variables from the test
+subprocess. The first admitted attempt is preserved as a failure: inherited
+`GIT_CONFIG_VALUE_8` made three hook tests refuse configuration before reaching
+their intended assertion. A clean PR successor, hosted CI rerun, independent
+review and merge remain outstanding; installed CLI is unchanged.
+
 ## Nov25 — Ma'at gate test-gap successor, untested
 
 Based on frozen dfa4b268 in a separate worktree. Reworked the five range-lint

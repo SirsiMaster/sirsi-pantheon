@@ -508,7 +508,6 @@ func shorts(shas []string) []string {
 // branch; when no such base can be resolved the push is refused (fail closed)
 // rather than admitted as "nothing to check".
 func RangesFromPrePush(root string, stdin io.Reader) ([]Range, error) {
-	const zero = "0000000000000000000000000000000000000000"
 	g := Gate{Root: root}
 	var ranges []Range
 	var errs []string

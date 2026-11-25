@@ -26,10 +26,15 @@
 # symlink fixture creates .githooks first; worksheet label is lowercase to
 # match its output regression assertion. No tests run by this session.
 # Candidate path: /private/tmp/sirsi-pantheon-maat-gate-successor-20261125-v5.
-# Nov25 isolated uncommitted candidate restores `sirsi maat gate` from the
-# historical command/package on origin/main 16e80ab. A–H are heuristic-only;
-# ADR-076 remains unallocated. No tests/build/admission, hook install, commit,
-# push, publication or deployment. Candidate: /private/tmp/sirsi-pantheon-maat-gate-20261125.
+# Nov25 `sirsi maat gate` PR #1454 head b87c9541 has independently accepted
+# source and passed exact local tests/vet, but hosted Lint failed for one unused
+# zero-hash constant. Removed it; clean-environment admitted vet+tests pass at
+# terminal cbb6408589ba49fdbf8bea1751cdbaba. Initial admitted run failed three
+# hook tests because injected GIT_CONFIG_VALUE_8 contaminated environment;
+# retained as failure. Successor not yet committed/pushed; hosted CI and
+# claude-deck review remain; installed CLI, hook arm, policy authority and
+# whole-repo completion are unchanged/open. A–H remain heuristic-only;
+# ADR-076 remains unallocated.
 # Current composition: release route328ba6d passed normal deep107 packages and
 # remote exact-head verification; packaging8f05e61 passed4 new+2 existing
 # fixtures and real static builds in a normal .git-directory clone. Both fixes
