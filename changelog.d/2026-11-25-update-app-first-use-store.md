@@ -1,0 +1,1 @@
+- `sirsi update --app` now initializes the Ma'at failure-memory store on genuine first use (store state exactly uninitialized) instead of refusing; incomplete or damaged stores still refuse.

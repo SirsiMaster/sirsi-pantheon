@@ -30,6 +30,7 @@ type maatAppUpdateStore interface {
 
 type maatAppUpdateOps struct {
 	storeStatus        func() maat.DefaultStoreStatus
+	initStore          func() (string, error)
 	openStore          func() (maatAppUpdateStore, error)
 	journal            func() (maat.DecisionJournal, error)
 	stage              func(context.Context, string, *updater.Release) (maintenanceInstallerPlan, error)
@@ -43,6 +44,7 @@ type maatAppUpdateOps struct {
 
 var maatAppUpdateDependencies = maatAppUpdateOps{
 	storeStatus:        maat.InspectDefaultStore,
+	initStore:          maat.InitializeDefaultStore,
 	openStore:          func() (maatAppUpdateStore, error) { return maat.OpenDefaultStore() },
 	journal:            func() (maat.DecisionJournal, error) { return maat.NewDefaultDecisionJournal() },
 	stage:              stageMaatAppUpdatePackage,
@@ -57,8 +59,23 @@ var maatAppUpdateDependencies = maatAppUpdateOps{
 var maatAppUpdatePackageInspector = inspectAppUpdatePKG
 var maatAppRollbackPackageInspector = inspectAppRollbackPKG
 
-func reconcilePendingMaatAppUpdate() (bool, error) {
+// appUpdateStoreStatus reports the failure-memory store status. Genuine first
+// use (exactly DefaultStoreUninitialized, nothing on disk) is initialized the
+// way `sirsi maat repair` does; Incomplete or damaged state is returned
+// untouched so callers keep refusing it.
+func appUpdateStoreStatus() maat.DefaultStoreStatus {
 	status := maatAppUpdateDependencies.storeStatus()
+	if status.State != maat.DefaultStoreUninitialized || maatAppUpdateDependencies.initStore == nil {
+		return status
+	}
+	if _, err := maatAppUpdateDependencies.initStore(); err != nil {
+		return status
+	}
+	return maatAppUpdateDependencies.storeStatus()
+}
+
+func reconcilePendingMaatAppUpdate() (bool, error) {
+	status := appUpdateStoreStatus()
 	if status.State != maat.DefaultStoreReady {
 		return true, errors.New("Ma'at app update requires the existing initialized failure-memory store; no network check or Installer action occurred")
 	}
@@ -141,7 +158,7 @@ func installAppReleaseWithMaatDirection(rel *updater.Release, rollback bool) err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	status := maatAppUpdateDependencies.storeStatus()
+	status := appUpdateStoreStatus()
 	if status.State != maat.DefaultStoreReady {
 		return errors.New("Ma'at app update requires the existing initialized failure-memory store; no installer was opened")
 	}
