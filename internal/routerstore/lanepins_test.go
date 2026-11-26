@@ -53,7 +53,9 @@ type pinHarness struct {
 
 func (h *pinHarness) now() time.Time { return time.Unix(0, h.nowNs.Load()).UTC() }
 
-func newPinHarness(t *testing.T) *pinHarness {
+func newPinHarness(t *testing.T) *pinHarness { return newPinHarnessEnforce(t, false) }
+
+func newPinHarnessEnforce(t *testing.T, enforce bool) *pinHarness {
 	t.Helper()
 	h := &pinHarness{}
 	h.nowNs.Store(time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC).UnixNano())
@@ -61,7 +63,7 @@ func newPinHarness(t *testing.T) *pinHarness {
 	t.Cleanup(func() { _ = h.backend.Close() })
 	h.backend.notifyDir = t.TempDir()
 	h.probe = &pinProbeStore{Store: h.backend}
-	handler, s, err := newHandler(h.probe, ServerOptions{Token: "host-token", MaxWait: 2 * time.Second, now: h.now})
+	handler, s, err := newHandler(h.probe, ServerOptions{Token: "host-token", MaxWait: 2 * time.Second, now: h.now, LanePinEnforce: enforce})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +317,77 @@ func TestLanePinReportOnlyVerdictsAtServedWait(t *testing.T) {
 	}
 }
 
-// The seam exists and is closed: no verdict refuses today.
+// Flag off (the default) allows every verdict; flag on refuses exactly a mismatch (403 + code) and nothing else.
+// The positive control (token machine == pinned machine) passes with the flag on.
+func TestLanePinEnforcementAtServedWait(t *testing.T) {
+	cases := []struct {
+		name    string
+		enforce bool
+		pin     string // lane-x pinned machine; "" = unpinned
+		tokenID string // token's adopted machine id; "" = none
+		refused bool
+	}{
+		{"off: mismatch allowed", false, "mach-a", "mach-b", false},
+		{"off: unpinned allowed", false, "", "mach-b", false},
+		{"off: no machine id allowed", false, "mach-a", "", false},
+		{"off: match allowed", false, "mach-a", "mach-a", false},
+		{"on: mismatch refused", true, "mach-a", "mach-b", true},
+		{"on: unpinned allowed", true, "", "mach-b", false},
+		{"on: no machine id allowed", true, "mach-a", "", false},
+		{"on: match allowed (positive control)", true, "mach-a", "mach-a", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := newPinHarnessEnforce(t, c.enforce)
+			if c.pin != "" {
+				if _, err := h.backend.SetLanePin("lane-x", c.pin, "ra", ""); err != nil {
+					t.Fatal(err)
+				}
+			}
+			rs := h.hostClient(t, "m1", c.tokenID)
+			_, err := rs.Wait(context.Background(), "lane-x", 30*time.Millisecond)
+			if !c.refused {
+				if err != nil {
+					t.Fatalf("Wait must be allowed: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("Wait must be refused")
+			}
+			if !errors.Is(err, ErrLanePinMismatch) {
+				t.Errorf("refusal must carry the ErrLanePinMismatch code: %v", err)
+			}
+			for _, want := range []string{"lane-x", "mach-a", "mach-b"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("refusal %q does not contain %q", err, want)
+				}
+			}
+			if strings.Contains(err.Error(), rs.token) {
+				t.Error("refusal must not carry the token")
+			}
+			if got := h.count("lane-x", LanePinMismatch); got != 1 {
+				t.Errorf("a refused mismatch is still counted: %d", got)
+			}
+		})
+	}
+}
+
+// lanePinRefuses is the single decision: only enforce+mismatch refuses.
+func TestLanePinRefusesTable(t *testing.T) {
+	for _, v := range []LanePinVerdict{LanePinMatch, LanePinMismatch, LanePinUnpinned, LanePinNoMachineID, lanePinError, lanePinSkipped} {
+		on := &server{opts: ServerOptions{LanePinEnforce: true}}
+		off := &server{}
+		if got, want := on.lanePinRefuses(v), v == LanePinMismatch; got != want {
+			t.Errorf("enforce on, %q: refuses=%v want %v", v, got, want)
+		}
+		if off.lanePinRefuses(v) {
+			t.Errorf("enforce off, %q must not refuse", v)
+		}
+	}
+}
+
+// With enforcement off (default) no verdict refuses.
 func TestLanePinEnforcementSeamIsOffForEveryVerdict(t *testing.T) {
 	h := newPinHarness(t)
 	for _, v := range []LanePinVerdict{LanePinMatch, LanePinMismatch, LanePinUnpinned, LanePinNoMachineID, lanePinError, lanePinSkipped} {

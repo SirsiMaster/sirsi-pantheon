@@ -74,6 +74,7 @@ var sentinelErrors = map[string]error{
 	"ErrThreadUnknown":        ErrThreadUnknown,
 	"ErrThreadAuthority":      ErrThreadAuthority,
 	"ErrWorkerAnswers":        ErrWorkerAnswers,
+	"ErrLanePinMismatch":      ErrLanePinMismatch,
 	"ErrReceiptInvalid":       ErrReceiptInvalid,
 	"ErrReceiptUnverifiable":  ErrReceiptUnverifiable,
 	"ErrWaiterFirst":          schedule.ErrWaiterFirst,
