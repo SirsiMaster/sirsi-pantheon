@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -107,5 +108,20 @@ func OpenPostgres(dsn string) (*SQLiteStore, error) {
 		d:               postgresDialect,
 		path:            "postgres",
 		escalationAgent: escalationAgent,
+		schemaVersion:   version,
 	}, nil
+}
+
+// LedgerSchemaVersion reports the live ledger schema this store verified at
+// open (Postgres) or reads from PRAGMA user_version (SQLite). It is served to
+// clients so a host with no local ledger (https service or spool relay) can run
+// the app-update schema-ceiling gate against the real service schema.
+func (s *SQLiteStore) LedgerSchemaVersion() (int, error) {
+	if s.schemaVersion > 0 {
+		return s.schemaVersion, nil
+	}
+	if s.d != postgresDialect && s.path != "" {
+		return ReadSchemaVersion(s.path)
+	}
+	return 0, errors.New("routerstore: ledger schema version is not recorded for this backend")
 }

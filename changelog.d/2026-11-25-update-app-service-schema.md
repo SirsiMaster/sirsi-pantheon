@@ -1,0 +1,1 @@
+- `sirsi update --app` on hosts whose ledger of record is the router service (https or spool relay) now learns the live ledger schema from the service through the new read-only `LedgerSchemaVersion` store call instead of refusing for lack of a local database; an older or unreachable service still refuses.
