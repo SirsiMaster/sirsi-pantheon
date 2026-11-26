@@ -88,7 +88,7 @@ var itemOwnership = map[string]int{
 
 // taskOwnership: method → indexes of (agent, taskID).
 var taskOwnership = map[string][2]int{
-	"CompleteTaskLease": {0, 1}, "ReleaseTaskLease": {0, 1}, "RenewTaskLease": {0, 1}, "WithdrawTaskLease": {0, 1},
+	"YieldTaskLease": {0, 1}, "CompleteTaskLease": {0, 1}, "ReleaseTaskLease": {0, 1}, "RenewTaskLease": {0, 1}, "WithdrawTaskLease": {0, 1},
 }
 
 const nonceWindow = 60 * time.Second
@@ -136,8 +136,8 @@ var ruleOfRaExempt = map[string]bool{
 	"GetState": true, "Counters": true, "Breakers": true, "Render": true, "ListWakeEvents": true, "ListIdentifiers": true,
 	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "RecipientLoad": true, "OperationalAgents": true,
 	"Wait": true, "ListenNotify": true, "NotifyAgent": true, "NotifyPath": true, "ExportItem": true,
-	"WakeLatencySamples": true,
-	"ForceOwner":         true, "AudienceSince": true, "TaskLeaseEventsSince": true,
+	"WakeLatencySamples": true, "TaskYieldCapabilities": true,
+	"ForceOwner": true, "AudienceSince": true, "TaskLeaseEventsSince": true,
 }
 
 // ErrThreadAuthority: a session tried to write or delete a thread binding

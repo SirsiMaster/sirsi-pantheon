@@ -268,7 +268,7 @@ var routerTaskReleaseCmd = &cobra.Command{
 			return err
 		}
 		defer f.Close()
-		return f.Store().ReleaseTaskLease(args[0], args[1], taskLeaseToken, taskLeaseReason)
+		return routerstore.SettleTaskAttempt(f.Store(), args[0], args[1], taskLeaseToken, routerstore.TaskAttemptOutcome{Disposition: taskReleaseDisposition, EvidenceRef: taskReleaseEvidence, Dependency: taskReleaseDependency, FailureReason: taskLeaseReason})
 	},
 }
 
@@ -601,4 +601,33 @@ func init() {
 	routerTaskCmd.AddCommand(routerTaskWithdrawCmd)
 	routerTaskCmd.AddCommand(routerTaskAddCmd, routerTaskUpdateCmd, routerTaskListCmd, routerTaskClaimCmd, routerTaskClaimIDCmd, routerTaskRenewCmd, routerTaskCompleteCmd, routerTaskReleaseCmd, routerTaskReclaimExpiredCmd, routerTaskRecheckReceiptsCmd, routerTaskResetAttemptsCmd, routerTaskWhyCmd)
 	routerCmd.AddCommand(routerLedgerCmd, routerTaskCmd, routerDependCmd)
+}
+
+var taskYieldDisposition, taskYieldEvidence, taskYieldDependency string
+var routerTaskYieldCmd = &cobra.Command{
+	Use: "yield <agent> <task-id>", Args: cobra.ExactArgs(2), Short: "Cleanly yield a live task without consuming a failure retry",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		f, err := openTaskFacade()
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		return routerstore.SettleTaskAttempt(f.Store(), args[0], args[1], taskLeaseToken, routerstore.TaskAttemptOutcome{Disposition: taskYieldDisposition, EvidenceRef: taskYieldEvidence, Dependency: taskYieldDependency})
+	},
+}
+
+func init() {
+	routerTaskYieldCmd.Flags().StringVar(&taskLeaseToken, "lease", "", "Live fenced lease capability")
+	routerTaskYieldCmd.Flags().StringVar(&taskYieldDisposition, "disposition", "", "Explicit clean or external-wait")
+	routerTaskYieldCmd.Flags().StringVar(&taskYieldEvidence, "evidence", "", "Correlated partial outcome reference; not task completion")
+	routerTaskYieldCmd.Flags().StringVar(&taskYieldDependency, "dependency", "", "Required external-wait blocker; never replaces an existing different dependency")
+	routerTaskCmd.AddCommand(routerTaskYieldCmd)
+}
+
+var taskReleaseDisposition, taskReleaseEvidence, taskReleaseDependency string
+
+func init() {
+	routerTaskReleaseCmd.Flags().StringVar(&taskReleaseDisposition, "disposition", "failure", "Explicit failure (legacy default), clean or external-wait")
+	routerTaskReleaseCmd.Flags().StringVar(&taskReleaseEvidence, "evidence", "", "Required partial-result reference for clean/wait")
+	routerTaskReleaseCmd.Flags().StringVar(&taskReleaseDependency, "dependency", "", "Required external-wait blocker")
 }
