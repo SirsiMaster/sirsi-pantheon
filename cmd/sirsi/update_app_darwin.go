@@ -63,19 +63,22 @@ var maatAppRollbackPackageInspector = inspectAppRollbackPKG
 // use (exactly DefaultStoreUninitialized, nothing on disk) is initialized the
 // way `sirsi maat repair` does; Incomplete or damaged state is returned
 // untouched so callers keep refusing it.
-func appUpdateStoreStatus() maat.DefaultStoreStatus {
+func appUpdateStoreStatus() (maat.DefaultStoreStatus, error) {
 	status := maatAppUpdateDependencies.storeStatus()
 	if status.State != maat.DefaultStoreUninitialized || maatAppUpdateDependencies.initStore == nil {
-		return status
+		return status, nil
 	}
 	if _, err := maatAppUpdateDependencies.initStore(); err != nil {
-		return status
+		return status, fmt.Errorf("Ma'at app update: initialize failure-memory store on first use: %w; no Installer action occurred", err)
 	}
-	return maatAppUpdateDependencies.storeStatus()
+	return maatAppUpdateDependencies.storeStatus(), nil
 }
 
 func reconcilePendingMaatAppUpdate() (bool, error) {
-	status := appUpdateStoreStatus()
+	status, initErr := appUpdateStoreStatus()
+	if initErr != nil {
+		return true, initErr
+	}
 	if status.State != maat.DefaultStoreReady {
 		return true, errors.New("Ma'at app update requires the existing initialized failure-memory store; no network check or Installer action occurred")
 	}
@@ -158,7 +161,10 @@ func installAppReleaseWithMaatDirection(rel *updater.Release, rollback bool) err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	status := appUpdateStoreStatus()
+	status, initErr := appUpdateStoreStatus()
+	if initErr != nil {
+		return initErr
+	}
 	if status.State != maat.DefaultStoreReady {
 		return errors.New("Ma'at app update requires the existing initialized failure-memory store; no installer was opened")
 	}

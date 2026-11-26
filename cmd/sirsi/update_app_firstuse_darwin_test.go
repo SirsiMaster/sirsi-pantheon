@@ -51,8 +51,11 @@ func TestAppUpdateFirstUseStoreInitialization(t *testing.T) {
 			if inits != tc.wantInit || opened != tc.wantOpened {
 				t.Fatalf("inits=%d opened=%v, want %d/%v", inits, opened, tc.wantInit, tc.wantOpened)
 			}
-			if tc.wantRefuse != (err != nil && strings.Contains(err.Error(), "requires the existing initialized failure-memory store")) {
+			if tc.wantRefuse != (err != nil) {
 				t.Fatalf("refusal mismatch: err=%v wantRefuse=%v", err, tc.wantRefuse)
+			}
+			if tc.initErr != nil && (err == nil || !errors.Is(err, tc.initErr) || !strings.Contains(err.Error(), "disk full")) {
+				t.Fatalf("init failure cause lost: %v", err)
 			}
 		})
 	}
