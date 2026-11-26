@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/dispatch"
@@ -81,25 +82,40 @@ func buildWithThreadsContext(ctx context.Context, repoRoot, agent string, now ti
 		return Snapshot{}, nil, err
 	}
 	defer f.Close()
-	all, _, err := f.ListActiveContext(ctx)
-	if err != nil {
-		return Snapshot{}, nil, err
-	}
-	var tasks []routerstore.Task
-	if contextual, ok := f.Store().(interface {
-		ListTasksContext(context.Context, string) ([]routerstore.Task, error)
-	}); ok {
-		tasks, err = contextual.ListTasksContext(ctx, agent)
-	} else {
-		tasks, err = f.Store().ListTasks(agent)
-	}
-	if err != nil {
-		return Snapshot{}, nil, err
-	}
-	routerRoot := repoRoot + "/.agents/idea-router"
-	threads, err := router.LoadThreadRegistryContext(ctx, routerRoot)
-	if err != nil {
-		return Snapshot{}, nil, err
+	// The three reads are independent remote calls (measured 1-2 s each on the
+	// M1 against the service); run them together so the snapshot stage costs
+	// the slowest, not the sum. Errors keep the original precedence.
+	var (
+		all                          []work.Item
+		tasks                        []routerstore.Task
+		threads                      *router.ThreadRegistry
+		errAll, errTasks, errThreads error
+		wg                           sync.WaitGroup
+	)
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		all, _, errAll = f.ListActiveContext(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		if contextual, ok := f.Store().(interface {
+			ListTasksContext(context.Context, string) ([]routerstore.Task, error)
+		}); ok {
+			tasks, errTasks = contextual.ListTasksContext(ctx, agent)
+		} else {
+			tasks, errTasks = f.Store().ListTasks(agent)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		threads, errThreads = router.LoadThreadRegistryContext(ctx, repoRoot+"/.agents/idea-router")
+	}()
+	wg.Wait()
+	for _, err := range []error{errAll, errTasks, errThreads} {
+		if err != nil {
+			return Snapshot{}, nil, err
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, nil, err
