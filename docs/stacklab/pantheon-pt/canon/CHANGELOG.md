@@ -1,5 +1,83 @@
 # Changelog — Pantheon PT canon
 
+## 2026-11-26 — v0.24.166 release candidate
+
+- Pantheon.app: every command is now a standard macOS button (`.bordered` / `.borderedProminent` / `.borderless`). `NavLink` no longer forces `.plain` internally, which had silently overridden callers' button styles and left many buttons rendering as bare text. Full-width stretched labels and the custom `ResultActionButtonStyle` / `DiagnosticRepairButtonStyle` are gone. Anubis Scan and Clean now read the CLI exit status and show failures in red with "Try again" instead of discarding the result (Clean previously showed a green check even on failure). Sidebar order: This Mac (Horus, Anubis, Osiris, Work, Fleet, All Tools) first, then Apollo/Mercury/Ra/Ma'at, then Stack Lab/Release, then Overview/Activity; Overview stays the landing page. Owner request 2026-11-26. Refs: #1464.
+- Add a source-bound, publication-only recovery for the retained v0.24.165 release after guard mount verification refused the first attempt. The recovery preserves the existing signed files and draft, and uses a single create-only claim.
+- `router task claim` / `claim-id` refusals (`ErrNotOwner`, "caller's session does not own this lease") now name which fact differed (session bound to no thread, claim names another agent, `--thread` is not the session's bound thread) and the next step, instead of a bare sentinel. Fencing is unchanged; `router task why` now notes that claiming also needs the session bound to the same agent and `--thread`.
+- The router now keeps its own server-side record of which Mac each lane belongs to (ADR-065 Decision 6, input for
+  rs-37; owner decision 2026-11-25). Schema v30 adds `lane_machine_pins(agent, machine_id, set_by, reason, created,
+  retired)`: a lane may hold several active pins, a pin is retired and never deleted (history kept), and nothing is
+  backfilled. The pin is set only by the router operator (`sirsi router lane-pin set|retire|list --store <backend>`,
+  the same surface as `router token mint|revoke`); `SetLanePin`, `RetireLanePin`, `ListLanePins` and
+  `ActiveLanePinMachines` are not served over the wire and are refused by the relay, so a lane cannot set, retire or
+  read a pin. It is never derived from a thread's self-asserted host.
+- Report-only.
+- Cost: one indexed read per lane per 60 s per service instance (10 s after a failed read); a pin change is seen by a
+  running instance within 60 s.
+- Deploy order: the router service and every `sirsi` binary that opens the Postgres ledger require schema version 30
+  exactly. Apply `pg/schema.sql` (the apply-schema job now expects 20 tables and version 30), then roll the service,
+  the token job and the Mac binaries to the new image together; a SQLite store upgraded by a v30 binary is refused by
+  older binaries. Until the operator pins lanes and each Mac token has adopted its machine id, every verdict reads
+  `unpinned` or `no-machine-id`.
+- Refs: PANTHEON_RULES.md A35, ADR-065 Decision 6, docs/design/ADR065_INFORMER_AUTHORIZATION_DECISION.md §8
+- Open-task counts no longer include canceled and withdrawn tasks: the ledger `OpenTasks` figure (CLI `router ledger`, `ctr`), the fabric "open" drill-down filter, `router doctor` ledger-rot findings and `OperationalAgents` now all use the single terminal-status list (`routerstore.IsTerminalTaskStatus`: done, canceled, withdrawn) instead of testing only `done`.
+- Record of the M5 checkout loss of 2026-11-20 and its restore.
+- A worker that cleanly yields a task no longer burns one of its retry attempts. New `YieldTaskLease` (clean or external-wait, fenced by the live lease and the claiming session, audited in the same transaction) refunds exactly the current claim; earlier failures stay charged and the legacy `ReleaseTaskLease` is unchanged and never parses its reason. `router task release --disposition clean|external-wait` and `router task yield` dispatch through `SettleTaskAttempt`, which negotiates the additive `TaskYieldCapabilities` read first and fails closed (no failure or reset fallback) against an older server. Bound: at most 3 consecutive refunded yields per task; the next yield keeps its attempt charged (and blocks at the retry ceiling), so a worker cannot yield forever. No schema change, source is the SSA-accepted `bd3357e8` and `1e4c47db` (Refs: ADR-057, A36).
+- The one-pass headless worker contract (ADR-079 D3) now also covers the lanes with a live interactive session: codex-finalwishes, claude-finalwishes-m1 and mercury (ra already had it). Only those three prompts changed; lane-specific text (codex-finalwishes' cross-host execution rules, mercury's attended-fence wording) is kept. The registry guard requires the contract for an explicit list of lanes and forbids it on every other lane, so it cannot spread by accident.
+- The wake loop can now wake early when a new item lands instead of waiting for its next fixed tick (A27, ADR-065). Opt-in and default OFF: set `SIRSI_WAKE_EVENT_TICK=1` on a wake loop to enable it. The tick stays as the fallback, every dispatch gate (progress gate, spawn ceiling, holds, backoff) is unchanged, bursts coalesce, and any source error or false wake backs off to the tick cadence. Adds `dispatch.Facade.WaitInbox`, a cursor-free park so the observer never steals a lane's own `router wait` delivery.
+- `sirsi thread list` no longer retires or imports thread records as a side effect of listing. Intentional dead and superseded local-thread reconciliation is available through `sirsi thread sweep --agent <id>` or the explicitly broad `--all`; JSON reports partial results and errors. Older installed clients retain their old behavior until updated.
+- A failed publication of a freshly minted host token no longer signs out every session on that host.
+  `sirsi router token mint --secret-resource` cleaned up with `RevokeHostToken`, which revokes every active
+  session on the token's host because sessions did not record the token that issued them. Sessions now carry
+  `token_id` (SQLite schema v29, Postgres schema version 29), stamped by the service at mint from the bearer the
+  request authenticated with (never from a client argument; a bootstrap-token, in-process or pre-v29 session is
+  `''`). The publish-failure cleanup is the new server-side `DiscardMintedToken(id)`: one transaction marks that
+  token revoked and revokes only the sessions whose `token_id` equals it. It refuses an empty id, is idempotent,
+  keeps the token and scope rows (marked revoked, not deleted), and is not served over the wire or forwarded by the
+  relay. A cleanup that itself fails is still reported as `CLEANUP_DEBT`. The operator command
+  `sirsi router token revoke` (`RevokeHostToken`) is unchanged: it still revokes the host's every session.
+  Deploy order: the router service and every `sirsi` binary that opens the Postgres ledger require schema version 29
+  exactly, so apply the schema and roll the service and token job to the new image together; a SQLite store
+  upgraded by a v29 binary is refused by older binaries. Sessions minted before v29 have no `token_id` and are
+  never matched by a discard (a later rotation that must clear them uses the explicit revoke).
+- Refs: PANTHEON_RULES.md A35
+- `recheck-receipts` finishes inside the service limit and makes progress across calls.
+- One merged PR may close every task its description names.
+- `sirsi maat reserve --queue --wait <seconds>` waits for the resource and returns the grant.
+- Ma'at reserve latency findings for Mercury (2026-11-24).
+- Ma'at heartbeat, extend, release and invalidate answer a legitimate refusal with HTTP 409 instead of 500.
+- `sirsi maat reserve r1 r2 ...` reserves several resources all-or-nothing.
+- The direct task claim's transactional wake-ACK rollback test now runs on Postgres as well as SQLite (test-only; the other direct-claim ACK tests already ran on both through `ci-postgres.sh`).
+- Three design/report notes under `docs/design/`, documents only, no behaviour change.
+- The recipient-halt stalled count no longer forgets a started task when
+  `task reset-attempts` zeroes `attempts`. New column `tasks.first_claimed_at`
+  (SQLite schema v28, Postgres schema version 28) is written once by every task
+  claim path (`ClaimTask`, `task resume-claim`) and never cleared or rewritten by
+  reset-attempts, release or withdraw. The "was started" predicate is now
+  `status='in-progress' OR first_claimed_at<>'' OR attempts>0`; `attempts>0` is
+  kept because there is no backfill, so rows claimed before v28 count exactly as
+  before. Deploy order: the router service and every `sirsi` binary that opens
+  the Postgres ledger require schema version 28 exactly, so apply the schema and
+  roll the service and token job to the new image together; a SQLite store
+  upgraded by a v28 binary is refused by older binaries.
+- Expose evidence-backed owner sign-off on the shared board without private task enumeration. Bind the opening account, preserve uncertain responses without automatic retry, and atomically refuse any retained worker custody before owner completion; cancellation remains distinct.
+- Preserve the enrolled protected signing/supervisor route and native-artifact-only publication scope for v0.24.165; refuse mismatched tag/version without legacy fallback. No signing, publication or host-adoption success is implied.
+- Router and board context builders explicitly set the generated binary to 0755
+  and only the copied public registry, machine-list and changelog assets to 0644.
+  Private context directories and unrelated files are not widened. Both static
+  builds require `-buildvcs=true` instead of permitting automatic omission.
+- Inert-compiler fixtures exercise both actual context functions under umask 077,
+  including private-file preservation and build argv. They are not real compiler,
+  container startup, deployment or installed-runtime qualification.
+  Existing staged-tag and traffic-selection fixtures now create their named
+  inert compiler output; every prior traffic/refusal assertion is retained.
+- Refs: docs/router-service/RUNBOOK.md, docs/user-guides/router-board.md, ADR-062
+  Diagrams: unchanged — packaging and provenance only
+  ADR: not required — correct existing distroless nonroot packaging contract
+- The native release publisher now verifies guard-image mount identity by filesystem object rather than path spelling, allowing macOS `/var` and `/private/var` aliases while retaining the single-mount and device checks. This fixes a pre-publication refusal; it does not itself publish a release.
+- Embed versioned production completion policy, require exact item and contract-command declarations, refuse caller-selected helper and Git-root substitution, and provide explicit non-overwriting standalone export. Preserve actor/session/lease fences; declaration validation is not proof that tests or delivery occurred.
+
 ## 2026-11-24 — v0.24.165 release candidate
 
 - Host-readiness change-only history retains changes in admission and GUI reasons and distinct SSH and screen-sharing probe state/reason signatures, while ignoring timestamps and attempt ordering. Existing history is not removed; variable diagnostic text may increase retained private history and storage. This is a source change; live deployment remains separate.

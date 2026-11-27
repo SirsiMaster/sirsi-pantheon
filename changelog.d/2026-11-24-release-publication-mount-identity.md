@@ -1,1 +1,0 @@
-The native release publisher now verifies guard-image mount identity by filesystem object rather than path spelling, allowing macOS `/var` and `/private/var` aliases while retaining the single-mount and device checks. This fixes a pre-publication refusal; it does not itself publish a release.
