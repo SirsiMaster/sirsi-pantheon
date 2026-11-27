@@ -172,11 +172,12 @@ struct PantheonDesktopView: View {
             .padding(.horizontal, 12).padding(.bottom, 18)
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 20) {
-                    // Hygiene tools lead; the landing page (Overview) still defaults to .command.
+                    // Owner 2026-11-26: hygiene tools first, sub-applications second.
+                    // The landing page (Overview) still defaults to .command.
                     sidebarSection("This Mac", [.horus, .anubis, .osiris, .threads, .fleet, .library])
-                    sidebarSection("Workspace", [.command, .activity])
                     sidebarSection("Intelligence & fabric", [.apollo, .mercury, .ra, .maat])
                     sidebarSection("Build & release", [.stackLab, .release])
+                    sidebarSection("Workspace", [.command, .activity])
                     if PantheonWorkspace.matching(search).isEmpty {
                         Text("No matching workspace. Clear the search to see all tools.")
                             .sirsiFont(12).foregroundStyle(PantheonTheme.mutedText).padding(8)
@@ -276,7 +277,7 @@ struct PantheonDesktopView: View {
 
 enum PantheonWorkspace: String, CaseIterable, Identifiable {
     // Declaration order is the sidebar order (search results follow it too).
-    case horus, anubis, osiris, threads, fleet, library, command, activity, apollo, mercury, ra, maat, stackLab, release
+    case horus, anubis, osiris, threads, fleet, library, apollo, mercury, ra, maat, stackLab, release, command, activity
     var id: String { rawValue }
     var title: String {
         switch self {
