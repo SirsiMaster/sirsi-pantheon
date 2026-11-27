@@ -1,5 +1,9 @@
 # Changelog — Pantheon PT canon
 
+## 2026-11-26 — v0.24.167 release candidate
+
+- Release note: v0.24.166 was tagged (3d1c4bea) but never published. Its signed build stopped at the release Ma’at preflight ("installed Ma’at supervisor does not match release source"), because the M1 runner still had the 2026-11-02 `sirsi-maat-run` (sha256 33b3d5c1…) while release source `scripts/maat/admitted-run.py` is 9515e1a8…. With the owner's approval on 2026-11-26, the reviewed source was installed as the M1 supervisor; the prior copy is kept as `~/.local/bin/sirsi-maat-run.bak-20261126` on the M1. A retry of the same run was correctly refused because no prior-attempt custody artifact existed, and cross-run tag custody refuses a second run for v0.24.166 until operator reconciliation, so its empty reserved draft is left for that reconciliation. v0.24.167 carries the same content as v0.24.166.
+
 ## 2026-11-26 — v0.24.166 release candidate
 
 - Pantheon.app: every command is now a standard macOS button (`.bordered` / `.borderedProminent` / `.borderless`). `NavLink` no longer forces `.plain` internally, which had silently overridden callers' button styles and left many buttons rendering as bare text. Full-width stretched labels and the custom `ResultActionButtonStyle` / `DiagnosticRepairButtonStyle` are gone. Anubis Scan and Clean now read the CLI exit status and show failures in red with "Try again" instead of discarding the result (Clean previously showed a green check even on failure). Sidebar order: This Mac (Horus, Anubis, Osiris, Work, Fleet, All Tools) first, then Apollo/Mercury/Ra/Ma'at, then Stack Lab/Release, then Overview/Activity; Overview stays the landing page. Owner request 2026-11-26. Refs: #1464.
