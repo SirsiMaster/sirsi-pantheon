@@ -158,7 +158,7 @@ struct PantheonControlCenterView: View {
                 Text("This Mac").sirsiFont(15, weight: .semibold)
                 Spacer()
                 Button { navigate(.horus) } label: { Label("Inspect", systemImage: "arrow.up.right") }
-                    .buttonStyle(.plain).sirsiFont(12).foregroundStyle(gold)
+                    .buttonStyle(.bordered).controlSize(.small)
             }
             HStack(alignment: .top, spacing: 24) {
                 observation("Health", healthKnown ? engine.healthSummary : "Not yet observed",
@@ -171,7 +171,7 @@ struct PantheonControlCenterView: View {
                 Button { navigate(.stackLab) } label: { Label("Explore recipes", systemImage: "square.3.layers.3d") }
                 Button { navigate(.release) } label: { Label("Prepare a release", systemImage: "shippingbox") }
             }
-            .buttonStyle(.plain).sirsiFont(12).foregroundStyle(gold)
+            .buttonStyle(.bordered)
             if let date = engine.healthReadAt {
                 Text("Health observed \(date.formatted(date: .omitted, time: .shortened))\(engine.healthReadError == nil ? "" : " · refresh failed")")
                     .sirsiFont(11).foregroundStyle(PantheonTheme.mutedText)
@@ -204,7 +204,7 @@ struct PantheonControlCenterView: View {
             HStack {
                 Text("Recent activity").sirsiFont(15, weight: .semibold)
                 Spacer()
-                Button("View all") { navigate(.activity) }.buttonStyle(.plain).sirsiFont(12).foregroundStyle(gold)
+                Button("View all") { navigate(.activity) }.buttonStyle(.borderless).sirsiFont(12).foregroundStyle(gold)
             }
             if engine.activity.isEmpty {
                 Text("Completed actions will appear here with their retained outcomes.")

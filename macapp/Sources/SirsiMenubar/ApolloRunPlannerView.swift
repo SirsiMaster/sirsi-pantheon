@@ -187,13 +187,13 @@ struct ApolloRunPlannerView: View {
                     .sirsiFont(.subheadline).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Read capacity again") { Task { await load() } }
-                    .buttonStyle(ResultActionButtonStyle(prominent: true))
+                    .buttonStyle(.borderedProminent)
                 Button("Choose a new plan") { nav.push(ApolloRunPlannerView(engine: engine)) }
-                    .buttonStyle(ResultActionButtonStyle(prominent: false))
+                    .buttonStyle(.bordered)
                 Button { nav.push(MaatWorkspaceView(engine: engine)) } label: {
                     Label("Open Ma'at evidence", systemImage: "checkmark.seal")
                 }
-                .buttonStyle(ResultActionButtonStyle(prominent: false))
+                .buttonStyle(.bordered)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
@@ -987,7 +987,7 @@ struct ApolloTelemetryView: View {
             }
             .fixedSize(horizontal: false, vertical: true)
         }
-        .buttonStyle(ResultActionButtonStyle(prominent: false))
+        .buttonStyle(.bordered)
         .disabled(step == "1" && isRefreshing)
     }
 

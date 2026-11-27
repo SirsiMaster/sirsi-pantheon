@@ -135,7 +135,6 @@ struct MaatLaunchdPreviewReviewControls: View {
                 Task { await loadPreview() }
             } label: {
                 Label(loading ? "Refreshing managed-target preview…" : "Preview exact managed targets", systemImage: "magnifyingglass")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .disabled(loading || !canRefresh)
@@ -145,7 +144,6 @@ struct MaatLaunchdPreviewReviewControls: View {
                 MaatLaunchdPreviewTargets(preview: preview)
                 Button(action: onConfirm) {
                     Label(confirmLabel, systemImage: "wrench.and.screwdriver.fill")
-                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(loading || !canConfirm)
