@@ -136,7 +136,7 @@ struct FabricContentProjection {
                 }
                 if projection.offersDetail {
                     Button {openDetail(in:nav)} label: {Text("Open full Fabric detail").sirsiFont(.caption)}
-                        .buttonStyle(.plain)
+                        .buttonStyle(.bordered).controlSize(.small)
                 }
                 if projection.showsDetails {
                     ForEach(board.lanes) {lane in Text("\(lane.agent) · \(lane.state_label) · \(lane.open) open tasks").sirsiFont(.caption).foregroundStyle(board.roleColor(lane.role,dark:colorScheme == .dark))}

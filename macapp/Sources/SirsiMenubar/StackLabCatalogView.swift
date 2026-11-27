@@ -92,7 +92,7 @@ struct StackLabCatalogView: View {
 
     private var refreshCatalogButton: some View {
         Button("Refresh selected project") { Task { await load() } }
-            .buttonStyle(ResultActionButtonStyle(prominent: true))
+            .buttonStyle(.borderedProminent)
             .accessibilityHint("Reads the currently selected project's Stack Lab catalog again without changing it.")
     }
 
@@ -100,7 +100,7 @@ struct StackLabCatalogView: View {
         Button { nav.push(StackLabDoctorView(engine: engine)) } label: {
             Label("Open Stack Lab Doctor", systemImage: "stethoscope")
         }
-        .buttonStyle(ResultActionButtonStyle(prominent: false))
+        .buttonStyle(.bordered)
         .accessibilityHint("Checks the selected project's canonical Stack Lab records and routes unresolved findings to Ma'at evidence.")
     }
 
@@ -303,7 +303,6 @@ struct StackLabContractDetail: View {
                 .fixedSize(horizontal: false, vertical: true)
             NavLink { ApolloRunPlannerView(engine: engine) } label: {
                 Label("Open Apollo recipe", systemImage: "arrow.right.circle.fill")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)
@@ -328,7 +327,6 @@ struct StackLabContractDetail: View {
                 .fixedSize(horizontal: false, vertical: true)
             NavLink { MaatWorkspaceView(engine: engine) } label: {
                 Label("Open Ma'at System One", systemImage: "arrow.right.circle.fill")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)
@@ -353,7 +351,6 @@ struct StackLabContractDetail: View {
                 .fixedSize(horizontal: false, vertical: true)
             NavLink { MaatWorkspaceView(engine: engine, opensReleasePreflight: true) } label: {
                 Label("Open Ma'at release preflight", systemImage: "arrow.right.circle.fill")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)

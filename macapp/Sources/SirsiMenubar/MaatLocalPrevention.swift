@@ -350,7 +350,7 @@ struct MaatLocalPreventionEntry: View {
             Text("Record an exact local prevention screen, without repairing or changing health. Retained failure and unknown action debt remain binding.").sirsiFont(.caption).foregroundStyle(.secondary)
             if state.busy { ProgressView("Reading and retaining exact local memory…") }
             if let message = state.message { Text(message).sirsiFont(.caption) }
-            if let next = state.nextCase { NavLink { destination(next) } label: { Label("Open retained local prevention", systemImage: "shield.lefthalf.filled") } }
+            if let next = state.nextCase { NavLink { destination(next) } label: { Label("Open retained local prevention", systemImage: "shield.lefthalf.filled") }.buttonStyle(.plain) }
         }.confirmationDialog("Record the current local prevention screen?", isPresented: $confirmScreen) {
             Button("Record and inspect local prevention") { model.recordPreventionScreen(entry) }
             Button("Cancel", role: .cancel) {}
@@ -389,7 +389,7 @@ struct MaatLocalPreventionDetail: View {
             ForEach(state.offers, id: \.plan_sha256) { offer in Button("Inspect and reconcile retained \(offer.effect)") { model.reconcile(entry, key, sha: offer.plan_sha256) }.disabled(state.busy) }
             Button("Review a new local action") { model.reviewNewAction(entry, key) }.disabled(state.busy)
             Text("This observes a fresh local case. It never replays the installer or carries old consent into a new repair.").sirsiFont(.caption).foregroundStyle(.secondary)
-            if let next = state.nextCase { NavLink { destination(next) } label: { Label("Open fresh local case", systemImage: "arrow.right.circle") } }
+            if let next = state.nextCase { NavLink { destination(next) } label: { Label("Open fresh local case", systemImage: "arrow.right.circle") }.buttonStyle(.plain) }
             if state.busy { ProgressView("Ma’at is verifying the exact retained workflow…"); Button("Cancel current request") { model.cancel(entry, key) } }
             if let message = state.message { Text(message).sirsiFont(.caption).foregroundStyle(.secondary) }
         }

@@ -383,8 +383,10 @@ struct NavLink<Label: View, Destination: View>: View {
         self.label = label
     }
     var body: some View {
+        // No style here: a style set inside NavLink silently overrides any
+        // .buttonStyle(.bordered/.borderedProminent) a caller applies outside it,
+        // which left every "button" NavLink rendering as bare text. Callers choose.
         Button { nav.push(destination()) } label: { label() }
-            .buttonStyle(.plain)
     }
 }
 
@@ -550,7 +552,7 @@ struct CommandDeckView: View {
                     .padding(.vertical, 5)
                     .background(Capsule().fill(tileFill))
                     .contentShape(Capsule())
-                }
+                }.buttonStyle(.plain)
                 .accessibilityLabel("\(aiStatusLabel) — open Ask Sirsi")
             }
 
@@ -580,7 +582,7 @@ struct CommandDeckView: View {
                             .padding(.top, 6)
                     }
                     .contentShape(Rectangle())
-                }
+                }.buttonStyle(.plain)
                 .accessibilityLabel("\(aiState.title) — open Ask Sirsi")
 
                 // Every chip is a drill-down into the surface it annotates (owner
@@ -620,7 +622,7 @@ struct CommandDeckView: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .contentShape(Rectangle())
-                    }
+                    }.buttonStyle(.plain)
                     .accessibilityLabel("Last run — open Activity")
                 }
             }
@@ -632,16 +634,16 @@ struct CommandDeckView: View {
             )
 
             HStack(spacing: 8) {
-                CommandDeckNav(title: "Ask", symbol: "sparkles", fill: panelFill) {
+                CommandDeckNav(title: "Ask", symbol: "sparkles") {
                     AskSirsiView(engine: engine)
                 }
-                CommandDeckNav(title: "Ra fabric", symbol: "point.3.connected.trianglepath.dotted", fill: panelFill) {
+                CommandDeckNav(title: "Ra fabric", symbol: "point.3.connected.trianglepath.dotted") {
                     RaFabricView(engine: engine)
                 }
-                CommandDeckNav(title: "Ops", symbol: "waveform.path.ecg", fill: panelFill) {
+                CommandDeckNav(title: "Ops", symbol: "waveform.path.ecg") {
                     HorusView(engine: engine)
                 }
-                CommandDeckNav(title: "Insight", symbol: "scope", fill: panelFill) {
+                CommandDeckNav(title: "Insight", symbol: "scope") {
                     InsightView(engine: engine)
                 }
             }
@@ -754,7 +756,7 @@ struct CommandDeckMetric<Destination: View>: View {
                         .stroke(hovering ? Color.secondary.opacity(0.35) : .clear, lineWidth: 1))
             )
             .contentShape(Rectangle())
-        }
+        }.buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityLabel("\(state.title): \(state.detail) — open \(destinationName)")
     }
@@ -763,31 +765,18 @@ struct CommandDeckMetric<Destination: View>: View {
 struct CommandDeckNav<Destination: View>: View {
     let title: String
     let symbol: String
-    let fill: Color
     private let destination: () -> Destination
 
-    init(title: String, symbol: String, fill: Color, @ViewBuilder destination: @escaping () -> Destination) {
+    init(title: String, symbol: String, @ViewBuilder destination: @escaping () -> Destination) {
         self.title = title
         self.symbol = symbol
-        self.fill = fill
         self.destination = destination
     }
 
     var body: some View {
         NavLink { destination() } label: {
-            HStack(spacing: 5) {
-                Image(systemName: symbol).sirsiFont(11, weight: .semibold)
-                Text(title).sirsiFont(12, weight: .semibold).lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(fill)
-                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(gold.opacity(0.42), lineWidth: 1))
-            )
-            .foregroundStyle(gold)
-        }
+            Label(title, systemImage: symbol).lineLimit(1)
+        }.buttonStyle(.bordered)
     }
 }
 
@@ -881,7 +870,7 @@ struct BackBar: View {
                 .padding(.trailing, 24)
                 .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).foregroundStyle(gold)
+                .buttonStyle(.borderless).foregroundStyle(gold)
                 Spacer()
                 Text(title).sirsiFont(12, weight: .semibold).foregroundStyle(.secondary)
                 Spacer()
@@ -953,16 +942,15 @@ struct FDAGuideView: View {
                                                reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) })
                         } label: {
                             Label("Open Full Disk Access", systemImage: "lock.open")
-                                .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(ResultActionButtonStyle(prominent: true))
+                        .buttonStyle(.borderedProminent)
 
                         Button {
                             revealAppInFinder()
                         } label: {
                             Label("Reveal \(guide.appName) in Finder", systemImage: "folder")
                         }
-                        .buttonStyle(ResultActionButtonStyle(prominent: false))
+                        .buttonStyle(.bordered)
                     }
 
                     if returnToTrash {
@@ -1561,8 +1549,11 @@ struct FindingView: View {
                             } else {
                                 confirmFix = true
                             }
-                        } label: { fixButtonContents(fix) }
-                        .buttonStyle(DiagnosticRepairButtonStyle())
+                        } label: { Label(fixButtonLabel, systemImage: fixIcon) }
+                        .buttonStyle(.borderedProminent).tint(gold)
+                        Text(repairCommand).sirsiFont(.caption, design: .monospaced)
+                            .foregroundStyle(.secondary).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
                         if let repairReviewMessage {
                             Text(repairReviewMessage).sirsiFont(.callout)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -1691,11 +1682,6 @@ struct FindingView: View {
         confirmFix = true
     }
 
-    private func fixButtonContents(_ fix: String) -> some View {
-        DiagnosticRepairActionLabel(title: fixButtonLabel, command: repairCommand,
-                                    systemImage: fixIcon)
-    }
-
     @ViewBuilder private var legacyNativeRepair: some View {
         VStack(alignment: .leading, spacing: 9) {
             Text("PANTHEON CAN REPAIR THIS").sirsiFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
@@ -1715,7 +1701,6 @@ struct FindingView: View {
             } label: {
                 Label(legacyNativeRepairArgs.map { diagnosticOpensMemoryPreview($0) } == true ? "Review memory relief" : "Resolve in Pantheon",
                       systemImage: "wrench.and.screwdriver.fill")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).tint(gold)
         }
@@ -1734,7 +1719,6 @@ struct FindingView: View {
                 AnubisView(engine: engine)
             } label: {
                 Label("Start guided cleanup", systemImage: "arrow.right.circle.fill")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).tint(gold)
         }
@@ -1755,7 +1739,6 @@ struct FindingView: View {
                 confirmMaatReview = true
             } label: {
                 Label("Record Ma'at review", systemImage: "arrow.triangle.branch")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)
@@ -1971,7 +1954,6 @@ struct RaFabricView: View {
                             showingHandoff = true
                         } label: {
                             Label("Hand off work", systemImage: "arrowshape.turn.up.right.fill")
-                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(gold)
@@ -1981,7 +1963,6 @@ struct RaFabricView: View {
                             ThreadsView(engine: engine)
                         } label: {
                             Label("Live work", systemImage: "circle.dotted")
-                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
                     }
@@ -2381,7 +2362,6 @@ struct RaHandoffView: View {
                     if sending { ProgressView().controlSize(.small) }
                     Text(sending ? "Sending…" : "Send to Ra fabric")
                 }
-                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)
@@ -2513,11 +2493,10 @@ struct AuthBlockerCard: View {
                         ? "Opened \(health.agentType). Finish its sign-in, then recheck this fabric."
                         : "Pantheon could not locate a compatible installed \(health.agentType) app. Open Ma'at for a guided local resolution instead."
                 } label: {
-                    Label("Open \(health.agentType)", systemImage: "arrow.up.forward.app").frame(maxWidth: .infinity)
+                    Label("Open \(health.agentType)", systemImage: "arrow.up.forward.app")
                 }.buttonStyle(.borderedProminent).tint(gold)
                 NavLink { MaatWorkspaceView(engine: engine) } label: {
                     Label("Guided resolution", systemImage: "checkmark.seal")
-                        .frame(maxWidth: .infinity)
                 }.buttonStyle(.bordered)
             }
             Button {
@@ -2533,7 +2512,6 @@ struct AuthBlockerCard: View {
                 }
             } label: {
                 Label(rechecking ? "Checking fabric…" : "I've signed in — recheck", systemImage: "arrow.clockwise")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)
@@ -2592,7 +2570,6 @@ struct DaemonBlockerCard: View {
                 Task { onResult(await engine.installRouterDaemons()) }
             } label: {
                 Label("Repair Ra relays", systemImage: "wrench.and.screwdriver.fill")
-                    .frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
         }
         .padding(12)
@@ -2781,7 +2758,6 @@ struct StrandedAgentView: View {
                         Task { resultLine = await engine.installWake(agent: agent.agentId) }
                     } label: {
                         Label("Arm wake channel", systemImage: "bolt.horizontal.circle")
-                            .frame(maxWidth: .infinity)
                     }.buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
 
                     Text("Runs: sirsi router wake-install \(agent.agentId)")
@@ -2916,7 +2892,7 @@ struct AnubisView: View {
                                 FDAGuideView(returnToTrash: true).onAppear { workflow.beginAccessReview() }
                             } label: {
                                 Label("Review macOS access", systemImage: "lock")
-                            }
+                            }.buttonStyle(.bordered)
                         }
                         Button("Retry this folder page") {
                             let request = workflow.browseRequest
@@ -3012,20 +2988,17 @@ struct AnubisView: View {
                                 }
                             } label: {
                                 Text("Permanently delete these \(preview.entries.count) reviewed members")
-                                    .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(.red)
                             .disabled(engine.busy)
                             Button("Cancel") { workflow.cancelApproval() }
-                                .buttonStyle(.plain)
-                                .sirsiFont(12)
-                                .foregroundStyle(.secondary)
+                                .buttonStyle(.bordered)
                         } else {
                             Button {
                                 workflow.prepareApproval()
                             } label: {
-                                Text("Empty Trash…").frame(maxWidth: .infinity)
+                                Text("Empty Trash…")
                             }
                             .buttonStyle(.bordered)
                             .disabled(engine.busy)
@@ -3406,6 +3379,11 @@ struct ScanCleanView: View {
                  ? "Scan your Mac to find reclaimable waste."
                  : "Nothing reclaimable to review right now.")
                 .sirsiFont(.callout).multilineTextAlignment(.center)
+            if let error = engine.lastError {
+                Text("Scan failed: \(error)")
+                    .sirsiFont(.caption).foregroundStyle(.red)
+                    .multilineTextAlignment(.center).textSelection(.enabled)
+            }
             Button {
                 Task {
                     isScanning = true
@@ -3414,20 +3392,23 @@ struct ScanCleanView: View {
                     isScanning = false
                 }
             } label: {
-                Label("Scan now", systemImage: "magnifyingglass").frame(maxWidth: .infinity)
+                Label(engine.lastError == nil ? "Scan now" : "Try again", systemImage: "magnifyingglass")
             }
-            .buttonStyle(.borderedProminent).tint(gold)
+            .buttonStyle(.borderedProminent).controlSize(.large).tint(gold)
+            .disabled(isScanning)
         }
         .frame(maxWidth: .infinity).padding(24)
     }
 
     private func resultState(_ line: String) -> some View {
-        VStack(spacing: 14) {
-            Text("✓").sirsiFont(40).foregroundStyle(.green)
-            Text(line).sirsiFont(.callout).multilineTextAlignment(.center)
-            Text("Moved to Trash — recoverable until you empty it.")
+        let failed = engine.lastError != nil
+        return VStack(spacing: 14) {
+            Text(failed ? "✕" : "✓").sirsiFont(40).foregroundStyle(failed ? .red : .green)
+            Text(line).sirsiFont(.callout).multilineTextAlignment(.center).textSelection(.enabled)
+            Text(failed ? "The cleanup did not complete cleanly. Rescan to see what is still present."
+                        : "Moved to Trash — recoverable until you empty it.")
                 .sirsiFont(.caption).foregroundStyle(.secondary)
-            Button { nav.pop() } label: { Text("Done").frame(maxWidth: .infinity) }
+            Button("Done") { nav.pop() }
                 .buttonStyle(.borderedProminent).tint(gold).padding(.top, 4)
         }
         .frame(maxWidth: .infinity).padding(24)
@@ -3503,7 +3484,7 @@ struct ScanCleanView: View {
                 }
                 else { syncSelection() }
             }
-            .sirsiFont(.caption).buttonStyle(.plain).foregroundStyle(gold)
+            .sirsiFont(.caption).buttonStyle(.bordered).controlSize(.small)
             Spacer()
             Button {
                 if includesCaution {
@@ -3601,7 +3582,7 @@ struct ItemDetailView: View {
                     } label: {
                         Label("Reveal in Finder", systemImage: "folder").sirsiFont(.caption)
                     }
-                    .buttonStyle(.plain).foregroundStyle(gold).padding(.top, 2)
+                    .buttonStyle(.bordered).controlSize(.small).padding(.top, 2)
                 }
                 .padding(16)
             }
@@ -3609,9 +3590,10 @@ struct ItemDetailView: View {
             Divider()
             if let resultLine {
                 HStack {
-                    Text("✓ \(resultLine)").sirsiFont(.caption).foregroundStyle(.green)
+                    Text("\(engine.lastError == nil ? "✓" : "✕") \(resultLine)").sirsiFont(.caption)
+                        .foregroundStyle(engine.lastError == nil ? .green : .red).textSelection(.enabled)
                     Spacer()
-                    Button("Done") { nav.pop() }.sirsiFont(.caption)
+                    Button("Done") { nav.pop() }.buttonStyle(.bordered)
                 }.padding(12)
             } else if isSafe {
                 Button {
@@ -3619,10 +3601,8 @@ struct ItemDetailView: View {
                 } label: {
                     if engine.busy {
                         HStack { ProgressView().controlSize(.small); Text("Moving to Trash…").sirsiFont(.caption) }
-                            .frame(maxWidth: .infinity)
                     } else {
                         Text("Move this to Trash (\(SirsiEngine.human(finding.sizeBytes)))")
-                            .frame(maxWidth: .infinity)
                     }
                 }
                 .buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy).padding(12)
@@ -3634,7 +3614,6 @@ struct ItemDetailView: View {
                         confirmCautionClean = true
                     } label: {
                         Text("Review and move this item to Trash…")
-                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent).tint(gold).disabled(engine.busy)
                 }
@@ -3748,21 +3727,20 @@ struct RiskView: View {
                                     .sirsiFont(.caption).fixedSize(horizontal: false, vertical: true)
                             }
                         } else {
-                            Button {
-                                Task { await checkpoint() }
-                            } label: {
-                                HStack {
-                                    if checkpointing { ProgressView().controlSize(.small) }
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text("Checkpoint now").sirsiFont(.caption, weight: .semibold)
-                                        Text("Commit all changes locally — nothing is pushed, undo with git reset.")
-                                            .sirsiFont(.caption2).foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Button {
+                                    Task { await checkpoint() }
+                                } label: {
+                                    HStack {
+                                        if checkpointing { ProgressView().controlSize(.small) }
+                                        Text(checkpointing ? "Checkpointing…" : "Checkpoint now")
                                     }
-                                    Spacer()
-                                }.contentShape(Rectangle())
+                                }
+                                .buttonStyle(.borderedProminent).tint(gold)
+                                .disabled(checkpointing)
+                                Text("Commit all changes locally — nothing is pushed, undo with git reset.")
+                                    .sirsiFont(.caption2).foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.plain)
-                            .disabled(checkpointing)
                         }
                     } header: { Text("WHAT YOU CAN DO") }
                 }
@@ -4436,26 +4414,29 @@ struct ResultView: View {
         }
     }
 
+    // Standard bordered button for the command; its consequence sits beneath it
+    // as readable text (native bezels are single-line, so the detail is not inside).
     @ViewBuilder private func actionButton(_ a: CRAction) -> some View {
-        if a.isApply {
-            Button {
-                let actual = remediationArguments(sirsiArgs(a.command))
-                actionApproval = ResultActionApproval.prepare(evidence: execution,
-                    producingDirectory: executionDirectory, command: a.command,
-                    currentDirectory: SirsiEngine.workingDirectory(for: actual))
-                if actionApproval != nil { pendingApply = a }
-                else { explainChangedAction() }
-            } label: { actionLabel(a, prominent: true) }
-                .buttonStyle(ResultActionButtonStyle(prominent: true)).disabled(applying)
-        } else {
-            Button { Task { await runFollow(a) } } label: { actionLabel(a, prominent: false) }
-                .buttonStyle(ResultActionButtonStyle(prominent: false)).disabled(applying)
+        VStack(alignment: .leading, spacing: 4) {
+            if a.isApply {
+                Button {
+                    let actual = remediationArguments(sirsiArgs(a.command))
+                    actionApproval = ResultActionApproval.prepare(evidence: execution,
+                        producingDirectory: executionDirectory, command: a.command,
+                        currentDirectory: SirsiEngine.workingDirectory(for: actual))
+                    if actionApproval != nil { pendingApply = a }
+                    else { explainChangedAction() }
+                } label: { Label(a.label, systemImage: "bolt.fill") }
+                    .buttonStyle(.borderedProminent).tint(gold).disabled(applying)
+            } else {
+                Button { Task { await runFollow(a) } } label: { Label(a.label, systemImage: "arrow.right.circle") }
+                    .buttonStyle(.bordered).disabled(applying)
+            }
+            if let detail = a.description, !detail.isEmpty {
+                Text(detail).sirsiFont(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-    }
-
-    @ViewBuilder private func actionLabel(_ a: CRAction, prominent: Bool) -> some View {
-        ResultActionLabel(title: a.label, detail: a.description, prominent: prominent,
-                          systemImage: a.isApply ? "bolt.fill" : "arrow.right.circle")
     }
 
     @ViewBuilder private var rawScroll: some View {
@@ -4869,7 +4850,8 @@ struct ThreadsView: View {
                         ProgressView().controlSize(.small)
                     } else {
                         Button { ask() } label: { Image(systemName: "arrow.up.circle.fill") }
-                            .buttonStyle(.plain).foregroundStyle(gold)
+                            .buttonStyle(.borderless).foregroundStyle(gold)
+                            .accessibilityLabel("Ask")
                             .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
@@ -4950,7 +4932,7 @@ struct ActivityView: View {
                 List(engine.activity) { e in
                     NavLink { ActivityDetailView(entry: e, engine: engine) } label: {
                         ActivityRow(entry: e)
-                    }
+                    }.buttonStyle(.plain)
                 }.listStyle(.inset)
             }
         }.task { engine.loadActivity() }
@@ -5035,17 +5017,9 @@ private struct ActivityDetailView: View {
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             Button { confirmMaatReview = true } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "sparkles")
-                                    Text("Review this outcome in Ma'at").sirsiFont(14, weight: .semibold)
-                                    Spacer()
-                                    Image(systemName: "arrow.right.circle.fill").sirsiFont(.caption, weight: .semibold)
-                                }
-                                .foregroundStyle(.black)
-                                .padding(.horizontal, 14).padding(.vertical, 12)
-                                .background(RoundedRectangle(cornerRadius: 12).fill(gold))
+                                Label("Review this outcome in Ma'at", systemImage: "sparkles")
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.borderedProminent).tint(gold)
                             .disabled(maatReviewInFlight)
                             .accessibilityLabel("Review this activity outcome in Ma'at")
                             .accessibilityHint("Records the retained command and outcome for Ma'at to classify. It does not replay the command or change the Mac.")
@@ -5470,7 +5444,7 @@ struct OwnerActionsListView: View {
                                 Image(systemName: "chevron.right").sirsiFont(.caption2).foregroundStyle(.tertiary)
                             }
                             .contentShape(Rectangle())
-                        }
+                        }.buttonStyle(.plain)
                     }
                 }
             }
