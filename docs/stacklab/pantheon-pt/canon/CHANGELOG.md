@@ -1,5 +1,9 @@
 # Changelog — Pantheon PT canon
 
+## 2026-11-27 — v0.24.169 release candidate
+
+- Release note: v0.24.168 was tagged (e95b0a83) but never published. Its signing job (b60eafef) hit `errSecInternalComponent` at 08:33Z, after the release run had waited about 3.5 h for the M1 runner, which was most likely asleep. A sign-only test right afterwards (d79501c8) produced a valid Developer ID signature. A retry cannot reuse the run because publication custody is retained only after signing succeeds. v0.24.169 carries the same content as v0.24.166–v0.24.168; their empty drafts await operator reconciliation.
+
 ## 2026-11-26 — v0.24.168 release candidate
 
 - Release note: v0.24.167 was tagged (e8b13c47) but never published. Its signing job (f842e6f7) failed with `errSecInternalComponent` because the M1 signer's login keychain was locked. The owner unlocked it and disabled its auto-lock on 2026-11-26, and a sign-only test job (309abe01) then returned a verified Developer ID (9D382WV988) signature. v0.24.168 carries the same content as v0.24.166 and v0.24.167. Their empty reserved drafts await operator reconciliation under cross-run tag custody.
