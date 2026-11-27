@@ -18,6 +18,12 @@ export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin
 APP="Developer ID Application: Sirsi Technologies Inc. (9D382WV988)"
 INST="Developer ID Installer: Sirsi Technologies Inc. (9D382WV988)"
 PROFILE=sirsi-notary
+# The signing identities and the notary profile live in the login keychain. A release job on this
+# Mac makes its own temporary build.keychain the default and first in the search list while it
+# runs; an unpinned codesign then picks the identity there, macOS prompts for a password nobody
+# here has, and signing fails with errSecInternalComponent (v0.24.167–169, 2026-11-26/27).
+# Pin every identity and profile lookup to the login keychain.
+LK=$HOME/Library/Keychains/login.keychain-db
 B=$HOME/sirsi-sign; mkdir -p "$B/inbox" "$B/outbox" "$B/work"
 mkdir "$B/.lock" 2>/dev/null || exit 0; trap 'rmdir "$B/.lock"' EXIT   # one runner at a time
 SAFE='^[A-Za-z0-9._-]+$'
@@ -70,21 +76,21 @@ for J in "$B"/inbox/*(/); do
   insha=$(hash "$in")
   { print -r -- "sirsi-signd job $id  kind=$kind  file=$f  caller=${caller:-?}  $(date -u +%FT%TZ)"; print -r -- "input sha256 $insha"; } > "$R"
   notarize() {   # accepted only if THIS submission's own output says so
-    local t=$(mktemp); xcrun notarytool submit "$1" --keychain-profile "$PROFILE" --wait > "$t" 2>&1
+    local t=$(mktemp); xcrun notarytool submit "$1" --keychain "$LK" --keychain-profile "$PROFILE" --wait > "$t" 2>&1
     cat "$t" >> "$R"; nid=$(awk '/^ *id: /{print $2; exit}' "$t")
     grep -qE '^[[:space:]]*status: Accepted[[:space:]]*$' "$t"; local rc=$?; rm -f "$t"; return $rc; }
   case $kind in
     codesign) # sign only, no notarization: for binaries that ship INSIDE a pkg/dmg/app whose own notarization covers them
-         withts codesign --force --options runtime --timestamp --sign "$APP" -- "$in" || ok=0 ;;
-    bin) withts codesign --force --options runtime --timestamp --sign "$APP" -- "$in" || ok=0
+         withts codesign --keychain "$LK" --force --options runtime --timestamp --sign "$APP" -- "$in" || ok=0 ;;
+    bin) withts codesign --keychain "$LK" --force --options runtime --timestamp --sign "$APP" -- "$in" || ok=0
          [ $ok = 1 ] && { ditto -c -k --keepParent -- "$in" "$W/n.zip" && notarize "$W/n.zip" || ok=0; } ;;
-    app) withts codesign --force --deep --options runtime --timestamp --sign "$APP" -- "$in" || ok=0
+    app) withts codesign --keychain "$LK" --force --deep --options runtime --timestamp --sign "$APP" -- "$in" || ok=0
          [ $ok = 1 ] && { ditto -c -k --keepParent -- "$in" "$W/n.zip" && notarize "$W/n.zip" && xcrun stapler staple "$in" >> "$R" 2>&1 || ok=0; } ;;
     pkg) # productsign needs distinct paths; sign to a temp, then keep the ORIGINAL name so every kind returns signed-<name>
-         psign() { rm -f -- "$W/.signed.pkg"; productsign --sign "$INST" "$in" "$W/.signed.pkg"; }   # fresh output path on every try
+         psign() { rm -f -- "$W/.signed.pkg"; productsign --keychain "$LK" --sign "$INST" "$in" "$W/.signed.pkg"; }   # fresh output path on every try
          withts psign && mv -f "$W/.signed.pkg" "$in" || ok=0
          [ $ok = 1 ] && { notarize "$in" && xcrun stapler staple "$in" >> "$R" 2>&1 || ok=0; } ;;
-    dmg) withts codesign --force --timestamp --sign "$APP" -- "$in" || ok=0
+    dmg) withts codesign --keychain "$LK" --force --timestamp --sign "$APP" -- "$in" || ok=0
          [ $ok = 1 ] && { notarize "$in" && xcrun stapler staple "$in" >> "$R" 2>&1 || ok=0; } ;;
   esac
   outsha=none; [ -e "$out" ] && outsha=$(hash "$out")
