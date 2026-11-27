@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.168] — 2026-11-26
+
+- Release note: v0.24.167 was tagged (e8b13c47) but never published. Its signing job (f842e6f7) failed with `errSecInternalComponent` because the M1 signer's login keychain was locked. The owner unlocked it and disabled its auto-lock on 2026-11-26, and a sign-only test job (309abe01) then returned a verified Developer ID (9D382WV988) signature. v0.24.168 carries the same content as v0.24.166 and v0.24.167. Their empty reserved drafts await operator reconciliation under cross-run tag custody.
+
 ## [0.24.167] — 2026-11-26
 
 - Release note: v0.24.166 was tagged (3d1c4bea) but never published. Its signed build stopped at the release Ma’at preflight ("installed Ma’at supervisor does not match release source"), because the M1 runner still had the 2026-11-02 `sirsi-maat-run` (sha256 33b3d5c1…) while release source `scripts/maat/admitted-run.py` is 9515e1a8…. With the owner's approval on 2026-11-26, the reviewed source was installed as the M1 supervisor; the prior copy is kept as `~/.local/bin/sirsi-maat-run.bak-20261126` on the M1. A retry of the same run was correctly refused because no prior-attempt custody artifact existed, and cross-run tag custody refuses a second run for v0.24.166 until operator reconciliation, so its empty reserved draft is left for that reconciliation. v0.24.167 carries the same content as v0.24.166.
