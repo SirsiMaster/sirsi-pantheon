@@ -1,5 +1,9 @@
 # Changelog — Pantheon PT canon
 
+## 2026-11-27 — v0.24.170 release candidate
+
+- Release note: v0.24.169 was tagged (07157066) but never published. Root cause of the v0.24.167–169 signing failures: while a release job runs, the M1's default keychain and first search-list entry is the job's temporary `build.keychain`. It stays that way when a run fails before its restore step. The signing service's unpinned codesign therefore resolved the Developer ID identity there, raised a console password prompt, and failed with `errSecInternalComponent`. The signer custodian deployed the fix from #1469 to the M1 signing service on 2026-11-27: every codesign, productsign and notarytool call is pinned to the login keychain, the prior script is kept as `sirsi-signd.sh.bak-20261127`, and a post-deploy sign test passed. v0.24.170 carries the same app content as v0.24.166–v0.24.169.
+
 ## 2026-11-27 — v0.24.169 release candidate
 
 - Release note: v0.24.168 was tagged (e95b0a83) but never published. Its signing job (b60eafef) hit `errSecInternalComponent` at 08:33Z, after the release run had waited about 3.5 h for the M1 runner, which was most likely asleep. A sign-only test right afterwards (d79501c8) produced a valid Developer ID signature. A retry cannot reuse the run because publication custody is retained only after signing succeeds. v0.24.169 carries the same content as v0.24.166–v0.24.168; their empty drafts await operator reconciliation.
