@@ -114,7 +114,7 @@ func (s *Server) apiRouterLedger(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Project both open and completed tasks with the same public allowlist used
+	// Project all retained task dispositions with the same public allowlist used
 	// by /api/fabric. Arbitrary blocker prose never leaves; the phase is a
 	// display label cleaned like the subject (owner decision 2026-11-08).
 	rows, err := ledger.FabricAllTasksFrom(scoped)

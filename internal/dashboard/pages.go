@@ -372,7 +372,7 @@ function viewFleet(){
   out('');
   // Summary tiles. Percent is stated WITH its numerator and denominator so a
   // number can never be read without the count it came from.
-  out('  COMPLETED / IN FLIGHT    '+s.done+' / '+s.total+'   ('+s.pct_done+'% done, '+s.in_flight+' still in flight)','t-head');
+  out('  COMPLETED / IN FLIGHT    '+s.done+' / '+s.total+'   ('+s.pct_done+'% done of '+s.total+' non-retired, '+s.in_flight+' still in flight, '+(s.retired||0)+' retired)','t-head');
   out('  IN PROGRESS / ASSIGNED   '+s.active+' / '+(s.active+s.assigned)+'   ('+s.assigned+' assigned but not started)','t-head');
   out('  STALLED / BLOCKED        '+(s.stalled+s.blocked)+'   ('+s.stalled+' stalled · '+s.blocked+' blocked · '+s.idle_lanes+' idle lanes)','t-head');
   sep();
