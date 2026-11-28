@@ -1,1 +1,0 @@
-Add a source-bound, publication-only recovery for the retained v0.24.165 release after guard mount verification refused the first attempt. The recovery preserves the existing signed files and draft, and uses a single create-only claim.

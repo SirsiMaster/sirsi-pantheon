@@ -15,11 +15,11 @@ type TaskLeaseLogEntry struct {
 	TS        string `json:"ts"`
 	TaskID    string `json:"task_id"`
 	Agent     string `json:"agent"`
-	Op        string `json:"op"` // "claim_check" | "bind"
+	Op        string `json:"op"` // "claim_check" | "bind" | "yield:clean" | "yield:external-wait"
 	SessionID string `json:"session_id"`
 	ThreadID  string `json:"thread_id"`
 	Host      string `json:"host"`
-	Verdict   string `json:"verdict"` // "allowed" | "refused" | "error"
+	Verdict   string `json:"verdict"` // "allowed" | "refused" | "error" | "yielded"
 	Reason    string `json:"reason,omitempty"`
 }
 

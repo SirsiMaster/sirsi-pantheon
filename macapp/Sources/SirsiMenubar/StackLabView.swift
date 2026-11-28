@@ -84,11 +84,11 @@ struct StackLabDoctorView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Try again") { Task { await load() } }
-                    .buttonStyle(ResultActionButtonStyle(prominent: true))
+                    .buttonStyle(.borderedProminent)
                 Button { nav.push(MaatWorkspaceView(engine: engine)) } label: {
                     Label("Open Ma'at evidence", systemImage: "checkmark.seal")
                 }
-                .buttonStyle(ResultActionButtonStyle(prominent: false))
+                .buttonStyle(.bordered)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)

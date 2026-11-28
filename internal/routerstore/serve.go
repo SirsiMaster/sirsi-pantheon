@@ -88,7 +88,7 @@ var itemOwnership = map[string]int{
 
 // taskOwnership: method → indexes of (agent, taskID).
 var taskOwnership = map[string][2]int{
-	"CompleteTaskLease": {0, 1}, "ReleaseTaskLease": {0, 1}, "RenewTaskLease": {0, 1}, "WithdrawTaskLease": {0, 1},
+	"YieldTaskLease": {0, 1}, "CompleteTaskLease": {0, 1}, "ReleaseTaskLease": {0, 1}, "RenewTaskLease": {0, 1}, "WithdrawTaskLease": {0, 1},
 }
 
 const nonceWindow = 60 * time.Second
@@ -116,6 +116,10 @@ type ServerOptions struct {
 	RuleOfRa string
 	// RuleOfRaStale is the heartbeat window; zero means ruleOfRaDefaultStale.
 	RuleOfRaStale time.Duration
+	// LanePinEnforce turns the lane-to-Mac pin from report-only into a refusal at a served Wait (ADR-065 rs-37,
+	// option a'): a token whose adopted machine id differs from the lane's pinned machine gets 403 ErrLanePinMismatch.
+	// Off by default; the service sets it once at start from SIRSI_ROUTER_LANE_PIN_ENFORCE.
+	LanePinEnforce bool
 	// Log receives the gate's log lines (nil → stderr).
 	Log func(format string, args ...any)
 	// now is injectable for the freshness tests (Rule A16).
@@ -136,8 +140,8 @@ var ruleOfRaExempt = map[string]bool{
 	"GetState": true, "Counters": true, "Breakers": true, "Render": true, "ListWakeEvents": true, "ListIdentifiers": true,
 	"ListRequirements": true, "UnmetRequirements": true, "RunnableFor": true, "ClassifyLane": true, "RecipientLoad": true, "OperationalAgents": true,
 	"Wait": true, "ListenNotify": true, "NotifyAgent": true, "NotifyPath": true, "ExportItem": true,
-	"WakeLatencySamples": true,
-	"ForceOwner":         true, "AudienceSince": true, "TaskLeaseEventsSince": true,
+	"WakeLatencySamples": true, "TaskYieldCapabilities": true,
+	"ForceOwner": true, "AudienceSince": true, "TaskLeaseEventsSince": true,
 }
 
 // ErrThreadAuthority: a session tried to write or delete a thread binding
@@ -617,10 +621,13 @@ func (s *server) call(w http.ResponseWriter, r *http.Request) {
 		if d, ok := in[2].Interface().(time.Duration); ok && (d <= 0 || d > s.opts.MaxWait) {
 			in[2] = reflect.ValueOf(s.opts.MaxWait)
 		}
-		// Lane-to-Mac pin: REPORT-ONLY (owner decision 2026-11-25). The verdict is counted and the request
-		// proceeds exactly as before whatever it is; both results are deliberately discarded here. The
-		// enforcement seam is lanePinRefuses, not this line.
-		_, _ = s.observeLanePin(in[1].String(), tokenMachineID)
+		// Lane-to-Mac pin: the verdict is always counted (report-only log line unchanged). It changes the
+		// outcome only when ServerOptions.LanePinEnforce is on and the verdict is exactly a mismatch.
+		if v, refuse := s.observeLanePin(in[1].String(), tokenMachineID); refuse {
+			s.logf("lane-pin: REFUSED Wait for %s from %s@%s (verdict %s)", in[1].String(), sess.Agent, sess.Host, v)
+			writeErr(w, http.StatusForbidden, "ErrLanePinMismatch", s.lanePinMismatchMessage(in[1].String(), tokenMachineID))
+			return
+		}
 	}
 
 	// Delegation administration stays off the scoped lane API. Pod grants and

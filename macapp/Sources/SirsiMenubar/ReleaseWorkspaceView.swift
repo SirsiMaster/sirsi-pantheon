@@ -65,7 +65,6 @@ struct PantheonReleaseWorkspaceView: View {
             } else {
                 Button { Task { await readSourceContract() } } label: {
                     Label("Inspect source contract", systemImage: "checklist")
-                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(emerald)
@@ -88,7 +87,6 @@ struct PantheonReleaseWorkspaceView: View {
             } else {
                 Button { Task { await readCredentials() } } label: {
                     Label("Check local signing identities", systemImage: "checkmark.shield")
-                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
             }

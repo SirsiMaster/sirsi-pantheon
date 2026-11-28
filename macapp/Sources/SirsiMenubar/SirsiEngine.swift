@@ -1467,7 +1467,10 @@ final class SirsiEngine: ObservableObject {
     // rescan runs a fresh `sirsi scan`, then reloads.
     func rescan() async {
         busy = true; lastError = nil
-        _ = await Self.run(args: ["scan"], stdin: nil)
+        let receipt = await Self.runCaptured(args: ["scan"])
+        if !(receipt.complete && receipt.exitCode == 0) {
+            lastError = Self.firstMeaningful(receipt.issue ?? Self.stripANSI(receipt.stderr + receipt.stdout))
+        }
         busy = false
         refresh()
     }
@@ -1493,7 +1496,10 @@ final class SirsiEngine: ObservableObject {
         var args = ["anubis", "clean", "--dry-run=false"]
         if includeCaution { args.append("--include-caution") }
         for p in paths { args.append("--only"); args.append(p) }
-        let out = await Self.run(args: args, stdin: "y\n")
+        let receipt = await Self.runCaptured(args: args, stdin: "y\n")
+        let ok = receipt.complete && receipt.exitCode == 0
+        let out = receipt.complete ? Self.stripANSI(receipt.stdout + receipt.stderr) : receipt.displayText
+        if !ok { lastError = Self.firstMeaningful(receipt.issue ?? out) }
         busy = false
         refresh()
         return Self.firstMeaningful(out)

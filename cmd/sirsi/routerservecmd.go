@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -116,6 +117,14 @@ func runRouterServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	opts := routerstore.ServerOptions{Token: token, MaxWait: routerServeMaxWait, RuleOfRa: strings.TrimSpace(os.Getenv("SIRSI_ROUTER_RULE_OF_RA"))}
+	// Lane-pin enforcement is an owner decision: off unless explicitly turned on; a typo is a startup failure.
+	if v := strings.TrimSpace(os.Getenv("SIRSI_ROUTER_LANE_PIN_ENFORCE")); v != "" {
+		on, perr := strconv.ParseBool(v)
+		if perr != nil {
+			return fmt.Errorf("router serve: SIRSI_ROUTER_LANE_PIN_ENFORCE=%q is not a boolean", v)
+		}
+		opts.LanePinEnforce = on
+	}
 	// Use the same declared registry as CLI dispatch. No local metadata is created.
 	repoRoot, err := router.FindRepoRoot()
 	if err == nil {

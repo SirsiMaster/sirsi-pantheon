@@ -746,7 +746,6 @@ private struct MaatPrimaryScrollOffsetProbe: NSViewRepresentable {
                     .fixedSize(horizontal: false, vertical: true)
                 NavLink { MaatCaseDetailView(engine: engine, operations: engine.maatCaseOperations, entry: next) } label: {
                     Label("Open next resolution", systemImage: "arrow.right.circle.fill")
-                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(gold)
@@ -1407,7 +1406,6 @@ struct MaatKnownFailureProposalsView: View {
 
                     NavLink { StackLabView(engine: engine) } label: {
                         Label("Open Stack Lab review", systemImage: "cube.transparent")
-                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                 }
@@ -1695,7 +1693,7 @@ struct MaatKnownFailureProposalsView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.16)))
-            }
+            }.buttonStyle(.plain)
             .foregroundStyle(.primary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -1926,7 +1924,7 @@ struct MaatKnownFailureProposalsView: View {
                 ForEach(cases) { entry in
                     NavLink { MaatCaseDetailView(engine: engine, operations: engine.maatCaseOperations, entry: entry) } label: {
                         MaatCaseRow(entry: entry)
-                    }
+                    }.buttonStyle(.plain)
                     if entry.id != cases.last?.id { Divider().padding(.leading, 14) }
                 }
             }
@@ -2178,7 +2176,6 @@ struct MaatKnowledgeView: View {
                 confirmKnowledgeRefresh = true
             } label: {
                 Label("Refresh local knowledge", systemImage: "arrow.triangle.2.circlepath")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(gold)
@@ -2255,7 +2252,7 @@ struct MaatKnowledgeView: View {
                         .padding(.horizontal, 13)
                         .padding(.vertical, 11)
                         .contentShape(Rectangle())
-                    }
+                    }.buttonStyle(.plain)
                     if item.id != items.last?.id { Divider().padding(.leading, 14) }
                 }
             }
@@ -3287,7 +3284,6 @@ private struct MaatCaseDetailView: View {
                     confirmAction = true
                 } label: {
                     Label(operationRecord?.phase == .retryReady ? "Confirm reviewed retry" : confirmationButton, systemImage: action.kind == "maat_repair" ? "wrench.and.screwdriver.fill" : action.kind == "owner_acceptance" ? "checkmark.circle.fill" : "arrow.triangle.branch")
-                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(gold)
@@ -3373,7 +3369,6 @@ private struct MaatCaseDetailView: View {
             confirmAction = true
         } label: {
             Label("Record as no longer active", systemImage: "checkmark.circle")
-                .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
         .disabled(operationInFlight || !canBeginOperation)
@@ -3383,7 +3378,6 @@ private struct MaatCaseDetailView: View {
             Task { await loadBinaryDriftPreview(action) }
         } label: {
             Label(binaryDriftPreviewLoading ? "Refreshing updater preview…" : "Preview supported updater", systemImage: "magnifyingglass")
-                .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
         .disabled(operationInFlight || binaryDriftPreviewLoading)
@@ -3411,7 +3405,6 @@ private struct MaatCaseDetailView: View {
                     confirmAction = true
                 } label: {
                     Label(operationRecord?.phase == .retryReady ? "Confirm reviewed update" : "Confirm this exact update", systemImage: "wrench.and.screwdriver.fill")
-                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(gold)

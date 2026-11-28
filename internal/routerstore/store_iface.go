@@ -17,6 +17,8 @@ import (
 // may depend on the concrete type.
 type Store interface {
 	LaneClaimBarrier(context.Context, LaneClaimBarrierRequest) (LaneClaimBarrierResult, error)
+	TaskYieldCapabilities(agent string) (TaskYieldProtocol, error)
+	YieldTaskLease(agent, taskID, token, disposition, evidenceRef, dependency string) error
 	MaatDelegation(action string, req schedule.Delegation) (schedule.Delegation, error)
 	MaatGetDelegation(pod string) (*schedule.Delegation, error)
 	MaatAuthorityReserve(machine string, req schedule.Reservation) (schedule.ReserveResult, error)
