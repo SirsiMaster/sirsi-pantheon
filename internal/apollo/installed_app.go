@@ -6,30 +6,43 @@ package apollo
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
 
 const (
 	InstalledAppModel     = "mlx-community/Qwen3.5-9B-4bit"
-	InstalledAppRoute     = InstalledAppModel + "@apollo:2.2.0"
 	InstalledAppPrecision = "Q4-affine-g64-bf16"
 	installedAppEndpoint  = "http://127.0.0.1:8520/v1"
+	installedAppRevision  = "8b2b98c00a6b4d291155e4890773ca8f769aee53"
 	// Public checkpoint identity, not a transport credential. A named digest
 	// keeps its role distinct from credential-shaped assignment syntax.
 	qwenVocabularySHA256 = "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4"
+	// The app is bound by its code signature, not per-release file hashes:
+	// bundle id ai.sirsi.apollo, signed by a Developer ID Application leaf
+	// (Apple Developer ID CA) of team 9D382WV988. codesign --strict --deep
+	// checks every sealed file and nested helper, so any changed byte, a
+	// re-signed copy or another team's app refuses. Same requirement as the
+	// app's designated requirement.
+	installedAppRequirement = `anchor apple generic and identifier "ai.sirsi.apollo" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "9D382WV988"`
 )
 
-// InstalledAppProfile is an exact compiled release binding, not a resident-model
+var (
+	installedAppVersionPattern = regexp.MustCompile(`^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$`)
+	installedAppRoutePattern   = regexp.MustCompile(`^` + regexp.QuoteMeta(InstalledAppModel) + `@apollo:[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$`)
+)
+
+// InstalledAppProfile is the signed installed app's binding, not a resident-model
 // observation or a numerical certification. Precision includes activation dtype.
 type InstalledAppProfile struct {
 	Version            string   `json:"version"`
@@ -43,75 +56,61 @@ type InstalledAppProfile struct {
 	TemplateSHA256     string   `json:"template_sha256"`
 }
 
-func installedAppProfile() InstalledAppProfile {
+func installedAppProfile(version string) InstalledAppProfile {
 	return InstalledAppProfile{
-		Version: "2.2.6", Model: InstalledAppModel, Route: InstalledAppRoute,
+		Version: version, Model: InstalledAppModel, Route: InstalledAppModel + "@apollo:" + version,
 		Precision: InstalledAppPrecision, Endpoint: installedAppEndpoint,
 		Modes:              []string{"plain", "flash", "mlx-certified"},
-		CheckpointRevision: "8b2b98c00a6b4d291155e4890773ca8f769aee53",
+		CheckpointRevision: installedAppRevision,
 		TokenizerSHA256:    qwenVocabularySHA256,
 		TemplateSHA256:     "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715",
 	}
 }
 
+// IsInstalledAppModel accepts the short and exact model IDs and any
+// model@apollo:X.Y.Z route. The route is always sent as the installed app's own.
 func IsInstalledAppModel(model string) bool {
-	return model == "qwen3.5-9b" || model == InstalledAppModel || model == InstalledAppRoute
-}
-
-var installedAppFiles = map[string]string{
-	"Helpers/apollo-router":               "2aa330c40c09f947bbda69cbb7e1bbbd3089205559ea5d31742d0f66e4c6f769",
-	"Helpers/qwen35_serve":                "1c3ede1cacc7bb9b6c3b57517596a52166fb832771e6e4a30dcf15b4aa672a3a",
-	"Helpers/qwen35_flash":                "27bbe5cac64b43911cb2a325f39dc69b254aaebf49e023d9620fabb2a3f4677a",
-	"Resources/qwen/apollo_qwen_serve.py": "15fa38b17ac4bf29f870f13ba8273239d725c14ac59d021b564bb6bc707d2257",
-	"MacOS/Apollo":                        "7d8b43cf9a3fcfb677f918ffc1aba4fb42b3eb069eaeb4e2c76d962c50463ad3",
+	return model == "qwen3.5-9b" || model == InstalledAppModel || installedAppRoutePattern.MatchString(model)
 }
 
 // InstalledApp reads only fixed installation locations. It accepts no profile,
-// endpoint, model path or environment override. A newer app needs a reviewed
-// binding update; merely finding a listener never qualifies this release.
+// endpoint, model path or environment override. Merely finding a listener never
+// qualifies an app; only the signed bundle does.
 func InstalledApp(home string) (InstalledAppProfile, error) {
 	for _, bundle := range []string{filepath.Join(home, "Applications", "Apollo.app"), "/Applications/Apollo.app"} {
-		if _, err := os.Stat(bundle); os.IsNotExist(err) {
+		if _, err := os.Lstat(bundle); os.IsNotExist(err) {
 			continue
 		}
 		// The first existing installation is authoritative. Never hide drift
 		// in the per-user app by finding a stale system-wide copy instead.
-		if err := verifyInstalledApp(bundle, installedAppFiles); err != nil {
-			return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.2.6 binding unavailable: %w", err)
+		version, err := verifyInstalledApp(bundle)
+		if err != nil {
+			return InstalledAppProfile{}, fmt.Errorf("installed Apollo binding unavailable: %w", err)
 		}
-		return installedAppProfile(), nil
+		return installedAppProfile(version), nil
 	}
-	return InstalledAppProfile{}, fmt.Errorf("installed Apollo 2.2.6 app is unavailable")
+	return InstalledAppProfile{}, fmt.Errorf("installed Apollo app is unavailable")
 }
 
-func verifyInstalledApp(bundle string, files map[string]string) error {
-	for path, expected := range files {
-		name := filepath.Join(bundle, "Contents", filepath.FromSlash(path))
-		info, err := os.Lstat(name)
-		if err != nil {
-			return fmt.Errorf("read installed Apollo artifact %s: %w", path, err)
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("installed Apollo artifact %s is not a regular file", path)
-		}
-		f, err := os.Open(name)
-		if err != nil {
-			return fmt.Errorf("open installed Apollo artifact %s: %w", path, err)
-		}
-		h := sha256.New()
-		_, readErr := io.Copy(h, f)
-		closeErr := f.Close()
-		if readErr != nil {
-			return fmt.Errorf("hash installed Apollo artifact %s: %w", path, readErr)
-		}
-		if closeErr != nil {
-			return fmt.Errorf("close installed Apollo artifact %s: %w", path, closeErr)
-		}
-		if hex.EncodeToString(h.Sum(nil)) != expected {
-			return fmt.Errorf("installed Apollo artifact %s differs from release 2.2.6", path)
-		}
+// verifyInstalledApp checks the bundle's code signature against the fixed
+// requirement, then reads its (sealed) version. Tools run by absolute path.
+func verifyInstalledApp(bundle string) (string, error) {
+	info, err := os.Lstat(bundle)
+	if err != nil {
+		return "", fmt.Errorf("read installed Apollo bundle: %w", err)
 	}
-	return nil
+	if !info.IsDir() {
+		return "", fmt.Errorf("installed Apollo bundle %s is not a directory", bundle)
+	}
+	if out, err := exec.Command("/usr/bin/codesign", "--verify", "--strict", "--deep", "-R="+installedAppRequirement, bundle).CombinedOutput(); err != nil {
+		return "", fmt.Errorf("%s is not the Developer ID-signed ai.sirsi.apollo of team 9D382WV988: %s", bundle, strings.TrimSpace(string(out)))
+	}
+	out, err := exec.Command("/usr/bin/plutil", "-extract", "CFBundleShortVersionString", "raw", "-o", "-", filepath.Join(bundle, "Contents", "Info.plist")).Output()
+	version := strings.TrimSpace(string(out))
+	if err != nil || !installedAppVersionPattern.MatchString(version) {
+		return "", fmt.Errorf("installed Apollo bundle has no X.Y.Z version")
+	}
+	return version, nil
 }
 
 type InstalledAppRequest struct {
@@ -138,6 +137,7 @@ type installedAppWireRequest struct {
 
 type InstalledAppResult struct {
 	Contract       string `json:"contract"`
+	Route          string `json:"route"`
 	Model          string `json:"model"`
 	Precision      string `json:"precision"`
 	Mode           string `json:"mode"`
@@ -147,7 +147,7 @@ type InstalledAppResult struct {
 	AdmissionOwner string `json:"admission_owner"`
 }
 
-func appWireRequest(in InstalledAppRequest) (installedAppWireRequest, error) {
+func appWireRequest(in InstalledAppRequest, route string) (installedAppWireRequest, error) {
 	var out installedAppWireRequest
 	if !IsInstalledAppModel(in.Model) || in.Precision != InstalledAppPrecision || in.MaxOutputTokens == 0 || in.MaxOutputTokens > 4096 {
 		return out, fmt.Errorf("Apollo app request requires Qwen3.5-9B, precision %s and 1..4096 output tokens", InstalledAppPrecision)
@@ -162,7 +162,7 @@ func appWireRequest(in InstalledAppRequest) (installedAppWireRequest, error) {
 	if len(in.Messages) != 1 || in.Messages[0].Role != "user" || len(in.Messages[0].Content) == 0 || len(in.Messages[0].Content) > 32768 || !utf8.ValidString(in.Messages[0].Content) {
 		return out, fmt.Errorf("Apollo app requires one UTF-8 user message of 1..32768 bytes")
 	}
-	out.Model, out.Messages, out.MaxTokens = InstalledAppRoute, in.Messages, in.MaxOutputTokens
+	out.Model, out.Messages, out.MaxTokens = route, in.Messages, in.MaxOutputTokens
 	out.Apollo.Mode = tier
 	return out, nil
 }
@@ -171,15 +171,16 @@ func appWireRequest(in InstalledAppRequest) (installedAppWireRequest, error) {
 // or resolves a hostname. Context cancellation closes the request; the existing
 // Apollo service owns model admission/cancellation/cleanup, not native fences.
 func ChatInstalledApp(ctx context.Context, home string, in InstalledAppRequest) (InstalledAppResult, error) {
-	if _, err := appWireRequest(in); err != nil {
+	if _, err := appWireRequest(in, ""); err != nil {
 		return InstalledAppResult{}, err
 	}
-	if _, err := InstalledApp(home); err != nil {
+	profile, err := InstalledApp(home)
+	if err != nil {
 		return InstalledAppResult{}, err
 	}
 	client := installedAppHTTPClient()
 	defer client.CloseIdleConnections()
-	return chatInstalledApp(ctx, client, in)
+	return chatInstalledApp(ctx, client, profile.Route, in)
 }
 
 func installedAppHTTPClient() *http.Client {
@@ -194,9 +195,9 @@ func installedAppHTTPClient() *http.Client {
 
 // The transport seam is private and only tests replace it. The URL is fixed even
 // in fixtures; no production caller can provide an alternate endpoint/client.
-func chatInstalledApp(ctx context.Context, client *http.Client, in InstalledAppRequest) (InstalledAppResult, error) {
+func chatInstalledApp(ctx context.Context, client *http.Client, route string, in InstalledAppRequest) (InstalledAppResult, error) {
 	var result InstalledAppResult
-	wire, err := appWireRequest(in)
+	wire, err := appWireRequest(in, route)
 	if err != nil {
 		return result, err
 	}
@@ -260,5 +261,5 @@ func chatInstalledApp(ctx context.Context, client *http.Client, in InstalledAppR
 	if c.Message.Role != "assistant" || c.Message.Content == nil || (len(c.Message.ToolCalls) != 0 && string(c.Message.ToolCalls) != "null" && string(c.Message.ToolCalls) != "[]") || (c.Finish != "stop" && c.Finish != "length") {
 		return result, fmt.Errorf("Apollo app returned an incomplete or unsupported text completion")
 	}
-	return InstalledAppResult{Contract: "sirsi.apollo.installed-loopback.v1", Model: body.Model, Precision: in.Precision, Mode: in.Mode, Tier: body.Apollo.Tier, Text: *c.Message.Content, FinishReason: c.Finish, AdmissionOwner: "installed Apollo service"}, nil
+	return InstalledAppResult{Contract: "sirsi.apollo.installed-loopback.v1", Route: wire.Model, Model: body.Model, Precision: in.Precision, Mode: in.Mode, Tier: body.Apollo.Tier, Text: *c.Message.Content, FinishReason: c.Finish, AdmissionOwner: "installed Apollo service"}, nil
 }

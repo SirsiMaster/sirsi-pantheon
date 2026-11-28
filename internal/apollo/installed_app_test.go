@@ -2,8 +2,6 @@ package apollo
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -46,16 +44,16 @@ func TestInstalledAppModesWireAndResponse(t *testing.T) {
 				if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
 					t.Fatal(err)
 				}
-				if wire.Model != InstalledAppRoute || wire.Apollo.Mode != tc.tier || wire.Stream || wire.Temperature != 0 || wire.Template.EnableThinking || wire.MaxTokens != 64 {
+				if wire.Model != fixtureRoute || wire.Apollo.Mode != tc.tier || wire.Stream || wire.Temperature != 0 || wire.Template.EnableThinking || wire.MaxTokens != 64 {
 					t.Fatalf("wire = %+v", wire)
 				}
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(appResponseFixture(tc.tier))), Header: make(http.Header)}, nil
 			})}
-			got, err := chatInstalledApp(context.Background(), client, in)
+			got, err := chatInstalledApp(context.Background(), client, fixtureRoute, in)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if calls != 1 || got.Tier != tc.tier || got.Mode != tc.mode || got.Precision != InstalledAppPrecision || got.Text != "fixture answer" || got.AdmissionOwner != "installed Apollo service" {
+			if calls != 1 || got.Route != fixtureRoute || got.Tier != tc.tier || got.Mode != tc.mode || got.Precision != InstalledAppPrecision || got.Text != "fixture answer" || got.AdmissionOwner != "installed Apollo service" {
 				t.Fatalf("calls=%d result=%+v", calls, got)
 			}
 		})
@@ -85,7 +83,7 @@ func TestInstalledAppRequestRefusalsBeforeHTTP(t *testing.T) {
 			in := appRequestFixture()
 			tc.mutate(&in)
 			client := &http.Client{Transport: appRoundTrip(func(*http.Request) (*http.Response, error) { t.Fatal("invalid request reached HTTP"); return nil, nil })}
-			if _, err := chatInstalledApp(context.Background(), client, in); err == nil {
+			if _, err := chatInstalledApp(context.Background(), client, fixtureRoute, in); err == nil {
 				t.Fatal("accepted unsupported request")
 			}
 		})
@@ -119,7 +117,7 @@ func TestInstalledAppResponseRefusals(t *testing.T) {
 				calls++
 				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body)), Header: make(http.Header)}, nil
 			})}
-			if _, err := chatInstalledApp(context.Background(), client, appRequestFixture()); err == nil {
+			if _, err := chatInstalledApp(context.Background(), client, fixtureRoute, appRequestFixture()); err == nil {
 				t.Fatal("accepted bad response")
 			}
 			if calls != 1 {
@@ -132,19 +130,19 @@ func TestInstalledAppResponseRefusals(t *testing.T) {
 func TestInstalledAppTransportFailureNotRetried(t *testing.T) {
 	calls := 0
 	client := &http.Client{Transport: appRoundTrip(func(r *http.Request) (*http.Response, error) { calls++; return nil, errors.New("fixture disconnect") })}
-	if _, err := chatInstalledApp(context.Background(), client, appRequestFixture()); err == nil || calls != 1 {
+	if _, err := chatInstalledApp(context.Background(), client, fixtureRoute, appRequestFixture()); err == nil || calls != 1 {
 		t.Fatalf("err=%v calls=%d", err, calls)
 	}
 }
 
 func TestInstalledAppCatalogPreservesGemma(t *testing.T) {
 	gemma := Engine{ID: "apollo-local-sne", MachineID: "this-mac", Provider: "SNE", ResidentModel: "mlx-community/gemma-4-12B-it-8bit", State: "configured"}
-	got := withInstalledAppEngine([]Engine{gemma}, installedAppProfile())
+	got := withInstalledAppEngine([]Engine{gemma}, installedAppProfile("2.3.14"))
 	if len(got) != 2 || got[0] != gemma {
 		t.Fatalf("legacy engine changed: %+v", got)
 	}
 	profile := got[1].InstalledProfile
-	if got[1].ResidentModel != "" || profile == nil || profile.Model != InstalledAppModel || profile.Route != InstalledAppRoute || profile.Precision != InstalledAppPrecision || got[1].Endpoint != installedAppEndpoint {
+	if got[1].ResidentModel != "" || profile == nil || profile.Model != InstalledAppModel || profile.Route != fixtureRoute || profile.Precision != InstalledAppPrecision || got[1].Endpoint != installedAppEndpoint {
 		t.Fatalf("unbound app profile %+v", got[1])
 	}
 }
@@ -178,46 +176,65 @@ func TestInstalledAppCancellationIsNotRetried(t *testing.T) {
 		<-r.Context().Done()
 		return nil, r.Context().Err()
 	})}
-	if _, err := chatInstalledApp(ctx, client, appRequestFixture()); err == nil || !errors.Is(err, context.Canceled) || calls != 1 {
+	if _, err := chatInstalledApp(ctx, client, fixtureRoute, appRequestFixture()); err == nil || !errors.Is(err, context.Canceled) || calls != 1 {
 		t.Fatalf("err=%v calls=%d", err, calls)
 	}
 }
 
-func TestInstalledAppArtifactBinding(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "Contents", "Helpers", "router")
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+const fixtureRoute = InstalledAppModel + "@apollo:2.3.14"
+
+func TestInstalledAppSignatureBinding(t *testing.T) {
+	// An unsigned bundle with a valid version refuses (and so does any Mac without codesign).
+	root := filepath.Join(t.TempDir(), "Apollo.app")
+	if err := os.MkdirAll(filepath.Join(root, "Contents", "MacOS"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("fixture"), 0600); err != nil {
+	plist := `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>ai.sirsi.apollo</string><key>CFBundleShortVersionString</key><string>2.3.14</string><key>CFBundleExecutable</key><string>Apollo</string></dict></plist>`
+	if err := os.WriteFile(filepath.Join(root, "Contents", "Info.plist"), []byte(plist), 0600); err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256([]byte("fixture"))
-	files := map[string]string{"Helpers/router": hex.EncodeToString(sum[:])}
-	if err := verifyInstalledApp(root, files); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "Contents", "MacOS", "Apollo"), []byte("fixture"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("drift"), 0600); err != nil {
+	if _, err := verifyInstalledApp(root); err == nil {
+		t.Fatal("accepted unsigned bundle")
+	}
+	if err := os.Symlink(root, root+"-link"); err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyInstalledApp(root, files); err == nil {
-		t.Fatal("accepted changed installed bytes")
+	if _, err := verifyInstalledApp(root + "-link"); err == nil {
+		t.Fatal("accepted symlinked bundle")
 	}
-	if err := verifyInstalledApp(root, map[string]string{"Helpers/missing": files["Helpers/router"]}); err == nil {
-		t.Fatal("accepted missing installed artifact")
+	for _, want := range []string{`identifier "ai.sirsi.apollo"`, `leaf[subject.OU] = "9D382WV988"`, "anchor apple generic", "6.2.6", "6.1.13"} {
+		if !strings.Contains(installedAppRequirement, want) {
+			t.Fatalf("requirement lost %q", want)
+		}
 	}
-	if err := os.Symlink(path, path+"-link"); err != nil {
-		t.Fatal(err)
+	// Positive control where the real signed app is installed (CI runners and fleet Macs).
+	if home, _ := os.UserHomeDir(); home != "" {
+		if _, err := os.Stat(filepath.Join(home, "Applications", "Apollo.app")); err == nil {
+			p, err := InstalledApp(home)
+			if err != nil || p.Route != InstalledAppModel+"@apollo:"+p.Version {
+				t.Fatalf("installed signed Apollo refused: %+v %v", p, err)
+			}
+		}
 	}
-	if err := verifyInstalledApp(root, map[string]string{"Helpers/router-link": files["Helpers/router"]}); err == nil {
-		t.Fatal("accepted final symlink")
-	}
-	if IsInstalledAppModel("mlx-community/gemma-4-12B-it-8bit") {
-		t.Fatal("Gemma stolen from native route")
-	}
-	for _, id := range []string{"qwen3.5-9b", InstalledAppModel, InstalledAppRoute} {
+}
+
+func TestInstalledAppModelIDs(t *testing.T) {
+	for _, id := range []string{"qwen3.5-9b", InstalledAppModel, fixtureRoute, InstalledAppModel + "@apollo:2.2.0", InstalledAppModel + "@apollo:2.3.9"} {
 		if !IsInstalledAppModel(id) {
 			t.Fatalf("missing explicit alias %s", id)
+		}
+		in := appRequestFixture()
+		in.Model = id
+		if wire, err := appWireRequest(in, fixtureRoute); err != nil || wire.Model != fixtureRoute {
+			t.Fatalf("%s sent as %q (%v)", id, wire.Model, err)
+		}
+	}
+	for _, id := range []string{"mlx-community/gemma-4-12B-it-8bit", InstalledAppModel + "@mlx-lm", InstalledAppModel + "@apollo:2.3", InstalledAppModel + "@apollo:../x"} {
+		if IsInstalledAppModel(id) {
+			t.Fatalf("accepted %s", id)
 		}
 	}
 }
