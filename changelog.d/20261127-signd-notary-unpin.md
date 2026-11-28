@@ -1,1 +1,0 @@
-- `sirsi-signd`: `notarytool` is no longer pinned to the login keychain. The `sirsi-notary` profile is not stored there, so the #1469 pin made notarization fail (v0.24.170). codesign and productsign stay pinned.

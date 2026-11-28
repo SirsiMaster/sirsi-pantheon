@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.172] — 2026-11-27
+
+- Release note: v0.24.171 was tagged (83037912) but never published. Its binaries were signed with Developer ID, but notarization failed with keychainLocked on the default keychain, which the release job had switched to its temporary build.keychain. Fixed in this release (the release workflow keeps the login keychain as the default). v0.24.172 carries the same app content as v0.24.166–v0.24.171.
+
+- `sirsi-signd`: `notarytool` is no longer pinned to the login keychain. The `sirsi-notary` profile is not stored there, so the #1469 pin made notarization fail (v0.24.170). codesign and productsign stay pinned.
+
+- Release workflow: the imported-secret path no longer makes the temporary `build.keychain` the user default keychain. The enrolled signing service on the M1 (`sirsi-signd`) runs in the same user session, and `notarytool` resolves its saved `sirsi-notary` profile through the default keychain, which the job had made locked for it. v0.24.166–v0.24.171 were tagged but never published; v0.24.164–165, which never touched the default, published normally. The pinned `release.yml` digest in `internal/maat/releasepreflight_test.go` is updated deliberately in this change.
+
 ## [0.24.171] — 2026-11-27
 
 - Release note: v0.24.170 was tagged (1d6cf22b) but never published. Its binary was signed with Developer ID, but notarization failed: "No Keychain password item found for profile: sirsi-notary". The #1469 signer change had pinned notarytool to the login keychain, where that profile is not stored. #1471 removes that pin and keeps codesign and productsign pinned. The fix was deployed to the M1 signer, and a post-deploy job signed and notarized (Accepted). v0.24.171 carries the same app content as v0.24.166–v0.24.170.
