@@ -835,3 +835,10 @@ func (rs *RemoteStore) ClassifyLaneContext(ctx context.Context, agent string, wa
 	err := rs.callFabricCtx(ctx, "ClassifyLane", []any{agent, wakeRoutable, recentWithin}, &out)
 	return out, err
 }
+
+// AnswerHandoff uses the existing authenticated session; no actor selectors.
+func (rs *RemoteStore) AnswerHandoff(ctx context.Context, agent string, c AnswerHandoffCall) (AnswerAssignment, error) {
+	var out AnswerAssignment
+	err := rs.callCtx(ctx, "AnswerHandoff", []any{agent, c}, &out)
+	return out, err
+}
