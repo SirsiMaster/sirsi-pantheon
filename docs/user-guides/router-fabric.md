@@ -31,6 +31,25 @@ client-side waiting where supported, but does not retract remote work already
 dispatched. The legacy non-contextual fallback may also remain active until its
 call returns.
 
+## Why is a lane UNROUTABLE?
+
+The Fabric board (`sirsi dashboard`, `/api/fleet`) and `sirsi router fleet` show
+a one-line `reason` under every UNROUTABLE lane, so a lane whose attended session
+closed two days ago no longer looks the same as a broken one. The reason is read
+from the same router ping result that decides routability (plus the registry and
+alias table); it explains the state and never changes it. Examples:
+
+- `retired lane (not in registry); open rows left over`
+- `retired; forwards to <successor>`
+- `waiting for an attended session (none seen for 2d2h)`
+- `no worker configured; needs a person's session`
+- `3 wake failures since the lane last acknowledged work`
+
+`/api/fleet` also carries the ping `verdict` (LIVE, WAKEABLE, HELD, WATCH_ONLY,
+and so on); the board shows it as a tooltip. Lanes that are not UNROUTABLE have no
+reason. `sirsi router fleet` has no wake-failure counts, so for a lane that pings
+LIVE or WAKEABLE it can only say that no automated wake path reaches it.
+
 ## Retired thread history
 
 Thread pruning removes an exact old registration from ordinary views while

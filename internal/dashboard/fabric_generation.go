@@ -38,7 +38,7 @@ func FleetFromGeneration(g *ledger.FabricGeneration) (FleetSnapshot, error) {
 	}
 	for _, lane := range v.Board.Lanes {
 		f := v.Facts.Lanes[lane.Agent]
-		row := FleetLane{Agent: lane.Agent, State: lane.State, Open: lane.Open, Active: lane.Active, Stalled: lane.Stalled, Blocked: lane.Blocked, Inbox: f.Inbox}
+		row := FleetLane{Agent: lane.Agent, State: lane.State, Open: lane.Open, Active: lane.Active, Stalled: lane.Stalled, Blocked: lane.Blocked, Inbox: f.Inbox, Reason: lane.Reason, Verdict: lane.ReachVerdict}
 		if lane.Runtime != nil {
 			row.Routable = lane.Runtime.WakeRoutable
 		}

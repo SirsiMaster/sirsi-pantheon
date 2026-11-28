@@ -63,6 +63,19 @@ type FabricLane struct {
 	LastTouch  string                            `json:"last_touch,omitempty"`
 	Registered FabricRegistration                `json:"registered"`
 	Role       string                            `json:"role"`
+	// Reach* and Registry explain WHY a lane is not working. They are read from
+	// the same PingLane result that decides routability; they never change State.
+	ReachVerdict string `json:"reach_verdict,omitempty"`
+	ReachDetail  string `json:"reach_detail,omitempty"`
+	Registry     string `json:"registry,omitempty"` // declared | alias:<successor> | undeclared
+	Reason       string `json:"reason,omitempty"`
+}
+
+// FabricReach is one lane's reachability evidence, captured by ReadFabric.
+type FabricReach struct {
+	Verdict  string
+	Detail   string
+	Registry string
 }
 
 type FabricHealth struct {
@@ -92,6 +105,7 @@ type FabricActivity struct {
 // operational evidence is UNKNOWN, never status/heartbeat-derived WORKING.
 type FabricEvidence struct {
 	Operational    map[string]routerstore.LaneOperationalState
+	Reach          map[string]FabricReach
 	Health         *FabricHealth
 	Activity       []FabricActivity
 	ActivitySeeded bool
@@ -175,6 +189,10 @@ func fabricFromFacts(s Snapshot, ns *router.NodeStatus, build string, evidence F
 			lane.StateLabel = "IDLE with work"
 		}
 		lane.Role = fabricLaneRole(lane.State)
+		if r, ok := evidence.Reach[a.AgentID]; ok {
+			lane.ReachVerdict, lane.ReachDetail, lane.Registry = r.Verdict, r.Detail, r.Registry
+			lane.Reason = FabricLaneReason(lane.State, r, lane.Runtime)
+		}
 		b.Lanes = append(b.Lanes, lane)
 	}
 	sort.Slice(b.Lanes, func(i, j int) bool { return b.Lanes[i].Agent < b.Lanes[j].Agent })
@@ -228,6 +246,8 @@ func ReadFabricContext(ctx context.Context, repoRoot string, now time.Time) (Fab
 	var f *dispatch.Facade
 	var reg *router.Registry
 	var unavailable map[string]bool
+	var reach map[string]router.PingResult
+	var aliases map[string]string
 	var metadata FabricMetadata
 	var ids []string
 	defer func() {
@@ -248,7 +268,9 @@ func ReadFabricContext(ctx context.Context, repoRoot string, now time.Time) (Fab
 		if reg == nil {
 			return fmt.Errorf("fabric registry unavailable")
 		}
-		unavailable = router.UnroutableFromRuntime(reg, threads, now)
+		reach = router.ReachFromRuntime(reg, threads, now)
+		unavailable = router.UnroutableFromReach(reg, reach)
+		aliases, _ = f.Aliases() // best effort: a missing alias only downgrades "forwards to X" to "retired"
 		metadata = captureFabricMetadata(reg, threads, ns)
 		if contextual, ok := f.Store().(interface {
 			OperationalAgentsContext(context.Context) ([]string, error)
@@ -272,6 +294,10 @@ func ReadFabricContext(ctx context.Context, repoRoot string, now time.Time) (Fab
 			seen[id] = true
 		}
 	}
+	laneReach := make(map[string]FabricReach, len(snap.Agents))
+	for _, agent := range snap.Agents {
+		laneReach[agent.AgentID] = fabricReachFor(agent.AgentID, reg, reach, aliases)
+	}
 	var operational map[string]routerstore.LaneOperationalState
 	err = FabricReadStage(ctx, FabricStageRuntimeClassification, func() error {
 		store := f.Store()
@@ -293,7 +319,7 @@ func ReadFabricContext(ctx context.Context, repoRoot string, now time.Time) (Fab
 	if err := ctx.Err(); err != nil {
 		return FabricRead{}, err
 	}
-	return FabricRead{Snapshot: snap, Node: ns, Evidence: FabricEvidence{Operational: operational}, Metadata: metadata}, nil
+	return FabricRead{Snapshot: snap, Node: ns, Evidence: FabricEvidence{Operational: operational, Reach: laneReach}, Metadata: metadata}, nil
 }
 func BuildFabric(repoRoot, build string, now time.Time) (FabricBoard, error) {
 	producer := NewFabricGenerationProducer(func() (FabricRead, error) { return ReadFabric(repoRoot, now) }, build)
