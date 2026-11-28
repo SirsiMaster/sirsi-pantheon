@@ -276,7 +276,13 @@ var routerDoctorCmd = &cobra.Command{
 		}
 		if len(ns.StaleThreads) > 0 {
 			issues++
-			fmt.Printf("⚠ %d stale thread record(s) — heartbeat aged out (OS-dead ones are reapable).\n\n", len(ns.StaleThreads))
+			fmt.Printf("⚠ %d stale thread record(s) — heartbeat aged out (OS-dead ones are reapable).\n", len(ns.StaleThreads))
+			fmt.Println("    → park them reversibly with `sirsi thread quarantine --stale --dry-run`, then without --dry-run.")
+			fmt.Println()
+		}
+		if len(ns.QuarantinedThreads) > 0 {
+			// Informational: parked records are not an issue and not counted above.
+			fmt.Printf("🔒 %d quarantined thread record(s) — parked, excluded from live/stale; a heartbeat releases one (`sirsi thread list --quarantined`).\n\n", len(ns.QuarantinedThreads))
 		}
 
 		// LEDGER ROT — the thread checks above cover only one of A36's three

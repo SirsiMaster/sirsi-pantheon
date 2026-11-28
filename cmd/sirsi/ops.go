@@ -171,7 +171,7 @@ func collectOpsLiveSummary(repoRoot, routerRoot string) (*opsLiveSummary, error)
 	staleThreads := 0
 	now := time.Now().UTC()
 	for _, thread := range threads.Threads {
-		if thread == nil || thread.Status.IsTerminal() || thread.Status == router.ThreadStatusSuspended {
+		if thread == nil || thread.Status.IsTerminal() || thread.Status.IsParked() {
 			continue
 		}
 		if thread.Status == router.ThreadStatusStale || now.Sub(thread.LastSeenAt) > router.DefaultThreadStaleAfter {

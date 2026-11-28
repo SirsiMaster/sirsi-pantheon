@@ -126,7 +126,7 @@ func PingLane(reg *ThreadRegistry, cfg AgentConfig, agentID string, now time.Tim
 				watches = true
 			}
 		}
-		if !watches || t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
+		if !watches || t.Status.IsTerminal() || t.Status.IsParked() {
 			continue
 		}
 		if now.Sub(t.LastSeenAt) > DefaultThreadStaleAfter {

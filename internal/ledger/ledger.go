@@ -156,7 +156,7 @@ func BuildFrom(all []work.Item, tasks []routerstore.Task, threads *router.Thread
 	picked := map[string]bool{}
 	if threads != nil {
 		for _, t := range threads.Threads {
-			if t == nil || t.Status.IsTerminal() || t.Status == router.ThreadStatusSuspended {
+			if t == nil || t.Status.IsTerminal() || t.Status.IsParked() {
 				continue
 			}
 			if t.LastSeenAt.After(latest[t.AgentID]) {

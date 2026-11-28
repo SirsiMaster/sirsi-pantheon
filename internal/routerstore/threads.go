@@ -151,7 +151,7 @@ WHERE threads.status NOT IN ('closed','reaped','suspended','pruned')
   AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
-          AND (excluded.status IN ('closed','reaped','suspended')
+          AND (excluded.status IN ('closed','reaped','suspended','quarantined') OR threads.status = 'quarantined'
                OR excluded.status = threads.status AND excluded.payload > threads.payload))`, r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload, r.Host); err != nil {
 			return fmt.Errorf("routerstore: upsert thread %q: %w", r.ThreadID, err)
 		}
@@ -187,7 +187,7 @@ WHERE threads.status NOT IN ('closed','reaped','suspended','pruned')
   AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
-          AND (excluded.status IN ('closed','reaped','suspended')
+          AND (excluded.status IN ('closed','reaped','suspended','quarantined') OR threads.status = 'quarantined'
                OR excluded.status = threads.status AND excluded.payload > threads.payload))`,
 		r.ThreadID, r.Agent, r.Status, r.LastSeenAt, r.Payload, r.Host)
 	if err != nil {
@@ -296,7 +296,7 @@ WHERE threads.status NOT IN ('closed','reaped','suspended','pruned')
   AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
-          AND (excluded.status IN ('closed','reaped','suspended')
+          AND (excluded.status IN ('closed','reaped','suspended','quarantined') OR threads.status = 'quarantined'
                OR excluded.status = threads.status AND excluded.payload > threads.payload))
   AND threads.agent IN (`+ph+`)`, args...)
 		if err != nil {
@@ -349,7 +349,7 @@ WHERE threads.status NOT IN ('closed','reaped','suspended','pruned')
   AND (threads.host='' OR excluded.host='' OR threads.host=excluded.host)
   AND (excluded.last_seen_at > threads.last_seen_at
        OR excluded.last_seen_at = threads.last_seen_at
-          AND (excluded.status IN ('closed','reaped','suspended')
+          AND (excluded.status IN ('closed','reaped','suspended','quarantined') OR threads.status = 'quarantined'
                OR excluded.status = threads.status AND excluded.payload > threads.payload))
   AND threads.agent IN (`+ph+`)`, args...)
 	}

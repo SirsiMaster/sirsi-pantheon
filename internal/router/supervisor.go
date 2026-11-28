@@ -280,7 +280,7 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 		pendingTotal += status.PendingCount
 
 		for _, thread := range threadReg.SortedThreads() {
-			if thread.AgentID != id || thread.Status.IsTerminal() {
+			if thread.AgentID != id || thread.Status.IsTerminal() || thread.Status == ThreadStatusQuarantined {
 				continue
 			}
 			if thread.IsStale(now, DefaultThreadStaleAfter) {
@@ -386,7 +386,7 @@ func SuperviseOnce(opts SuperviseOptions) (*SuperviseReport, error) {
 	liveCount, staleCount := 0, 0
 	if refreshed, loadErr := LoadThreadRegistry(routerRoot); loadErr == nil {
 		for _, thread := range refreshed.SortedThreads() {
-			if thread.Status.IsTerminal() {
+			if thread.Status.IsTerminal() || thread.Status == ThreadStatusQuarantined {
 				continue
 			}
 			if thread.IsStale(now, DefaultThreadStaleAfter) {

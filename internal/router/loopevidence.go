@@ -236,7 +236,7 @@ func NewestActiveByAgent(threads []*Thread) map[string]string {
 	newest := make(map[string]string)
 	newestAt := make(map[string]time.Time)
 	for _, t := range threads {
-		if t == nil || t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
+		if t == nil || t.Status.IsTerminal() || t.Status.IsParked() {
 			continue
 		}
 		if prev, exists := newestAt[t.AgentID]; !exists || t.StartedAt.After(prev) {

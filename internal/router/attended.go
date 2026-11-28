@@ -77,7 +77,7 @@ func AttendedSessionLive(routerRoot, agentID string) bool {
 		if t == nil || t.AgentID != agentID {
 			continue
 		}
-		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
+		if t.Status.IsTerminal() || t.Status.IsParked() {
 			continue
 		}
 		if IsAttendedSurface(t.Surface) && !t.IsStale(now, DefaultThreadStaleAfter) {
