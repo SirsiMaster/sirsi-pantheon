@@ -1,4 +1,57 @@
 # 𓃣 Anubis Engineering Journal
+## Nov25 — Ma'at gate hosted-lint correction
+
+PR #1454 head b87c9541 failed hosted lint because `RangesFromPrePush` retained
+an unused zero-hash constant after the helper refactor. Removed that dead
+declaration. Fresh admitted `go vet` and both affected package suites passed
+after explicitly removing inherited `GIT_CONFIG_*` variables from the test
+subprocess. The first admitted attempt is preserved as a failure: inherited
+`GIT_CONFIG_VALUE_8` made three hook tests refuse configuration before reaching
+their intended assertion. A clean PR successor, hosted CI rerun, independent
+review and merge remain outstanding; installed CLI is unchanged.
+
+## Nov25 — Ma'at gate test-gap successor, untested
+
+Based on frozen dfa4b268 in a separate worktree. Reworked the five range-lint
+tests to call the internal lint implementation directly, preserving coverage
+without invoking the prohibited public explicit-range `--lint-only` mode. The
+symlink hook fixture now creates `.githooks` before placing its link. Lowercased
+the worksheet's informational label to satisfy its output assertion. Changelog
+and Thoth updated. No tests were run; no admission or hook configuration change.
+
+## Nov25 — Ma'at gate worksheet follow-up, untested
+
+Based on frozen 769e7658 in a separate worktree. Corrected the worksheet's
+invalid ranged lint-only example to `sirsi maat gate --all --lint-only` and
+explicitly labeled that no-range compatibility command informational, not a
+full enforcement pass. Added a report-output regression test. Updated
+changelog and Thoth; no tests/admission, hook configuration, commit or push.
+
+## Nov25 — Ma'at gate lint-only range successor, untested
+
+Created this successor from frozen 9c7e495; that tree remains unchanged.
+Explicit `--base`/`--head` plus `--lint-only` is rejected before CLI work and
+also returns a failed, incomplete result through the trust-boundary package
+API. No-range lint-only remains available for FinalWishes compatibility, with
+the CLI, JSON scope, changelog and guides labeling it informational rather than
+full enforcement. Added CLI-mode/exit and package-result controls; none were
+run. No fresh Ma'at admission, hook configuration, commit, push or publication.
+
+## Nov25 — Ma'at gate CHANGES successor frozen, untested
+
+Created a separate successor worktree from frozen dfe9a29; the earlier
+candidate remains unchanged. Branch updates are classified by remote
+destination, with a tag-source→branch-destination regression and Git's
+`(delete)` local-ref shape retained as no-work. `ArmHooks` now requires a
+regular executable pre-push file before it can configure a hook path. CLI
+enforcement (`--pre-push` with content or an explicit range) rejects failed,
+incomplete, or skipped results; the no-range survey is explicitly
+informational, and tag/deletion-only pushes remain distinct no-work success.
+The older Ma'at guide no longer claims automatic hooks or `MAAT_DEPTH` tiers.
+Tests were authored but not run; no fresh Ma'at admission, hook configuration,
+commit, push, or publication occurred. Await exact independent review before
+fresh test admission.
+
 ## Nov24 — composed source checkpoint
 
 Normal deep publication of328ba6d passed107 Go packages and unchanged gates,
@@ -2772,3 +2825,28 @@ contract was failing before it evaluated the product. The shell guard now starts
 the renamed probe itself, polls its PID for five seconds, terminates a hung probe,
 and records that as the same launch failure. Normal output and exit semantics are
 unchanged; this makes the behavioral assertion executable on the release target.
+
+### `sirsi maat gate` isolated restoration candidate (2026-11-25)
+
+Restored the historical command and `internal/maat/trustboundary` implementation
+in `/private/tmp/sirsi-pantheon-maat-gate-20261125`, based on `origin/main`
+`16e80ab0922e4d96b8881f84e491f8f9f816d5d`. The current ADR index explicitly
+keeps ADR-076 unallocated, so A–H are described as optional heuristics and the
+report worksheet is explicitly non-canonical. Exact-head blob checking,
+per-ref pre-push aggregation, strict range selection, JSON failure exit and
+explicit `--lint-only` compatibility are retained. `--report` does not locate
+or inspect a repository or configure hooks. Source is uncommitted; tests/builds
+were not run because fresh Ma'at admission was not obtained. No FinalWishes
+changes, hook installation, commit, push, publication or deployment occurred.
+
+### Review successor (2026-11-25)
+
+Independent review of frozen tree `eeba7612af11b9a714fdd4457e8b42ddbb850793`
+found that `--install` only changed `core.hooksPath`, without wiring the hook,
+and could overwrite custom configuration. Successor is isolated in a new
+worktree: the CLI no longer exposes `--install`; the retained `ArmHooks` helper
+refuses conflicting worktree/local/global/system values. Nonempty malformed
+pre-push records now produce errors, including malformed-only and mixed input.
+Result JSON adds scope, skipped-step names and `complete`, so `ok` is not a
+standalone full-pass signal. A–H remains explicitly heuristic-only. Tests are
+authored but not run; no hook, test/build, commit, push, or deployment occurred.

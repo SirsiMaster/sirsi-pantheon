@@ -138,16 +138,13 @@ separate, independently-reviewed later phase.
 
 ## Pre-Push Gate
 
-Ma'at runs automatically on every `git push` via the pre-push hook:
-
-```
-𓆄 Ma'at pre-push gate... [Pantheon | depth: fast]
-```
-
-Three depth tiers:
-- **fast** (default): gofmt + go vet + build + tests on changed packages (~10-30s)
-- **standard**: fast + Ma'at coverage + canon check (`MAAT_DEPTH=standard git push`)
-- **deep**: full test suite + full Ma'at assessment (`MAAT_DEPTH=deep git push`)
+There is no Pantheon-wide automatic pre-push hook or `MAAT_DEPTH` tier behavior.
+The `sirsi maat gate` command runs only when explicitly invoked, or when a
+repository has separately configured and reviewed a hook that invokes it. Its
+`--pre-push` mode consumes Git's pushed-ref records; it does not install or arm
+that hook. See the [`sirsi maat gate` guide](MAAT-GATE.md) for modes, scope,
+skipped-check behavior, and FinalWishes' no-range, informational `--lint-only`
+compatibility mode. Explicit ranges cannot be combined with `--lint-only`.
 
 ## Feather Weight Score
 
