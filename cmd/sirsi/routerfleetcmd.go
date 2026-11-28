@@ -75,6 +75,18 @@ needs a long-lived process to hold the baseline. Use the Horus board for that.`,
 			return fmt.Errorf("fleet: %w — routability is unknown; refusing to render lanes as routable", unErr)
 		}
 		out := dashboard.NewFleetTracker(nil).ObserveWithRoutability(snap, time.Now(), un)
+		ids := make([]string, 0, len(out.Lanes))
+		for _, l := range out.Lanes {
+			ids = append(ids, l.Agent)
+		}
+		// Reasons are explanation only; if they cannot be read the board still renders.
+		if reach, rErr := ledger.ReadLaneReach(repoRoot, ids, time.Now().UTC()); rErr == nil {
+			for i, l := range out.Lanes {
+				r := reach[l.Agent]
+				out.Lanes[i].Verdict = r.Verdict
+				out.Lanes[i].Reason = ledger.FabricLaneReason(l.State, r, nil)
+			}
+		}
 
 		if JsonOutput {
 			enc := json.NewEncoder(os.Stdout)
@@ -104,6 +116,9 @@ needs a long-lived process to hold the baseline. Use the Horus board for that.`,
 			}
 			if l.TouchedAgo != "" {
 				line += " · touched " + l.TouchedAgo
+			}
+			if l.Reason != "" {
+				line += "\n      why: " + truncateAt(l.Reason, 100)
 			}
 			fmt.Println(line)
 		}

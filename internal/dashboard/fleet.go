@@ -74,7 +74,12 @@ type FleetLane struct {
 	// See internal/routerboard: work that is not recorded is invisible here by
 	// design, so this figure must never be labeled as liveness.
 	TouchedAgo string `json:"touched_ago,omitempty"`
-	touchedAt  time.Time
+	// Reason says in plain English why a non-working lane is not working, and
+	// Verdict is the router ping verdict behind it. Both are explanation only:
+	// State is never derived from them.
+	Reason    string `json:"reason,omitempty"`
+	Verdict   string `json:"verdict,omitempty"`
+	touchedAt time.Time
 }
 
 // FleetSummary is the three-tile header.

@@ -415,6 +415,8 @@ function viewFleet(){
    if(l.stalled)parts.push(l.stalled+' stalled');
    if(l.blocked)parts.push(l.blocked+' blocked');
    if(l.touched_ago)parts.push('touched '+l.touched_ago);
+   if(l.reason)parts.push(l.reason);
+   if(l.verdict)row.title='ping verdict: '+l.verdict;
    cts.textContent=parts.join(' · ');
    row.appendChild(ag);row.appendChild(st);row.appendChild(cts);T.appendChild(row)});
  }).catch(function(e){out('  fleet board unavailable: '+e.message,'t-err')});
