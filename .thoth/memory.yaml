@@ -1,4 +1,10 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
+# Nov28 `sirsi maat gate` restored on main (successor to #1454; Codex lineage
+# 5ddb0efb -> 82a047ce -> 7057da86): cmd/sirsi/maatgate.go +
+# internal/maat/trustboundary. Modes: --pre-push, --base/--head, --lint-only
+# (needs --all or both endpoints), --report. A–H are heuristics, not
+# certification; ADR-076 unallocated. No hook-install mode. FinalWishes
+# .githooks/pre-push probes `--report`, then runs `--base X --head Y`.
 # Current composition: release route328ba6d passed normal deep107 packages and
 # remote exact-head verification; packaging8f05e61 passed4 new+2 existing
 # fixtures and real static builds in a normal .git-directory clone. Both fixes

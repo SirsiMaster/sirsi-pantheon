@@ -1,4 +1,23 @@
 # 𓃣 Anubis Engineering Journal
+## Nov28 — `sirsi maat gate` lands on current main (Codex takeover)
+
+Owner direction 2026-11-28: Codex rows are taken back. Codex's last reviewed
+gate lineage (5ddb0efb fixes, 82a047ce inherited-Git-config fixture, 5d8afce7
+range lint-only, 7057da86 bare lint-only refusal) was cherry-picked clean onto
+main 2df5067c and squashed. The Nov25 entries below describe that lineage; their
+"untested/unpushed" notes refer to the isolated candidates of the time.
+## Nov25 — make the range-scoped lint-only contract explicit
+
+Owner-directed recovery of the FinalWishes pre-push compatibility command is
+being carried on current Pantheon main in an isolated worktree. Source inspection
+found that `sirsi maat gate --lint-only --base X --head Y` already flowed through
+the range linter, but the CLI mode table had no explicit positive case and help
+documented only `--all --lint-only`. The successor adds the exact mode control,
+reports `lint-only-range`, and pins that only one changed-blob lint step executes
+against the pushed head (not the dirty working tree). No test or build has run
+yet; the Pantheon candidate, installed CLI, hook qualification, independent
+review, and merge remain open.
+
 ## Nov24 — composed source checkpoint
 
 Normal deep publication of328ba6d passed107 Go packages and unchanged gates,
@@ -2772,3 +2791,86 @@ contract was failing before it evaluated the product. The shell guard now starts
 the renamed probe itself, polls its PID for five seconds, terminates a hung probe,
 and records that as the same launch failure. Normal output and exit semantics are
 unchanged; this makes the behavioral assertion executable on the release target.
+
+### `sirsi maat gate` isolated restoration candidate (2026-11-25)
+
+Restored the historical command and `internal/maat/trustboundary` implementation
+in `/private/tmp/sirsi-pantheon-maat-gate-20261125`, based on `origin/main`
+`16e80ab0922e4d96b8881f84e491f8f9f816d5d`. The current ADR index explicitly
+keeps ADR-076 unallocated, so A–H are described as optional heuristics and the
+report worksheet is explicitly non-canonical. Exact-head blob checking,
+per-ref pre-push aggregation, strict range selection, JSON failure exit and
+explicit `--lint-only` compatibility are retained. `--report` does not locate
+or inspect a repository or configure hooks. Source is uncommitted; tests/builds
+were not run because fresh Ma'at admission was not obtained. No FinalWishes
+changes, hook installation, commit, push, publication or deployment occurred.
+
+### Review successor (2026-11-25)
+
+Independent review of frozen tree `eeba7612af11b9a714fdd4457e8b42ddbb850793`
+found that `--install` only changed `core.hooksPath`, without wiring the hook,
+and could overwrite custom configuration. Successor is isolated in a new
+worktree: the CLI no longer exposes `--install`; the retained `ArmHooks` helper
+refuses conflicting worktree/local/global/system values. Nonempty malformed
+pre-push records now produce errors, including malformed-only and mixed input.
+Result JSON adds scope, skipped-step names and `complete`, so `ok` is not a
+standalone full-pass signal. A–H remains explicitly heuristic-only. Tests are
+authored but not run; no hook, test/build, commit, push, or deployment occurred.
+
+### Fail-closed review correction (2026-11-25)
+
+Newton's exact staged review of the restored gate found scanner configuration
+could come from mutable worktree files; new branches guessed `origin/*` instead
+of destination context; incomplete required checks, empty pre-push input and
+JSON early-return paths could appear successful. Corrected the isolated
+candidate to use the base commit's unchanged `.gitleaks.toml`/`.gitleaksignore`,
+require explicit `--new-branch-base`, reject empty input, fail pre-push on
+incomplete checks, and route report/no-content JSON through the command writer.
+Added command and gate regressions. The first fresh admitted run failed because
+the host injected `GIT_CONFIG_COUNT` into ArmHooks tests; fixtures now clear and
+restore every inherited `GIT_CONFIG_*` variable. A follow-up vet run found an
+append-with-no-values construction in the hook-path test helper; that was
+replaced with direct `exec.Command` arguments. Both failed runs remain recorded.
+The latest fresh admitted `go test ./cmd/sirsi ./internal/maat/trustboundary
+-count=1`, `go vet` on both packages, and `git diff --check` passed (exit 0,
+terminal `/Users/thekryptodragon/.sirsi/evidence/maat-runs/5cd643bec2924b3ca93501a7bce6c38f/terminal.json`; admission
+`20261125T110732Z-m5-codex-finalwishes-b8280cbb7c62b6ac5fb5aaa9632259fa`).
+Hilbert's exact-diff follow-up found no remaining concrete findings in the
+correction set. The candidate remains uncommitted/unmerged/uninstalled;
+current-main composition and operational adoption remain open. The root
+checkout's broad tracked deletions remain untouched.
+
+Follow-up review then found that a caller-supplied new-branch base could equal
+or descend from the pushed head, producing an empty/reversed range; report JSON
+also carried gate-like `ok`/`complete` fields, and the hook fixture did not
+clear all possible `GIT_CONFIG_*` variables. The isolated candidate now rejects
+equal/non-ancestor bases, report JSON contains only `scope` and `report`, and
+the fixture clears/restores the complete variable prefix. Hilbert reviewed the
+exact correction and reported no remaining concrete findings; the admitted
+test, vet, and diff-check results are recorded above.
+
+Repository-wide fresh Ma'at admission then passed `go test ./...`, `go vet
+./...`, and `git diff --check HEAD` on this exact candidate, exit 0, terminal
+`/Users/thekryptodragon/.sirsi/evidence/maat-runs/19884e009e4d4071844decda1b40b0e7/terminal.json`
+(admission `20261125T111453Z-m5-codex-finalwishes-4aca36e4e58a7ab8a098c186fca545b8`,
+617.743 seconds, one core). No current-main commits had moved at the read-only
+`git ls-remote` check (`16e80ab`). The candidate is still local/uncommitted;
+this does not establish installation, hook adoption, merge, or release.
+
+The repository completion contract's remaining gates were run under fresh
+admission. The first attempt stopped at golangci-lint because one parser-local
+zero constant was unused; it was removed and remains recorded as a failed run.
+The subsequent exact candidate run passed `go build ./cmd/sirsi/`, `go vet
+./...`, `golangci-lint run ./...` (0 issues), `go test ./... -race`, and final
+`git diff --check HEAD`, exit 0, terminal
+`/Users/thekryptodragon/.sirsi/evidence/maat-runs/7ad0750cf3ac4b43804f4aba06e78336/terminal.json`
+(admission `20261125T113329Z-m5-codex-finalwishes-d0fef7e2b2b9d26802cd163399e2320f`,
+1160.269 sec, one core). Source remains uncommitted/unmerged/uninstalled.
+
+After that gate passed, the exact source and current Thoth state were committed
+locally on an isolated branch based on current main
+`16e80ab0922e4d96b8881f84e491f8f9f816d5d5`. The exact latest commit/tree and
+Claude Deck review request are recorded in the linked handoff. The first review
+request named an earlier commit and was superseded before review. No push, PR,
+merge, install, publication, or deployment has occurred; review and operational
+adoption remain open.
