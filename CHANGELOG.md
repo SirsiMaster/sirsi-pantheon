@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ## [Unreleased]
 
+## [0.24.171] — 2026-11-27
+
+- Release note: v0.24.170 was tagged (1d6cf22b) but never published. Its binary was signed with Developer ID, but notarization failed: "No Keychain password item found for profile: sirsi-notary". The #1469 signer change had pinned notarytool to the login keychain, where that profile is not stored. #1471 removes that pin and keeps codesign and productsign pinned. The fix was deployed to the M1 signer, and a post-deploy job signed and notarized (Accepted). v0.24.171 carries the same app content as v0.24.166–v0.24.170.
+
+- `sirsi-signd`: every `codesign`, `productsign` and `notarytool` call is pinned to the login keychain (`--keychain ~/Library/Keychains/login.keychain-db`). A release job on the signing Mac makes its temporary `build.keychain` the default and first in the search list (and leaves it so when the run fails before its restore step); unpinned signing then picked the identity there, macOS prompted for a password nobody on the Mac has, and signing failed with `errSecInternalComponent` (v0.24.167–v0.24.169).
+
 ## [0.24.170] — 2026-11-27
 
 - Release note: v0.24.169 was tagged (07157066) but never published. Root cause of the v0.24.167–169 signing failures: while a release job runs, the M1's default keychain and first search-list entry is the job's temporary `build.keychain`. It stays that way when a run fails before its restore step. The signing service's unpinned codesign therefore resolved the Developer ID identity there, raised a console password prompt, and failed with `errSecInternalComponent`. The signer custodian deployed the fix from #1469 to the M1 signing service on 2026-11-27: every codesign, productsign and notarytool call is pinned to the login keychain, the prior script is kept as `sirsi-signd.sh.bak-20261127`, and a post-deploy sign test passed. v0.24.170 carries the same app content as v0.24.166–v0.24.169.
