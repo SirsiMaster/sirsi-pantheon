@@ -162,10 +162,72 @@ jobs:
           # Hermetic guards; the normal binder fixture doubles gh/sirsi/openssl (no keys/network).
           for t in a34-fail-closed router-rejection router-rejection-bind; do bash "scripts/bind/$t.test.sh"; done
 
-  test:
-    name: Test
-    timeout-minutes: 60
+  # The Go suite runs as four parallel shards (owner 2026-11-27: PR checks took
+  # 15-19 min, almost all of it one serial `go test ./...`). The three slowest
+  # packages each get their own job; everything else shares the fourth. The
+  # required status check is still the single job named "Test" below, which
+  # passes only when every shard and the extras job passed.
+  test-go:
+    name: Test go (${{ matrix.shard }})
+    timeout-minutes: 40
     # GitHub-hosted macOS 15 supports standard ARM64 runners: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [maat, routerstore, cmd-sirsi, rest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests (${{ matrix.shard }})
+        shell: bash
+        env:
+          CGO_ENABLED: 1
+          SHARD: ${{ matrix.shard }}
+          # This self-hosted runner's service process is launched outside the
+          # login session's own process tree (nohup, not launchd's GUI
+          # domain), so it inherits no TMPDIR — Go's t.TempDir() then falls
+          # back to /tmp (root:wheel) instead of the per-user sandboxed tmp
+          # (the invoking user's own primary group). Every routerstore spool
+          # test asserting a trust-group directory mode fails on gid 0 vs the
+          # expected primary-group gid as a result — reproduced on main,
+          # unrelated to any PR's diff (2026-09-16). runner.temp is scoped to
+          # this job and owned by the runner's own user on every runner,
+          # hosted or self-hosted, so this needs no host-specific path.
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          M=github.com/SirsiMaster/sirsi-pantheon
+          ALL="$(bash scripts/ci-private-sdk.sh go list ./...)"
+          SOLO=("$M/internal/maat" "$M/internal/routerstore" "$M/cmd/sirsi")
+          for p in "${SOLO[@]}"; do
+            grep -qxF "$p" <<< "$ALL" || { echo "::error::shard package $p no longer exists; update the shard list"; exit 1; }
+          done
+          case "$SHARD" in
+            maat)        PKGS="$M/internal/maat" ;;
+            routerstore) PKGS="$M/internal/routerstore" ;;
+            cmd-sirsi)   PKGS="$M/cmd/sirsi" ;;
+            rest)        PKGS="$(grep -vxF -e "${SOLO[0]}" -e "${SOLO[1]}" -e "${SOLO[2]}" <<< "$ALL")" ;;
+            *) echo "::error::unknown shard $SHARD"; exit 1 ;;
+          esac
+          [ -n "$PKGS" ] || { echo "::error::shard $SHARD selected no packages"; exit 1; }
+          # shellcheck disable=SC2086 # one package path per word
+          bash scripts/ci-private-sdk.sh go test -v -race -short -timeout 20m -coverprofile="coverage-$SHARD.out" $PKGS
+
+      - name: Upload shard coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.shard }}
+          path: coverage-${{ matrix.shard }}.out
+
+  test-extras:
+    name: Test extras
+    timeout-minutes: 40
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -191,23 +253,6 @@ jobs:
       - name: v164 publication custody fixtures
         if: ${{ (github.event_name == 'pull_request' && github.head_ref == 'codex/v164-guard-resume-20261123') || (github.event_name == 'push' && contains(github.event.head_commit.message, 'codex/v164-guard-resume-20261123')) }}
         run: python3 -B -m unittest scripts.test_claim_v164_publication_resume scripts.test_claim_v164_metadata_resume scripts.test_claim_v164_resume scripts.test_compare_pretoolguard_macho scripts.test_release_publication_guard
-
-      - name: Run tests
-        shell: bash
-        run: bash scripts/ci-private-sdk.sh go test -v -race -short -timeout 20m -coverprofile=coverage.out ./...
-        env:
-          CGO_ENABLED: 1
-          # This self-hosted runner's service process is launched outside the
-          # login session's own process tree (nohup, not launchd's GUI
-          # domain), so it inherits no TMPDIR — Go's t.TempDir() then falls
-          # back to /tmp (root:wheel) instead of the per-user sandboxed tmp
-          # (the invoking user's own primary group). Every routerstore spool
-          # test asserting a trust-group directory mode fails on gid 0 vs the
-          # expected primary-group gid as a result — reproduced on main,
-          # unrelated to any PR's diff (2026-09-16). runner.temp is scoped to
-          # this job and owned by the runner's own user on every runner,
-          # hosted or self-hosted, so this needs no host-specific path.
-          TMPDIR: ${{ runner.temp }}
 
       # ADR-120: the native CLI pod-authority qualification is opt-in (it skips
       # without PANTHEON_NATIVE_CLI), so the suite above never runs it. Build the
@@ -262,12 +307,6 @@ jobs:
       - name: Router store on PostgreSQL (ADR-062)
         run: bash scripts/ci-private-sdk.sh bash scripts/ci-postgres.sh
 
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: coverage.out
-
       # ADR-057: ADR numbers are allocated through the router store, not by
       # counting files. Two documents claiming one number makes every citation
       # of it ambiguous. --allow is the pre-existing debt list (013/016/046/054
@@ -310,6 +349,43 @@ jobs:
         with:
           name: metrics
           path: metrics.json
+
+  # The required status check. Green only when all four Go shards and the
+  # extras job succeeded; it also merges shard coverage into the single
+  # `coverage` artifact the unsharded job used to publish.
+  test:
+    name: Test
+    needs: [test-go, test-extras]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every test part
+        env:
+          GO_RESULT: ${{ needs.test-go.result }}
+          EXTRAS_RESULT: ${{ needs.test-extras.result }}
+        run: |
+          echo "go shards: $GO_RESULT; extras: $EXTRAS_RESULT"
+          [ "$GO_RESULT" = success ] && [ "$EXTRAS_RESULT" = success ] \
+            || { echo "::error::Test failed: go shards=$GO_RESULT extras=$EXTRAS_RESULT"; exit 1; }
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          path: cov
+          merge-multiple: true
+
+      - name: Merge shard coverage
+        run: |
+          set -euo pipefail
+          ls cov/coverage-*.out
+          { head -n 1 cov/coverage-maat.out; for f in cov/coverage-*.out; do tail -n +2 "$f"; done; } > coverage.out
+          wc -l coverage.out
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
 
   build:
     # Keep the published branch-protection context truthful while the runner
