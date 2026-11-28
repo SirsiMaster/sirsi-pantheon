@@ -12,4 +12,9 @@ for v in $(compgen -e); do
     SSH_AUTH_SOCK) unset "$v" ;;
   esac
 done
+# xcode-select on a fabric Mac may point at Command Line Tools, whose Swift lacks
+# the SwiftUI macro plugins macapp needs. Select full Xcode for this process only.
+if [[ -z ${DEVELOPER_DIR:-} && -d /Applications/Xcode.app/Contents/Developer ]]; then
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
 exec bash --noprofile --norc -eo pipefail "$@"
