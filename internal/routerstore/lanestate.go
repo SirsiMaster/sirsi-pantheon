@@ -169,6 +169,28 @@ func (s *SQLiteStore) laneWakeFailures(agent string) (int, int, error) {
 	if err != nil {
 		return 0, 0, err
 	}
+	// A later acknowledged wake is direct evidence the wake path works: AckWakeEvent
+	// only accepts a validated store-action ref (router claim or task lease), so
+	// lanes that finish work without tripping the two paths above still resolve.
+	rows, err = s.db.Query(`SELECT updated FROM wake_events WHERE agent=? AND status='acked'`, agent)
+	if err != nil {
+		return 0, 0, fmt.Errorf("routerstore: lane acked wake evidence: %w", err)
+	}
+	for rows.Next() {
+		var stamp string
+		if err = rows.Scan(&stamp); err != nil {
+			rows.Close()
+			return 0, 0, err
+		}
+		if t, e := time.Parse(time.RFC3339Nano, stamp); e == nil && t.After(latest) {
+			latest = t
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return 0, 0, err
+	}
 	rows, err = s.db.Query(`SELECT updated FROM wake_events WHERE agent=? AND status='terminal_failed'`, agent)
 	if err != nil {
 		return 0, 0, err
