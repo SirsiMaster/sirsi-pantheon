@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run-step shell for CI jobs on the owner's self-hosted M5 runners.
+# Run-step shell for CI jobs on the owner's self-hosted fabric runners (Studio, M5).
 # launchd exports the owner's live session settings to every agent, including
 # these runners: SIRSI_ROUTER_URL (the live relay spool) and SSH_AUTH_SOCK (the
 # owner's SSH agent). GitHub-hosted runners have neither, and tests must never

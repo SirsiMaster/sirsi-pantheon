@@ -170,12 +170,12 @@ jobs:
   test-go:
     name: Test go (${{ matrix.shard }})
     timeout-minutes: 40
-    # Owner 2026-11-27: Pantheon CI runs on the M5's own runners (m5-pantheon-ci-1..4,
-    # label pantheon-ci, Nice 10). Hosted macOS capped parallel jobs and queued shards 9-10 min.
+    # Owner 2026-11-27: Pantheon CI runs on the least-encumbered fabric Macs (label pantheon-ci:
+    # studio-pantheon-ci-1..4 + m5-pantheon-ci-1, Nice 10). Hosted macOS queued shards 9-10 min.
     runs-on: [self-hosted, macOS, ARM64, pantheon-ci]
     defaults:
       run:
-        # Strips the owner session settings (live relay URL, SSH agent) the M5 runners inherit.
+        # Strips the owner session settings (live relay URL, SSH agent) self-hosted runners inherit.
         shell: bash scripts/ci-self-hosted-shell.sh {0}
     # Five CI jobs share one 18-core Mac with the owner's own work. Uncapped, each
     # race build and test binary sized itself to the whole machine (load 63 on 18
@@ -193,7 +193,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          # Self-hosted: GOCACHE/GOMODCACHE persist on the M5; restoring the hosted cache over them fails.
+          # Self-hosted: GOCACHE/GOMODCACHE persist on self-hosted runners; restoring the hosted cache over them fails.
           cache: false
 
       - name: Run tests (${{ matrix.shard }})
@@ -242,7 +242,7 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, pantheon-ci]
     defaults:
       run:
-        # Strips the owner session settings (live relay URL, SSH agent) the M5 runners inherit.
+        # Strips the owner session settings (live relay URL, SSH agent) self-hosted runners inherit.
         shell: bash scripts/ci-self-hosted-shell.sh {0}
     # Same per-job CPU cap as test-go (see there).
     env:
@@ -254,7 +254,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          # Self-hosted: GOCACHE/GOMODCACHE persist on the M5; restoring the hosted cache over them fails.
+          # Self-hosted: GOCACHE/GOMODCACHE persist on self-hosted runners; restoring the hosted cache over them fails.
           cache: false
 
       - name: Ma'at supervisor reliability (model-free)
