@@ -60,7 +60,7 @@ func AgentArmed(routerRoot, agentID string) bool {
 		if t == nil || t.AgentID != agentID {
 			continue
 		}
-		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
+		if t.Status.IsTerminal() || t.Status.IsParked() {
 			continue
 		}
 		if threadArmedForNewest(t, now, newestByAgent[agentID] == t.ThreadID) {

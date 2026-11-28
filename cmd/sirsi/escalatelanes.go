@@ -34,7 +34,7 @@ func activeThreadCountByAgent(repoRoot string, now time.Time) map[string]int {
 	}
 	counts := make(map[string]int)
 	for _, thr := range treg.SortedThreads() {
-		if thr.Status.IsTerminal() || thr.Status == router.ThreadStatusSuspended {
+		if thr.Status.IsTerminal() || thr.Status.IsParked() {
 			continue
 		}
 		// ponytail: reuses IsStale() from threads.go — single staleness predicate

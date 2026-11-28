@@ -85,6 +85,7 @@ var (
 
 	threadCloseID          string
 	threadListAll          bool
+	threadListQuarantined  bool
 	threadListStale        time.Duration
 	threadListAgentFilter  string
 	threadListThreadFilter string
@@ -973,6 +974,10 @@ var threadListCmd = &cobra.Command{
 			if t.Status.IsTerminal() && !threadListAll {
 				continue
 			}
+			// Quarantined records are listed only on request (or with --all).
+			if (t.Status == router.ThreadStatusQuarantined) != threadListQuarantined && !threadListAll {
+				continue
+			}
 			if threadListAgentFilter != "" && t.AgentID != threadListAgentFilter {
 				continue
 			}
@@ -1097,6 +1102,7 @@ func init() {
 	threadCloseCmd.Flags().StringVar(&threadCloseID, "thread", "", "Thread ID to close (required)")
 
 	threadListCmd.Flags().BoolVar(&threadListAll, "all", false, "Include closed threads")
+	threadListCmd.Flags().BoolVar(&threadListQuarantined, "quarantined", false, "List only quarantined threads")
 	threadListCmd.Flags().DurationVar(&threadListStale, "stale-after", router.DefaultThreadStaleAfter, "Stale threshold")
 	threadListCmd.Flags().StringVar(&threadListAgentFilter, "agent", "", "Filter to one agent ID")
 	threadListCmd.Flags().StringVar(&threadListThreadFilter, "thread", "", "Filter to one thread ID")

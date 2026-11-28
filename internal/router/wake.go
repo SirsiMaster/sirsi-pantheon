@@ -448,7 +448,7 @@ func WakePassFiltered(routerRoot string, now time.Time, allow func(work.Item) bo
 	armed := map[string]bool{}
 	thisMachine := MachineID()
 	for _, t := range threadReg.SortedThreads() {
-		if t.Status.IsTerminal() || t.IsStale(now, DefaultThreadStaleAfter) {
+		if t.Status.IsTerminal() || t.Status == ThreadStatusQuarantined || t.IsStale(now, DefaultThreadStaleAfter) {
 			continue
 		}
 		// Two independent ways a thread can be fresh-looking and still not be
@@ -1679,7 +1679,7 @@ func adoptWorkerThread(routerRoot, agentID string, pid int) (*Thread, error) {
 		if t == nil || t.AgentID != agentID || t.Surface != surfaceWorker || t.WakeMechanism != WakeLaunchAgent {
 			continue
 		}
-		if t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
+		if t.Status.IsTerminal() || t.Status.IsParked() {
 			continue
 		}
 		if !SameMachine(t.MachineID, thisMachine) {

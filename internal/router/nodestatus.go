@@ -85,9 +85,12 @@ type NodeStatus struct {
 
 	// Live threads (CTR thread registry). Distinct from RegisteredAgents:
 	// these are the open conversations/workers that have checked in.
-	LiveThreads     []ThreadSummary `json:"live_threads,omitempty"`
-	StaleThreads    []ThreadSummary `json:"stale_threads,omitempty"`
-	LiveThreadCount int             `json:"live_thread_count"`
+	LiveThreads  []ThreadSummary `json:"live_threads,omitempty"`
+	StaleThreads []ThreadSummary `json:"stale_threads,omitempty"`
+	// QuarantinedThreads are parked stale records (threadquarantine.go),
+	// excluded from LiveThreads/StaleThreads and every count derived from them.
+	QuarantinedThreads []ThreadSummary `json:"quarantined_threads,omitempty"`
+	LiveThreadCount    int             `json:"live_thread_count"`
 
 	// Outbox: per-agent held (queued-for-retry) spool relay items (ADR-069),
 	// read-only — collecting this NEVER drains, retries, or deletes anything.
@@ -587,6 +590,16 @@ func CollectNodeStatusContext(ctx context.Context, repoRoot string, launchctlChe
 				continue
 			}
 			if thr.Status == ThreadStatusSuspended {
+				continue
+			}
+			if thr.Status == ThreadStatusQuarantined {
+				// Parked: counted on its own, never in live/stale/armed.
+				ns.QuarantinedThreads = append(ns.QuarantinedThreads, ThreadSummary{
+					ThreadID: thr.ThreadID, AgentID: thr.AgentID, Host: thr.Host, MachineID: thr.MachineID,
+					Surface: thr.Surface, Status: thr.Status, StartedAt: thr.StartedAt, LastSeenAt: thr.LastSeenAt,
+					AgeSeconds: now.Sub(thr.StartedAt).Seconds(), IdleSeconds: now.Sub(thr.LastSeenAt).Seconds(),
+					LastError: thr.LastError, PID: thr.PID,
+				})
 				continue
 			}
 			osScope := threadOSScope(thr.MachineID, machineID)

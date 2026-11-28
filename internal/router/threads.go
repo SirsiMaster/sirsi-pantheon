@@ -67,7 +67,18 @@ const (
 	// RegisterThread bypasses the live fast-path and routes through resume). The
 	// only way back to active is `sirsi thread resume`.
 	ThreadStatusSuspended ThreadStatus = "suspended"
+	// ThreadStatusQuarantined is a reversible, NON-terminal parking state for a
+	// record whose heartbeat aged out (threadquarantine.go). It is never pruned
+	// or reaped and is excluded from live/stale counts and wake targeting. The
+	// owning session's next heartbeat or re-register releases it.
+	ThreadStatusQuarantined ThreadStatus = "quarantined"
 )
+
+// IsParked reports a non-live resting state excluded from liveness, counts and
+// targeting: suspended (ADR-025) or quarantined.
+func (s ThreadStatus) IsParked() bool {
+	return s == ThreadStatusSuspended || s == ThreadStatusQuarantined
+}
 
 // hasPerpetualRegistration reports whether t is an attended claude/codex session.
 // Its registration lasts until it is explicitly closed or superseded: time passing
@@ -179,6 +190,9 @@ type Thread struct {
 	// This is the idempotency key: hasSuccessorFor checks this field so a
 	// second reconcile pass does not mint a duplicate successor.
 	ReapedFrom string `json:"reaped_from,omitempty"`
+	// Quarantine records who parked this thread, when and why while Status is
+	// quarantined; cleared on release.
+	Quarantine *ThreadQuarantine `json:"quarantine,omitempty"`
 }
 
 // IsInboxConsumer reports whether this thread can actually drain its agent's
@@ -687,6 +701,13 @@ func registerThreadRetry(root string, input *Thread, load func(string) (*ThreadR
 				if !compatibleRegistration(existing, &intent) {
 					return fmt.Errorf("registration target is occupied by a conflicting or retired binding")
 				}
+				if existing.Status == ThreadStatusQuarantined {
+					releaseQuarantine(existing, "proved alive")
+					existing.LastSeenAt = time.Now().UTC()
+					if err := save(root, reg); err != nil {
+						return err
+					}
+				}
 				copy := *existing
 				copy.Watches = append([]string(nil), existing.Watches...)
 				out = &copy
@@ -810,6 +831,7 @@ func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mi
 			//
 			// Found the live record for this session — renew the lease.
 			existing.LastSeenAt = now
+			releaseQuarantine(existing, "proved alive")
 			if existing.MachineID == "" {
 				existing.MachineID = t.MachineID
 			}
@@ -894,6 +916,7 @@ func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mi
 					continue
 				}
 				existing.LastSeenAt = now
+				releaseQuarantine(existing, "proved alive")
 				if existing.MachineID == "" {
 					existing.MachineID = t.MachineID // backfill legacy record in place
 				}
@@ -959,6 +982,12 @@ func registerThreadAttempt(routerRoot string, t *Thread, reg *ThreadRegistry, mi
 	}
 	if t.StartTime == "" {
 		t.StartTime = newStart
+	}
+	if prev := reg.Threads[t.ThreadID]; prev != nil && prev.Status == ThreadStatusQuarantined {
+		releaseQuarantine(prev, "proved alive") // pinned re-register of a parked thread: keep its start time
+		if t.StartedAt.IsZero() {
+			t.StartedAt = prev.StartedAt
+		}
 	}
 	if t.StartedAt.IsZero() {
 		t.StartedAt = now
@@ -1075,6 +1104,7 @@ func heartbeatWithRegistry(routerRoot, threadID string, upd HeartbeatUpdate, loa
 			return fmt.Errorf("thread %q is suspended and cannot heartbeat; run `sirsi thread resume --thread %s` to restore it", threadID, threadID)
 		}
 		cur.LastSeenAt = time.Now().UTC()
+		releaseQuarantine(cur, "proved alive")
 		if upd.Status != "" {
 			cur.Status = upd.Status
 		}
@@ -1375,7 +1405,7 @@ func ReconcileExits(reg *ThreadRegistry, host, agentFilter string, now time.Time
 			reg.Threads[succ.ThreadID] = succ
 			outcomes = append(outcomes, ReconcileOutcome{ThreadID: t.ThreadID, AgentID: t.AgentID, Action: ReconcileMintedSuccessor, SuccessorID: succ.ThreadID})
 
-		case t.Status == ThreadStatusSuspended || t.Status.IsTerminal():
+		case t.Status.IsParked() || t.Status.IsTerminal():
 			continue // parked or cleanly closed — nothing to heal
 
 		case hasPerpetualRegistration(t):
@@ -1476,7 +1506,7 @@ func reapDeadThreadsOnce(routerRoot, agent string) ([]ReapedThread, error) {
 		// gone (the session ended cleanly), so the reaper must NOT retire it to
 		// terminal `reaped` — that would destroy the recoverable continuation
 		// state. Suspended leaves the OS-truth sweep untouched.
-		if t.Status == ThreadStatusSuspended {
+		if t.Status.IsParked() {
 			continue
 		}
 		// Scope to THIS machine's process table by stable machine identity, not
@@ -1543,7 +1573,7 @@ func reapDeadThreadsOnce(routerRoot, agent string) ([]ReapedThread, error) {
 // Suspended is excluded even if its PID happens to linger — it is a parked
 // resting state (ADR-025), never an anchor that supersedes a sibling.
 func isLiveWatcher(t *Thread) bool {
-	if t == nil || t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
+	if t == nil || t.Status.IsTerminal() || t.Status.IsParked() {
 		return false
 	}
 	if t.PID < minAgentPID {
@@ -1636,7 +1666,7 @@ func reapStrayThreadsOnce(routerRoot, agent string) ([]ReapedThread, error) {
 		salvage []pendingSalvage
 	)
 	for _, t := range reg.Threads {
-		if t == nil || t.Status.IsTerminal() || (agent != "" && t.AgentID != agent) || !threadReapMachineMatches(t.MachineID, thisMachine, shared) {
+		if t == nil || t.Status.IsTerminal() || t.Status == ThreadStatusQuarantined || (agent != "" && t.AgentID != agent) || !threadReapMachineMatches(t.MachineID, thisMachine, shared) {
 			continue
 		}
 		anchor, ok := live[groupKey{t.AgentID, t.Surface}]

@@ -130,7 +130,7 @@ func computeWorkBoard(routerRoot string, recent func(string, time.Duration) ([]w
 	liveSurfaces := map[string][]string{}
 	if reg, rerr := registry(routerRoot); rerr == nil {
 		for _, t := range reg.Threads {
-			if t == nil || t.Status.IsTerminal() || t.Status == ThreadStatusSuspended {
+			if t == nil || t.Status.IsTerminal() || t.Status.IsParked() {
 				continue
 			}
 			if t.IsStale(now, DefaultThreadStaleAfter) {

@@ -47,7 +47,8 @@ account, and is recorded as board:<email>.`,
 		}
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		if err := registerBoardThread(ctx); err != nil {
+		threadClosed, err := registerBoardThread(ctx)
+		if err != nil {
 			return err
 		}
 		build := buildversion.Current("sirsi").Version
@@ -84,7 +85,14 @@ account, and is recorded as board:<email>.`,
 		}
 		fmt.Printf("router board serving on 0.0.0.0:%d\n", port)
 		<-ctx.Done()
-		return srv.Stop()
+		stopErr := srv.Stop()
+		// Cloud Run allows ~10s after SIGTERM; give the own-thread close most of it.
+		select {
+		case <-threadClosed:
+		case <-time.After(5 * time.Second):
+			fmt.Fprintln(os.Stderr, "board: timed out closing own thread on shutdown")
+		}
+		return stopErr
 	},
 }
 
@@ -135,10 +143,15 @@ func macConsoleURLs(machines []router.Machine, tailnet string) (map[string]strin
 // the whole-ledger reads are not exempt) and keeps it alive every minute,
 // re-registering if it was reaped while the service was scaled to zero. The
 // thread id travels in SIRSI_THREAD_ID, which every routerstore.Resolve reads.
-func registerBoardThread(ctx context.Context) error {
+//
+// The returned channel closes once the thread has been closed on shutdown
+// (A27: close your own thread). The caller must wait on it before the process
+// exits, otherwise the close races process exit and every Cloud Run instance
+// leaves a stale record behind.
+func registerBoardThread(ctx context.Context) (<-chan struct{}, error) {
 	repo, err := router.FindRepoRoot()
 	if err != nil {
-		return fmt.Errorf("board: locate registry: %w", err)
+		return nil, fmt.Errorf("board: locate registry: %w", err)
 	}
 	root := filepath.Join(repo, ".agents", "idea-router")
 	agent := strings.TrimSpace(os.Getenv("SIRSI_AGENT_ID"))
@@ -154,8 +167,9 @@ func registerBoardThread(ctx context.Context) error {
 		return os.Setenv("SIRSI_THREAD_ID", t.ThreadID)
 	}
 	if err := register(); err != nil {
-		return err
+		return nil, err
 	}
+	closed := make(chan struct{})
 	go func() {
 		tick := time.NewTicker(time.Minute)
 		defer tick.Stop()
@@ -163,6 +177,7 @@ func registerBoardThread(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
 				_, _ = router.CloseThread(root, os.Getenv("SIRSI_THREAD_ID"))
+				close(closed)
 				return
 			case <-tick.C:
 			}
@@ -175,7 +190,7 @@ func registerBoardThread(ctx context.Context) error {
 			}
 		}
 	}()
-	return nil
+	return closed, nil
 }
 
 func init() {
