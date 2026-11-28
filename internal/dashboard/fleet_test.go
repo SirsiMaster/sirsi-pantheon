@@ -35,6 +35,23 @@ func TestFleetTracker_FirstPollSeedsAndEmitsNothing(t *testing.T) {
 	}
 }
 
+func TestFleetTracker_RetiredTasksAreHistoryNotInFlightWork(t *testing.T) {
+	ft := NewFleetTracker(nil)
+	now := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	retired := task("cancel", "canceled")
+	retired.Updated = now.Format(time.RFC3339)
+	got := ft.Observe(snapOf("lane", task("done", "done"), retired, task("withdraw", "withdrawn"), task("open", "pending")), now)
+	if got.Summary.Total != 2 || got.Summary.Done != 1 || got.Summary.Retired != 2 || got.Summary.InFlight != 1 {
+		t.Fatalf("retired task disposition polluted fleet summary: %+v", got.Summary)
+	}
+	if len(got.Lanes) != 1 || got.Lanes[0].Open != 1 || got.Lanes[0].Stalled != 1 {
+		t.Fatalf("retired tasks counted as lane work: %+v", got.Lanes)
+	}
+	if got.Lanes[0].State == LaneWorking {
+		t.Fatalf("retired task update made stale open work look active: %+v", got.Lanes[0])
+	}
+}
+
 func TestFleetTracker_RealTransitionEmitsOneEvent(t *testing.T) {
 	ft := NewFleetTracker(nil)
 	now := time.Now()

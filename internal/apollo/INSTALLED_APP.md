@@ -1,8 +1,9 @@
 # Installed Apollo app transport
 
-`installed_app.go` is the narrow Qwen2.2.6 bridge alongside (not in place of)
+`installed_app.go` is the narrow Qwen bridge alongside (not in place of)
 the signed native fleet backend. One compiled typed profile pins the model,
-precision, checkpoint/tokenizer/template and five installed artifact hashes.
+precision and checkpoint/tokenizer/template; the app is bound by its code
+signature (ai.sirsi.apollo, Developer ID team 9D382WV988), not file hashes.
 `InstalledApp` observes fixed install locations without changing a registry.
 `ChatInstalledApp` accepts no transport/configuration override, disables proxies
 and redirects, and dials only literal loopback8520. Apollo owns live admission.

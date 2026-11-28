@@ -203,7 +203,8 @@ func FabricTasksFilteredFrom(s Snapshot, offset int, expected, filter string) (F
 	return page, nil
 }
 
-// FabricAllTasksFrom projects open and completed rows once, with the same
+// FabricAllTasksFrom projects every retained task row, including terminal
+// dispositions, with the same
 // allowlist and identity checks as paged Fabric. It fails instead of silently
 // returning an incomplete lane when the bounded response limit is exceeded.
 func FabricAllTasksFrom(s Snapshot) ([]FabricTask, error) {
@@ -267,10 +268,14 @@ func fabricTask(agent string, task routerstore.Task) FabricTask {
 		row.Status = "done"
 		row.Role = brand.OK.Name()
 	}
+	if task.Status == "canceled" || task.Status == "withdrawn" {
+		row.Status = task.Status
+		row.Role = brand.Dim.Name()
+	}
 	if task.Liveness == "active" || task.Liveness == "stalled" {
 		row.Liveness = task.Liveness
 	}
-	if task.Status == "blocked" || task.Liveness == "stalled" {
+	if task.Status == "blocked" || (task.Liveness == "stalled" && !routerstore.IsTerminalTaskStatus(task.Status)) {
 		row.Role = brand.Warn.Name()
 	}
 	for _, value := range []string{"spec", "build", "review", "verify", "shipped"} {

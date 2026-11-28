@@ -86,6 +86,7 @@ type FleetLane struct {
 type FleetSummary struct {
 	Total      int `json:"total"`
 	Done       int `json:"done"`
+	Retired    int `json:"retired"`
 	InFlight   int `json:"in_flight"`
 	Active     int `json:"active"`
 	Assigned   int `json:"assigned"`
@@ -208,6 +209,10 @@ func (ft *FleetTracker) observe(snap ledger.Snapshot, now time.Time, unroutable 
 			switch status {
 			case "done":
 				out.Summary.Done++
+			case "canceled", "withdrawn":
+				// Retired rows stay in task history and the dedicated count, but
+				// they are not active fleet work or part of its denominator.
+				out.Summary.Retired++
 			case "in-progress":
 				lane.Active++
 				lane.Open++
@@ -221,10 +226,14 @@ func (ft *FleetTracker) observe(snap ledger.Snapshot, now time.Time, unroutable 
 				lane.Open++
 				out.Summary.Stalled++
 			}
-			out.Summary.Total++
+			if status != "canceled" && status != "withdrawn" {
+				out.Summary.Total++
+			}
 
-			if ts, err := time.Parse(time.RFC3339, t.Updated); err == nil && ts.After(lane.touchedAt) {
-				lane.touchedAt = ts
+			if status != "canceled" && status != "withdrawn" {
+				if ts, err := time.Parse(time.RFC3339, t.Updated); err == nil && ts.After(lane.touchedAt) {
+					lane.touchedAt = ts
+				}
 			}
 		}
 

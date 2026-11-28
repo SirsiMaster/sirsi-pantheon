@@ -17,6 +17,33 @@ reports `lint-only-range`, and pins that only one changed-blob lint step execute
 against the pushed head (not the dirty working tree). No test or build has run
 yet; the Pantheon candidate, installed CLI, hook qualification, independent
 review, and merge remain open.
+## Nov25 — PR1455 current-main terminal-projection source candidate (unqualified)
+
+Started from freshly read `origin/main` `2c7f432f0deae705c5691ca4ea06bd40a739031a`
+(tree `1f09d4b65a9c8b65d7b833c6a5ad3653924e0c1f`) in a separate clean clone.
+Integrated only the Fleet/task-history projection portions of predecessor
+`ab1a7886ea2232b4496f4e525000b0e484f428fb` (tree
+`081b71a7e1860502d4321561088c4443b5bd96c4`; bundle SHA-256
+`3f11533942ef1acfaef9e171e3f651916f5b93086b0ab990c741cdca618bc009`). The
+source commit is `15834ca7a7e454e8332193b8f637eec3ae0e098f` (tree
+`8831ce469a77b16e288f559d7a6302ba543e98e9`); exact binary source diff from
+the base, using `git diff --binary --full-index origin/main 15834ca7...`, hashes
+to `913b9e5f6f7fe823c558b50a653a2207869d3055e719c048ca6878defb529dca`.
+
+FleetTracker and generation-backed Fleet now report canceled/withdrawn as
+retired, outside active/open/stalled denominators and touch recency. The API and
+all-task projection preserve original rows and statuses; paged work views reject
+terminal rows. `routerdoctorledger.go` was not changed because this exact base
+already uses `routerstore.IsTerminalTaskStatus`, with a canceled/withdrawn
+regression test.
+
+Nov28 (Codex takeover, claude-finalwishes-m5): rebased onto main `2df5067c`
+as the #1455 successor. Two fixes on top: the Fleet text summary states its
+numerator and denominator again (M1 review item 2), and a canceled/withdrawn row
+with stalled liveness keeps the Dim role instead of Warn (the candidate's own
+`TestClosedNotDoneTasksLeaveTheBoard` failed without it). Red controls: removing
+the retired count fails `TestFleetTracker_RetiredTasksAreHistoryNotInFlightWork`;
+removing the terminal guard fails `TestClosedNotDoneTasksLeaveTheBoard`.
 
 ## Nov24 — composed source checkpoint
 

@@ -5,6 +5,11 @@
 # (needs --all or both endpoints), --report. A–H are heuristics, not
 # certification; ADR-076 unallocated. No hook-install mode. FinalWishes
 # .githooks/pre-push probes `--report`, then runs `--base X --head Y`.
+# Nov28 PR1455 successor (Codex takeover): Fleet/task-history terminal
+# projections from 15834ca7 rebased on main 2df5067c. Fleet reports retired
+# (canceled/withdrawn) separately, outside the active denominator; task rows
+# keep their raw status; a stalled terminal row no longer renders as Warn.
+# Router doctor already uses routerstore.IsTerminalTaskStatus on main.
 # Current composition: release route328ba6d passed normal deep107 packages and
 # remote exact-head verification; packaging8f05e61 passed4 new+2 existing
 # fixtures and real static builds in a normal .git-directory clone. Both fixes
