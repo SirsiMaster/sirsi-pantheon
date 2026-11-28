@@ -54,6 +54,40 @@ func TestStoreWakePresentMarkerIsOn(t *testing.T) {
 	}
 }
 
+// A cut-over host (router-service.env) is on the service even when
+// SIRSI_ROUTER_URL is unset, as in a LaunchAgent: Resolve self-heals to the
+// service there, so StoreWake must agree or reads take the legacy ListAll path.
+func TestStoreWakeServiceEnvMarker(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		files []string
+		want  bool
+	}{
+		{"neither marker (negative control)", nil, false},
+		{"router-service.env only", []string{"router-service.env"}, true},
+		{"store-wake only", []string{"store-wake"}, true},
+		{"unrelated file only", []string{"router.db.old"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateStoreWake(t)
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			os.Unsetenv(StoreWakeEnv)
+			if err := os.MkdirAll(filepath.Join(home, ".sirsi"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, f := range tc.files {
+				if err := os.WriteFile(filepath.Join(home, ".sirsi", f), []byte("x"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := StoreWake(); got != tc.want {
+				t.Errorf("StoreWake() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // THE regression. An UNREADABLE marker is UNKNOWN, and unknown must never
 // resolve to "off" — that direction sends writes to the legacy threads.json and
 // mints a silent second thread registry that no code path reconciles.

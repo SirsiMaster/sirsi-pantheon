@@ -34,6 +34,10 @@ const StoreWakeEnv = "SIRSI_ROUTER_STORE_WAKE"
 // one-off overrides force a value regardless of the marker.
 var markerRel = filepath.Join(".sirsi", "store-wake")
 
+// serviceEnvRel is the per-host service pointer written by the router-service
+// cut-over; routerstore.Resolve treats its presence as "this host is on the service".
+var serviceEnvRel = filepath.Join(".sirsi", "router-service.env")
+
 // MarkerPath returns the absolute cutover-marker path, or "" if $HOME is unknown.
 func MarkerPath() string {
 	home, err := os.UserHomeDir()
@@ -88,9 +92,14 @@ func StoreWake() bool {
 		// unknown, same direction: never silently downgrade to legacy writes.
 		return true
 	}
-	_, err := os.Stat(p)
-	if err == nil {
-		return true
+	// A cut-over host's router-service.env is the same authority routerstore.Resolve
+	// self-heals from when SIRSI_ROUTER_URL is unset (LaunchAgent, minimal env).
+	// Reading only store-wake here sent that process to the legacy ListAll path
+	// while its store was already the service (2026-11-25: fabric 15 s deadline).
+	for _, rel := range []string{markerRel, serviceEnvRel} {
+		if _, err := os.Stat(filepath.Join(filepath.Dir(filepath.Dir(p)), rel)); err == nil || !os.IsNotExist(err) {
+			return true
+		}
 	}
-	return !os.IsNotExist(err)
+	return false
 }
