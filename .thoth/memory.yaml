@@ -1,4 +1,10 @@
 # 𓁟 Thoth — Project Memory for Sirsi Pantheon
+# Nov28 `sirsi maat gate` restored on main (successor to #1454; Codex lineage
+# 5ddb0efb -> 82a047ce -> 7057da86): cmd/sirsi/maatgate.go +
+# internal/maat/trustboundary. Modes: --pre-push, --base/--head, --lint-only
+# (needs --all or both endpoints), --report. A–H are heuristics, not
+# certification; ADR-076 unallocated. No hook-install mode. FinalWishes
+# .githooks/pre-push probes `--report`, then runs `--base X --head Y`.
 # Nov28 PR1455 successor (Codex takeover): Fleet/task-history terminal
 # projections from 15834ca7 rebased on main 2df5067c. Fleet reports retired
 # (canceled/withdrawn) separately, outside the active denominator; task rows
