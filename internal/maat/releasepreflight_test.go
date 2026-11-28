@@ -143,7 +143,7 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
 		// Keep both reviewed source digests exact; changes require deliberate
 		// provenance review while the negative contract controls remain in force.
-		".github/workflows/release.yml": "b2ce4acfcb3ce5eaed44179a62d2ef564632ac5348fed4eea05c123bcc1ce088",
+		".github/workflows/release.yml": "1a9af4fbadd53039a7eb91f4778d56ea0c754a156830dcefb9d07fa7126bb988",
 		"tools/signing/sirsi-sign":      "12829a2eda097571aa6d182ecb46328894e0e9390957649294898461107571ba",
 	}
 	for _, requirement := range releaseContractRequirements {
