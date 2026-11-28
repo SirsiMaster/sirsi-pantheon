@@ -1,0 +1,1 @@
+- CI: `Test extras` now runs on the fabric runners instead of hosted macOS. The self-hosted shell wrapper selects `/Applications/Xcode.app` per process when `xcode-select` points at Command Line Tools, whose Swift cannot build the menubar app. Extras was the slowest PR check on hosted macOS (8.4 min of an 8.5 min run).

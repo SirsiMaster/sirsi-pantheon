@@ -180,7 +180,7 @@ jobs:
     # Several shards share one Mac with other work. Uncapped, each race build and
     # test binary sized itself to the whole machine (load 63 on the 18-core M5) and
     # time-bounded tests missed deadlines; at 3 per job the Studio, which is also
-    # the owner's exit node, still peaked near 27. 4 shards x 2 = 8 cores.
+    # the owner's exit node, still peaked near 27. 5 jobs x 2 = 10 cores.
     env:
       GOMAXPROCS: '2'
       GOFLAGS: '-p=2'
@@ -240,17 +240,25 @@ jobs:
   test-extras:
     name: Test extras
     timeout-minutes: 40
-    # Hosted: the menubar CLI guard builds the Swift app, which needs full Xcode;
-    # the Studio runners have only Command Line Tools (its compiler rejects
-    # macapp/Views.swift). One job fits under the hosted macOS concurrency cap.
-    runs-on: macos-15
+    # The menubar CLI guard builds the Swift app, which needs full Xcode; the
+    # shell wrapper selects /Applications/Xcode.app per process (see there).
+    runs-on: [self-hosted, macOS, ARM64, pantheon-ci]
+    defaults:
+      run:
+        # Strips the owner session settings (live relay URL, SSH agent) self-hosted runners inherit.
+        shell: bash scripts/ci-self-hosted-shell.sh {0}
+    # Same per-job CPU cap as test-go (see there).
+    env:
+      GOMAXPROCS: '2'
+      GOFLAGS: '-p=2'
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          # Self-hosted: GOCACHE/GOMODCACHE persist on self-hosted runners; restoring the hosted cache over them fails.
+          cache: false
 
       - name: Ma'at supervisor reliability (model-free)
         run: python3 -B -m unittest discover -s scripts/maat -p 'test*.py' -v
