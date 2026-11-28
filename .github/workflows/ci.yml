@@ -173,6 +173,10 @@ jobs:
     # Owner 2026-11-27: Pantheon CI runs on the M5's own runners (m5-pantheon-ci-1..4,
     # label pantheon-ci, Nice 10). Hosted macOS capped parallel jobs and queued shards 9-10 min.
     runs-on: [self-hosted, macOS, ARM64, pantheon-ci]
+    defaults:
+      run:
+        # Strips the owner session settings (live relay URL, SSH agent) the M5 runners inherit.
+        shell: bash scripts/ci-self-hosted-shell.sh {0}
     strategy:
       fail-fast: false
       matrix:
@@ -187,7 +191,6 @@ jobs:
           cache: false
 
       - name: Run tests (${{ matrix.shard }})
-        shell: bash
         env:
           CGO_ENABLED: 1
           SHARD: ${{ matrix.shard }}
@@ -231,6 +234,10 @@ jobs:
     name: Test extras
     timeout-minutes: 40
     runs-on: [self-hosted, macOS, ARM64, pantheon-ci]
+    defaults:
+      run:
+        # Strips the owner session settings (live relay URL, SSH agent) the M5 runners inherit.
+        shell: bash scripts/ci-self-hosted-shell.sh {0}
     steps:
       - uses: actions/checkout@v4
 
@@ -263,7 +270,6 @@ jobs:
       # RED: the PASS line must be present. MAAT_SUBMIT_HELPER=1 takes TestMain's
       # m.Run fast path (integration_test.go) so it skips its redundant CLI build.
       - name: Native CLI pod-authority qualification (ADR-120)
-        shell: bash
         env:
           MAAT_SUBMIT_HELPER: '1'
           TMPDIR: ${{ runner.temp }}
@@ -317,7 +323,6 @@ jobs:
       # ones are reported. Only ever REMOVE numbers from that list.
       # SIRSI_ROUTER_DB points at a scratch store so CI never touches the live one.
       - name: ADR number collisions
-        shell: bash
         env:
           SIRSI_ROUTER_DB: ${{ runner.temp }}/adr-audit/router.db
         run: |
@@ -340,7 +345,6 @@ jobs:
         run: ./macapp/check-cli-flags.sh
 
       - name: Ma'at Pulse — Dynamic Metrics
-        shell: bash
         run: |
           bash scripts/ci-private-sdk.sh go build -o sirsi ./cmd/sirsi/
           ./sirsi maat pulse --skip-test --json > metrics.json
