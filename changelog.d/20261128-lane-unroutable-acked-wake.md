@@ -1,0 +1,1 @@
+- `routerstore`: a terminal wake failure is now also resolved by any later acknowledged wake for the same lane. Live lanes that finish work by other paths (items closed with `--ack`, tasks completed with receipts) were pinned at UNROUTABLE on the Fabric board by one historical failure.
