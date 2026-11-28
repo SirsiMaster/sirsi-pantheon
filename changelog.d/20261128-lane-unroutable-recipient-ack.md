@@ -1,0 +1,1 @@
+- `routerstore`: a later recipient acknowledgement of one of the lane's own items (`items.acked_at`, recipient-only, never delegable) now resolves an older terminal wake failure, so an attended session that reads its inbox without a lease claim is no longer UNROUTABLE. Closes by other agents are not evidence (items record no closer).
