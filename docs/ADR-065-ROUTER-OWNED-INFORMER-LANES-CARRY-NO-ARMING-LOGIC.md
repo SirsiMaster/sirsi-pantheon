@@ -17,6 +17,13 @@
 
 **Implementation state as of 2026-11-11 (acceptance is of the design, not of shipped behaviour):** on `main`, only Phase-1 task 2 (`AgentConfig.Delivery`, `dc082ef0`) exists. Task 7 and the `RemoteStore` refusal exist only on `origin/ra/rs37b-informer-host-wiring` (not merged). PR #1045 was closed unmerged. No informer runs anywhere; no wake LaunchAgent has been retired.
 
+**Status note 2026-11-28 (Ra; rs-37 part C of 3, docs only; rs-37 stays open).**
+
+- **Condition 4, service-side predicate: option (a') adopted by Ra on 2026-11-28.** The service gates a lane's served `Wait` (which `RemoteStore.ListenNotify` long-polls) on the Decision-6 predicate (token's adopted machine id equals the lane's pinned machine). The node-side informer runs unchanged over `RemoteStore`; no new verb and no new credential. See `docs/design/ADR065_INFORMER_AUTHORIZATION_DECISION.md` §9.
+- **Part A shipped: #1463 (`f5cf280f`).** `SIRSI_ROUTER_LANE_PIN_ENFORCE`, read once at `sirsi router serve` start, **default off**: a served `Wait` is refused with 403 `ErrLanePinMismatch` only on an exact mismatch. Unpinned lanes, tokens with no machine id and evaluation errors never refuse. **Enabling it is an owner decision**, to be taken after the operator has set the pins (`sirsi router lane-pin set`) and each Mac token has adopted its machine id; until then every verdict reads `unpinned` or `no-machine-id`.
+- **Part B pending, not started:** the node-side `RunInformer`, shared admission and delivery-marker re-port from `origin/ra/rs37b-informer-host-wiring` (Phase-1 tasks 3 to 6), removal of its `RemoteStore` refusal, and the informer census and load-bearing rows (task 8). No informer runs anywhere.
+- **Condition 4, what remains:** (1) whether gating a served method on this predicate is the owner's reserved "credential surface" security decision (Ra's reading: no, since no credential or verb is added; the owner may disagree, and enabling enforcement is gated regardless); (2) multi-instance Postgres `Wait` wake across Cloud Run instances is unexamined; (3) the delivery-marker write on a remote store (task 6) is unverified. The condition is closed for the service-side predicate and open until (1) is answered and part B is built.
+
 ## Context
 
 On 2026-09-13, one review cycle produced four independent failures with a single shape:
