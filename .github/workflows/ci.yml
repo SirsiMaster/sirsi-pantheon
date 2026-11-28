@@ -170,8 +170,9 @@ jobs:
   test-go:
     name: Test go (${{ matrix.shard }})
     timeout-minutes: 40
-    # GitHub-hosted macOS 15 supports standard ARM64 runners: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
-    runs-on: macos-15
+    # Owner 2026-11-27: Pantheon CI runs on the M5's own runners (m5-pantheon-ci-1..4,
+    # label pantheon-ci, Nice 10). Hosted macOS capped parallel jobs and queued shards 9-10 min.
+    runs-on: [self-hosted, macOS, ARM64, pantheon-ci]
     strategy:
       fail-fast: false
       matrix:
@@ -182,7 +183,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          # Self-hosted: GOCACHE/GOMODCACHE persist on the M5; restoring the hosted cache over them fails.
+          cache: false
 
       - name: Run tests (${{ matrix.shard }})
         shell: bash
@@ -228,14 +230,15 @@ jobs:
   test-extras:
     name: Test extras
     timeout-minutes: 40
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, ARM64, pantheon-ci]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          # Self-hosted: GOCACHE/GOMODCACHE persist on the M5; restoring the hosted cache over them fails.
+          cache: false
 
       - name: Ma'at supervisor reliability (model-free)
         run: python3 -B -m unittest discover -s scripts/maat -p 'test*.py' -v
