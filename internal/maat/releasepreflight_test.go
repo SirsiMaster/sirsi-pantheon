@@ -137,7 +137,7 @@ func makeReleaseContractFixture(t *testing.T, broken bool) string {
 	// workflow bytes and causal route/retry/CI fixtures are pinned deliberately.
 	pinned := map[string]string{
 		"cmd/sirsi/update.go":                  "6afdb9391a36adf4d1ca46d630bdeaa863f04002c4923ece204e41dafef09567",
-		"cmd/sirsi/update_app_darwin.go":       "bf03bf0ebba9c49b65382ecbaa2f0e35dd38f773a56722e2ea54edba77fcfa0b",
+		"cmd/sirsi/update_app_darwin.go":       "070102f33a190e22a87c0eb37231faaafc4ed3782a6d18ce882ba7a3e3bbd671",
 		"scripts/build-dmg.sh":                 "2eae7c74a88e62f47a184d510974c1463baf139e63f9e40614f5d15fcdbe9385",
 		"scripts/build-pkg.sh":                 "82fd6b3377bf42d3be3ea68381f01067f75f7a91a8a470be5f71159be1cc66d6",
 		"scripts/notarize-release-artifact.sh": "cf4112f04f90f1b8ac70e9aecd17ed87652e1718bb82dcecc6801efd03eab433",
