@@ -220,6 +220,43 @@ func printStacklabCatalog(out interface{ Write([]byte) (int, error) }, catalog s
 	}
 }
 
+var stacklabModelJSON bool
+
+var stacklabModelCmd = &cobra.Command{
+	Use:   "model hub:<org>/<name>@<rev>...",
+	Short: "Resolve model ingredients against the Stack Lab hub; refuse any unknown or mismatched revision",
+	Long: `Resolves each pinned hub:<org>/<name>@<rev> model ingredient through the
+Apollo Stack Lab hub (/hub/v1/models, exact revision only) using this Mac's
+Stack Lab account. Ma'at admission: exits non-zero unless every ingredient
+resolves to exactly that revision with sha256 for every file. An unreachable
+hub, a missing account or an unpinned ref is a refusal, never a fallback.`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := stacklab.LoadHubClient(stacklab.HubAccountPath())
+		if err != nil {
+			return fmt.Errorf("Ma'at refuses model ingredients: %w", err)
+		}
+		models, err := stacklab.AdmitModelIngredients(cmd.Context(), c, args)
+		if err != nil {
+			return err
+		}
+		out := cmd.OutOrStdout()
+		if stacklabModelJSON {
+			enc := json.NewEncoder(out)
+			enc.SetIndent("", "  ")
+			return enc.Encode(models)
+		}
+		for _, m := range models {
+			var n int64
+			for _, f := range m.Files {
+				n += f.Size
+			}
+			fmt.Fprintf(out, "admitted hub:%s@%s  %d files  %d bytes  via %s\n", m.Repo, m.Revision, len(m.Files), n, m.Source)
+		}
+		return nil
+	},
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1
@@ -232,5 +269,7 @@ func init() {
 	stacklabCatalogCmd.Flags().BoolVar(&stacklabCatalogJSON, "json", false, "machine-readable local recipe and wing catalog")
 	stacklabCmd.AddCommand(stacklabDoctorCmd)
 	stacklabCmd.AddCommand(stacklabCatalogCmd)
+	stacklabModelCmd.Flags().BoolVar(&stacklabModelJSON, "json", false, "machine-readable admitted listings")
+	stacklabCmd.AddCommand(stacklabModelCmd)
 	rootCmd.AddCommand(stacklabCmd)
 }
