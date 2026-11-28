@@ -134,6 +134,18 @@ other machine notices. The host name a node presents is its `hostname`.
 Adding a machine is therefore: mint a token, set `SIRSI_ROUTER_URL` and
 `SIRSI_ROUTER_TOKEN` on it, and `sirsi thread register`.
 
+### Lane-to-Mac pin enforcement (off by default)
+
+An operator can pin a lane to a Mac (`sirsi router lane-pin set|retire|list`). By default the service only counts
+whether a `Wait` comes from the pinned Mac. Setting `SIRSI_ROUTER_LANE_PIN_ENFORCE=true` on the service (read once at
+start; restart to change) makes it refuse a `Wait` for a pinned lane when the calling token's machine id differs from
+the pin: HTTP 403, code `ErrLanePinMismatch`. Unpinned lanes, tokens with no machine id and evaluation errors are
+never refused. `RemoteStore.ListenNotify` waits through `Wait`, so listeners are covered.
+
+Turning it on is an owner decision. Before that, pins must be set for the lanes and each Mac token must have adopted
+its machine id; otherwise nothing is protected (or, for a wrong pin, the real Mac is locked out). A pin change is
+seen within 60 s.
+
 Still to come: a release-manifest check of the runtime hash (Phase D). Keep the
 service on Tailscale or a VPC until the hosted deployment lands.
 

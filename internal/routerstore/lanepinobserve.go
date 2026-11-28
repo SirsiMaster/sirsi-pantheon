@@ -1,8 +1,9 @@
 package routerstore
 
-// REPORT-ONLY lane-pin observation at a served Wait (owner decision 2026-11-25). The verdict
-// (EvaluateLanePin) is computed and counted; NO request changes outcome and a failure to evaluate is counted,
-// never returned. Enforcement is deliberately not built: lanePinRefuses is the one named seam.
+// Lane-pin observation at a served Wait (owner decision 2026-11-25). The verdict (EvaluateLanePin) is computed
+// and counted; a failure to evaluate is counted, never returned. By default NO request changes outcome
+// (report-only). Enforcement is opt-in (ServerOptions.LanePinEnforce) and refuses only a mismatch, through
+// lanePinRefuses, the one named seam.
 //
 // Cost on the hot path: zero extra queries for the caller's machine id (hostForBearer already read it from
 // host_tokens); one indexed read of the lane's active pins on a cache miss, then a 60 s cache (10 s after a
@@ -10,6 +11,7 @@ package routerstore
 // 60 s to be seen by a running service instance. Counters are per instance and reset on restart.
 
 import (
+	"errors"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,10 +48,23 @@ type lanePinObserver struct {
 	lastLog time.Time
 }
 
-// lanePinRefuses is THE ENFORCEMENT SEAM. It is report-only by owner decision (2026-11-25): it returns false for
-// every verdict. When the owner turns enforcement on, this is the single function that changes (plus its
-// wiring in call), and the mismatch counters are the evidence of what it would have refused.
-func (s *server) lanePinRefuses(LanePinVerdict) bool { return false }
+// ErrLanePinMismatch is the 403 a served Wait returns when enforcement is on and the token's machine is not the
+// lane's pinned machine.
+var ErrLanePinMismatch = errors.New("routerstore: lane pin mismatch")
+
+// lanePinRefuses is THE ENFORCEMENT SEAM. Off unless ServerOptions.LanePinEnforce is set (the owner's decision,
+// default off); then it refuses exactly a mismatch. unpinned, no-machine-id, error and skipped never refuse: a
+// lane with no pin, a token with no adopted machine id, or a failed evaluation must not strand a lane.
+func (s *server) lanePinRefuses(v LanePinVerdict) bool {
+	return s.opts.LanePinEnforce && v == LanePinMismatch
+}
+
+// lanePinMismatchMessage names the lane, its pinned machine(s) and the token's machine id. Machine ids are
+// operator-set identifiers, not secrets; no token value is included.
+func (s *server) lanePinMismatchMessage(lane, tokenMachine string) string {
+	pins, _, _ := s.pins.lookup(lane, s.opts.now())
+	return ErrLanePinMismatch.Error() + ": lane " + lane + " is pinned to machine " + strings.Join(pins, ",") + "; token machine is " + tokenMachine
+}
 
 // observeLanePin evaluates and counts one served Wait for lane by a token whose adopted machine id is machineID.
 // It never fails and never panics outward: whatever happens inside, the caller proceeds exactly as before.
