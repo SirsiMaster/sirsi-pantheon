@@ -191,6 +191,30 @@ func (s *SQLiteStore) laneWakeFailures(agent string) (int, int, error) {
 	if err != nil {
 		return 0, 0, err
 	}
+	// A recipient acknowledgement (items.acked_at) is the lane's own action:
+	// Facade.AckItem is recipient-only (no delegation), so no other agent can
+	// stamp it. An attended session that reads its inbox without claiming under
+	// a lease leaves no wake ack, yet proves the lane consumes it. Closes are
+	// NOT used: items record no closer and CloseItem allows close:any.
+	rows, err = s.db.Query(`SELECT acked_at FROM items WHERE to_agent=? AND acked_at<>''`, agent)
+	if err != nil {
+		return 0, 0, fmt.Errorf("routerstore: lane recipient ack evidence: %w", err)
+	}
+	for rows.Next() {
+		var stamp string
+		if err = rows.Scan(&stamp); err != nil {
+			rows.Close()
+			return 0, 0, err
+		}
+		if t, e := time.Parse(time.RFC3339Nano, stamp); e == nil && t.After(latest) {
+			latest = t
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return 0, 0, err
+	}
 	rows, err = s.db.Query(`SELECT updated FROM wake_events WHERE agent=? AND status='terminal_failed'`, agent)
 	if err != nil {
 		return 0, 0, err
