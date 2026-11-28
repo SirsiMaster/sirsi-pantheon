@@ -177,6 +177,12 @@ jobs:
       run:
         # Strips the owner session settings (live relay URL, SSH agent) the M5 runners inherit.
         shell: bash scripts/ci-self-hosted-shell.sh {0}
+    # Five CI jobs share one 18-core Mac with the owner's own work. Uncapped, each
+    # race build and test binary sized itself to the whole machine (load 63 on 18
+    # cores) and time-bounded tests missed their deadlines. 5 jobs x 3 = 15 cores.
+    env:
+      GOMAXPROCS: '3'
+      GOFLAGS: '-p=3'
     strategy:
       fail-fast: false
       matrix:
@@ -238,6 +244,10 @@ jobs:
       run:
         # Strips the owner session settings (live relay URL, SSH agent) the M5 runners inherit.
         shell: bash scripts/ci-self-hosted-shell.sh {0}
+    # Same per-job CPU cap as test-go (see there).
+    env:
+      GOMAXPROCS: '3'
+      GOFLAGS: '-p=3'
     steps:
       - uses: actions/checkout@v4
 
