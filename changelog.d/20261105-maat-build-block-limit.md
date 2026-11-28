@@ -1,0 +1,1 @@
+- **Ma'at**: a build with no memory ask that has stood in another lane's way for 120 seconds now stops blocking it and is downgraded to the floor share. Nothing is stopped or throttled. Measurements, load tests, holds with a memory ask and quiet requests are unchanged.
