@@ -153,6 +153,8 @@ type Store interface {
 	NotifyAgent(agent string)
 	NotifyPath(agent string) string
 	OperationalAgents() ([]string, error)
+	// LedgerSchemaVersion is the live ledger schema (Postgres: verified at open; SQLite: user_version).
+	LedgerSchemaVersion() (int, error)
 	PublishIdentifier(namespace string, number int, slug string) error
 	Put(it Item) error
 	ReclaimExpiredTaskLeases(dryRun bool) ([]ExpiredLeaseReclaim, error)

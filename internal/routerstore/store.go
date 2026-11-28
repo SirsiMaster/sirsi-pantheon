@@ -165,6 +165,7 @@ type SQLiteStore struct {
 	path            string
 	escalationAgent string
 	now             func() time.Time // injectable clock (Rule A16); nil means time.Now().UTC()
+	schemaVersion   int              // Postgres ledger version verified by OpenPostgres; 0 = not recorded (SQLite reads user_version)
 
 	sessionGCMu   sync.Mutex // guards sessionGCNext: GC of dead sessions runs at most once per interval (sessions.go)
 	sessionGCNext time.Time

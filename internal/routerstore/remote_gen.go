@@ -276,6 +276,11 @@ func (rs *RemoteStore) MintSession(host, agent, runtimeHash string) (Session, er
 	err := rs.call("MintSession", []any{host, agent, runtimeHash}, &o0)
 	return o0, err
 }
+func (rs *RemoteStore) LedgerSchemaVersion() (int, error) {
+	var o0 int
+	err := rs.call("LedgerSchemaVersion", nil, &o0)
+	return o0, err
+}
 func (rs *RemoteStore) OperationalAgents() ([]string, error) {
 	var o0 []string
 	err := rs.call("OperationalAgents", nil, &o0)

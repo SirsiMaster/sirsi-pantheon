@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/SirsiMaster/sirsi-pantheon/internal/maat"
+	"github.com/SirsiMaster/sirsi-pantheon/internal/routerstore"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/selfupdate"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/setup"
 	"github.com/SirsiMaster/sirsi-pantheon/internal/updater"
@@ -320,11 +321,35 @@ func sameInstalledAppUpdateObservation(a, b maat.AppUpdateObservation) bool {
 }
 
 func observeAppUpdateLiveSchema() (int, error) {
-	dbPath, err := resolveRouterDBPath()
+	return observeLiveSchemaWith(resolveRouterDBPath, resolveLiveSchema, serviceLedgerSchema)
+}
+
+// observeLiveSchemaWith reads the local ledger when this host has one. When the
+// ledger of record is the router service (SIRSI_ROUTER_URL https or spool relay)
+// there is no local DB, so the schema is asked of the service itself. An older
+// service without LedgerSchemaVersion, or an unreachable one, refuses.
+func observeLiveSchemaWith(path func() (string, error), local func(string) (int, error), service func() (int, error)) (int, error) {
+	dbPath, pathErr := path()
+	if pathErr == nil {
+		return local(dbPath)
+	}
+	schema, err := service()
+	if err != nil {
+		return 0, fmt.Errorf("no local ledger (%v) and the router service did not report its schema (older service without LedgerSchemaVersion, or unreachable): %w", pathErr, err)
+	}
+	if schema <= 0 {
+		return 0, fmt.Errorf("router service reported an invalid ledger schema %d", schema)
+	}
+	return schema, nil
+}
+
+func serviceLedgerSchema() (int, error) {
+	store, err := routerstore.Resolve()
 	if err != nil {
 		return 0, err
 	}
-	return resolveLiveSchema(dbPath)
+	defer func() { _ = store.Close() }()
+	return store.LedgerSchemaVersion()
 }
 
 func recheckAppUpdateSchema(reviewed int) error {
