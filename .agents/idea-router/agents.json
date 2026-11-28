@@ -1175,6 +1175,7 @@
     },
     "claude-apollo-m5-rail": {
       "id": "claude-apollo-m5-rail",
+      "capabilities": ["close:any"],
       "lifecycle_services": ["ai.sirsi.apollo.observer", "ai.sirsi.apollo-chat", "ai.sirsi.gemma-broker"],
       "type": "claude",
       "command": [
