@@ -34,3 +34,12 @@ test('a matching count cannot disguise rows from the wrong bucket',()=>{
  const b=board();b.tasks={filter:'blocked',state:'observed',rows:[{agent:'lane',id:'one',subject:'Task',status:'pending',liveness:'unknown',role:'gold',responsible:'lead',stage:'build',test_state:'untested',updated:'',blocker_recorded:false,text_limited:false,provenance:{source:'canonical-task-registry',created:'',commissioned_at:'',commissioned_by:'lead',charter_recorded:true,outline_recorded:false,result_recorded:false,public_links:[],withheld_links:0}}],limit:64,total:1,offset:0,snapshot:'a'.repeat(64),next_offset:null};
  assert.equal(fabric.taskPage(b),null);b.tasks.rows[0].status='blocked';assert.ok(fabric.taskPage(b));
 });
+test('retired task rows are rejected from work pages while completed rows stay on the done page',()=>{
+ const row=status=>({agent:'lane',id:'terminal-'+status,subject:'Task',status,liveness:'unknown',role:'dim',responsible:'lead',stage:'review',test_state:'untested',updated:'',blocker_recorded:false,text_limited:false,provenance:{source:'canonical-task-registry',created:'',commissioned_at:'',commissioned_by:'lead',charter_recorded:true,outline_recorded:false,result_recorded:false,public_links:[],withheld_links:0}});
+ for(const status of ['done','canceled','withdrawn'])for(const filter of filters){
+  const b=board(),key=filter==='open'?'open':filter;b.work[key]=1;
+  b.tasks={filter,state:'observed',rows:[row(status)],limit:64,total:1,offset:0,snapshot:'c'.repeat(64),next_offset:null};
+  if(status==='done'&&filter==='done')assert.ok(fabric.taskPage(b));
+  else assert.equal(fabric.taskPage(b),null,`${status} must not appear in ${filter} page`);
+ }
+});

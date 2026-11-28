@@ -29,6 +29,9 @@ func FleetFromGeneration(g *ledger.FabricGeneration) (FleetSnapshot, error) {
 	w := v.Board.Work
 	out := FleetSnapshot{GeneratedAt: v.Board.GeneratedAt, Seeded: v.Board.ActivitySeeded, Activity: []FleetEvent{}, Lanes: []FleetLane{},
 		Summary: FleetSummary{Total: w.Total, Done: w.Done, InFlight: w.Open, Active: w.InProgress, Assigned: w.AssignedNotStarted, Stalled: w.Stalled, Blocked: w.Blocked, LanesTotal: len(v.Board.Lanes), IdleLanes: ledger.IdleFabricLanes(v.Board.Lanes)}}
+	for _, lane := range v.Facts.Lanes {
+		out.Summary.Retired += lane.Counts["canceled"] + lane.Counts["withdrawn"]
+	}
 	if w.Total > 0 {
 		out.Summary.PctDone = w.Done * 100 / w.Total
 	}

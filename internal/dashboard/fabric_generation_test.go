@@ -52,6 +52,8 @@ func mixedFabricGeneration(t *testing.T) (*ledger.FabricGeneration, *int) {
 			{Agent: "worker", TaskID: "stalled", Subject: "Stalled", Status: "in-progress", Liveness: "stalled", Updated: stamp},
 			{Agent: "worker", TaskID: "blocked", Subject: "Blocked", Status: "blocked", Liveness: "blocked", Updated: stamp, BlockedBy: "pending"},
 			{Agent: "worker", TaskID: "done", Subject: "Done", Status: "done", Liveness: "unknown", Updated: stamp},
+			{Agent: "worker", TaskID: "canceled", Subject: "Canceled", Status: "canceled", Liveness: "unknown", Updated: stamp},
+			{Agent: "worker", TaskID: "withdrawn", Subject: "Withdrawn", Status: "withdrawn", Liveness: "unknown", Updated: stamp},
 		}},
 		{AgentID: "orphan", Tasks: []routerstore.Task{{Agent: "orphan", TaskID: "unregistered", Subject: "Unregistered", Status: "pending", Liveness: "unknown", Updated: stamp}}},
 	}}, Node: &router.NodeStatus{RegisteredAgents: []string{"worker", "horus"}, LiveThreads: []router.ThreadSummary{{AgentID: "worker", ThreadID: "worker-thread", Armed: true, LoopState: "na"}, {AgentID: "horus", ThreadID: "service-thread", Armed: true, LoopState: "na"}}, StaleThreads: []router.ThreadSummary{{AgentID: "orphan", ThreadID: "stale-thread", Stale: true}}},
@@ -123,7 +125,7 @@ func TestFabricGenerationMixedExistingConsumersShareFactsAndNoReacquisition(t *t
 	if v.Facts.Ledger.BlockedItems != 2 || legacy.Board.BlockedItems != 1 {
 		t.Fatal("task and inbox blocker scopes relabeled")
 	}
-	if fleet.Summary.Active != w.InProgress || fleet.Summary.Stalled != w.Stalled || fleet.Summary.Assigned != w.AssignedNotStarted || fleet.Summary.LanesWork != 0 || fleet.Summary.IdleLanes != 1 || ledger.IdleFabricLanes(v.Board.Lanes) != 1 {
+	if fleet.Summary.Active != w.InProgress || fleet.Summary.Stalled != w.Stalled || fleet.Summary.Assigned != w.AssignedNotStarted || fleet.Summary.Retired != 2 || fleet.Summary.LanesWork != 0 || fleet.Summary.IdleLanes != 1 || ledger.IdleFabricLanes(v.Board.Lanes) != 1 {
 		t.Fatal("fleet/menu inferred runtime or recounted work")
 	}
 	byID := map[string]routerboard.TaskDetail{}
@@ -140,15 +142,15 @@ func TestFabricGenerationMixedExistingConsumersShareFactsAndNoReacquisition(t *t
 	for _, lane := range legacy.Fleet {
 		serviceSeen = serviceSeen || lane.Agent == "horus"
 		orphanSeen = orphanSeen || lane.Agent == "orphan"
-		for _, status := range []string{"done", "in-progress", "pending", "blocked"} {
+		for _, status := range []string{"done", "canceled", "withdrawn", "in-progress", "pending", "blocked"} {
 			if _, known := lane.Counts[status]; !known {
 				t.Fatalf("legacy captured lane %s omitted known-zero status %s", lane.Agent, status)
 			}
 		}
-		if lane.Agent == "orphan" && !reflect.DeepEqual(lane.Counts, map[string]int{"done": 0, "in-progress": 0, "pending": 1, "blocked": 0}) {
+		if lane.Agent == "orphan" && !reflect.DeepEqual(lane.Counts, map[string]int{"done": 0, "canceled": 0, "withdrawn": 0, "in-progress": 0, "pending": 1, "blocked": 0}) {
 			t.Fatalf("pending-only legacy lane needs explicit 0 / 1 completed output: %+v", lane.Counts)
 		}
-		if lane.Agent == "horus" && !reflect.DeepEqual(lane.Counts, map[string]int{"done": 0, "in-progress": 0, "pending": 0, "blocked": 0}) {
+		if lane.Agent == "horus" && !reflect.DeepEqual(lane.Counts, map[string]int{"done": 0, "canceled": 0, "withdrawn": 0, "in-progress": 0, "pending": 0, "blocked": 0}) {
 			t.Fatalf("taskless legacy service needs explicit 0 / 0 completed output: %+v", lane.Counts)
 		}
 		if lane.Agent == "orphan" && (lane.Registered.Router || lane.State != "UNROUTABLE" || lane.Consumer == nil || lane.Consumer.Armed || lane.Consumer.Loop != "unknown") {
