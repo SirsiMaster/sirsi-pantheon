@@ -22,7 +22,9 @@ PROFILE=sirsi-notary
 # Mac makes its own temporary build.keychain the default and first in the search list while it
 # runs; an unpinned codesign then picks the identity there, macOS prompts for a password nobody
 # here has, and signing fails with errSecInternalComponent (v0.24.167–169, 2026-11-26/27).
-# Pin every identity and profile lookup to the login keychain.
+# Pin every signing-identity lookup (codesign, productsign) to the login keychain. notarytool is NOT
+# pinned: the sirsi-notary profile is not in login.keychain-db, and pinning it there broke
+# notarization (v0.24.170: "No Keychain password item found for profile: sirsi-notary").
 LK=$HOME/Library/Keychains/login.keychain-db
 B=$HOME/sirsi-sign; mkdir -p "$B/inbox" "$B/outbox" "$B/work"
 mkdir "$B/.lock" 2>/dev/null || exit 0; trap 'rmdir "$B/.lock"' EXIT   # one runner at a time
@@ -76,7 +78,7 @@ for J in "$B"/inbox/*(/); do
   insha=$(hash "$in")
   { print -r -- "sirsi-signd job $id  kind=$kind  file=$f  caller=${caller:-?}  $(date -u +%FT%TZ)"; print -r -- "input sha256 $insha"; } > "$R"
   notarize() {   # accepted only if THIS submission's own output says so
-    local t=$(mktemp); xcrun notarytool submit "$1" --keychain "$LK" --keychain-profile "$PROFILE" --wait > "$t" 2>&1
+    local t=$(mktemp); xcrun notarytool submit "$1" --keychain-profile "$PROFILE" --wait > "$t" 2>&1
     cat "$t" >> "$R"; nid=$(awk '/^ *id: /{print $2; exit}' "$t")
     grep -qE '^[[:space:]]*status: Accepted[[:space:]]*$' "$t"; local rc=$?; rm -f "$t"; return $rc; }
   case $kind in
