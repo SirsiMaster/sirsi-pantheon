@@ -91,6 +91,22 @@ ADR-065 Decision 2, as originally written, says the informer records `read_at` "
 | 8 | A33 census matcher row + A32 load-bearing pidfile for the informer; Negative Controls 3 and 4 (informer absence; misaddressed delivery surface as unreachable, not success) | `internal/router/census.go` (or equivalent), `internal/guard/loadbearing.go` | code+test | CI green, Negative Controls 3 and 4 shown failing pre-fix |
 | 9 | CHANGELOG + ADR-065 status note (authorization, attribution correction, Decision 2 supersession note, rollback contract reference) | `CHANGELOG.md`, `docs/ADR-065-...md` | docs | Phase-1 commit |
 
+### Status as of 2026-11-28 (rs-37 part C; added, task rows above unchanged)
+
+| # | Status | Evidence |
+|---|---|---|
+| 1 | done | #1034 (`319d22d7`) |
+| 2 | done | `dc082ef0` (`AgentConfig.Delivery`) |
+| 3 | pending (part B) | written on unmerged `origin/ra/rs37b-informer-host-wiring` (`e4c13cc8`) |
+| 4 | pending (part B) | same branch (`28ca5740`) |
+| 5 | pending (part B) | same branch (`c5aafe6f`); its `RemoteStore` refusal (`4d066f1a`) is to be deleted under (a') |
+| 6 | pending (part B) | same branch (`132ab3de`); remote-store marker write unverified |
+| 7 | superseded for the service side, pending for the node side | node-side `InformerHostAuthorized` (`e1c58c37`, unmerged) is superseded by option (a'): the predicate is evaluated at the service's served `Wait`, shipped opt-in and default off in #1463 (`f5cf280f`), on the operator-set pin source `80118d08`. Enabling is an owner decision |
+| 8 | pending (part B) | needs the informer process to exist; no census row or load-bearing pidfile is added before then |
+| 9 | partly done | status notes in ADR-065 and the decision doc (§9) added 2026-11-28; changelog fragments per PR; completion proof not started |
+
+Negative controls: NC1 is covered service-side by `TestLanePinEnforcementAtServedWait` (#1463). NC2 is covered only by the authentication chain and pre-existing `TestNegativeControlRevokeHostTokenKillsEveryHostSession`, not by a #1463 test; the informer-level NC2 test belongs to part B. NC3 to NC6 need the informer and are pending.
+
 No task in this list retires a live lane. Task 5's "coexistence" requirement is deliberate: Phase 1 proves the informer works beside the existing arming logic — sharing its admission state, not parallel to it — before anything is asked to depend on it exclusively.
 
 ## Tests / verification

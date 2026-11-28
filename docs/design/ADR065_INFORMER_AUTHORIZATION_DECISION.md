@@ -1,6 +1,6 @@
 # Decision note: where ADR-065 informer authorization (NC1/NC2) is enforced
 
-**Status:** proposed recommendation, not accepted · **Task:** `rs-37-adr065-router-owned-informer` · **Author:** ra · **Date:** 2026-11-24
+**Status:** option (a') **adopted by Ra 2026-11-28** for the service-side predicate (see §9); part A shipped as #1463 (default off); part B pending · **Task:** `rs-37-adr065-router-owned-informer` · **Author:** ra · **Date:** 2026-11-24
 **This note does not complete rs-37.** rs-37 stays open: on `origin/main` only Phase-1 task 2 (`AgentConfig.Delivery`) exists; no informer runs anywhere; no wake LaunchAgent is retired.
 **Closes:** ADR-065 acceptance condition 4 (the open design question) once adopted. Adoption is Ra's design call, but any variant that changes who may call what is a security-relevant change and keeps the security gate (SSA review; owner gate if a credential surface is added).
 
@@ -82,3 +82,23 @@ Also remaining and outside tasks 3-8: task 9 (changelog fragment and the ADR-065
 **The enforcement seam.** `lanePinRefuses(verdict) bool` in `internal/routerstore/lanepinobserve.go` returns false for every verdict, and the call site discards the result. Turning enforcement on is a separate, owner-gated change to that one function and its wiring; there is no flag, env var or switch to flip today. The mismatch counters are the evidence of what it would have refused, and should be read before that decision (an unpinned or `no-machine-id` lane today means "not yet pinned or adopted", which enforcement must not treat as a mismatch without a deliberate choice).
 
 **Still open for rs-37.** (1) Operator must pin the lanes and confirm each Mac token has adopted its machine id (`AdoptTokenMachineID`), or every verdict reads `no-machine-id`/`unpinned`. (2) §5's second assumption (multi-instance Postgres `Wait` wake) is still unexamined. (3) Whether gating a served method on this predicate is the owner's "credential surface" decision (§7.2) is unchanged; the report-only build adds no refusal.
+
+## 9. Addendum 2026-11-28: (a') adopted, part A shipped, part B pending
+
+**Decision (Ra, design owner):** option (a') from §5 is adopted for the service-side predicate. The service refuses a served `Wait` for a lane whose token's adopted machine id differs from the lane's operator-set pin; the node-side informer runs over `RemoteStore` unchanged. No new verb, no new credential. SSA review of the served-method change and the owner's answer to §7.2 are unchanged and still open.
+
+**Part A shipped: #1463 (`f5cf280f`).** `SIRSI_ROUTER_LANE_PIN_ENFORCE` (service-side, read once at start, default off, non-boolean is a startup error). This supersedes the "no flag" statement in §8: the seam `lanePinRefuses` now returns true only for `enforce && mismatch`; unpinned, `no-machine-id`, error and skipped are always allowed. **Enabling it is an owner decision**, taken after the operator has pinned the lanes and every Mac token has adopted its machine id; before that the flag would refuse nothing.
+
+**Part B pending, not started:** node-side `RunInformer`, shared admission, delivery-attempt marker, removal of the `RemoteStore` refusal (§6 tasks 3 to 6), and the census and load-bearing rows (task 8). Part C (this change) is docs only.
+
+**Negative-control coverage as of this date**
+
+| NC | Service-side coverage | Where |
+|---|---|---|
+| 1 mismatched token host | covered for the served `Wait` predicate: flag on refuses exactly a mismatch (403, `ErrLanePinMismatch`, names lane and both machines, no token), flag off allows it, match passes with the flag on (positive control) | `TestLanePinEnforcementAtServedWait`, `TestLanePinRefusesTable` in `internal/routerstore/lanepins_test.go` |
+| 2 revoked after prior adoption | not covered by #1463's tests. Revocation is enforced by the authentication chain before the predicate runs, and `RevokeHostToken` kills every session of the token (pre-existing `TestNegativeControlRevokeHostTokenKillsEveryHostSession`). The informer-level NC2 test belongs to part B | `discardtoken_test.go` |
+| 3 to 6 | not covered; they need the informer process | part B |
+
+**Lane-pin mismatch counts have no read surface.** The report-only counters (`lanePinObserver.snapshot`) live in service memory, per instance, and are emitted only as a log line every 5 minutes (`lane-pin (report-only ...)`). No served method exposes them, so a `doctor` finding "enforcement would refuse N" needs a new served verb. That is out of scope for part C; until one exists, read the service log line before enabling enforcement.
+
+**Condition 4, remaining question.** Whether a served-method gate on this predicate is the owner's reserved "credential surface" decision (§7.2). Ra's reading is no; it stays open until the owner answers or SSA rules.
