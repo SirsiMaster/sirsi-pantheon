@@ -730,9 +730,23 @@ func closingParen(s string) int {
 // ── shell / CI yaml (rule H) ────────────────────────────────────────────────
 
 var (
-	shPipedVerifier = regexp.MustCompile(`\b(verify|check|test|lint|gate|audit)[^|\n]*\|\s*(tail|head|grep|wc|cat)\b`)
-	shNoVerify      = regexp.MustCompile(`git\s+push[^\n]*--no-verify`)
+	// The verifier word and the pipe must sit in one simple command: a `;`, `&`,
+	// `(` or backtick between them means the word belongs to another command.
+	shPipedVerifier = regexp.MustCompile("\\b(verify|check|test|lint|gate|audit)[^|;&(`\\n]*\\|\\s*(tail|head|grep|wc|cat)\\b")
+	// `tool --version | head -1` only displays a version string; it gates nothing.
+	shVersionDisplay = regexp.MustCompile(`--version(\s[^|]*)?\|\s*$`)
+	shNoVerify       = regexp.MustCompile(`git\s+push[^\n]*--no-verify`)
 )
+
+func pipedVerifier(l string) bool {
+	for _, loc := range shPipedVerifier.FindAllStringIndex(l, -1) {
+		seg := l[loc[0]:loc[1]]
+		if !shVersionDisplay.MatchString(seg[:strings.LastIndex(seg, "|")+1]) {
+			return true
+		}
+	}
+	return false
+}
 
 func lintShell(rel string, lines []string) []Finding {
 	var out []Finding
@@ -745,7 +759,7 @@ func lintShell(rel string, lines []string) []Finding {
 		if strings.HasPrefix(t, "#") {
 			continue
 		}
-		if !pipefail && shPipedVerifier.MatchString(l) {
+		if !pipefail && pipedVerifier(l) {
 			out = append(out, Finding{File: rel, Line: i + 1, Rule: "H", Message: "verifier piped through a filter without pipefail; the pipe's exit status is the filter's — gate on the verifier's own status"})
 		}
 		if shNoVerify.MatchString(l) {

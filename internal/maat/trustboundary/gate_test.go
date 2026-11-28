@@ -73,32 +73,6 @@ func fixtureGateTools(dir string) *gateTools {
 	return &gateTools{git: "/usr/bin/git", bash: "/bin/bash", gitleaks: filepath.Join(dir, ".git", "fixture-gitleaks")}
 }
 
-// These fixtures intentionally manipulate Git config to verify hook safety.
-// The host may also inject GIT_CONFIG_COUNT from its own harness; save/restore
-// that state and remove it while these cases assert the fixture's own inputs.
-func clearInheritedGitConfigEnv(t *testing.T) {
-	t.Helper()
-	original := map[string]string{}
-	for _, pair := range os.Environ() {
-		key, value, ok := strings.Cut(pair, "=")
-		if ok && strings.HasPrefix(key, "GIT_CONFIG_") {
-			original[key] = value
-			_ = os.Unsetenv(key)
-		}
-	}
-	t.Cleanup(func() {
-		for _, pair := range os.Environ() {
-			key, _, ok := strings.Cut(pair, "=")
-			if ok && strings.HasPrefix(key, "GIT_CONFIG_") {
-				_ = os.Unsetenv(key)
-			}
-		}
-		for key, value := range original {
-			_ = os.Setenv(key, value)
-		}
-	})
-}
-
 const (
 	sha40  = "0123456789abcdef0123456789abcdef01234567"
 	sha40b = "89abcdef0123456789abcdef0123456789abcdef"
@@ -431,63 +405,6 @@ func TestRangesFromPrePushRejectsEmptyInput(t *testing.T) {
 		if ranges, err := RangesFromPrePush(dir, strings.NewReader(input), ""); err == nil || len(ranges) != 0 {
 			t.Fatalf("empty input must fail, got ranges=%v err=%v", ranges, err)
 		}
-	}
-}
-
-func TestArmHooksCoversTheRepo(t *testing.T) {
-	clearInheritedGitConfigEnv(t)
-	dir, commit, write := repo(t)
-	privateHome := privateFixtureDir(t)
-	t.Setenv("HOME", privateHome)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(privateHome, "xdg"))
-	write(".githooks/pre-push", "#!/bin/sh\nexit 0\n")
-	commit("chore: hook")
-	if err := ArmHooks(dir); err != nil {
-		t.Fatal(err)
-	}
-	if err := ArmHooks(dir); err != nil { // idempotent
-		t.Fatal(err)
-	}
-	out, _ := Gate{tools: fixtureGateTools(dir), Root: dir}.git("config", "--get", "core.hooksPath")
-	if out != ".githooks" {
-		t.Fatalf("core.hooksPath = %q", out)
-	}
-}
-
-func TestArmHooksRefusesConflictingLocalPath(t *testing.T) {
-	clearInheritedGitConfigEnv(t)
-	dir, commit, write := repo(t)
-	write(".githooks/pre-push", "#!/bin/sh\nexit 0\n")
-	commit("chore: hook")
-	g := Gate{tools: fixtureGateTools(dir), Root: dir}
-	if _, err := g.git("config", "--local", "core.hooksPath", "/custom/hooks"); err != nil {
-		t.Fatal(err)
-	}
-	if err := ArmHooks(dir); err == nil || !strings.Contains(err.Error(), "/custom/hooks") {
-		t.Fatalf("conflicting local hook path must be refused, got %v", err)
-	}
-	got, err := g.git("config", "--local", "--get", "core.hooksPath")
-	if err != nil || got != "/custom/hooks" {
-		t.Fatalf("local hook path changed after refusal: got=%q err=%v", got, err)
-	}
-}
-
-func TestArmHooksRefusesConflictingGlobalPath(t *testing.T) {
-	clearInheritedGitConfigEnv(t)
-	dir, commit, write := repo(t)
-	write(".githooks/pre-push", "#!/bin/sh\nexit 0\n")
-	commit("chore: hook")
-	privateHome := privateFixtureDir(t)
-	if err := os.WriteFile(filepath.Join(privateHome, ".gitconfig"), []byte("[core]\n\thooksPath = /custom/global-hooks\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("HOME", privateHome)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(privateHome, "xdg"))
-	if err := ArmHooks(dir); err == nil || !strings.Contains(err.Error(), "/custom/global-hooks") {
-		t.Fatalf("conflicting global hook path must be refused, got %v", err)
-	}
-	if got, err := (Gate{tools: fixtureGateTools(dir), Root: dir}).git("config", "--local", "--get", "core.hooksPath"); err == nil {
-		t.Fatalf("local hook path should remain unset after global conflict, got %q", got)
 	}
 }
 

@@ -24,9 +24,12 @@ with content. Empty/whitespace-only input is refused. A new branch requires an e
 local `origin/*` refs. Tags and deletions contain no branch content. Range checks inspect
 blobs at the requested head commit, not uncommitted working-tree edits. Gitleaks uses
 the committed base policy/ignore files and refuses a range that changes them; it never
-discovers mutable working-tree suppressions. Any skipped required verifier makes
-pre-push enforcement incomplete and therefore nonzero. Supplying only one of `--base`
-and `--head` is an error; it never silently becomes a survey.
+discovers mutable working-tree suppressions. Any skipped verifier (no traceability
+script, no exemptions file, gitleaks not installed) makes a `--pre-push` or
+`--base`/`--head` run incomplete and therefore nonzero. Supplying only one of `--base`
+and `--head` is an error; it never silently becomes a survey. A bare
+`sirsi maat gate` with no range, `--pre-push`, `--lint-only` or `--report` is refused:
+it could enforce nothing, and exit 0 would read as a pass.
 
 `--lint-only` is retained as an explicit FinalWishes compatibility mode. It runs
 only the source-pattern linter, not traceability, exemption-growth or secrets

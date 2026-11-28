@@ -21,7 +21,9 @@ func TestMaatGateRequestModeBoundaries(t *testing.T) {
 		mode gateRequestModes
 		want string
 	}{
-		{name: "default-survey"},
+		{name: "bare-run-is-not-a-verdict", want: "not a verdict"},
+		{name: "all-without-lint-only-is-not-a-verdict", mode: gateRequestModes{all: true}, want: "not a verdict"},
+		{name: "root-only-is-not-a-verdict", mode: gateRequestModes{root: "/fixture"}, want: "not a verdict"},
 		{name: "report-only", mode: gateRequestModes{report: true}},
 		{name: "enforcement", mode: gateRequestModes{prePush: true}},
 		{name: "explicit-range", mode: gateRequestModes{base: "base", head: "head", rangeSet: true}},
@@ -55,7 +57,8 @@ func TestMaatGateRequestModeBoundaries(t *testing.T) {
 	}
 }
 
-func TestMaatGateCLIExplicitRangeLintOnlyUsesCommittedBlobs(t *testing.T) {
+func maatGateFixtureRepo(t *testing.T) (string, func(...string) string) {
+	t.Helper()
 	root := t.TempDir()
 	hooks := t.TempDir()
 	git := func(args ...string) string {
@@ -72,6 +75,11 @@ func TestMaatGateCLIExplicitRangeLintOnlyUsesCommittedBlobs(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	git("init", "-q", "-b", "main", "--template="+t.TempDir())
+	return root, git
+}
+
+func TestMaatGateCLIExplicitRangeLintOnlyUsesCommittedBlobs(t *testing.T) {
+	root, git := maatGateFixtureRepo(t)
 	if err := os.WriteFile(filepath.Join(root, "clean.go"), []byte("package fixture\nfunc clean() int { return 1 }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -125,10 +133,37 @@ func TestMaatGateDoesNotExposeHookInstall(t *testing.T) {
 func TestMaatGateEnforcementRejectsIncompleteResult(t *testing.T) {
 	incomplete := trustboundary.Result{OK: true, Complete: false}
 	if !maatGateFailed(incomplete, true) {
-		t.Fatal("pre-push enforcement must refuse a result with skipped required checks")
+		t.Fatal("enforcement must refuse a result with skipped required checks")
 	}
 	if maatGateFailed(incomplete, false) {
-		t.Fatal("informational survey may report no executed failure while remaining incomplete")
+		t.Fatal("lint-only may report no executed failure while remaining incomplete")
+	}
+
+	// End to end: a clean explicit range in a repo with no traceability
+	// verifier or exemptions file skips those steps, so range mode must exit
+	// nonzero; the same range with --lint-only passes.
+	root, git := maatGateFixtureRepo(t)
+	// A committed gitleaks policy lets the secrets step pass where gitleaks is
+	// installed (it skips elsewhere), so no executed step fails.
+	if err := os.WriteFile(filepath.Join(root, ".gitleaks.toml"), []byte("title = \"fixture\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git("add", ".gitleaks.toml")
+	git("commit", "-q", "-m", "fixture base")
+	base := git("rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "clean.go"), []byte("package fixture\nfunc clean() int { return 1 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "clean.go")
+	git("commit", "-q", "-m", "fixture clean")
+	head := git("rev-parse", "HEAD")
+	out, err := runMaatGateJSON(t, func() { gateRoot, gateBase, gateHead = root, base, head })
+	var ranged trustboundary.Result
+	if err == nil || json.Unmarshal([]byte(out), &ranged) != nil || !ranged.OK || ranged.Complete || len(ranged.Skipped) == 0 {
+		t.Fatalf("explicit range with skipped verifiers must fail: err=%v result=%s", err, out)
+	}
+	if out, err := runMaatGateJSON(t, func() { gateRoot, gateBase, gateHead, gateLintOnly = root, base, head, true }); err != nil {
+		t.Fatalf("lint-only clean range refused: %v\n%s", err, out)
 	}
 }
 

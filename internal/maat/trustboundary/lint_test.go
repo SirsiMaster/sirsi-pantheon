@@ -86,6 +86,27 @@ func TestReportListsEveryRule(t *testing.T) {
 	}
 }
 
+func TestShellPipedVerifierScope(t *testing.T) {
+	tests := []struct {
+		line string
+		want bool
+	}{
+		// FinalWishes #2067 .githooks/pre-push:378 — display-only version string.
+		{`    case "$(sirsi maat gate --help 2>&1 || true)" in *--lint-only*) ;; *) GATE_CLI="installed sirsi ($(sirsi --version 2>/dev/null | head -1)) has no 'maat gate --lint-only'" ;; esac`, false},
+		{`golangci-lint --version | head -1`, false},
+		{`scripts/verify-commit-traceability.sh --main "$BASE" "$HEAD" | tail -5 && git push`, true},
+		{`go test ./... | tail -5`, true},
+		{`./verify.sh --version-file v.txt "$B" | tail`, true},
+		{`echo checking; ls | head`, false},
+	}
+	for _, tc := range tests {
+		got := len(lintShell("hook.sh", []string{tc.line})) > 0
+		if got != tc.want {
+			t.Errorf("H finding = %v, want %v for %q", got, tc.want, tc.line)
+		}
+	}
+}
+
 func TestMalformedGoIsExplicitFailure(t *testing.T) {
 	if _, err := lintSource("broken.go", []byte("package x\nfunc (")); err == nil {
 		t.Fatal("unparsable Go must fail the lint explicitly, not pass as nil findings")

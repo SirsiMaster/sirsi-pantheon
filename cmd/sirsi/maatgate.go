@@ -54,6 +54,11 @@ func (m gateRequestModes) validate() error {
 	if m.lintOnly && !m.all && !selectedRange {
 		return fmt.Errorf("--lint-only requires --all or both --base and --head; no working-tree survey fallback")
 	}
+	// An unranged full run checks nothing it could enforce, yet exit 0 would read
+	// as a pass to any script. Refuse it; surveys use --all --lint-only.
+	if !m.report && !m.prePush && !selectedRange && !m.lintOnly {
+		return fmt.Errorf("an unranged gate run is not a verdict; use --pre-push, --base X --head Y, --all --lint-only, or --report")
+	}
 	return nil
 }
 
@@ -148,7 +153,7 @@ Runs, with each verifier's OWN exit status as the verdict:
 			if err := encodeMaatGateJSON(cmd.OutOrStdout(), res); err != nil {
 				return err
 			}
-			if maatGateFailed(res, gatePrePush) {
+			if maatGateFailed(res, !gateLintOnly) {
 				cmd.SilenceUsage = true
 				return fmt.Errorf("𓆄 configured Ma'at gate steps failed; see JSON result")
 			}
@@ -165,7 +170,7 @@ Runs, with each verifier's OWN exit status as the verdict:
 		for _, f := range res.Findings {
 			fmt.Fprintf(cmd.OutOrStdout(), "     %s\n", f)
 		}
-		if maatGateFailed(res, gatePrePush) {
+		if maatGateFailed(res, !gateLintOnly) {
 			// Exit non-zero through cobra so a hook's `|| exit 1` sees it. Never
 			// print-and-exit-0: the status IS the gate.
 			cmd.SilenceUsage = true

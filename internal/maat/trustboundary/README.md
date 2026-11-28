@@ -23,7 +23,8 @@ certification, and neither this package nor its report changes current canon.
 - `--report` only formats an optional heuristic worksheet. It does not locate
   or inspect a repository, configure hooks, run a verifier, or mutate state.
 - Missing optional tools/files are reported as `skip`, not represented as
-  verified; pre-push enforcement returns nonzero for incomplete ranges. A valid
+  verified; `--pre-push` and `--base`/`--head` runs return nonzero when any
+  step was skipped (only `--lint-only` may pass incomplete). A valid
   tag/deletion-only input is a no-op. Command time/output bounds and parsing
   failures fail closed.
 - The secrets scan reads `.gitleaks.toml` and `.gitleaksignore` from the trusted
